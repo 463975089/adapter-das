@@ -31,10 +31,12 @@ from sgl_kernel.moe import (
     topk_softmax,
 )
 
-# Register HCU shims for AMD-only dependencies that upstream sglang imports
-# unconditionally on HIP devices (e.g. `aiter` in the quark mxfp4 shims).
-# Must run before any sglang module import; symbol *access* raises loudly.
-from sgl_kernel import _aiter_hcu_stub as _aiter_shim  # noqa: F401
+# Register HCU shims for AMD/NVIDIA-only dependencies that upstream sglang
+# imports on HIP devices (`aiter`, `flashinfer`, `flash_attn`, ...). Must run
+# before any sglang module import; unimplemented symbol *calls* raise loudly.
+from sgl_kernel import _adapters
+
+_adapters.register_all()
 from sgl_kernel.kvcacheio import (  # noqa: F401
     copy_all_layer_kv_cache_cpu,
     get_device_accessible_ptr,
