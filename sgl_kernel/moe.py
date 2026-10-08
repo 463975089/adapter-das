@@ -24,6 +24,12 @@ from typing import Optional, Tuple
 
 import torch
 
+from .compat import HAS_TRITON, check_cuda_tensor, next_power_of_2
+
+if HAS_TRITON:
+    import triton
+    import triton.language as tl
+
 _SCORING_FUNC_MAP = {"sigmoid": 0, "sqrtsoftplus": 1, "softmax": 2}
 
 _RENORMALIZE_SUM_EPSILON = 1e-20
@@ -243,7 +249,7 @@ def moe_fused_gate(scores: torch.Tensor, bias: Optional[torch.Tensor], *args, **
 # ---------------------------------------------------------------------------
 
 
-def moe_align_block_size(
+def _moe_align_block_size_torch(
     topk_ids,
     num_experts,
     block_size,
@@ -251,20 +257,8 @@ def moe_align_block_size(
     experts_ids,
     num_tokens_post_pad,
     cumsum_buffer,
-    pad_sorted_token_ids=False,
-    ignore_invalid_expert=False,
+    ignore_invalid_expert,
 ):
-    """Group flat token ids by expert, padding every expert's slot count up to
-    a multiple of ``block_size`` (in place on all output buffers).
-
-    Contracts (matching the CUDA kernel consumed by the triton fused_moe):
-      - padding value in sorted_token_ids = topk_ids.numel() (out-of-range token id)
-      - experts_ids[b] = expert of block b for b < ceil(total/block); tail = num_experts
-      - num_tokens_post_pad (1,) int32 = total padded length
-      - cumsum_buffer[i] = exclusive prefix sum of block-aligned per-expert counts
-    With ignore_invalid_expert=True, ids outside [0, num_experts) (e.g. the EP
-    sentinel -1) are skipped entirely.
-    """
     numel = topk_ids.numel()
     flat = topk_ids.flatten().to(torch.long)
     if ignore_invalid_expert:
@@ -320,6 +314,199 @@ def moe_align_block_size(
     experts_ids[:n_blocks].copy_(expert_of_block)
     if max_blocks > n_blocks:
         experts_ids[n_blocks:].fill_(num_experts)
+
+
+def moe_align_block_size(
+    topk_ids,
+    num_experts,
+    block_size,
+    sorted_token_ids,
+    experts_ids,
+    num_tokens_post_pad,
+    cumsum_buffer,
+    pad_sorted_token_ids=False,
+    ignore_invalid_expert=False,
+):
+    """Group flat token ids by expert, padding every expert's slot count up to
+    a multiple of ``block_size`` (in place on all output buffers).
+
+    Contracts (matching the CUDA kernel consumed by the triton fused_moe):
+      - padding value in sorted_token_ids = topk_ids.numel() (out-of-range token id)
+      - experts_ids[b] = expert of block b for b < ceil(total/block); tail = num_experts
+      - num_tokens_post_pad (1,) int32 = total padded length
+      - cumsum_buffer[i] = exclusive prefix sum of block-aligned per-expert counts
+    With ignore_invalid_expert=True, ids outside [0, num_experts) (e.g. the EP
+    sentinel -1) are skipped entirely.
+
+    Runs on GPU via fully device-side triton kernels: the CUDA-graph capture
+    path of the fused_moe pipeline calls this every step, so host syncs
+    (`.item()`), dynamic-shape ops (`nonzero`, boolean-mask indexing) and
+    data-dependent raises are forbidden there. The triton path keeps every
+    scalar contract bit-exact; within one expert's segment the token order is
+    arrival-scheduled (atomic cursors) rather than strictly FIFO, which does
+    not change the fused-moe result (rows are independent per token). The
+    eager/validating range check only runs off capture, like the AOT kernel
+    which trusts its inputs. CPU falls back to the exact torch port above.
+    """
+    if not (HAS_TRITON and topk_ids.is_cuda and num_experts <= 16384):
+        return _moe_align_block_size_torch(
+            topk_ids,
+            num_experts,
+            block_size,
+            sorted_token_ids,
+            experts_ids,
+            num_tokens_post_pad,
+            cumsum_buffer,
+            ignore_invalid_expert,
+        )
+    check_cuda_tensor(sorted_token_ids, experts_ids, num_tokens_post_pad, cumsum_buffer)
+
+    flat = topk_ids.reshape(-1)
+    if flat.dtype not in (torch.int32, torch.int64):
+        flat = flat.to(torch.int64)
+    numel = flat.numel()
+    capturing = torch.cuda.is_current_stream_capturing()
+    if not ignore_invalid_expert and numel and not capturing:
+        flat_min = int(flat.min().item())
+        flat_max = int(flat.max().item())
+        if flat_min < 0 or flat_max >= num_experts:
+            raise ValueError(
+                "topk_ids contains expert ids outside [0, num_experts); "
+                "pass ignore_invalid_expert=True for EP sentinel lanes"
+            )
+
+    sorted_token_ids.fill_(numel)
+    counts = torch.zeros(num_experts, dtype=torch.int32, device=topk_ids.device)
+    cursor = torch.empty(num_experts, dtype=torch.int32, device=topk_ids.device)
+
+    block_hist = 1024
+    if numel:
+        grid = (triton.cdiv(numel, block_hist),)
+        _moe_align_hist_kernel[grid](
+            flat, numel, counts, num_experts, ignore_invalid_expert, BLOCK=block_hist
+        )
+    block_e = max(16, next_power_of_2(num_experts))
+    write_extra = 1 if cumsum_buffer.shape[0] > num_experts + 1 else 0
+    _moe_align_scan_kernel[(1,)](
+        counts,
+        cumsum_buffer,
+        cursor,
+        num_tokens_post_pad,
+        num_experts,
+        block_size,
+        write_extra,
+        BLOCK_E=block_e,
+    )
+    if numel:
+        _moe_align_fill_kernel[grid](
+            flat,
+            numel,
+            cursor,
+            sorted_token_ids,
+            num_experts,
+            ignore_invalid_expert,
+            BLOCK=block_hist,
+        )
+    if experts_ids.shape[0]:
+        _moe_align_block_expert_kernel[(experts_ids.shape[0],)](
+            cumsum_buffer,
+            experts_ids,
+            num_tokens_post_pad,
+            num_experts,
+            block_size,
+            BLOCK_E=block_e,
+        )
+
+
+if HAS_TRITON:
+
+    @triton.jit
+    def _moe_align_hist_kernel(
+        ids_ptr,
+        numel,
+        counts_ptr,
+        num_experts,
+        IGNORE_INVALID: tl.constexpr,
+        BLOCK: tl.constexpr,
+    ):
+        offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+        inb = offs < numel
+        e = tl.load(ids_ptr + offs, mask=inb, other=-1)
+        if IGNORE_INVALID:
+            ok = inb & (e >= 0) & (e < num_experts)
+        else:
+            ok = inb
+        tl.atomic_add(counts_ptr + e, 1, mask=ok)
+
+    @triton.jit
+    def _moe_align_scan_kernel(
+        counts_ptr,
+        cumsum_ptr,
+        cursor_ptr,
+        post_pad_ptr,
+        num_experts,
+        block_size,
+        WRITE_EXTRA: tl.constexpr,
+        BLOCK_E: tl.constexpr,
+    ):
+        offs = tl.arange(0, BLOCK_E)
+        m = offs < num_experts
+        counts = tl.load(counts_ptr + offs, mask=m, other=0)
+        aligned = ((counts + block_size - 1) // block_size) * block_size
+        incl = tl.cumsum(aligned, 0)
+        excl = incl - aligned
+        total = tl.sum(aligned, 0)
+        tl.store(cumsum_ptr + offs, excl, mask=m)
+        tl.store(cumsum_ptr + num_experts, total)
+        if WRITE_EXTRA:
+            # callers size this (E+2,) buffer; define the trailing slot too
+            tl.store(cumsum_ptr + num_experts + 1, total)
+        tl.store(post_pad_ptr, total)
+        tl.store(cursor_ptr + offs, excl, mask=m)
+
+    @triton.jit
+    def _moe_align_fill_kernel(
+        ids_ptr,
+        numel,
+        cursor_ptr,
+        sorted_ptr,
+        num_experts,
+        IGNORE_INVALID: tl.constexpr,
+        BLOCK: tl.constexpr,
+    ):
+        offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+        inb = offs < numel
+        e = tl.load(ids_ptr + offs, mask=inb, other=-1)
+        if IGNORE_INVALID:
+            ok = inb & (e >= 0) & (e < num_experts)
+        else:
+            ok = inb
+        pos = tl.atomic_add(cursor_ptr + e, 1, mask=ok)
+        tl.store(sorted_ptr + pos, offs.to(tl.int32), mask=ok)
+
+    @triton.jit
+    def _moe_align_block_expert_kernel(
+        cumsum_ptr,
+        experts_ptr,
+        post_pad_ptr,
+        num_experts,
+        block_size,
+        BLOCK_E: tl.constexpr,
+    ):
+        b = tl.program_id(0)
+        total = tl.load(post_pad_ptr)
+        padded = (total + block_size - 1) // block_size
+        if b < padded:
+            s = b * block_size
+            offs = tl.arange(0, BLOCK_E)
+            em = offs < num_experts
+            start = tl.load(cumsum_ptr + offs, mask=em, other=1 << 30)
+            end = tl.load(cumsum_ptr + offs + 1, mask=em, other=-1)
+            # exactly one non-empty expert's [start, end) contains s; pick it
+            hit = ((start <= s) & (s < end)).to(tl.int32) * (offs + 1)
+            tl.store(experts_ptr + b, tl.max(hit, 0).to(tl.int32) - 1)
+        else:
+            tl.store(experts_ptr + b, num_experts)
 
 
 def moe_sum(input_tensor: torch.Tensor, output_tensor: torch.Tensor):
