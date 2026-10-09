@@ -7,6 +7,8 @@ of them, so upstream code runs unmodified on HCU:
     aiter        AMD aiter (real triton-backed silu_and_mul + lazy stubs)
     flashinfer   NVIDIA flashinfer (lazy stubs; attention uses triton backend)
     flash_attn   flash-attn / vLLM FA3 (lazy stubs; same)
+    fast_hadamard_transform  NVIDIA CUDA ext (torch matmul; DSA indexer's
+                 rotate_activation on the HIP branch)
 
 All adapters are meta-path based: `from <lib> import <name>` succeeds at
 import time (upstream shims bind eagerly), while *calling* an unimplemented
@@ -20,6 +22,7 @@ Registered by `sgl_kernel.__init__` via `_adapters.register_all()`.
 from sgl_kernel._adapters import flash_attn as _fa
 from sgl_kernel._adapters import flashinfer as _fi
 from sgl_kernel._adapters import aiter as _aiter
+from sgl_kernel._adapters import hadamard as _had
 
 
 def register_all() -> None:
@@ -27,3 +30,4 @@ def register_all() -> None:
     _aiter.register()
     _fi.register()
     _fa.register()
+    _had.register()

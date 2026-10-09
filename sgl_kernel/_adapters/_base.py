@@ -1,4 +1,12 @@
-"""Shared machinery for external-library meta-path adapters."""
+"""Shared machinery for external-library meta-path adapters.
+
+Strategy: prefer the REAL library whenever it actually exists on disk (the
+DTK/DCU vendor wheel ports many of the ROCm triton kernels to HCU), and fall
+back to per-module stubs only for the modules that are missing. `allowlist`
+entries are *fill-in* overlays: after a real module executes, any allowlist
+attribute the real module does not define itself is set on it, so our
+validated bridges remain active even when the real package loads.
+"""
 
 import importlib.abc
 import importlib.machinery
@@ -50,21 +58,63 @@ class Missing:
         return f"<hcu-adapter missing:{self._name}>"
 
 
+class _OverlayLoader(importlib.abc.Loader):
+    """Wraps a real module's loader; after exec, fills allowlist attrs the
+    real module does not define itself (our bridges win nothing else)."""
+
+    def __init__(self, inner, extras, lib, fullname):
+        self._inner = inner
+        self._extras = extras
+        self._lib = lib
+        self._fullname = fullname
+
+    def create_module(self, spec):
+        return self._inner.create_module(spec)
+
+    def exec_module(self, module):
+        self._inner.exec_module(module)
+        for attr, value in self._extras.items():
+            if not hasattr(module, attr):
+                setattr(module, attr, value)
+
+    def __getattr__(self, item):
+        return getattr(self._inner, item)
+
+
 class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
-    """Generic `<lib>[.sub...]` meta-path stub with per-module allowlists."""
+    """Generic `<lib>[.sub...]` meta-path stub with per-module allowlists.
+
+    Real modules on disk win (PathFinder only — no meta-path recursion);
+    missing ones get a lazy stub package so `from lib import name` binds at
+    import time, and calling an unimplemented entry raises a loud
+    NotImplementedError naming the missing kernel.
+    """
 
     def __init__(self, lib_name, allowlist=None):
         self.lib_name = lib_name
-        # fullname -> absolute module attr -> value (real implementations)
+        # fullname -> absolute module attr -> value
         self.allowlist = dict(allowlist or {})
 
     def _extra_attrs(self, fullname):
         return self.allowlist.get(fullname, {})
 
     def find_spec(self, fullname, path=None, target=None):
-        if fullname == self.lib_name or fullname.startswith(self.lib_name + "."):
-            return importlib.machinery.ModuleSpec(fullname, self, is_package=True)
-        return None
+        if not (
+            fullname == self.lib_name or fullname.startswith(self.lib_name + ".")
+        ):
+            return None
+        try:
+            real = importlib.machinery.PathFinder.find_spec(fullname, path)
+        except Exception:
+            real = None
+        if real is not None:
+            extras = self._extra_attrs(fullname)
+            if extras:
+                real.loader = _OverlayLoader(
+                    real.loader, extras, self.lib_name, fullname
+                )
+            return real
+        return importlib.machinery.ModuleSpec(fullname, self, is_package=True)
 
     def create_module(self, spec):
         mod = types.ModuleType(spec.name)
