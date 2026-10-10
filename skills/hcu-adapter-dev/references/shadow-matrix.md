@@ -39,19 +39,24 @@ destination-passing、占位参数）：
 路由统一走 env（规划中，接入 lightop 时落地）：
 `HCU_<OP>_IMPL=auto|triton|vendor|torch`，`auto` = 探测+压测结论决定。
 
-## lightop 接入盘点（DTK 0.6.0，nmz18 实测）
+## lightop 接入盘点（DTK 0.6.0，nmz26 dtk26041 实测 export 面与 aiter 交集）
 
-gfx938 有 fp8（gfx936 只有 int8），这些出口可作为 vendor 档候选：
+gfx938 有 fp8（gfx936 只有 int8）。**与 aiter 同用法的交集算子**（同一语义
+两边都有实现 → 同一份契约测试跑双 backend，正是 73-297 要的"默认打开、
+排精度时可切"）：
 
-- attention：`paged_mqa_logits`（gfx936 int8 / gfx938 fp8 分支，head_dim=128）
-  —— 替换 `_adapters/mqa_logits_emu.py` 的 torch 模拟，MQA 性能主杠杆；
-- quant：`per_token_quant_int8`（W4A8 激活量化直接可替换）、fp8/blockwise；
-- moe：gemm / marlin / routing / permutation；
-- gemm_ops：quantized / grouped；
-- 融合：`fuse_silu_mul_quant`、`fuse_rmsnorm_rope`、`fuse_rotary_positional_embedding`。
+| 语义 | lightop 出口 | aiter 出口 | 接入优先级 |
+|---|---|---|---|
+| silu_and_mul(+fp8 quant 融合) | `activation.existing.fuse_silu_and_mul` / `fuse_silu_mul_fp8_quant` 系列（含 _ep） | `silu_and_mul` / fused_clamp_act_mul 融合 | P1（契约最简单，跑通双 backend 模式） |
+| MQA logits（DSA） | `attention.mqa.paged_mqa_logits` / `mqa_logits` / `_fp4` 变体 | `aiter.ops.triton(.attention).pa_mqa_logits` | P1（我们有 mqa_logits_emu torch 金标可直接对拍） |
+| MoE group gemm | `moe.groupgemm_permute / fuse_groupgemm_permute_quant / gemm_ops.quantized.gemm_w8a8_*`（marlin w4a8/w4a16 配置齐） | aiter 项目前 moe 出口少 | P2 |
+| RMSnorm+RoPE 融合 | `fuse_rmsnorm_rope.rms_rotary_embedding_fuse(_with_kv_store)` | 无对应（aiter 分开） | P2（性能档） |
+| KV cache 反量化 | `kvcache.dequantize_k_cache_paged` / `gather_and_maybe_dequant_cache` | `cp_gather_indexer_k_quant_cache`（我们已桥） | P3 |
 
-接入顺序建议：per_token_quant_int8（契约简单）→ paged_mqa_logits（有 emu
-金标可直接对拍）→ moe/routing。
+接入顺序：P1 两个先做（silu 融合→mqa），每个出口注册 `HCU_<OP>_IMPL`
+env 档位（auto=vendor 过压测则用/triton/torch），四个维度测试各跑一遍。
+ أصل轻盘点记录：`lightop._lmslim_native.quantize` 顶层无导出（空）、
+marlin repack 只在 lightop 有（aiter 无交）。
 
 ## 新增一个算子垫片的流程
 
