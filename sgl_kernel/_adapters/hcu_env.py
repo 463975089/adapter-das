@@ -113,6 +113,12 @@ REGISTRY = {
         "env": "HCU_SLIMQUANT", "default": "1",
         "about": "slimquant_w4a8 方法注册（按 checkpoint 配置自选）；=0 关闭",
     },
+    # vendor op backends (替换矩阵档位: auto|triton|lightop|torch)
+    "HCU_SILU_MUL_IMPL": {
+        "env": "HCU_SILU_MUL_IMPL", "default": "auto",
+        "about": "silu_and_mul 后端档位：auto=triton（lightop 过验证后转正），"
+                 "triton|lightop|torch",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},

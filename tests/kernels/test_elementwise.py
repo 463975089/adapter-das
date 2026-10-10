@@ -56,3 +56,54 @@ def test_gated_act_gpu_3d_out_kwarg(dtype):
     tol = (2e-3, 2e-3) if dtype != torch.bfloat16 else (1.0, 0.3)
     torch.testing.assert_close(y.float(), ref, rtol=tol[0], atol=tol[1])
     assert y.data_ptr() == out.data_ptr()
+
+
+# --------------------------------------------------------------- lightop ----
+
+def test_silu_backend_default_is_triton(monkeypatch):
+    """auto (=default) must stay on the triton path — lightop is opt-in
+    until it passes the full contract + graph-replay matrix."""
+    monkeypatch.delenv("HCU_SILU_MUL_IMPL", raising=False)
+    import sgl_kernel.elementwise as ew
+
+    ew._LIGHTOP_IMPL = None  # re-probe with the cleaned env
+    try:
+        assert ew._lightop_silu_impl() is None
+    finally:
+        ew._LIGHTOP_IMPL = None
+
+
+def test_silu_backend_gate_unknown_value_falls_to_triton(monkeypatch):
+    monkeypatch.setenv("HCU_SILU_MUL_IMPL", "wat")
+    import sgl_kernel.elementwise as ew
+
+    ew._LIGHTOP_IMPL = None
+    try:
+        assert ew._lightop_silu_impl() is None
+    finally:
+        ew._LIGHTOP_IMPL = None
+
+
+@requires_gpu
+def test_silu_lightop_backend_parity(monkeypatch):
+    """HCU_SILU_MUL_IMPL=lightop: same contract as the triton path, all
+    execution-path switches below it must be invisible to the caller."""
+    pytest.importorskip("lightop")
+    monkeypatch.setenv("HCU_SILU_MUL_IMPL", "lightop")
+    import sgl_kernel.elementwise as ew
+
+    ew._LIGHTOP_IMPL = None
+    try:
+        assert ew._lightop_silu_impl() is not None, \
+            "lightop wheel present but probe failed"
+        for dtype in (torch.float32, torch.float16, torch.bfloat16):
+            torch.manual_seed(3)
+            x = (torch.randn(65, 512, device="cuda") * 2).to(dtype)
+            y = sgl_kernel.silu_and_mul(x.clone())
+            ref = torch.nn.functional.silu(
+                x[..., :256].float()) * x[..., 256:].float()
+            cos = torch.nn.functional.cosine_similarity(
+                y.float().flatten(), ref.flatten(), dim=0).item()
+            assert cos >= 0.9999, f"lightop backend cos={cos:.6f} {dtype}"
+    finally:
+        ew._LIGHTOP_IMPL = None
