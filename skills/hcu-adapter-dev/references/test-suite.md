@@ -19,15 +19,36 @@ API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug
 tol 参考：bf16 maxrel ≤ 5e-2（GEMM 类，excess ≤ 1.05× 输入舍入下限）、
 fp16 ≤ 1e-2、fp32 ≤ 1e-4；AR 类用 `tol × max|x|` 的自适应 atol。
 
-## 文件清单
+## 文件清单与分类规划（73-296：单测越多越要先分好类）
 
-| 文件 | 内容 | 运行 |
-|---|---|---|
-| `test_ops_cpu.py` | 无 GPU 也能跑的契约面 | 任何机器 |
-| `test_gpu_kernels.py` | sgl_kernel triton/torch 档全量契约 | 1 GPU |
-| `test_vendor_allreduce.py` | AR：eager/graph-replay × 尺寸×dtype + gate 三态 | 1 GPU（gate）/ 2 GPU（stress，自驱动 torchrun） |
-| `test_flash_attn_gpu.py` | FA 场景矩阵（探针式后端注册）+ graph-replay | 1 GPU |
-| `run_triage.py` | 四级定位流程（见 precision-triage.md） | 容器内 |
+**分类原则**：一级按运行环境/对象（cpu / gpu 自有 kernel / vendor 高危 /
+bench / tools），二级按算子域。命名即分类：`test_<域>_<维度>.py`。
+
+```
+tests/
+  test_ops_cpu.py            # CPU 契约面（torch 参考档+包装面），任何机器跑
+  kernels/                   # sgl_kernel 自有算子（GPU）
+    test_elementwise.py      #   silu/gelu 系列：契约+graph-safety
+    test_layernorm.py        #   rmsnorm/fused-add/gemma：契约+graph-safety
+    test_rope.py             #   neox/interleave：契约+cache 布局回归(fbc540c)
+    test_moe_gate.py         #   topk 系列：排序/tie-break/共享专家契约
+    test_moe_align.py        #   align/sum：capture 回归（527ad97）
+    test_kvtransfer.py       #   transfer_kv_*：索引契约
+  vendor/                    # 高危 vendor 压测（一份矩阵多后端）
+    test_allreduce.py        #   aiter AR：eager+graph-replay+gate 三态
+    test_flash_attn.py       #   FA 场景矩阵+graph-replay（探针式后端）
+  bench/                     # 性能/并发基准（非门禁，长跑）
+    gsm8k_eval.py            #   GSM8K-N 并发精度快评
+  tools/                     # 排查工具（手动，_ 前缀约束同旧）
+    probes（rope/rms/gemm/graph-safety 探针，HCU_ADAPTER_ROOT 可覆路径）
+    run_triage.py            #   四级定位入口
+    _ref_forward_h/_bisect_cmp   # 层对齐参考与二分
+```
+
+**门槛连接**：门禁 = `test_ops_cpu.py` + `kernels/` + `vendor/` 里的 gate 测试
+（fast 集合）；`vendor/` 的 stress 与 `bench/` 为 nightly/按需。
+单测新增一律先进对应二级域文件，不为每个 bug 新开文件（回归用例打注释标
+bug 号，如 fbc540c/1eb038d）。
 
 ## 高危 vendor 压测矩阵
 

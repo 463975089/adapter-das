@@ -9,7 +9,7 @@
 | 2026-10-08 | Qwen3.6-35B-A3B (GDN+MoE bf16) | 67G/1卡 | nmz26 | TP1 144G, mem 0.80 | ✅ | ✅ | ✅ GSM8K-100 69% | ✅ | MoE+线性注意力；graph capture 经 moe_align triton 化修复 (527ad97) |
 | 2026-10-10 | GLM-5-W4A8_V2_6 (slimquant int4-int8 MoE) | ~G/8卡 | nmz18 dtk26041 torch2.11 | TP8 graph ON 零旗标 | ✅ | ✅ | ✅ 语义/长文锚点 | ✅ | 两 bug 破案（fbc540c rope / 1eb038d aiter AR）；NSA emu 短路验证 |
 | 2026-10-10 | Qwen3-4B (bf16) | 7.6G/1卡 | nmz26 dtk26041 torch2.11 + **官方 v0.5.21 release** | TP1, triton attn, graph ON | ✅ | ✅ | ✅ GSM8K-100 68%（16并发46s，无算子错例） | ✅ | 首个官方 release 版；需 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`（rust TreeCore 无预编译扩展，见下） |
-| 2026-10-10 | Qwen3-4B-Channel-FP8 | /1卡 | nmz26 dtk26041 | TP1 | 待验证 | | | | fp8 路径（gfx938 有 fp8） |
+| 2026-10-10 | Qwen3-4B-Channel-FP8 | 7.6G/1卡 | nmz26 dtk26041 + 官方 v0.5.21 | TP1, graph ON/OFF 双试 | ✅ | ❌ | ❌ token 全 0 | — | **quant=compressed-tensors**（format=float-quantized, act=strategy=token）——adapter 未覆盖的路径（README 路线图已知项）；fp8 trace 证实 apply_fp8_linear 从未被调，推理走 compressed-tensors 自己的 kernel 链。待办：compressed-tensors 垫片或换 Fp8LinearMethod 格式的 checkpoint 对照 |
 | 2026-10-10 | Qwen2.5-0.5B-Instruct | /1卡 | nmz26 dtk26041 | TP1 | 待验证 | | | | 极小回归锚点 |
 | 2026-10-10 | Qwen3-32B (bf16) | 65G/1卡 | nmz26 dtk26041 | TP1 144G | 待验证 | | | | 中型 dense |
 | 规划 | Qwen3-30B-A3B (MoE bf16) | 61G/1卡 | nmz26 | TP1 | 待验证 | | | | MoE 独立于 GDN 验证 |

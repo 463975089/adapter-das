@@ -72,6 +72,96 @@ if getattr(torch.version, "hip", None) is not None:
     except Exception:
         pass
 
+    # Debug facility: HCU_FP8_TRACE=1 logs every fp8 apply call (shapes +
+    # OK/RAISE) to /tmp/fp8_trace.log — serve-time GEMM-path localization.
+    if os.environ.get("HCU_FP8_TRACE") == "1":
+        try:
+            import sglang.srt.layers.quantization.fp8_utils as _fpu
+
+            _trace_log = open("/tmp/fp8_trace.log", "w", buffering=1)
+
+            def _hcu_trace(fn, name):
+                def w(*a, **k):
+                    try:
+                        out = fn(*a, **k)
+                        _trace_log.write(f"{name} OK\n")
+                        return out
+                    except Exception as e:
+                        _trace_log.write(f"{name} RAISE {e!r:.140}\n")
+                        raise
+
+                return w
+
+            for _name in ("apply_fp8_linear", "apply_w8a8_block_fp8_linear",
+                          "apply_fp8_ptpc_linear"):
+                _fn = getattr(_fpu, _name, None)
+                if callable(_fn):
+                    setattr(_fpu, _name, _hcu_trace(_fn, _name))
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: fp8 trace not installed", exc_info=True
+            )
+
+    # v0.5.21 HIP native fp8 per-token quant bug (Qwen3-4B-FP8 decode-graph
+    # capture, bs=16 + output_padding=17): apply_fp8_linear passes a
+    # preallocated (bs,1) scale buffer while num_token_padding makes the
+    # quant output bs+1 rows — `_native_dynamic_per_token_quant_fp8` then
+    # copy_s a (17,1) scale into a (16,1) buffer. The aiter branch handles
+    # this; the native fallback doesn't. Bridge: align scale to the padded
+    # row count before quant (graph-safe: same buffers, no host sync).
+    try:
+        import sglang.kernels.ops.quantization.fp8_kernel as _fpk
+
+        _orig_spq = _fpk.scaled_fp8_quant
+
+        def _hcu_scaled_fp8_quant(
+            input, scale=None, num_token_padding=None,
+            use_per_token_if_dynamic=False, **kw,
+        ):
+            # v0.5.21 HIP native bug: the wrapper pads ONLY the output tensor
+            # to num_token_padding but `_native_dynamic_per_token_quant_fp8`
+            # divides the unpadded input by the padded per-token scale
+            # (17,1) -> shape mismatch. The aiter branch pads its quant
+            # internally; the native one doesn't. Bridge: quantize unpadded
+            # with the native path, then pad the output ourselves (and pad
+            # the scale with neutral rows so downstream _scaled_mm sees
+            # consistent per-row scales). Graph-safe: no host sync.
+            pad_rows = 0
+            if (
+                num_token_padding
+                and num_token_padding > input.shape[0]
+                and not _fpk._use_aiter
+            ):
+                pad_rows = num_token_padding - input.shape[0]
+                num_token_padding = None
+            out, s = _orig_spq(
+                input, scale, num_token_padding=num_token_padding,
+                use_per_token_if_dynamic=use_per_token_if_dynamic, **kw,
+            )
+            if pad_rows:
+                if s.shape[0] == input.shape[0] and out.shape[0] != s.shape[0]:
+                    pass  # scale already covers real rows only
+                out = torch.nn.functional.pad(
+                    out, (0, 0, 0, pad_rows)
+                ).contiguous()
+            return out, s
+
+        _hcu_scaled_fp8_quant.__wrapped__ = _orig_spq
+        _fpk.scaled_fp8_quant = _hcu_scaled_fp8_quant
+        # byname importers that were loaded before this bridge
+        import sys as _sys
+
+        for _mod_name in tuple(_sys.modules):
+            if _mod_name.endswith("quantization.fp8_utils"):
+                _m = _sys.modules[_mod_name]
+                if getattr(_m, "scaled_fp8_quant", None) is _orig_spq:
+                    _m.scaled_fp8_quant = _hcu_scaled_fp8_quant
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: fp8 per-token padding bridge not installed",
+            exc_info=True,
+        )
+
     # Family-override modules import `_register_for` by reference at their own
     # import time (later than ours), so patching the attribute here intercepts
     # every registration, including deepseek_v2's DSA branch.
