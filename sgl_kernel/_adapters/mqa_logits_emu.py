@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 _HEAD_DIM_WITH_SF = 132  # 128 fp8 + 4B fp32 scale per index key
 
 
+_MQA_CALL_LOG = {"n": 0}
+
+
+def _note_call(tag):
+    if os.environ.get("HCU_DUMP_MQA") == "1" and _MQA_CALL_LOG["n"] < 8:
+        print(f"[HCU mqa-emu] {tag} called", flush=True)
+        _MQA_CALL_LOG["n"] += 1
+
+
 def _fp8_view_dtype():
     from sglang.kernels.ops.quantization.fp8_kernel import is_fp8_fnuz
 
@@ -49,6 +58,7 @@ def _paged_mqa_logits(
     preshuffle,
     kv_block_size,
 ):
+    _note_call("paged")
     if preshuffle or kv_block_size != 1:
         raise NotImplementedError(
             "HCU MQA emu only supports legacy kv_block_size=1 no-preshuffle "
@@ -89,6 +99,7 @@ def _ragged_fp8_mqa_logits(
     q_fp8, kv, kv_scales, weights, cu_starts, cu_ends, **_ignored
 ):
     """Semantics of aiter fp8_mqa_logits: -inf outside each row's [ks, ke)."""
+    _note_call("ragged")
     q_b = _as_bf16(q_fp8).contiguous()  # [Q, H, D]
     k_b = _as_bf16(kv).contiguous()  # [T, D]
     Q, H, _ = q_b.shape
@@ -132,6 +143,47 @@ def install():
 
     if getattr(_afml, "fp8_mqa_logits", None) is not _ragged_fp8_mqa_logits:
         _afml.fp8_mqa_logits = _ragged_fp8_mqa_logits
+
+    if os.environ.get("HCU_DUMP_MQA") == "1":
+        _log = {"n": 0}
+
+        def _norm(t):
+            return (
+                f"{tuple(t.shape)} {t.dtype}"
+                f" nz={(t.float().abs() > 0).sum().item()}/{t.numel()}"
+                if isinstance(t, torch.Tensor)
+                else repr(t)[:40]
+            )
+
+        def _wrap_ragged(q_fp8, kv, kv_scales, weights, cu_starts, cu_ends,
+                         **kw):
+            out = _ragged_fp8_mqa_logits(
+                q_fp8, kv, kv_scales, weights, cu_starts, cu_ends, **kw)
+            if _log["n"] < 4:
+                print(
+                    f"[HCU mqa] ragged q={_norm(q_fp8)} kv={_norm(kv)}"
+                    f" kv_sc={_norm(kv_scales)} w={_norm(weights)}"
+                    f" ks={cu_starts.tolist()[:6]} ke={cu_ends.tolist()[:6]}"
+                    f" -> out={_norm(out)}", flush=True)
+                _log["n"] += 1
+            return out
+
+        _afml.fp8_mqa_logits = _wrap_ragged
+
+        def _wrap_paged(q_fp8, kv_cache_fp8, weights, seq_lens, block_tables,
+                        max_seq_len, **kw):
+            out = _paged_mqa_logits(
+                q_fp8, kv_cache_fp8, weights, seq_lens, block_tables,
+                max_seq_len, **kw)
+            if _log["n"] < 4:
+                print(
+                    f"[HCU mqa] paged q={_norm(q_fp8)} kv={_norm(kv_cache_fp8)}"
+                    f" w={_norm(weights)} lens={seq_lens.tolist()[:6]}"
+                    f" -> out={_norm(out)}", flush=True)
+                _log["n"] += 1
+            return out
+
+        _dsa_pkg.aiter_paged_mqa_logits = _wrap_paged
 
     logger.warning(
         "[hcu] MQA-logits emu installed (paged -> torch gather-GEMM, ragged ->"

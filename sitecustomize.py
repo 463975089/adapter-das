@@ -180,6 +180,39 @@ if getattr(torch.version, "hip", None) is not None:
         import sgl_kernel._adapters.dsa_topk as _dsa_topk
 
         _dsa_topk.install()
+        if os.environ.get("HCU_DUMP_TOPK") == "1":
+            _tpk = {"n": 0}
+
+            def _hcu_log_topk(fn_name, fn):
+                def wrapped(*a, **k):
+                    out = fn(*a, **k)
+                    if _tpk["n"] < 3:
+                        score = a[0]
+                        print(
+                            f"[HCU topk] {fn_name} score{tuple(score.shape)}"
+                            f" dtype={score.dtype} lens={a[1].tolist()[:4]}"
+                            f" topk={a[3] if len(a) > 3 else k.get('topk')}",
+                            flush=True,
+                        )
+                        torch.save(
+                            {
+                                "score": score[:2].float().cpu(),
+                                "lens": a[1][:4].cpu(),
+                                "out": out[:2].cpu(),
+                            },
+                            f"/tmp/hcu_topk_{_tpk['n']}.pt",
+                        )
+                        _tpk["n"] += 1
+                    return out
+
+                return wrapped
+
+            for _nm in ("fast_topk_transform_fused",
+                        "fast_topk_transform_ragged_fused",
+                        "fast_topk_v2"):
+                _fn = getattr(_sk, _nm, None)
+                if _fn is not None:
+                    setattr(_sk, _nm, _hcu_log_topk(_nm, _fn))
     except Exception:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: dsa topk bridge not installed", exc_info=True
@@ -196,4 +229,140 @@ if getattr(torch.version, "hip", None) is not None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: MQA-logits emu not installed", exc_info=True
+            )
+
+    # Debug facility: HCU_DUMP_LAYERS=1 captures, per decoder layer, the
+    # post-reduction residual stream entering `input_layernorm` (TP8 uses
+    # delayed partial reductions, so module hooks deeper than this see
+    # one rank's partial sum). Entry i of the saved list = residual stream
+    # before layer i (embed output = entry 0), matching the pure torch
+    # reference (tests/_ref_forward_h.py). With HCU_DUMP_INNER=1 also
+    # saves xa/xb (norm outputs) of layers 0-1 to /tmp/hcu_inner.pt.
+    # Prefill-sized passes only (1 < T <= 64), rank 0, file
+    # HCU_DUMP_LAYERS_PATH (default /tmp/hcu_layers.pt).
+    if os.environ.get("HCU_DUMP_LAYERS") == "1":
+        try:
+            import sglang.srt.models.glm4_moe as _g4m
+
+            _dump = {
+                "cur": {},
+                "rank": None,
+                "path": os.environ.get(
+                    "HCU_DUMP_LAYERS_PATH", "/tmp/hcu_layers.pt"
+                ),
+                "nlayers": int(os.environ.get("HCU_DUMP_LAYERS_TOTAL", "0")),
+                "want_t": int(os.environ.get("HCU_DUMP_LAYERS_T", "0")),
+                "inner": {},
+            }
+
+            def _hcu_row(t):
+                if not isinstance(t, torch.Tensor) or t.dim() != 2:
+                    return None
+                if not 1 < t.shape[0] <= 64:
+                    return None
+                return t[t.shape[0] - 1].detach().float().cpu()
+
+            def _hcu_layernorm_pre(layer_idx):
+                def hook(mod, args, kwargs):
+                    try:
+                        x = kwargs.get("x", args[0] if args else None)
+                        r = kwargs.get(
+                            "residual", args[1] if len(args) > 1 else None)
+                        if _dump["rank"] is None:
+                            _dump["rank"] = (
+                                torch.distributed.get_rank()
+                                if torch.distributed.is_initialized()
+                                else 0
+                            )
+                        if _dump["rank"] != 0:
+                            return
+                        if r is None:
+                            hs = x
+                        elif isinstance(r, torch.Tensor):
+                            hs = x.float() + r.float()
+                        else:
+                            return
+                        row = _hcu_row(hs)
+                        if row is not None and (
+                            not _dump["want_t"]
+                            or hs.shape[0] == _dump["want_t"]
+                        ):
+                            cur = _dump["cur"]
+                            if layer_idx == 0 and cur:
+                                _dump["cur"] = cur = {}
+                            cur[layer_idx] = (hs.shape[0], row)
+                            nl = _dump["nlayers"]
+                            if nl and len(cur) == nl:
+                                rows = [
+                                    (i, cur[i][0], cur[i][1])
+                                    for i in sorted(cur)
+                                ]
+                                torch.save(rows, _dump["path"])
+                                print(
+                                    f"[HCU dump] saved {len(rows)} rows"
+                                    f" (T={rows[0][1]}) to {_dump['path']}",
+                                    flush=True,
+                                )
+                                _dump["cur"] = {}
+                    except Exception:
+                        logging.getLogger("hcu.adapter").warning(
+                            "HCU adapter: layer dump capture failed",
+                            exc_info=True,
+                        )
+
+                return hook
+
+            def _hcu_norm_out(tag):
+                def hook(mod, args, output):
+                    if os.environ.get("HCU_DUMP_INNER") != "1":
+                        return
+                    if _dump["rank"] not in (None, 0):
+                        return
+                    out = output[0] if isinstance(output, tuple) else output
+                    row = _hcu_row(out)
+                    if row is not None:
+                        _dump["inner"][tag] = row
+                        if len(_dump["inner"]) >= 4:
+                            torch.save(dict(_dump["inner"]), "/tmp/hcu_inner.pt")
+                            print(
+                                f"[HCU inner] saved keys="
+                                f"{sorted(_dump['inner'])}",
+                                flush=True,
+                            )
+                            _dump["inner"] = {}
+
+                return hook
+
+            def _hcu_dump_init(_orig_init):
+                def init(self, *a, **k):
+                    _orig_init(self, *a, **k)
+                    for i, lyr in enumerate(self.model.layers):
+                        lyr.input_layernorm.register_forward_pre_hook(
+                            _hcu_layernorm_pre(i), with_kwargs=True
+                        )
+                        if i < 2 and os.environ.get("HCU_DUMP_INNER") == "1":
+                            lyr.input_layernorm.register_forward_hook(
+                                _hcu_norm_out(f"xa{i}")
+                            )
+                            lyr.post_attention_layernorm.register_forward_hook(
+                                _hcu_norm_out(f"xb{i}")
+                            )
+                    print(
+                        f"[HCU dump] pre-hooks on {len(self.model.layers)}"
+                        " input_layernorms",
+                        flush=True,
+                    )
+
+                return init
+
+            _g4m.GlmMoeDsaForCausalLM.__init__ = _hcu_dump_init(
+                _g4m.GlmMoeDsaForCausalLM.__init__
+            )
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: layer dump bridge not installed", exc_info=True
+            )
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: layer dump bridge not installed", exc_info=True
             )

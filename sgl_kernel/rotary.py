@@ -163,12 +163,18 @@ def _rotary_embedding_neox_torch(positions, query, key, head_size, cos_sin_cache
 
 
 def _rotary_embedding_interleaved_torch(positions, query, key, head_size, cos_sin_cache):
-    """GPT-J interleaved layout torch reference."""
+    """GPT-J interleaved layout torch reference.
+
+    sglang's RotaryEmbedding always stores the cache half-split
+    ([cos(rotary_dim/2) | sin(rotary_dim/2)]), independent of
+    is_neox_style; only the lane pairing of the rotated vector differs.
+    Pair even lane 2j with odd lane 2j+1.
+    """
     rotary_dim = cos_sin_cache.shape[1]
     pos = positions.long()
     cache = cos_sin_cache[pos].float()  # (T, rotary_dim)
-    cos_i = cache[:, 0::2]  # even columns are cos
-    sin_i = cache[:, 1::2]  # odd columns are sin
+    cos_i = cache[:, : rotary_dim // 2]
+    sin_i = cache[:, rotary_dim // 2:]
     num_tokens = positions.shape[0]
 
     def _rope(t):
