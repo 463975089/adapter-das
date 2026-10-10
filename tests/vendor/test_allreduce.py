@@ -5,7 +5,7 @@ The two failure classes this file pins down (both seen live on gfx93x):
   2. CUDA-graph replay corruption        -> capture/replay with fresh inputs
      (eager passes, replay is garbage — bug 1eb038d).
 
-Running: plain `pytest tests/test_vendor_allreduce.py` on a node with >=2
+Running: plain `pytest tests/vendor/test_allreduce.py` on a node with >=2
 free GPUs drives everything, including the torchrun subprocess. The gate
 tests need 1 GPU. On non-gfx93 archs the auto-refuse test self-skips.
 """
@@ -17,8 +17,9 @@ import sys
 import pytest
 import torch
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+HERE = os.path.dirname(os.path.abspath(__file__))  # tests/vendor/
+TESTS = os.path.dirname(HERE)
+ROOT = os.path.dirname(TESTS)  # adapter root (PYTHONPATH entry)
 
 requires_gpu = pytest.mark.skipif(
     not (torch.cuda.is_available() and torch.cuda.device_count() > 0),
@@ -118,7 +119,7 @@ def test_gate_disable_list_refuses_any_arch():
     torch.cuda.device_count() < 2, reason="stress needs >=2 GPUs"
 )
 def test_aiter_ar_stress_eager_and_graph():
-    """Drive tests/_ar_worker.py under torchrun (HCU_AITER_AR=1 on purpose:
+    """Drive vendor/_ar_worker.py under torchrun (HCU_AITER_AR=1 on purpose:
     we test the vendor kernel; the gfx93* gate would otherwise refuse)."""
     env = dict(os.environ)
     env["HCU_AITER_AR"] = "1"

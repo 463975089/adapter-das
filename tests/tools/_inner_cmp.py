@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 
 srv = torch.load("/tmp/hcu_inner.pt", map_location="cpu")
-ref = torch.load("/adapter/tests/_ref_inner.pt", map_location="cpu")
+ref = torch.load("/adapter/tests/tools/_ref_inner.pt", map_location="cpu")
 
 print("server keys:", sorted(srv.keys()))
 print("ref keys:   ", sorted(ref.keys()))

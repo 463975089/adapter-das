@@ -1,7 +1,7 @@
 """Sanity tests that pass on any machine (CPU-only included).
 
 They exercise the non-triton (pure torch) paths and the packaging surface;
-triton kernels are covered by tests/test_gpu_kernels.py on HCU/CUDA hosts.
+triton kernels are covered by tests/kernels/ on HCU/CUDA hosts.
 """
 
 import math

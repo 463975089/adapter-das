@@ -6,7 +6,7 @@ vendor's unit test" does not transfer. When a run shows precision symptoms
 (garbage decode, divergence vs eager, wrong top-1 tokens), the fastest
 localization is: disable the suspect op via one env var, rerun, and see
 whether the symptom disappears — then run the matching stress test in
-tests/ (test_vendor_allreduce.py / test_flash_attn_gpu.py).
+tests/vendor/ (test_allreduce.py / test_flash_attn.py).
 
 Usage
 -----

@@ -1,6 +1,6 @@
 # 精度问题快速定位流程
 
-入口：`python tests/run_triage.py [--stage env|ops|layers|e2e] [--full]`
+入口：`python tests/tools/run_triage.py [--stage env|ops|layers|e2e] [--full]`
 （容器内、adapter 根目录）。四级漏斗，每级 FAIL 都会打印疑似算子 + 对应
 快关 + 复现测试。
 
@@ -20,7 +20,7 @@
 1. **env**：arch（gfx938 有 fp8）、wheels、快关状态、HCU_* env——先确认
    配置如你所想（gate 是否生效、emu 是否开着）。
 2. **ops**：rope/rmsnorm/gemm/graph-safety 探针（数值谓词判定）+
-   `test_gpu_kernels.py` + FA 场景矩阵 + AR gate（`--full` 加 2 卡 AR 压测）。
+   `tests/kernels/` + FA 场景矩阵 + AR gate（`--full` 加 2 卡 AR 压测）。
 3. **layers**：12 层截层快启（`launch_w4a8_12l.sh`，`HCU_DUMP_LAYERS=1`）
    + 纯 torch 参考（`_ref_forward_h.py`）→ `_bisect_cmp.py` 找第一个
    DIVERGE 层。**TP8 坑**：残差流延迟归约，module hook 抓到的是 rank0

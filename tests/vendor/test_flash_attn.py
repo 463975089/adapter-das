@@ -10,7 +10,7 @@ torch reference:
   backends probed (first wins; add ours when sgl_kernel ships an FA port):
     aiter.flash_attn_varlen_func   (DTK vendor wheel, if present)
 
-Run: pytest tests/test_flash_attn_gpu.py -v   (1+ GPU).
+Run: pytest tests/vendor/test_flash_attn.py -v   (1+ GPU).
 """
 
 import math

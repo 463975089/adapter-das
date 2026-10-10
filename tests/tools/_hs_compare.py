@@ -49,7 +49,7 @@ if sys.argv[1:2] == ["inspect"]:
     sys.exit(0)
 
 # cmp mode: hs expected list (per layer) of flat floats or nested
-ref = torch.load("/adapter/tests/_ref_hiddens.pt", map_location="cpu")
+ref = torch.load("/adapter/tests/tools/_ref_hiddens.pt", map_location="cpu")
 refl = ref["hiddens"]
 print(f"ref entries: {len(refl)} ids={ref['ids']}")
 

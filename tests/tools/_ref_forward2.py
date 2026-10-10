@@ -10,7 +10,7 @@ import torch
 
 import importlib.util
 
-spec = importlib.util.spec_from_file_location("_rf", "/adapter/tests/_ref_forward.py")
+spec = importlib.util.spec_from_file_location("_rf", "/adapter/tests/tools/_ref_forward.py")
 _rf = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(_rf)  # runs the single prompt; prints REFERENCE top8
 

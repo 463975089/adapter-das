@@ -61,14 +61,14 @@ kernel）时，以下矩阵是最低要求：
   它也在被测链路里，只做 harness sanity）；
 - graph capture 后 replay 4 次、每次换新输入——检测"烘焙/损坏"两类。
 
-**flash attention**（`test_flash_attn_gpu.py`）：
+**flash attention**（`vendor/test_flash_attn.py`）：
 - (qo,kv) ∈ {(1,1),(1,7),(1,127),(1,1024),(3,129),(17,1023),(127,127),
   (128,128),(129,257),(1023,1023),(1024,1),(2051,2051)}，
   causal 双向 × head_dim {64,128} × dtype {bf16,fp16}——重点奇数长度、
   qo≠kv、2 的幂边界 ±1；
 - graph-replay 变输入（decode 形状）。
 
-新后端接入：在 `test_flash_attn_gpu.py` 的 `load_backends()` 注册一个
+新后端接入：在 `vendor/test_flash_attn.py` 的 `load_backends()` 注册一个
 探针类（包一层把统一入参翻译成该后端 ABI），矩阵自动全量跑一遍。
 
 ## 新增算子的最低测试配置

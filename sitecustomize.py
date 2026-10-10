@@ -395,7 +395,7 @@ if getattr(torch.version, "hip", None) is not None:
     # delayed partial reductions, so module hooks deeper than this see
     # one rank's partial sum). Entry i of the saved list = residual stream
     # before layer i (embed output = entry 0), matching the pure torch
-    # reference (tests/_ref_forward_h.py). With HCU_DUMP_INNER=1 also
+    # reference (tests/tools/_ref_forward_h.py). With HCU_DUMP_INNER=1 also
     # saves xa/xb (norm outputs) of layers 0-1 to /tmp/hcu_inner.pt.
     # Prefill-sized passes only (1 < T <= 64), rank 0, file
     # HCU_DUMP_LAYERS_PATH (default /tmp/hcu_layers.pt).

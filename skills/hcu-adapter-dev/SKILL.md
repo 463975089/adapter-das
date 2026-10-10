@@ -46,21 +46,23 @@ sgl_kernel/            同名影子包（sglang 的 AOT 默认内核路径）
   elementwise/layernorm/rotary/moe/kvcacheio.py   triton/torch 实现
 sitecustomize.py       HIP 桥接线（vllm._custom_ops、AR gate、DSA、调试设施）
 tests/
-  test_gpu_kernels.py / test_ops_cpu.py   sgl_kernel 自有算子契约测试
-  test_vendor_allreduce.py / test_flash_attn_gpu.py  高危 vendor 压测
-  _*_probe.py          排查探针（手动，路径可用 HCU_ADAPTER_ROOT/HCU_CKPT 覆盖）
-  run_triage.py        精度问题四级快速定位入口
+  test_ops_cpu.py + tests/kernels/        sgl_kernel 自有算子契约测试
+  tests/vendor/{test_allreduce,test_flash_attn}.py  高危 vendor 压测
+  tests/tools/_*.py     排查探针（手动，路径可用 HCU_ADAPTER_ROOT/HCU_CKPT 覆盖）
+  tests/tools/run_triage.py  精度问题四级快速定位入口
+  tests/bench/          性能/并发评测（gsm8k_eval，非门禁）
 skills/hcu-adapter-dev/  本 skill
 ```
 
 ## 协作规约
 
-- `tests/test_*.py` 是自动化门禁（pytest 可跑、断言带数值谓词）；
-  `tests/_*.py` 是排查工具（手动、可硬编码路径但须支持 env 覆盖）。
+- 自动化门禁 = `tests/test_ops_cpu.py` + `tests/kernels/` + `tests/vendor/`
+  （pytest 可跑、断言带数值谓词）；`tests/tools/_*.py` 是排查工具
+  （手动、可硬编码路径但须支持 env 覆盖）；`tests/tools/` 不进门禁。
 - 改 kernel 必须附带或更新对应契约测试；涉及 vendor 高危面的同时更新压测
   与快关注册表，三件一起提交。
 - push 前最低标准：`pytest tests/test_ops_cpu.py`（任何机器）+
-  节点上 `pytest tests/test_gpu_kernels.py` + `python tests/run_triage.py
-  --stage ops`。
+  节点上 `pytest tests/kernels tests/vendor -k "not stress"` +
+  `python tests/tools/run_triage.py --stage ops`。
 - commit 信息带根因短句（参考 fbc540c / 1eb038d 风格），便于回溯 bug 类。
 - 文档与代码同库同 PR：改行为必须同步改本 skill 对应参考文档。

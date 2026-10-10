@@ -59,17 +59,16 @@ python -m sglang.launch_server --model-path <model> --port 30000 \
 ## 测试
 
 ```bash
-pytest tests/test_ops_cpu.py -v          # 纯 CPU，验证 torch 兜底路径
-pytest tests/test_gpu_kernels.py -v      # HCU/CUDA 节点，含 CUDA-graph capture 回归
-pytest tests/test_flash_attn_gpu.py -v   # FA 场景矩阵（奇数长度/变长/graph-replay）
-pytest tests/test_vendor_allreduce.py -v # aiter AR 压测（>=2 卡自动 torchrun）+ 快关 gate
-python tests/run_triage.py               # 精度问题四级快速定位（容器内）
+pytest tests/test_ops_cpu.py -v          # 纯 CPU，验证 torch 兜底路径（任何机器）
+pytest tests/kernels -v                  # 自有算子（HCU 节点，含 CUDA-graph capture 回归）
+pytest tests/vendor -v                   # vendor 高危：FA 场景矩阵 + aiter AR 压测/快关 gate
+python tests/tools/run_triage.py         # 精度问题四级快速定位（容器内）
 ```
 
 - 单测以官方 CUDA 核的语义为基准对照（gate 排序/tie-break、
   moe_align_block_size 的 padding/cumsum 契约）；CPU 36 例 + GPU 29 例全绿
   （GPU 含 moe_align capture/replay 回归）。
-- 官方 sgl-kernel parity：fused-op GPU 对照 12/12。
+- 官方 sgl-kernel parity：fused-op GPU 对照 12/12（`tests/kernels/`）。
 - 高危 vendor 算子（custom all-reduce / flash attention）有专门压测：
   尺寸×dtype×CUDA-graph-replay 变输入，黄金参考为 fp32 精确和 / fp32 SDPA。
 - 高危算子均配**快关**：`HCU_DISABLE_OPS=aiter_ar[,aiter_fa]` 一翻开关即

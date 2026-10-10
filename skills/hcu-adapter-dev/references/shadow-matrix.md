@@ -19,7 +19,7 @@
 **flash_attn wheel 兼容性现状**（2026-10-10 实测）：共享盘
 `/public/share/dtk_fa_whl/*/flash_attn-2.6.1+das.opt1.dtk2604-cp310`
 只匹配 torch2.5 栈；dtk26041/torch2.11 上 `c10::hip` 符号不匹配，需
-vendor 出新轮。轮子就位后 `tests/test_flash_attn_gpu.py` 的探针会自动
+vendor 出新轮。轮子就位后 `tests/vendor/test_flash_attn.py` 的探针会自动
 切到真包跑全场景矩阵（sglang-das 侵入仓同款回退链
 `kernels → sgl_kernel.flash_attn → flash_attn 包`）。
 | `lightop` | **待接**（DTK 0.6.0 内置，见下） | — | 规划 |

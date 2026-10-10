@@ -9,7 +9,7 @@ import torch
 import torch.nn.functional as F
 
 srv = torch.load("/tmp/hcu_layers.pt", map_location="cpu")
-ref = torch.load("/adapter/tests/_ref_hiddens.pt", map_location="cpu")["hiddens"]
+ref = torch.load("/adapter/tests/tools/_ref_hiddens.pt", map_location="cpu")["hiddens"]
 
 if srv and isinstance(srv[0], tuple):
     print("server rows:", [(r[0], r[1]) for r in srv])

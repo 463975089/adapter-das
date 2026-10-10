@@ -3,10 +3,10 @@
 When a run shows precision symptoms (garbled decode, divergence vs eager,
 wrong tokens), run this INSIDE the compute container from the adapter root:
 
-    python tests/run_triage.py                 # env -> ops -> layers -> e2e
-    python tests/run_triage.py --stage ops     # one stage only
-    python tests/run_triage.py --full          # incl. 2-GPU AR stress
-    python tests/run_triage.py --url http://127.0.0.1:30000   # e2e server
+    python tests/tools/run_triage.py                 # env -> ops -> layers -> e2e
+    python tests/tools/run_triage.py --stage ops     # one stage only
+    python tests/tools/run_triage.py --full          # incl. 2-GPU AR stress
+    python tests/tools/run_triage.py --url http://127.0.0.1:30000   # e2e server
 
 Stages narrow the blast radius; every FAIL line names the suspected op,
 the kill switch to flip (HCU_DISABLE_OPS, see kill_switch.py) and the
@@ -32,7 +32,7 @@ import time
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(os.path.dirname(HERE))  # tests/tools/ -> adapter root
 sys.path.insert(0, ROOT)
 
 RESULTS = []  # (stage, name, status, detail)
@@ -135,16 +135,16 @@ def stage_ops(full):
     run_probe("ops", "bridge-graph-safety", "_graph_safety_probe.py",
               _contains_pred("none — bridges are graph-safe"))
     _pytest("ops", "sgl_kernel-triton-suite",
-            ["tests/test_gpu_kernels.py", "-q"], timeout=1200)
+            ["tests/kernels", "-q"], timeout=1200)
     _pytest("ops", "fa-scenario-matrix",
-            ["tests/test_flash_attn_gpu.py", "-q", "--no-header"],
+            ["tests/vendor/test_flash_attn.py", "-q", "--no-header"],
             timeout=1800)
     _pytest("ops", "ar-gate",
-            ["tests/test_vendor_allreduce.py", "-q", "--no-header",
+            ["tests/vendor/test_allreduce.py", "-q", "--no-header",
              "-k", "gate"], timeout=900)
     if full:
         _pytest("ops", "ar-stress-2gpu",
-                ["tests/test_vendor_allreduce.py", "-q", "--no-header",
+                ["tests/vendor/test_allreduce.py", "-q", "--no-header",
                  "-k", "stress"], timeout=1200)
 
 
@@ -172,12 +172,12 @@ def stage_layers():
                "need both files; recipe below")
         print(
             "\nrecipe (12-layer truncated model, container):\n"
-            "  1) reference: python tests/_ref_forward_h.py   "
-            "(NL_OVERWRITE=12; writes tests/_ref_hiddens.pt)\n"
-            "  2) server:    bash tests/launch_w4a8_12l.sh    "
+            "  1) reference: python tests/tools/_ref_forward_h.py   "
+            "(NL_OVERWRITE=12; writes tests/tools/_ref_hiddens.pt)\n"
+            "  2) server:    bash tests/tools/launch_w4a8_12l.sh    "
             "(HCU_DUMP_LAYERS=1 -> /tmp/hcu_layers.pt)\n"
             "  3) one short /generate request (T<=64, fresh prompt),\n"
-            "  4) rerun:     python tests/run_triage.py --stage layers\n",
+            "  4) rerun:     python tests/tools/run_triage.py --stage layers\n",
             flush=True,
         )
         return
@@ -251,16 +251,16 @@ def stage_e2e(update_golden):
 
 HINTS = {
     "rope-parity": "bug class fbc540c: same-name != same-semantics; check"
-                   " tests/_rope_probe.py vs sglang cache layout",
+                   " tests/tools/_rope_probe.py vs sglang cache layout",
     "bridge-graph-safety": "capture-baked host state / H2D; see"
-                           " tests/_graph_safety_probe.py",
+                           " tests/tools/_graph_safety_probe.py",
     "fa-scenario-matrix": "vendor FA: try HCU_DISABLE_OPS=aiter_fa,"
-                          " rerun; stress: tests/test_flash_attn_gpu.py",
+                          " rerun; stress: tests/vendor/test_flash_attn.py",
     "ar-gate": "gate must refuse on gfx93*; HCU_AITER_AR=1 opts back in",
     "ar-stress-2gpu": "vendor AR: HCU_DISABLE_OPS=aiter_ar (NCCL fallback);"
-                      " stress: tests/test_vendor_allreduce.py",
+                      " stress: tests/vendor/test_allreduce.py",
     "layer-align": "first DIVERGE layer +1 locates the op; cross-check"
-                   " tests/_inner_cmp.py for xa/xb",
+                   " tests/tools/_inner_cmp.py for xa/xb",
 }
 
 

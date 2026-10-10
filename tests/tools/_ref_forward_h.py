@@ -2,7 +2,7 @@
 
 NL_OVERWRITE env: truncate num_hidden_layers (user-endorsed fast iteration).
 Saves list of last-token hidden states [L0..L{NL-1}, final_normed] to
-/adapter/tests/_ref_hiddens.pt and prints top8 logits.
+/adapter/tests/tools/_ref_hiddens.pt and prints top8 logits.
 Rest identical to _ref_forward.py.
 """
 import json
@@ -180,7 +180,7 @@ with torch.no_grad():
                     "v0": v[-1].float().cpu(),
                     "pr0": pr[:, :, -1].float().cpu(),
                 },
-                "/adapter/tests/_ref_inner.pt",
+                "/adapter/tests/tools/_ref_inner.pt",
             )
             print("saved _ref_inner.pt")
 
@@ -194,10 +194,10 @@ with torch.no_grad():
             ff = (silu_mul(xb, gw, uw).float() @ dw.t()).view(1, T, H)
             hs = hs + ff
             if L == 0 and os.environ.get("REF_DUMP_INNER") == "1":
-                d = torch.load("/adapter/tests/_ref_inner.pt")
+                d = torch.load("/adapter/tests/tools/_ref_inner.pt")
                 d["mlp0"] = ff[0, -1].float().cpu()
                 d["xb0"] = xb[-1].float().cpu()
-                torch.save(d, "/adapter/tests/_ref_inner.pt")
+                torch.save(d, "/adapter/tests/tools/_ref_inner.pt")
         else:
             gate = bfl("mlp.gate.weight")
             rl = xb.float() @ gate.t()
@@ -247,5 +247,5 @@ with torch.no_grad():
                    [round(v, 2) for v in topv.tolist()])))
 
 torch.save({"hiddens": hiddens, "ids": ids.tolist(), "NL": NL},
-           "/adapter/tests/_ref_hiddens.pt")
+           "/adapter/tests/tools/_ref_hiddens.pt")
 print("saved _ref_hiddens.pt", len(hiddens), "entries")

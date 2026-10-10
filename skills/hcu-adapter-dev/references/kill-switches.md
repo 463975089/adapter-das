@@ -31,7 +31,7 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 2. 拦截动作：优雅降级型→在 `sitecustomize.py` 对应 patch 处判
    `op_disabled(name)`；调时报错型→在对应 `_adapters/<lib>/__init__.py`
    的 `_guard_attrs()` 加 `{attr: 名字}`（真包属性也会被包一层）；
-3. `tests/test_vendor_allreduce.py` 的 gate 测试加一态（禁用生效），
+3. `tests/vendor/test_allreduce.py` 的 gate 测试加一态（禁用生效），
    并在本文件登记。
 
 ## 其它运行开关（非快关，行为选择）

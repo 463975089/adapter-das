@@ -1,6 +1,6 @@
 """Distributed aiter custom-all-reduce stress worker (HCU adapter).
 
-Run by tests/test_vendor_allreduce.py via torchrun (>=2 ranks), with
+Run by tests/vendor/test_allreduce.py via torchrun (>=2 ranks), with
 HCU_AITER_AR=1 so the adapter's gfx93* refuse-gate is bypassed on purpose:
 we are testing the vendor kernel itself. Selection goes through sglang's
 production dispatch (dispatch_custom_allreduce), so what fails here is

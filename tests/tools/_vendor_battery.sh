@@ -28,13 +28,13 @@ EOF
 echo "=== [1/5] cpu suite ==="
 python -m pytest tests/test_ops_cpu.py -q 2>&1 | tail -2
 echo "=== [2/5] gpu kernel suite ==="
-python -m pytest tests/test_gpu_kernels.py -q 2>&1 | tail -3
+python -m pytest tests/kernels -q 2>&1 | tail -3
 echo "=== [3/5] fa scenario matrix ==="
-python -m pytest tests/test_flash_attn_gpu.py -q --no-header 2>&1 | tail -5
+python -m pytest tests/vendor/test_flash_attn.py -q --no-header 2>&1 | tail -5
 echo "=== [4/5] ar gate (3 states) ==="
-python -m pytest tests/test_vendor_allreduce.py -q --no-header -k gate 2>&1 | tail -5
+python -m pytest tests/vendor/test_allreduce.py -q --no-header -k gate 2>&1 | tail -5
 echo "=== [5/5] ar stress (torchrun 2gpu) ==="
-python -m pytest tests/test_vendor_allreduce.py -q --no-header -k "stress and not gate" 2>&1 | tail -8
+python -m pytest tests/vendor/test_allreduce.py -q --no-header -k "stress and not gate" 2>&1 | tail -8
 echo "=== triage env stage ==="
-python tests/run_triage.py --stage env 2>&1 | tail -12
+python tests/tools/run_triage.py --stage env 2>&1 | tail -12
 echo "=== DONE ==="
