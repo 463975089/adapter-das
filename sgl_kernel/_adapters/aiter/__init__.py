@@ -136,24 +136,34 @@ def _extra(fullname):
         return {"cp_gather_indexer_k_quant_cache": _hcu_cp_gather_indexer_k_quant_cache}
     if fullname == "aiter.ops.triton.pa_mqa_logits":
         # Newer aiter moved pa_mqa_logits under ops.triton.attention; sglang
-        # still imports the old path. Re-export the wheel's real kernels.
-        import importlib
+        # still imports the old path. Re-export the wheel's real kernels —
+        # guarded: re-entrant imports inside find/create must never raise
+        # (missing on both paths just leaves the loud Missing stub).
+        try:
+            import importlib
 
-        real = importlib.import_module("aiter.ops.triton.attention.pa_mqa_logits")
-        return {
-            name: getattr(real, name)
-            for name in ("deepgemm_fp8_paged_mqa_logits",)
-            if hasattr(real, name)
-        }
+            real = importlib.import_module(
+                "aiter.ops.triton.attention.pa_mqa_logits")
+            return {
+                name: getattr(real, name)
+                for name in ("deepgemm_fp8_paged_mqa_logits",)
+                if hasattr(real, name)
+            }
+        except Exception:
+            return {}
     if fullname == "aiter.ops.triton.fp8_mqa_logits":
-        import importlib
+        try:
+            import importlib
 
-        real = importlib.import_module("aiter.ops.triton.attention.fp8_mqa_logits")
-        return {
-            name: getattr(real, name)
-            for name in ("fp8_mqa_logits",)
-            if hasattr(real, name)
-        }
+            real = importlib.import_module(
+                "aiter.ops.triton.attention.fp8_mqa_logits")
+            return {
+                name: getattr(real, name)
+                for name in ("fp8_mqa_logits",)
+                if hasattr(real, name)
+            }
+        except Exception:
+            return {}
     if fullname == "aiter":
         return {"silu_and_mul": _hcu_silu_and_mul, "dtypes": _AiterDtypes}
     return {}

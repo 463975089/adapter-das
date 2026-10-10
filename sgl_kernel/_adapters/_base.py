@@ -76,6 +76,8 @@ class _OverlayLoader(importlib.abc.Loader):
         self._fullname = fullname
 
     def create_module(self, spec):
+        if self._inner is None:  # namespace package: default module creation
+            return None
         return self._inner.create_module(spec)
 
     def exec_module(self, module):

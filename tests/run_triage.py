@@ -103,7 +103,9 @@ def stage_env():
 
 def _min_cos_pred(threshold=0.9999):
     def pred(out):
-        vals = [float(m) for m in re.findall(r"cos\w*=([0-9.]+)", out)]
+        # only the parity metrics (`cos=`); probes also print negative
+        # controls (`cos_neox=...`, deliberately ~0.9) that must NOT count
+        vals = [float(m) for m in re.findall(r"\bcos=([0-9.]+)", out)]
         if not vals:
             return "FAIL", "no cos metrics found in probe output"
         worst = min(vals)
@@ -282,23 +284,29 @@ def verdict():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", default="all",
-                    choices=["all", "env", "ops", "layers", "e2e"])
+                    help="comma-separated subset of env,ops,layers,e2e or all")
     ap.add_argument("--full", action="store_true",
                     help="include 2-GPU AR stress")
     ap.add_argument("--url", help="server base URL for e2e")
     ap.add_argument("--update-golden", action="store_true")
     a = ap.parse_args()
+    stages = [s.strip() for s in a.stage.split(",")]
+    if "all" in stages:
+        stages = ["env", "ops", "layers", "e2e"]
+    bad = [s for s in stages if s not in ("env", "ops", "layers", "e2e")]
+    if bad:
+        ap.error(f"invalid stage(s) {bad}; choose from env,ops,layers,e2e,all")
     if a.url:
         os.environ["HCU_TRIAGE_URL"] = a.url
 
     t0 = time.time()
-    if a.stage in ("all", "env"):
+    if "env" in stages:
         stage_env()
-    if a.stage in ("all", "ops"):
+    if "ops" in stages:
         stage_ops(a.full)
-    if a.stage in ("all", "layers"):
+    if "layers" in stages:
         stage_layers()
-    if a.stage in ("all", "e2e"):
+    if "e2e" in stages:
         stage_e2e(a.update_golden)
     print(f"\n({time.time() - t0:.0f}s)")
     raise SystemExit(verdict())

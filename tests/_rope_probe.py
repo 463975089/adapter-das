@@ -10,7 +10,7 @@ import sys
 sys.path.insert(0, os.environ.get("HCU_ADAPTER_ROOT", "/adapter"))
 import torch
 
-CKPT = os.environ.get("HCU_CKPT", "/public/share/GLM-5-W4A8_V2_6/")
+CKPT = os.environ.get("HCU_CKPT", "/public/share/GLM-5-W4A8_V2_6").rstrip("/") + "/"
 cfg = json.load(open(CKPT + "config.json"))
 theta = cfg["rope_parameters"]["rope_theta"]
 RD = cfg["qk_rope_head_dim"]
