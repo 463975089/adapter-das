@@ -42,6 +42,11 @@ def _lightop_silu_impl():
 
                 _LIGHTOP_IMPL = fuse_silu_and_mul
         except Exception:
+            # visibility beats silence: a silent vendor-probe failure reads
+            # as "auto mode" and hides a real wheel/env problem.
+            import traceback
+
+            traceback.print_exc()
             _LIGHTOP_IMPL = False
     return _LIGHTOP_IMPL or None
 
