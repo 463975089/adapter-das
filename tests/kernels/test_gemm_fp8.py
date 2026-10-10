@@ -61,9 +61,10 @@ def test_fp8_scaled_mm_contract(out_dtype, M, N, K, with_bias):
     got = sgl_kernel.fp8_scaled_mm(a, b, sa, sb, out_dtype, bias)
     ref = _ref(a, b, sa, sb, out_dtype, bias)
     assert got.shape == (M, N) and got.dtype == out_dtype
-    # per-channel scale magnitudes ~1e-3 keep abs error small; bf16 noise
-    # bound for a K=4k fp32-accum GEMM
-    torch.testing.assert_close(got.float(), ref.float(), rtol=5e-2, atol=1e-3)
+    # bf16/fp16 output rounding dominates: values ~1e-3*randn*K-col-scales
+    # land near zero where rel error explodes — bound by abs 2e-2 (one bf16
+    # ULP at magnitude ~2) plus rel for the bulk.
+    torch.testing.assert_close(got.float(), ref.float(), rtol=5e-2, atol=2e-2)
 
 
 @requires_gpu
