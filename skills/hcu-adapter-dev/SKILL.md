@@ -21,6 +21,10 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 4. **高危 vendor 算子默认不信**：custom all-reduce、flash attention 这类
    "size 灵活、场景多" 的 vendor kernel，接入即配压测 + 快关。
 5. **import 永不失败**：未覆盖算子在**调用时**抛带指引的 NotImplementedError。
+6. **环境变量三原则**（客户反馈"变量太多"的对策）：一个手册
+   （`docs/env-vars.md`）；默认自动适应（arch/wheel 探测，正确部署零
+   变量）；显式设置优先且启动日志标注来源（`hcu_env.py` 注册表，
+   禁止在行为接线处裸读 `os.environ`）。
 
 ## 任务路由（做某类事之前先读对应参考文档）
 
@@ -31,6 +35,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 加一个快关（kill switch） | `references/kill-switches.md` |
 | 排查精度问题（输出垃圾/分叉/漂移） | `references/precision-triage.md` |
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
+| 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
 
 ## 仓库结构
 

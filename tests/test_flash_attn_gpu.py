@@ -32,17 +32,16 @@ requires_gpu = pytest.mark.skipif(
 # backend probe
 # ---------------------------------------------------------------------------
 
-class AiterFA:
-    name = "aiter.flash_attn_varlen_func"
-    varlen = True
+class _VarlenFA:
+    """Shared driver for FA2-style varlen ABIs (flash_attn package, aiter):
+    fn(q, k, v, cu_q, cu_k, max_q, max_k, dropout_p, softmax_scale, causal)
+    -> (out, lse)."""
 
-    def __init__(self):
-        import aiter
-
-        self.fn = aiter.flash_attn_varlen_func
+    def __init__(self, name, fn):
+        self.name = name
+        self.fn = fn
 
     def __call__(self, q, k, v, causal, scale):
-        # q [Tq,H,D] k/v [Tk,H,D] flattened varlen, single sequence
         tq, h, d = q.shape
         tk = k.shape[0]
         cq = torch.tensor([0, tq], dtype=torch.int32, device=q.device)
@@ -56,10 +55,22 @@ class AiterFA:
 
 def load_backends():
     out = []
+    # HCU flash_attn wheel (OpenDAS cancon build) — the vendor FA2 port the
+    # sglang-das invasive fork also falls back to; with it installed the
+    # adapter's flash_attn stub is bypassed automatically (real pkg wins).
     try:
-        out.append(AiterFA())
+        from flash_attn import flash_attn_varlen_func as _fa2
+
+        out.append(_VarlenFA("flash_attn.flash_attn_varlen_func", _fa2))
     except Exception as e:
-        print(f"[fa-stress] aiter FA unavailable: {e!r}")
+        print(f"[fa-stress] flash_attn pkg unavailable: {e!r:.100}")
+    try:
+        import aiter
+
+        out.append(_VarlenFA(
+            "aiter.flash_attn_varlen_func", aiter.flash_attn_varlen_func))
+    except Exception as e:
+        print(f"[fa-stress] aiter FA unavailable: {e!r:.100}")
     return out
 
 

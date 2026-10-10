@@ -40,11 +40,57 @@ def main():
     fails = []
 
     dist.init_process_group("nccl")
+    # production parity (parallel_state): CA attaches to a gloo cpu group,
+    # never the NCCL world group.
+    cpu_group = dist.new_group(backend="gloo")
     try:
+        # newer sglang builds read process-global ServerArgs during dispatch
+        # (e.g. runtime_context); set a minimal dummy so the production
+        # selection path actually runs instead of erroring out.
+        try:
+            from sglang.srt.server_args import ServerArgs
+
+            # ServerArgs validates model_path as an HF repo id unless the
+            # dir exists; fabricate a minimal plain (non-quantized) config
+            # so construction succeeds regardless of what's on disk.
+            path = os.environ.get("HCU_AR_STRESS_MODEL") or \
+                "/tmp/hcu_ar_stress_model"
+            os.makedirs(path, exist_ok=True)
+            if not os.path.exists(os.path.join(path, "config.json")):
+                import json as _json
+
+                with open(os.path.join(path, "config.json"), "w") as _f:
+                    _json.dump(
+                        {"model_type": "llama",
+                         "architectures": ["LlamaForCausalLM"],
+                         "hidden_size": 512, "num_hidden_layers": 2,
+                         "num_attention_heads": 8, "vocab_size": 32000},
+                        _f,
+                    )
+            sa = ServerArgs(model_path=path)
+            try:
+                from sglang.srt.runtime_context import _CONTEXT
+
+                _CONTEXT.set_server_args(sa)
+            except Exception:
+                pass
+            try:
+                from sglang.srt.server_args import (
+                    set_global_server_args_for_scheduler as _set_sa,
+                )
+
+                _set_sa(sa)
+            except Exception:
+                pass
+        except Exception as e:
+            if rank == 0:
+                print(f"ARSTRESS INFO server-args init skipped: {e!r:.120}",
+                      flush=True)
+
         import sglang.srt.distributed.device_communicators.\
             custom_all_reduce as car
 
-        ar = car.dispatch_custom_allreduce(dist.group.WORLD, dev)
+        ar = car.dispatch_custom_allreduce(group=cpu_group, device=dev)
     except Exception as e:  # gate active, wheel missing, init fail, ...
         msg(rank, "SKIP", "dispatch", repr(e)[:300])
         dist.destroy_process_group()
@@ -55,11 +101,25 @@ def main():
         dist.destroy_process_group()
         raise SystemExit(0)
 
-    run = getattr(ar, "all_reduce", None)
+    # dispatch returns either an AR instance (older sglang: .all_reduce()) or
+    # a constructor partial (newer sglang: caller supplies group/device,
+    # mirroring parallel_state's CAClass(group=cpu_group, device=...)).
+    if hasattr(ar, "all_reduce") or hasattr(ar, "custom_all_reduce"):
+        inst = ar
+    else:
+        inst = ar(group=cpu_group, device=dev)
+        dist.barrier()
+    # prefer custom_all_reduce (returns None when the size is out of the
+    # kernel's range — production then falls back); else raw all_reduce.
+    run = getattr(inst, "custom_all_reduce", None) or \
+        getattr(inst, "all_reduce", None)
     if not callable(run):
-        msg(rank, "SKIP", "api", f"{type(ar).__name__} has no all_reduce()")
+        msg(rank, "SKIP", "api", f"{type(inst).__name__} has no AR entry")
         dist.destroy_process_group()
         raise SystemExit(0)
+    print(f"ARSTRESS INFO backend={type(inst).__name__} "
+          f"entry={'custom_all_reduce' if hasattr(inst, 'custom_all_reduce') else 'all_reduce'}",
+          flush=True)
 
     SIZES = [8192, 65536, 262144, 1048576, 8388608]  # elements
     TOL = {
@@ -84,9 +144,13 @@ def main():
                 torch.manual_seed(1234 + nelem)
                 x = (torch.randn(nelem, device=dev) * 3).to(dt)
 
-                # --- eager aiter AR vs gold ---
+                # --- eager aiter AR vs gold (None = size out of range) ---
                 yr = run(x.clone())
                 dist.barrier()
+                if yr is None:
+                    msg(rank, "SKIP", name + ":range",
+                        "should_custom_ar=False (out of vendor range)")
+                    continue
                 g0 = gold(x)
                 if not close(yr, g0, TOL[dt]):
                     fails.append(name + ":eager")

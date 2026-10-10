@@ -24,6 +24,14 @@ import os
 import torch
 
 if getattr(torch.version, "hip", None) is not None:
+    # env registry first: every bridge below resolves its knobs through it
+    # (docs/env-vars.md). One startup line lists effective values + sources.
+    try:
+        from sgl_kernel._adapters import hcu_env as _he
+
+        _he.log_summary()
+    except Exception:
+        _he = None
     try:
         import vllm._custom_ops as _vco
 
@@ -162,8 +170,12 @@ if getattr(torch.version, "hip", None) is not None:
         )
 
     # slimquant_w4a8 checkpoints (GLM-5-W4A8_V2_6 family): expert int4 unpack
-    # + register the quant method, opt-in via HCU_SLIMQUANT=1.
-    if os.environ.get("HCU_SLIMQUANT") == "1":
+    # + register the quant method. Default ON (the method only activates for
+    # checkpoints whose quantization_config names slimquant_w4a8 — inert
+    # otherwise); HCU_SLIMQUANT=0 opts out (debug/isolation).
+    _sq_on = _he.enabled("HCU_SLIMQUANT") if _he else \
+        os.environ.get("HCU_SLIMQUANT", "1") != "0"
+    if _sq_on:
         try:
             from sgl_kernel._adapters import slimquant as _slimquant
 
@@ -228,27 +240,26 @@ if getattr(torch.version, "hip", None) is not None:
     # which is graph-correct.
     #
     # Kill-switch precedence (kill_switch.py): HCU_DISABLE_OPS=aiter_ar
-    # refuses on ANY arch (triage); the gfx93* auto-rule refuses by default;
-    # HCU_AITER_AR=1 opts back in against the auto-rule only.
+    # refuses on ANY arch (triage); arch auto-rule via hcu_env (old-aiter
+    # layout on gfx93* refuses — graph-replay corruption, 1eb038d; the new
+    # aiter.dist GraphSafe class passed the full stress suite 2026-10-10);
+    # explicit HCU_AITER_AR=1 overrides the auto-rule only.
     try:
         from sgl_kernel._adapters import kill_switch as _ks
 
         _ks.log_state()
     except Exception:
         _ks = None
-    _ar_refuse = bool(_ks and _ks.op_disabled("aiter_ar"))
-    _ar_reason = "disabled via HCU_DISABLE_OPS (triage)"
-    if not _ar_refuse and os.environ.get("HCU_AITER_AR") != "1":
-        try:
-            _arch = (
-                torch.cuda.get_device_properties(0)
-                .gcnArchName.split(":")[0]
-            )
-        except Exception:
-            _arch = ""
-        if _arch.startswith("gfx93"):
-            _ar_refuse = True
-            _ar_reason = f"graph-replay data corruption on {_arch}"
+    _ar_val, _ar_src = (
+        _he.resolve("HCU_AITER_AR") if _he else ("0", "default")
+    )
+    _ar_refuse = bool(_ks and _ks.op_disabled("aiter_ar")) or \
+        str(_ar_val).startswith("refused")
+    _ar_reason = (
+        "disabled via HCU_DISABLE_OPS (triage)"
+        if _ks and _ks.op_disabled("aiter_ar")
+        else f"{_ar_val} [{_ar_src}]"
+    )
     if _ar_refuse:
         try:
             import sglang.srt.distributed.device_communicators.\
@@ -275,7 +286,11 @@ if getattr(torch.version, "hip", None) is not None:
     # gfx936-class DCUs have no fp8 matrix unit and the DTK aiter MQA-logits
     # kernels hard-gate on gfx942/950: emulate paged/ragged fp8 MQA logits in
     # torch (dequant -> bf16 GEMM, fp32 scales). Legacy page_size=1 only.
-    if os.environ.get("HCU_MQA_EMU") == "1":
+    # hcu_env auto-rule: emulation ON only where the arch lacks fp8;
+    # explicit HCU_MQA_EMU=0/1 wins (debug).
+    _mqa_on = _he.enabled("HCU_MQA_EMU") if _he else \
+        os.environ.get("HCU_MQA_EMU") == "1"
+    if _mqa_on:
         try:
             import sgl_kernel._adapters.mqa_logits_emu as _mqa_emu
 

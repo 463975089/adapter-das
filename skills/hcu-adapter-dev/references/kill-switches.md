@@ -18,8 +18,12 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 | `aiter_fa` | aiter FA 入口（真包已有属性也拦） | 调用时响亮报错（换 `--attention-backend triton`） |
 
 优先级：`HCU_DISABLE_OPS` > arch 自动规则 > 单算子 opt-in env。
-gfx93* 上 `aiter_ar` 默认自动拒绝（图重放损坏，1eb038d），
-`HCU_AITER_AR=1` 可跨过自动规则（压测时用），但跨不过显式 disable。
+`aiter_ar` 的自动规则（hcu_env.py）区分新旧 aiter 布局：gfx93\* +
+**旧版** `aiter.ops.triton.custom_all_reduce` → 自动拒绝（图重放损坏，
+1eb038d）；**新版** `aiter.dist` GraphSafeAiterCustomAllreduce → 自动允许
+（2026-10-10 nmz26 实测 15/15 压测全过，含 graph-replay 换输入）。
+`HCU_AITER_AR=1` 可显式夺回（压测先行），但跨不过显式 disable。
+变量手册与自动适应总注册表：`docs/env-vars.md` / `hcu_env.py`。
 
 ## 新增一个快关（三处，一个 PR 内）
 

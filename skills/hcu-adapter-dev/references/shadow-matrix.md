@@ -14,7 +14,14 @@
 | `vllm._custom_ops` | 属性级桥接（rms_norm 等 HIP 形态） | `sitecustomize.py` | 生产 |
 | `aiter` | 真包优先 + 缺口填空 + 高危守卫 | `sgl_kernel/_adapters/aiter/` | 生产 |
 | `flashinfer` | 填空桥 + 响亮 stub | `sgl_kernel/_adapters/flashinfer/` | 生产 |
-| `flash_attn` / `flash_attn_interface` | 响亮 stub（HCU 上游走 triton backend） | `sgl_kernel/_adapters/flash_attn/` | 生产 |
+| `flash_attn` / `flash_attn_interface` | 响亮 stub；装 HCU flash_attn wheel 后真包自动胜出（零改动切 vendor 档） | `sgl_kernel/_adapters/flash_attn/` | 生产 |
+
+**flash_attn wheel 兼容性现状**（2026-10-10 实测）：共享盘
+`/public/share/dtk_fa_whl/*/flash_attn-2.6.1+das.opt1.dtk2604-cp310`
+只匹配 torch2.5 栈；dtk26041/torch2.11 上 `c10::hip` 符号不匹配，需
+vendor 出新轮。轮子就位后 `tests/test_flash_attn_gpu.py` 的探针会自动
+切到真包跑全场景矩阵（sglang-das 侵入仓同款回退链
+`kernels → sgl_kernel.flash_attn → flash_attn 包`）。
 | `lightop` | **待接**（DTK 0.6.0 内置，见下） | — | 规划 |
 
 ## 三档实现策略

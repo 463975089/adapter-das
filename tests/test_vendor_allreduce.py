@@ -68,20 +68,35 @@ def _run_gate_probe(extra_env):
     return None, p
 
 
+def _sglang_uses_new_aiter_ca():
+    try:
+        import sglang.srt.distributed.device_communicators.\
+            custom_all_reduce as car
+
+        with open(car.__file__, encoding="utf-8", errors="ignore") as f:
+            return "aiter.dist.device_communicators" in f.read()
+    except Exception:
+        return False
+
+
 @requires_gpu
-def test_gate_auto_refuses_on_gfx93():
+def test_gate_auto_rule_matches_aiter_layout():
+    """gfx93*: old-aiter sglang dispatch -> REFUSED; new aiter.dist
+    GraphSafe path (stress-passed) -> ACTIVE without any env var."""
     if not _arch_name().startswith("gfx93"):
         pytest.skip(f"auto-rule targets gfx93*, this host is {_arch_name()}")
+    want = "ACTIVE" if _sglang_uses_new_aiter_ca() else "REFUSED"
     state, p = _run_gate_probe({})
-    assert state == "REFUSED", (
-        f"dispatch not refused: {state}\n{p.stdout}\n{p.stderr[-2000:]}"
+    assert state == want, (
+        f"auto-rule should resolve to {want} on this layout, got {state}"
+        f"\n{p.stdout}\n{p.stderr[-2000:]}"
     )
 
 
 @requires_gpu
 def test_gate_opt_in_env_restores_dispatch():
-    if not _arch_name().startswith("gfx93"):
-        pytest.skip(f"auto-rule targets gfx93*, this host is {_arch_name()}")
+    if not _arch_name().startswith("gfx93") or _sglang_uses_new_aiter_ca():
+        pytest.skip("opt-in is meaningful on old-aiter gfx93* hosts")
     state, p = _run_gate_probe({"HCU_AITER_AR": "1"})
     assert state == "ACTIVE", (
         f"HCU_AITER_AR=1 should bypass the auto-rule: {state}"
