@@ -6,9 +6,10 @@ output tracks the NEW inputs -> graph-safe (no baked host state). If it
 stays at capture-time values -> an H2D/host-side bake broke replay —
 the classic '2nd decode token garbage' signature.
 """
+import os
 import sys
 
-sys.path.insert(0, "/adapter")
+sys.path.insert(0, os.environ.get("HCU_ADAPTER_ROOT", "/adapter"))
 import torch
 
 dev = "cuda"

@@ -59,16 +59,30 @@ python -m sglang.launch_server --model-path <model> --port 30000 \
 ## 测试
 
 ```bash
-pytest tests/test_ops_cpu.py -v        # 纯 CPU，验证 torch 兜底路径
-pytest tests/test_gpu_kernels.py -v    # HCU/CUDA 节点，含 CUDA-graph capture 回归
+pytest tests/test_ops_cpu.py -v          # 纯 CPU，验证 torch 兜底路径
+pytest tests/test_gpu_kernels.py -v      # HCU/CUDA 节点，含 CUDA-graph capture 回归
+pytest tests/test_flash_attn_gpu.py -v   # FA 场景矩阵（奇数长度/变长/graph-replay）
+pytest tests/test_vendor_allreduce.py -v # aiter AR 压测（>=2 卡自动 torchrun）+ 快关 gate
+python tests/run_triage.py               # 精度问题四级快速定位（容器内）
 ```
 
 - 单测以官方 CUDA 核的语义为基准对照（gate 排序/tie-break、
   moe_align_block_size 的 padding/cumsum 契约）；CPU 36 例 + GPU 29 例全绿
   （GPU 含 moe_align capture/replay 回归）。
 - 官方 sgl-kernel parity：fused-op GPU 对照 12/12。
+- 高危 vendor 算子（custom all-reduce / flash attention）有专门压测：
+  尺寸×dtype×CUDA-graph-replay 变输入，黄金参考为 fp32 精确和 / fp32 SDPA。
+- 高危算子均配**快关**：`HCU_DISABLE_OPS=aiter_ar[,aiter_fa]` 一翻开关即
+  绕开疑似算子复跑（gfx93* 上 aiter AR 默认自动拒绝，`HCU_AITER_AR=1` 夺回）。
 - 端到端精度：Qwen3.6-35B-A3B 对话验证 + 64 并发 soak 0 错误 + GSM8K 前 100
-  题（thinking 原生模式）69%，错例为思考截断与模型自身水平，算子链路无损。
+  题（thinking 原生模式）69%，错例为思考截断与模型自身水平，算子链路无损；
+  GLM-5-W4A8_V2_6 TP8 + CUDA graph ON 零旗标验证连贯（短/长 prompt）。
+
+## 开发规约（skill）
+
+改本仓库前先读 [`skills/hcu-adapter-dev/SKILL.md`](skills/hcu-adapter-dev/SKILL.md)：
+影子库矩阵与三档实现策略（triton/vendor/torch）、测试四质量维度、
+快关注册流程、精度定位流程、cookbook（NVIDIA 参数）降级矩阵。
 
 ## 已知未覆盖 / 路线图
 

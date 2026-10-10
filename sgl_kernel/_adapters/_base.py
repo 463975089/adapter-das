@@ -59,12 +59,19 @@ class Missing:
 
 
 class _OverlayLoader(importlib.abc.Loader):
-    """Wraps a real module's loader; after exec, fills allowlist attrs the
-    real module does not define itself (our bridges win nothing else)."""
+    """Wraps a real module's loader; after exec:
+    - fills allowlist attrs the real module does not define itself (our
+      bridges win nothing else);
+    - wraps attrs listed in `guards` (attr -> op name) with a kill-switch
+      raiser when that op is disabled via HCU_DISABLE_OPS (see
+      kill_switch.py). Guards only touch attrs the real module actually
+      defines, so unknown wheel layouts are a no-op.
+    """
 
-    def __init__(self, inner, extras, lib, fullname):
+    def __init__(self, inner, extras, lib, fullname, guards=None):
         self._inner = inner
         self._extras = extras
+        self._guards = dict(guards or {})
         self._lib = lib
         self._fullname = fullname
 
@@ -76,6 +83,13 @@ class _OverlayLoader(importlib.abc.Loader):
         for attr, value in self._extras.items():
             if not hasattr(module, attr):
                 setattr(module, attr, value)
+        if self._guards:
+            from sgl_kernel._adapters import kill_switch as _ks
+
+            for attr, op in self._guards.items():
+                fn = getattr(module, attr, None)
+                if callable(fn):
+                    setattr(module, attr, _ks.guard(fn, op, attr))
 
     def __getattr__(self, item):
         return getattr(self._inner, item)
@@ -98,6 +112,11 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def _extra_attrs(self, fullname):
         return self.allowlist.get(fullname, {})
 
+    def _guard_attrs(self, fullname):
+        """fullname -> {module attr: kill-switch op name}; subclasses override
+        to guard real-wheel attrs (only applied while the op is disabled)."""
+        return {}
+
     def find_spec(self, fullname, path=None, target=None):
         if not (
             fullname == self.lib_name or fullname.startswith(self.lib_name + ".")
@@ -109,9 +128,10 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             real = None
         if real is not None:
             extras = self._extra_attrs(fullname)
-            if extras:
+            guards = self._guard_attrs(fullname)
+            if extras or guards:
                 real.loader = _OverlayLoader(
-                    real.loader, extras, self.lib_name, fullname
+                    real.loader, extras, self.lib_name, fullname, guards
                 )
             return real
         return importlib.machinery.ModuleSpec(fullname, self, is_package=True)

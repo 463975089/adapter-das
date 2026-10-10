@@ -166,6 +166,30 @@ class _AiterFinder(LibStubFinder):
     def _extra_attrs(self, fullname):
         return _extra(fullname)
 
+    # kill-switch guards on REAL wheel attrs (only active while the op is in
+    # HCU_DISABLE_OPS): flash attention is a historically flaky vendor surface
+    # (flexible sizes, many capture scenarios); blocking its entries makes
+    # sglang fail loudly instead of silently running a suspect kernel.
+    def _guard_attrs(self, fullname):
+        if fullname == "aiter":
+            return {
+                "flash_attn_varlen_func": "aiter_fa",
+                "flash_attn_func": "aiter_fa",
+                "flash_attn_with_kvcache": "aiter_fa",
+            }
+        if fullname in (
+            "aiter.ops.triton.attention",
+            "aiter.ops.triton.attention.attn_fwd",
+            "aiter.ops.triton.pa_mqa_logits",
+            "aiter.ops.triton.attention.pa_mqa_logits",
+        ):
+            return {
+                "attn_fwd": "aiter_fa",
+                "mha_fwd": "aiter_fa",
+                "flash_attn_varlen_func": "aiter_fa",
+            }
+        return {}
+
 
 def register() -> None:
     if not is_registered(_AiterFinder, "aiter"):

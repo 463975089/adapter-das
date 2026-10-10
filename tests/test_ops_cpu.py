@@ -148,8 +148,10 @@ def test_rope_interleaved_cpu():
     sgl_kernel.rotary_embedding(pos, q, None, D, cache, is_neox=False)
     for t in range(T):
         p = pos[t].item()
-        cos_i = cache[p, 0::2]
-        sin_i = cache[p, 1::2]
+        # sglang's cos_sin_cache is ALWAYS half-split [cos | sin] regardless
+        # of neox style (fbc540c); lanes are interleaved, the cache is not.
+        cos_i = cache[p, : rot // 2]
+        sin_i = cache[p, rot // 2:]
         for h in range(H):
             x1 = q0[t, h * D: h * D + rot: 2]
             x2 = q0[t, h * D + 1: h * D + rot: 2]

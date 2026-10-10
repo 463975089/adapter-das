@@ -225,8 +225,20 @@ if getattr(torch.version, "hip", None) is not None:
     # diverging from the first graph-replayed step while eager decode and
     # prefill stay correct. Refuse the dispatch on this arch — the exception
     # is caught in parallel_state's init and the group falls back to NCCL,
-    # which is graph-correct. HCU_AITER_AR=1 opts back in.
-    if os.environ.get("HCU_AITER_AR") != "1":
+    # which is graph-correct.
+    #
+    # Kill-switch precedence (kill_switch.py): HCU_DISABLE_OPS=aiter_ar
+    # refuses on ANY arch (triage); the gfx93* auto-rule refuses by default;
+    # HCU_AITER_AR=1 opts back in against the auto-rule only.
+    try:
+        from sgl_kernel._adapters import kill_switch as _ks
+
+        _ks.log_state()
+    except Exception:
+        _ks = None
+    _ar_refuse = bool(_ks and _ks.op_disabled("aiter_ar"))
+    _ar_reason = "disabled via HCU_DISABLE_OPS (triage)"
+    if not _ar_refuse and os.environ.get("HCU_AITER_AR") != "1":
         try:
             _arch = (
                 torch.cuda.get_device_properties(0)
@@ -235,26 +247,30 @@ if getattr(torch.version, "hip", None) is not None:
         except Exception:
             _arch = ""
         if _arch.startswith("gfx93"):
-            try:
-                import sglang.srt.distributed.device_communicators.\
-                    custom_all_reduce as _car
+            _ar_refuse = True
+            _ar_reason = f"graph-replay data corruption on {_arch}"
+    if _ar_refuse:
+        try:
+            import sglang.srt.distributed.device_communicators.\
+                custom_all_reduce as _car
 
-                def _hcu_no_aiter_ar(group, device):
-                    raise RuntimeError(
-                        "HCU adapter: AiterCustomAllreduce disabled on"
-                        f" {_arch} (CUDA-graph replay corrupts data; falling"
-                        " back to NCCL). Set HCU_AITER_AR=1 to re-enable."
-                    )
+            def _hcu_no_aiter_ar(group, device):
+                raise RuntimeError(
+                    f"HCU adapter: AiterCustomAllreduce disabled"
+                    f" ({_ar_reason}; falling back to NCCL)."
+                    " Set HCU_AITER_AR=1 to re-enable (auto-rule only) or"
+                    " remove aiter_ar from HCU_DISABLE_OPS."
+                )
 
-                _car.dispatch_custom_allreduce = _hcu_no_aiter_ar
-                logging.getLogger("hcu.adapter").warning(
-                    f"HCU adapter: aiter custom all-reduce refused on {_arch}"
-                    " (graph-replay data corruption); NCCL all-reduce instead"
-                )
-            except Exception:
-                logging.getLogger("hcu.adapter").warning(
-                    "HCU adapter: aiter AR gate not installed", exc_info=True
-                )
+            _car.dispatch_custom_allreduce = _hcu_no_aiter_ar
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: aiter custom all-reduce refused (%s);"
+                " NCCL all-reduce instead", _ar_reason
+            )
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: aiter AR gate not installed", exc_info=True
+            )
 
     # gfx936-class DCUs have no fp8 matrix unit and the DTK aiter MQA-logits
     # kernels hard-gate on gfx942/950: emulate paged/ragged fp8 MQA logits in
@@ -395,10 +411,6 @@ if getattr(torch.version, "hip", None) is not None:
 
             _g4m.GlmMoeDsaForCausalLM.__init__ = _hcu_dump_init(
                 _g4m.GlmMoeDsaForCausalLM.__init__
-            )
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: layer dump bridge not installed", exc_info=True
             )
         except Exception:
             logging.getLogger("hcu.adapter").warning(

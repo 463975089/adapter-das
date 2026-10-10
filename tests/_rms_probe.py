@@ -1,7 +1,8 @@
 """rmsnorm bridge sanity: sgl_kernel.rmsnorm + our fused_add bridge vs torch."""
+import os
 import sys
 
-sys.path.insert(0, "/adapter")
+sys.path.insert(0, os.environ.get("HCU_ADAPTER_ROOT", "/adapter"))
 import torch
 import torch.nn.functional as F
 
