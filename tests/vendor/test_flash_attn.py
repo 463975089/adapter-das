@@ -61,6 +61,14 @@ class _VarlenFA:
 
 
 def load_backends():
+    """Probe importable FA backends and sanity-gate each one.
+
+    A wheel whose numbers are garbage on this arch (e.g. flash_attn 2.8.4
+    compiled for gfx942, run on gfx938 — plain and varlen identically wrong,
+    cos 0.002..0.8) is dropped with a loud warning instead of 53 red
+    failures burying the one-line verdict. Repair the wheel and the matrix
+    resumes automatically.
+    """
     out = []
     # HCU flash_attn wheel (OpenDAS cancon build) — the vendor FA2 port the
     # sglang-das invasive fork also falls back to; with it installed the
@@ -78,7 +86,29 @@ def load_backends():
             "aiter.flash_attn_varlen_func", aiter.flash_attn_varlen_func))
     except Exception as e:
         print(f"[fa-stress] aiter FA unavailable: {e!r:.100}")
-    return out
+    return [b for b in out if _backend_sanity(b)]
+
+
+def _backend_sanity(b):
+    """One known small scenario vs fp32 sdpa; guards against known-bad wheels."""
+    if not (torch.cuda.is_available() and torch.cuda.device_count() > 0):
+        return True
+    torch.manual_seed(1234)
+    t, h, d = 33, 4, 128
+    q = (torch.randn(1, h, t, d, device="cuda") * 1.5).to(torch.bfloat16)
+    k, v = q.clone(), q.clone()
+    o, r = b(q, k, v, True, 1.0 / math.sqrt(d)).float(), \
+        sdpa_ref(q.float(), k.float(), v.float(), True, 1.0 / math.sqrt(d))
+    cos = F.cosine_similarity(
+        o.flatten(), r.float().flatten(), dim=0).item()
+    if cos < 0.99:
+        print(f"[fa-stress] WARNING: {b.name} is numerically BROKEN on "
+              f"this host (sanity cos={cos:.4f} vs fp32 sdpa); dropping "
+              f"it from the matrix — do not enable aiter_fa/flash_attn "
+              f"paths until the wheel is fixed.")
+        return False
+    print(f"[fa-stress] sanity ok: {b.name} (cos={cos:.6f})")
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +169,8 @@ DTYPES = [torch.bfloat16, torch.float16]
 def test_fa_scenario_matrix(dtype, hd, qo, kv, causal):
     backs = load_backends()
     if not backs:
-        pytest.skip("no FA backend importable on this host")
+        pytest.skip(
+            "no numerically-sound FA backend on this host (see sanity log)")
     torch.manual_seed(7 + qo * 31 + kv)
     h, d = 4, hd
     scale = 1.0 / math.sqrt(d)
@@ -170,7 +201,8 @@ def test_fa_graph_replay_tracks_fresh_inputs():
     caught the aiter AR corruption (eager passes, replay bakes/corrupts)."""
     backs = load_backends()
     if not backs:
-        pytest.skip("no FA backend importable on this host")
+        pytest.skip(
+            "no numerically-sound FA backend on this host (see sanity log)")
     torch.manual_seed(11)
     h, d, qo, kv = 4, 128, 1, 1024
     scale = 1.0 / math.sqrt(d)
