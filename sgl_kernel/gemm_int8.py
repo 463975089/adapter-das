@@ -51,7 +51,7 @@ if HAS_TRITON:
             k_mask = offs_k < k_left
             a = tl.load(a_ptrs, mask=m_mask[:, None] & k_mask[None, :], other=0)
             b = tl.load(b_ptrs, mask=k_mask[:, None] & n_mask[None, :], other=0)
-            acc = tl.dot(a, b, acc)
+            acc += tl.dot(a, b).to(tl.int32)
             a_ptrs += BLOCK_K * strides_ak
             b_ptrs += BLOCK_K * strides_bk
 
