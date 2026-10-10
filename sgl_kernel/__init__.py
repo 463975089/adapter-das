@@ -31,6 +31,7 @@ from sgl_kernel.moe import (
     topk_softmax,
 )
 from sgl_kernel.gemm_fp8 import fp8_scaled_mm
+from sgl_kernel.gemm_int8 import int8_scaled_mm
 
 # Register HCU shims for AMD/NVIDIA-only dependencies that upstream sglang
 # imports on HIP devices (`aiter`, `flashinfer`, `flash_attn`, ...). Must run
@@ -73,6 +74,7 @@ __all__ = [
     "rotary_embedding",
     # gemm
     "fp8_scaled_mm",
+    "int8_scaled_mm",
     # moe
     "topk_softmax",
     "topk_sigmoid",
