@@ -46,10 +46,17 @@ class _VarlenFA:
         tk = k.shape[0]
         cq = torch.tensor([0, tq], dtype=torch.int32, device=q.device)
         ck = torch.tensor([0, tk], dtype=torch.int32, device=q.device)
-        out, _ = self.fn(
+        # ABI drift across wheel versions: 2.6.x returns (out, lse), 2.8.x
+        # (out, lse, rng_state?) — inspectable shapes first, tensor wins.
+        res = self.fn(
             q, k, v, cq, ck, tq, tk,
             dropout_p=0.0, softmax_scale=scale, causal=causal,
         )
+        if isinstance(res, (tuple, list)):
+            out = next(r for r in res if torch.is_tensor(r)
+                       and r.shape == q.shape)
+        else:
+            out = res
         return out
 
 
