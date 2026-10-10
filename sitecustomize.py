@@ -218,6 +218,44 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: dsa topk bridge not installed", exc_info=True
         )
 
+    # AiterCustomAllreduce silently corrupts data when the CUDA graph it was
+    # captured into replays on gfx936-class DCUs (eager all-reduce is fine).
+    # sglang selects it as the AMD default because the C++ sgl_kernel
+    # allreduce extension has no HIP build; the symptom is decode tokens
+    # diverging from the first graph-replayed step while eager decode and
+    # prefill stay correct. Refuse the dispatch on this arch — the exception
+    # is caught in parallel_state's init and the group falls back to NCCL,
+    # which is graph-correct. HCU_AITER_AR=1 opts back in.
+    if os.environ.get("HCU_AITER_AR") != "1":
+        try:
+            _arch = (
+                torch.cuda.get_device_properties(0)
+                .gcnArchName.split(":")[0]
+            )
+        except Exception:
+            _arch = ""
+        if _arch.startswith("gfx93"):
+            try:
+                import sglang.srt.distributed.device_communicators.\
+                    custom_all_reduce as _car
+
+                def _hcu_no_aiter_ar(group, device):
+                    raise RuntimeError(
+                        "HCU adapter: AiterCustomAllreduce disabled on"
+                        f" {_arch} (CUDA-graph replay corrupts data; falling"
+                        " back to NCCL). Set HCU_AITER_AR=1 to re-enable."
+                    )
+
+                _car.dispatch_custom_allreduce = _hcu_no_aiter_ar
+                logging.getLogger("hcu.adapter").warning(
+                    f"HCU adapter: aiter custom all-reduce refused on {_arch}"
+                    " (graph-replay data corruption); NCCL all-reduce instead"
+                )
+            except Exception:
+                logging.getLogger("hcu.adapter").warning(
+                    "HCU adapter: aiter AR gate not installed", exc_info=True
+                )
+
     # gfx936-class DCUs have no fp8 matrix unit and the DTK aiter MQA-logits
     # kernels hard-gate on gfx942/950: emulate paged/ragged fp8 MQA logits in
     # torch (dequant -> bf16 GEMM, fp32 scales). Legacy page_size=1 only.
