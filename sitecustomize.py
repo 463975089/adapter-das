@@ -19,6 +19,7 @@ stay untouched; what we bridge here:
    override registry to keep a CLI-provided page_size when upstream forces 1.
 """
 
+import logging
 import os
 
 import torch
@@ -160,6 +161,38 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: fp8 per-token padding bridge not installed",
             exc_info=True,
+        )
+
+    # Kernel-selector capability gap: ops like gemm.fp8_scaled_mm declare
+    # AOT-capability {CapabilityRequirement.CUDA}, but PlatformInfo.detect()
+    # reports device_type="hip" on HCU, so HIP fails `device != platform.device`
+    # and select_kernel raises "no backend usable on device 'hip'" — even
+    # though the AOT backend (our sgl_kernel) runs fine here. Bridge: relax
+    # the CUDA check to also accept HIP platforms (the backward-compatible
+    # reading of "cuda" in CapabilityRequirement docs, and what every other
+    # `_is_cuda = torch.cuda.is_available()` call site already assumes).
+    try:
+        from sglang.kernels.spec import CapabilityRequirement as _CR
+        from sglang.kernels.spec import DeviceType as _DT
+
+        _orig_sat = _CR.is_satisfied_by
+
+        def _hcu_is_satisfied_by(self, platform):
+            if (
+                self.device == _DT.CUDA
+                and platform.device == _DT.HIP
+            ):
+                # arch-bounded CUDA windows (e.g. SM90-only TORCH backends)
+                # still must NOT match: HIP has no meaningful SM number.
+                if self.min_cuda_arch is None and self.max_cuda_arch is None:
+                    return True
+                return False
+            return _orig_sat(self, platform)
+
+        _CR.is_satisfied_by = _hcu_is_satisfied_by
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: capability HIP bridge not installed", exc_info=True
         )
 
     # Family-override modules import `_register_for` by reference at their own
