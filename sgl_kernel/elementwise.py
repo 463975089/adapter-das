@@ -30,7 +30,7 @@ def _lightop_silu_impl():
     global _LIGHTOP_IMPL
     if _LIGHTOP_IMPL is None:
         try:
-            from .._adapters import hcu_env
+            from ._adapters import hcu_env
 
             impl, _src = hcu_env.resolve("HCU_SILU_MUL_IMPL")
             # auto = triton (default); lightop only on explicit opt-in until
