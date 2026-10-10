@@ -10,10 +10,11 @@
 | 2026-10-10 | GLM-5-W4A8_V2_6 (slimquant int4-int8 MoE) | ~G/8卡 | nmz18 dtk26041 torch2.11 | TP8 graph ON 零旗标 | ✅ | ✅ | ✅ 语义/长文锚点 | ✅ | 两 bug 破案（fbc540c rope / 1eb038d aiter AR）；NSA emu 短路验证 |
 | 2026-10-10 | Qwen3-4B (bf16) | 7.6G/1卡 | nmz26 dtk26041 torch2.11 + **官方 v0.5.21 release** | TP1, triton attn, graph ON | ✅ | ✅ | ✅ GSM8K-100 68%（16并发46s，无算子错例） | ✅ | 首个官方 release 版；需 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`（rust TreeCore 无预编译扩展，见下） |
 | 2026-10-10 | Qwen3-4B-Channel-FP8 | 7.6G/1卡 | nmz26 dtk26041 + 官方 v0.5.21 | TP1, graph ON/OFF 双试 | ✅ | ❌ | ❌ token 全 0 | — | **quant=compressed-tensors**（format=float-quantized, act=strategy=token）——adapter 未覆盖的路径（README 路线图已知项）；fp8 trace 证实 apply_fp8_linear 从未被调，推理走 compressed-tensors 自己的 kernel 链。待办：compressed-tensors 垫片或换 Fp8LinearMethod 格式的 checkpoint 对照 |
-| 2026-10-10 | Qwen2.5-0.5B-Instruct | 954M/1卡 | nmz26 dtk26041 | TP1 | 待验证 | | | | 极小回归锚点；qwen2 家族（attn/rope 走 Qwen2 分支） |
+| 2026-10-10 | Qwen2.5-0.5B-Instruct | 954M/1卡 | nmz26 dtk26041 | TP1, triton attn, graph ON | ✅ | ✅ | ✅ SHORT 语义锚点 | ✅ | qwen2 家族（attn/rope 走 Qwen2 分支）三门全过 |
 | 2026-10-10 | Qwen3-32B (bf16) | 62G/1卡 | nmz26 dtk26041 | TP1 144G, mem 0.85 | 待验证 | | | | 中型 dense 64 层 |
-| 2026-10-10 | Qwen3-30B-A3B (MoE bf16) | 57G/1卡 | nmz26 dtk26041 | TP1, mem 0.85 | 待验证 | | | | MoE 128 专家；独立于 GDN 验证 align/gate 链 |
-| 2026-10-10 | Qwen3.8-27B-FP8 | 29G/1卡 | nmz26 dtk26041 | TP1, mem 0.85, trust-remote-code | 待验证 | | | | **quant_method=fp8 正确格式**（dynamic block[128,128]，Qwen3_5 arch）——fp8 全链首个真验证（Channel-FP8 是 CT 路径不算） |
+| 2026-10-10 | Qwen3-30B-A3B (MoE bf16) | 57G/1卡 | nmz26 dtk26041 官方 v0.5.21 | TP1, mem 0.85, triton attn, graph ON | ✅ | ✅ | ✅ SHORT 数学锚点+CHAT thinking 连贯 | ✅ LONG after-think 连贯 | MoE 128 专家独立验证；thinking 模型注意 max_new_tokens 给足 |
+| 2026-10-10 | Qwen3.8-27B-FP8 | 29G/1卡 | nmz26 dtk26041 官方 v0.5.21 | TP1, mem 0.85, triton attn, graph ON | ✅ | ✅ | ✅ CHAT=Paris | ✅ LONG after-think=Paris | **fp8 全链首验通过**：fp8_scaled_mm triton 后端 + capability HIP 桥（v0.5.21 Fp8ScaledMMOp AOT capacity=CUDA 拒 HIP）；长文注意 thinking 包裹（看 `</think>` 后文本） |
+| 2026-10-10 | Qwen3.6-27B-Channel-INT8-w8a8 | 55G/1卡 | nmz26 dtk26041 官方 v0.5.21 | TP1, triton attn, graph ON | ✅ | ✅ | ✅ SHORT 数学锚点 1397km；GSM8K-mini 11/12 | ✅ LONG 识别重复欺骗+总结 | **CT int-quantized 首验通过**：int8_scaled_mm triton 后端 + capability/int8 双桥；曾乱码——根因是 HCU_SLIMQUANT 的 safetensors shim 全局误伤（dequant→bf16 copy_ 进 int8 参数全零），已改为按 checkpoint format 门控（仅 slimquant_w4a8 格式生效） |
 | 2026-10-10 | Qwen3.5-122B-A10B-AWQ | 77G/4卡 | nmz26 dtk26041 | TP4, trust-remote-code | 待验证 | | | | awq bits=4（Qwen3_5Moe arch）；AWQ 路径首验 |
 | 规划 | Qwen3.5-35B-A3B-W8A8 | 36G/1卡 | nmz26 | TP1 | 风险：config 无 quantization_config（裸 w8a8 打包，需 --quantization 显式或权重名自识别） | | | | 36G/14 分片无 quant 声明，格式待定 |
 

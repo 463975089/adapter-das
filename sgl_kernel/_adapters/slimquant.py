@@ -42,11 +42,54 @@ _ROUTED_EXPERT_RE = re.compile(
 
 
 class _SlimquantShard:
-    """Proxies one safetensors file handle, transforming slimquant tensors."""
+    """Proxies one safetensors file handle, transforming slimquant tensors.
 
-    def __init__(self, f):
+    The transform is gated per checkpoint: slimquant-format models only.
+    Other quantized formats that also use ``.weight_scale`` siblings (e.g.
+    compressed-tensors int-quantized) must pass through untouched — their
+    schemes expect the raw int8 weight + scale, and dequantizing here turns
+    every quantized projection into zeros (bf16 copy_ into int8 param).
+    """
+
+    _format_cache: dict = {}
+
+    def __init__(self, f, path=""):
         self._f = f
-        self._keys = [k for k in f.keys() if self._keep(k)]
+        self._active = _SlimquantShard._checkpoint_is_slimquant(path)
+        if self._active:
+            self._keys = [k for k in f.keys() if self._keep(k)]
+        else:
+            self._keys = list(f.keys())
+
+    @classmethod
+    def _checkpoint_is_slimquant(cls, path):
+        """Read the owning checkpoint dir's config.json format field."""
+        if not path:
+            return True  # unknown origin: preserve legacy behavior
+        cached = cls._format_cache.get(path)
+        if cached is not None:
+            return cached
+        try:
+            import json
+            import os
+
+            d = os.path.dirname(os.path.abspath(path))
+            cfg = None
+            for _ in range(3):  # nested-name checkpoints keep config at root
+                p = os.path.join(d, "config.json")
+                if os.path.exists(p):
+                    cfg = json.load(open(p, encoding="utf-8"))
+                    break
+                d = os.path.dirname(d)
+            fmt = ""
+            if cfg:
+                q = cfg.get("quantization_config") or {}
+                fmt = str(q.get("format", ""))
+            result = fmt == "slimquant_w4a8"
+        except Exception:
+            result = True  # probe failure: preserve legacy behavior
+        cls._format_cache[path] = result
+        return result
 
     @staticmethod
     def _keep(name):
@@ -68,6 +111,8 @@ class _SlimquantShard:
             return None
 
     def get_tensor(self, name):
+        if not self._active:
+            return self._f.get_tensor(name)
         f = self._f
         if name.endswith("_scale"):
             base = name[: -len("_scale")]
@@ -100,7 +145,15 @@ class _SlimquantShard:
 
 def _wrap_safe_open(real_open):
     def safe_open(*args, **kwargs):
-        return _SlimquantShard(real_open(*args, **kwargs))
+        path = args[0] if args else kwargs.get("filename")
+        shard = _SlimquantShard.__new__(_SlimquantShard)
+        shard._f = real_open(*args, **kwargs)
+        shard._active = _SlimquantShard._checkpoint_is_slimquant(path or "")
+        if shard._active:
+            shard._keys = [k for k in shard._f.keys() if _SlimquantShard._keep(k)]
+        else:
+            shard._keys = list(shard._f.keys())
+        return shard
 
     return safe_open
 
