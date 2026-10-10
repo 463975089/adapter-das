@@ -27,6 +27,20 @@ requires_gpu = pytest.mark.skipif(
 )
 
 
+def _has_sglang():
+    try:
+        import sglang  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+requires_sglang = pytest.mark.skipif(
+    not _has_sglang(), reason="sglang not installed on this host"
+)
+
+
 def _arch_name():
     try:
         return (
@@ -81,6 +95,7 @@ def _sglang_uses_new_aiter_ca():
 
 
 @requires_gpu
+@requires_sglang
 def test_gate_auto_rule_matches_aiter_layout():
     """gfx93*: old-aiter sglang dispatch -> REFUSED; new aiter.dist
     GraphSafe path (stress-passed) -> ACTIVE without any env var."""
@@ -95,6 +110,7 @@ def test_gate_auto_rule_matches_aiter_layout():
 
 
 @requires_gpu
+@requires_sglang
 def test_gate_opt_in_env_restores_dispatch():
     if not _arch_name().startswith("gfx93") or _sglang_uses_new_aiter_ca():
         pytest.skip("opt-in is meaningful on old-aiter gfx93* hosts")
@@ -106,6 +122,7 @@ def test_gate_opt_in_env_restores_dispatch():
 
 
 @requires_gpu
+@requires_sglang
 def test_gate_disable_list_refuses_any_arch():
     state, p = _run_gate_probe({"HCU_DISABLE_OPS": "aiter_fa,aiter_ar"})
     assert state == "REFUSED", (
@@ -115,6 +132,7 @@ def test_gate_disable_list_refuses_any_arch():
 
 
 @requires_gpu
+@requires_sglang
 @pytest.mark.skipif(
     torch.cuda.device_count() < 2, reason="stress needs >=2 GPUs"
 )
