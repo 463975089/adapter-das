@@ -98,7 +98,8 @@ def _backend_sanity(b):
     scale = 1.0 / math.sqrt(d)
     q = (torch.randn(1, h, t, d, device="cuda") * 1.5).to(torch.bfloat16)
     k, v = q.clone(), q.clone()
-    o = b(q, k, v, True, scale).float()
+    # backends take the 3D [t, h, d] varlen form (same as the matrix calls)
+    o = b(q.squeeze(0), k.squeeze(0), v.squeeze(0), True, scale).float()
     r = sdpa_ref(q.float(), k.float(), v.float(), True, scale)
     cos = F.cosine_similarity(
         o.flatten(), r.float().flatten(), dim=0).item()
