@@ -63,9 +63,16 @@ class _SlimquantShard:
 
     @classmethod
     def _checkpoint_is_slimquant(cls, path):
-        """Read the owning checkpoint dir's config.json format field."""
+        """Read the owning checkpoint dir's config.json quant fields.
+
+        slimquant exports carry quantization_config.quant_method (GLM-5
+        family) and/or .format == 'slimquant_w4a8'. Anything else — no
+        config, probe error, other quant formats — is passthrough: the
+        transform is only ever safe on genuine slimquant checkpoints, and
+        misfiring it on a CT style checkpoint loads all-zero int8 weights.
+        """
         if not path:
-            return True  # unknown origin: preserve legacy behavior
+            return False
         cached = cls._format_cache.get(path)
         if cached is not None:
             return cached
@@ -81,13 +88,13 @@ class _SlimquantShard:
                     cfg = json.load(open(p, encoding="utf-8"))
                     break
                 d = os.path.dirname(d)
-            fmt = ""
-            if cfg:
-                q = cfg.get("quantization_config") or {}
-                fmt = str(q.get("format", ""))
-            result = fmt == "slimquant_w4a8"
+            q = (cfg or {}).get("quantization_config") or {}
+            result = (
+                str(q.get("quant_method", "")) == "slimquant_w4a8"
+                or str(q.get("format", "")) == "slimquant_w4a8"
+            )
         except Exception:
-            result = True  # probe failure: preserve legacy behavior
+            result = False
         cls._format_cache[path] = result
         return result
 

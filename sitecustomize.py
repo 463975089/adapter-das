@@ -656,6 +656,8 @@ if getattr(torch.version, "hip", None) is not None:
             import sgl_kernel._adapters.mqa_logits_emu as _mqa_emu
 
             _mqa_emu.install()
+        except ModuleNotFoundError:
+            pass  # no sglang importable (adapter-only tooling) — emu irrelevant
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: MQA-logits emu not installed", exc_info=True
