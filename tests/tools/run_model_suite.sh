@@ -30,7 +30,7 @@ ORDER=(q25-05b q3-32b q3-30b-a3b q38-27b-fp8 q35-122b-awq)
 
 need_mib() {  # rough VRAM need per model id (MiB), includes graph/act margin
   case $1 in
-    q25-05b) echo 6000 ;;
+    q25-05b) echo 4200 ;;
     q3-32b) echo 78000 ;;
     q3-30b-a3b) echo 74000 ;;
     q38-27b-fp8) echo 40000 ;;
@@ -156,10 +156,17 @@ for id in $ITS; do
   extra=${spec##*::}
   need=$(need_mib $id)
 
-  echo "[suite] [$id] waiting for >= ${need}MiB free on HCU0..."
+  echo "[suite] [$id] waiting for >= ${need}MiB free on any HCU..."
   while true; do
-    avail=$(free_mib 0)
-    if [ "${avail:-0}" -ge "$need" ]; then break; fi
+    avail=0
+    for card in 0 1 2 3 4 5 6 7; do
+      a=$(free_mib $card)
+      if [ "${a:-0}" -ge "$need" ]; then avail=$a
+        export HIP_VISIBLE_DEVICES=$card CUDA_VISIBLE_DEVICES=$card
+        break
+      fi
+    done
+    if [ "$avail" -ge "$need" ]; then break; fi
     sleep 120
   done
 
