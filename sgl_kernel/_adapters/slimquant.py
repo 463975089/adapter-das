@@ -141,7 +141,7 @@ def _build_kernel():
         a_ptr,
         b_ptr,  # int8 [E, N, K//2], packed signed int4
         c_ptr,
-        a_scale_ptr,  # fp32 [num_tokens*top_k]
+        a_scale_ptr,  # fp32 [num_tokens*top_k, K//A_GROUP] per-k-group
         b_scale_ptr,  # fp32 [E, N]
         topk_weights_ptr,
         sorted_token_ids_ptr,
@@ -159,6 +159,7 @@ def _build_kernel():
         stride_cm,
         stride_cn,
         stride_asm,
+        stride_ask,
         stride_bse,
         stride_bsn,
         BLOCK_SIZE_M: tl.constexpr,
@@ -206,7 +207,7 @@ def _build_kernel():
         b_scale_ptrs = b_scale_ptr + off_experts * stride_bse + offs_bn * stride_bsn
 
         accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-        for _k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+        for k_iter in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
             a = tl.load(a_ptrs, mask=token_mask[:, None], other=0.0)
             b_raw = tl.load(b_ptrs)
             b_u = b_raw.to(tl.uint8)
@@ -215,14 +216,17 @@ def _build_kernel():
             hi = tl.where(hi >= 8, hi - 16, hi)
             lo = tl.where(lo >= 8, lo - 16, lo)
             b4 = tl.trans(tl.interleave(hi, lo))  # [BK, BN], hi nibble on even k
-            accumulator += tl.dot(a, b4)
+            # per-k-group activation scale applied inside the K loop
+            a_scale_k = tl.load(
+                a_scale_ptrs + k_iter * stride_ask, mask=token_mask, other=0.0
+            )
+            accumulator += tl.dot(a, b4) * a_scale_k[:, None]
 
             a_ptrs += BLOCK_SIZE_K * stride_ak
             b_ptrs += (BLOCK_SIZE_K // 2) * stride_bk
 
-        a_scale = tl.load(a_scale_ptrs, mask=token_mask, other=0.0)
         b_scale = tl.load(b_scale_ptrs)
-        accumulator = accumulator * a_scale[:, None] * b_scale[None, :]
+        accumulator = accumulator * b_scale[None, :]
         if MUL_ROUTED_WEIGHT:
             w = tl.load(topk_weights_ptr + offs_token, mask=token_mask, other=0.0)
             accumulator = accumulator * w[:, None]
@@ -243,6 +247,16 @@ def _get_kernel():
     if _W4A8_KERNEL is None:
         _W4A8_KERNEL = _build_kernel()
     return _W4A8_KERNEL
+
+
+def _per_token_group_quant_int8(x, group=64):
+    """Dynamic per-token-k-group int8 quant (NPU w4a8 style, no static
+    input_scale in these checkpoints). CUDA-graph-safe pure torch ops."""
+    M, K = x.shape
+    xg = x.float().view(M, K // group, group)
+    s = (xg.abs().amax(dim=-1, keepdim=True) / 127.0).clamp(min=1e-10)
+    q = torch.round(xg / s).clamp(-127, 127).to(torch.int8)
+    return q.view(M, K), s.view(M, K // group)
 
 
 def _invoke_w4a8(
@@ -291,6 +305,7 @@ def _invoke_w4a8(
         C.stride(-2),
         C.stride(-1),
         A_scale.stride(0),
+        A_scale.stride(1),
         B_scale.stride(0),
         B_scale.stride(1),
         MUL_ROUTED_WEIGHT=mul_routed_weight,
@@ -319,7 +334,6 @@ def fused_experts_w4a8(
     import torch.nn.functional as F
     import triton
 
-    from sglang.kernels.ops.quantization.int8_kernel import per_token_quant_int8
     from sglang.srt.layers.moe.moe_runner.triton_utils.moe_align_block_size import (
         moe_align_block_size,
     )
@@ -354,8 +368,8 @@ def fused_experts_w4a8(
         topk_ids, config["BLOCK_SIZE_M"], E
     )
 
-    # up GEMM: per-token int8 activation x packed weights -> [tokens, topk, 2I]
-    a1_q, a1_scale = per_token_quant_int8(hidden_states)
+    # up GEMM: per-token-group int8 activation x packed weights -> [tokens, topk, 2I]
+    a1_q, a1_scale = _per_token_group_quant_int8(hidden_states)
     cache1 = torch.empty(
         (num_tokens, top_k, N2), device=device, dtype=hidden_states.dtype
     )
@@ -363,7 +377,7 @@ def fused_experts_w4a8(
         a1_q,
         w13_q,
         cache1,
-        a1_scale.view(-1),
+        a1_scale,
         w13_scale,
         topk_weights,
         sorted_token_ids,
@@ -375,12 +389,16 @@ def fused_experts_w4a8(
         compute_type=compute_type,
     )
 
-    # activation: silu(gate) * up on the two halves
-    gate, up = cache1.view(num_tokens * top_k, N2).chunk(2, dim=-1)
-    inter = F.silu(gate) * up  # [tokens*topk, I] bf16
+    # activation: silu(gate) * up. The stacked loader writes w13 as chunk
+    # [gate; up] rows (w1 offset 0 / w3 offset I); sglang's plain-silu triton
+    # runner is chunk-semantic too (silu_and_mul(cache.view(-1, N))) --
+    # gate_up_interleaved is only consumed by the gpt-oss alpha swiglu branch.
+    c1 = cache1.view(num_tokens * top_k, N2)
+    gate, up = c1[:, :I], c1[:, I:]
+    inter = torch.nn.functional.silu(gate) * up  # [tokens*topk, I] bf16
 
     # down GEMM with routed weight multiply
-    a2_q, a2_scale = per_token_quant_int8(inter)
+    a2_q, a2_scale = _per_token_group_quant_int8(inter)
     cache2 = torch.empty(
         (num_tokens, top_k, H), device=device, dtype=hidden_states.dtype
     )
@@ -388,7 +406,7 @@ def fused_experts_w4a8(
         a2_q,
         w2_q,
         cache2,
-        a2_scale.view(-1),
+        a2_scale,
         w2_scale,
         topk_weights,
         sorted_token_ids,
@@ -493,6 +511,11 @@ def register_quant_config():
 
             x = dispatch_output.hidden_states
             topk_output = dispatch_output.topk_output
+            # routed_scaling_factor is NOT applied here: on HIP with
+            # SGLANG_USE_AITER unset, DeepseekV2MoE multiplies it outside
+            # (dsv2: "not _is_cuda and not _is_musa and not _use_aiter" ->
+            # final *= routed_scaling_factor), so an in-kernel multiply would
+            # double it (6.25x = 2.5^2 per layer).
             out = fused_experts_w4a8(
                 x,
                 layer.w13_weight,
@@ -501,9 +524,6 @@ def register_quant_config():
                 layer.w2_weight_scale,
                 topk_output.topk_weights,
                 topk_output.topk_ids,
-                routed_scaling_factor=getattr(
-                    self.moe_runner_config, "routed_scaling_factor", None
-                ),
             )
             return StandardCombineInput(hidden_states=out)
 

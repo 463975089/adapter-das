@@ -142,10 +142,20 @@ if getattr(torch.version, "hip", None) is not None:
     try:
         import sglang.srt.layers.attention.dsa.utils as _dsa_utils
 
-        _dsa_utils.aiter_can_use_preshuffle_paged_mqa = lambda: True
-        logging.getLogger("hcu.adapter").warning(
-            "HCU adapter: DSA aiter-preshuffle gate forced on (DTK wheel kernels)"
-        )
+        if os.environ.get("HCU_DSA_PRESHUFFLE") == "0":
+            # Legacy page_size=1 / KVBlockSize=1 DSA path (paired with the
+            # HCU_MQA_EMU torch emulation on gfx936-class DCUs).
+            _dsa_utils.aiter_can_use_preshuffle_paged_mqa = lambda: False
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: DSA aiter-preshuffle gate forced OFF (legacy"
+                " page_size=1 path)"
+            )
+        else:
+            _dsa_utils.aiter_can_use_preshuffle_paged_mqa = lambda: True
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: DSA aiter-preshuffle gate forced on"
+                " (DTK wheel kernels)"
+            )
     except Exception:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: preshuffle gate patch not installed", exc_info=True
@@ -174,3 +184,16 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: dsa topk bridge not installed", exc_info=True
         )
+
+    # gfx936-class DCUs have no fp8 matrix unit and the DTK aiter MQA-logits
+    # kernels hard-gate on gfx942/950: emulate paged/ragged fp8 MQA logits in
+    # torch (dequant -> bf16 GEMM, fp32 scales). Legacy page_size=1 only.
+    if os.environ.get("HCU_MQA_EMU") == "1":
+        try:
+            import sgl_kernel._adapters.mqa_logits_emu as _mqa_emu
+
+            _mqa_emu.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: MQA-logits emu not installed", exc_info=True
+            )

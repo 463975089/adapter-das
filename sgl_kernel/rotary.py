@@ -145,15 +145,14 @@ def _rotary_embedding_neox_torch(positions, query, key, head_size, cos_sin_cache
             return None
         orig_shape = t.shape
         t = t.view(num_tokens, -1, head_size)
-        t_rot, t_pass = t[..., :rotary_dim], t[..., rotary_dim:]
-        x1 = t_rot[..., : rotary_dim // 2].float()
-        x2 = t_rot[..., rotary_dim // 2:].float()
-        rotated = torch.cat((-x2, x1), dim=-1)
-        out = x1 * cos.unsqueeze(1) + rotated[..., : rotary_dim // 2] * sin.unsqueeze(1)
-        out2 = x2 * cos.unsqueeze(1) + x1 * sin.unsqueeze(1)
-        t_rot[..., : rotary_dim // 2] = out.to(t.dtype)
-        t_rot[..., rotary_dim // 2:] = out2.to(t.dtype)
-        return t.view(orig_shape)
+        x1 = t[..., : rotary_dim // 2].float()
+        x2 = t[..., rotary_dim // 2 : rotary_dim].float()
+        y1 = x1 * cos.unsqueeze(1) - x2 * sin.unsqueeze(1)
+        y2 = x2 * cos.unsqueeze(1) + x1 * sin.unsqueeze(1)
+        out = t.clone()
+        out[..., : rotary_dim // 2] = y1.to(t.dtype)
+        out[..., rotary_dim // 2 : rotary_dim] = y2.to(t.dtype)
+        return out.view(orig_shape)
 
     out_q = _rope(query)
     if out_q is not None:
@@ -177,14 +176,14 @@ def _rotary_embedding_interleaved_torch(positions, query, key, head_size, cos_si
             return None
         orig_shape = t.shape
         t = t.view(num_tokens, -1, head_size)
-        t_rot = t[..., :rotary_dim]
-        x1 = t_rot[..., 0::2].float()  # even lanes
-        x2 = t_rot[..., 1::2].float()  # odd lanes
+        x1 = t[..., :rotary_dim, 0::2].float()  # even lanes
+        x2 = t[..., :rotary_dim, 1::2].float()  # odd lanes
         y1 = x1 * cos_i.unsqueeze(1) - x2 * sin_i.unsqueeze(1)
         y2 = x1 * sin_i.unsqueeze(1) + x2 * cos_i.unsqueeze(1)
-        t_rot[..., 0::2] = y1.to(t.dtype)
-        t_rot[..., 1::2] = y2.to(t.dtype)
-        return t.view(orig_shape)
+        out = t.clone()
+        out[..., :rotary_dim, 0::2] = y1.to(t.dtype)
+        out[..., :rotary_dim, 1::2] = y2.to(t.dtype)
+        return out.view(orig_shape)
 
     out_q = _rope(query)
     if out_q is not None:
