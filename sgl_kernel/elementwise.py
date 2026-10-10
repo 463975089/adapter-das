@@ -181,8 +181,8 @@ def silu_and_mul(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
                     input.shape[:-1] + (input.shape[-1] // 2,),
                     device=input.device, dtype=input.dtype,
                 )
-            lo(out, input)  # lightop signature: (output, input)
-            return out
+            res = lo(input, out)  # lightop sig: (input, output, mask_m, expect_m)
+            return out if res is None else res
     return _gated_mul_impl(input, out, "silu")
 
 
