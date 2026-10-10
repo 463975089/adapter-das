@@ -40,3 +40,23 @@ CUDA graph ON + 零旗标 e2e 连贯（短/长 prompt 双变体）。
 - 结论口径：**方向可行**——参数面大部分可透传，差异集中在算子层，而算子
   层正是本仓库的职责边界；风险主要在社区码演进速度，应对 = 锚定 import 面
   + 契约测试门禁。
+
+## E. 新容器初始化规程（混合栈防火墙，黄金法则 #7）
+
+```bash
+# 1) 杀掉镜像自带的 das 定制 sglang 与 kernel 包（防混栈：hcu_alloc_decode_kernel
+#    这类"奇怪的 ImportError"全部源于此）
+SP=/usr/local/lib/python3.10/dist-packages
+rm -rf $SP/sglang $SP/sglang-*dist-info \
+       $SP/sglang_kernel $SP/sglang_kernel-*dist-info \
+       $SP/sgl_kernel $SP/sgl_kernel-*dist-info 2>/dev/null
+# 2) 眼见为实：官方源 + adapter 解析正确、版本入日志
+PYTHONPATH=<adapter>:<official-sglang>/python python - <<'P'
+import sglang, sgl_kernel
+print("sglang:", sglang.__version__, sglang.__file__)   # 必须是官方源路径
+print("adapter:", sgl_kernel.__version__, sgl_kernel.__file__)
+P
+# 3) 发射命令里固定 PYTHONPATH=<adapter>:<official>/python（顺序不可倒）
+```
+镜像 sglang 是 dtk 定制线（含 hcu_alloc_decode_kernel 等私改），与官方 release
+共存时 `sys.path` 顺序稍有变化就会解析到它——删除比 mv.disabled 更彻底。

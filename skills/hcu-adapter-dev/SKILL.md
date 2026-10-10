@@ -25,6 +25,11 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
    （`docs/env-vars.md`）；默认自动适应（arch/wheel 探测，正确部署零
    变量）；显式设置优先且启动日志标注来源（`hcu_env.py` 注册表，
    禁止在行为接线处裸读 `os.environ`）。
+7. **新容器先灭镜像包**：每次创建/新用容器，先把镜像自带的 sglang(das
+   定制线)和 sgl_kernel/sglang_kernel 从 dist-packages 删干净再干活；
+   残留会与 PYTHONPATH 的官方源/ adapter 混栈（症状：奇怪的
+   ImportError 如 hcu_alloc_decode_kernel、module 解析到镜像路径）。
+   清理命令见 references/cookbook-matrix.md。
 
 ## 任务路由（做某类事之前先读对应参考文档）
 
