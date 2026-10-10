@@ -98,9 +98,18 @@ def _backend_sanity(b):
     scale = 1.0 / math.sqrt(d)
     q = (torch.randn(1, h, t, d, device="cuda") * 1.5).to(torch.bfloat16)
     k, v = q.clone(), q.clone()
+    # ref BEFORE the call: an in-place kernel would corrupt q and the fp32
+    # ref would silently match its own corruption (cos=1.0 trap).
+    r = sdpa_ref(q.float(), k.float(), v.float(), True, scale)
+    q0 = q.clone()
     # backends take the 3D [t, h, d] varlen form (same as the matrix calls)
     o = b(q.squeeze(0), k.squeeze(0), v.squeeze(0), True, scale).float()
-    r = sdpa_ref(q.float(), k.float(), v.float(), True, scale)
+    for nm, t0, t1 in (("q", q0, q), ("k", q0, k), ("v", q0, v)):
+        if not torch.equal(t0, t1):
+            print(f"[fa-stress] WARNING: {b.name} modified its input "
+                  f"{nm} in place (out aliases input — same-name "
+                  f"different-semantics bug class); refusing it.")
+            return False
     cos = F.cosine_similarity(
         o.flatten(), r.float().flatten(), dim=0).item()
     if cos < 0.99:
