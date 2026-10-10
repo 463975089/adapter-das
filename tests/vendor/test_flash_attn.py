@@ -95,10 +95,11 @@ def _backend_sanity(b):
         return True
     torch.manual_seed(1234)
     t, h, d = 33, 4, 128
+    scale = 1.0 / math.sqrt(d)
     q = (torch.randn(1, h, t, d, device="cuda") * 1.5).to(torch.bfloat16)
     k, v = q.clone(), q.clone()
-    o, r = b(q, k, v, True, 1.0 / math.sqrt(d)).float(), \
-        sdpa_ref(q.float(), k.float(), v.float(), True, 1.0 / math.sqrt(d))
+    o = b(q, k, v, True, scale).float()
+    r = sdpa_ref(q.float(), k.float(), v.float(), True, scale)
     cos = F.cosine_similarity(
         o.flatten(), r.float().flatten(), dim=0).item()
     if cos < 0.99:
