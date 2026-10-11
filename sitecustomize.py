@@ -1052,6 +1052,20 @@ if getattr(torch.version, "hip", None) is not None:
                     },
                 )
             )
+            # the finder only patches loads that happen AFTER registration;
+            # early adapter imports (e.g. the MQA emu installer) may already
+            # have cached these modules behind our back -- flip them too.
+            import sys as _sys
+
+            for _mn in (
+                "sglang.srt.layers.deep_gemm_wrapper.configurer",
+                "sglang.srt.layers.deep_gemm_wrapper.entrypoint",
+                "sglang.srt.layers.deep_gemm_wrapper",
+            ):
+                _m = _sys.modules.get(_mn)
+                if _m is not None and hasattr(_m, "ENABLE_JIT_DEEPGEMM"):
+                    _m.ENABLE_JIT_DEEPGEMM = True
+                    _m.HCU_DEEPGEMM_BRIDGE_FLIPPED = True
             logging.getLogger("hcu.adapter").info(
                 "HCU DeepGEMM bridge: deep_gemm -> DTK deepgemm alias + "
                 "ENABLE_JIT_DEEPGEMM flipped (EP opt-in)"
