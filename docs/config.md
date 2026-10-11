@@ -60,6 +60,7 @@ ops:
 | `paged_mqa_logits` | emu（默认）/ aiter、lightop（planned） | DSA 线 |
 | `rotary_embedding` | triton（在用，无开关）；aiter / lightop（planned） | rope_fwd / rotary_embedding_fuse 家族待接 |
 | `moe_gate` | triton（在用，contract=torch）；aiter / lightop（planned） | topk_softmax/sigmoid/moe_fused_gate |
+| `fused_moe` | triton（默认回退）/ aiter（validated，auto 先试） | w8a8 专家层：aiter 块量化走 ASM 调优表、通道量化走 moe_c；未调优形状自动回 triton |
 | `per_token_quant` | torch（在用）；aiter / lightop（planned） | per_token_quant_hip / lightop 量化族 |
 
 ## 与环境变量的关系（迁移口径）

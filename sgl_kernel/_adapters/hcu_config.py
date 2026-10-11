@@ -129,6 +129,20 @@ BACKEND_CATALOG = {
                         "note": "fast_topk_transform_* family"},
         },
     },
+    "fused_moe": {
+        "var": "HCU_FUSED_MOE_IMPL",
+        "summary": "w8a8 fused MoE experts (standard dispatch, "
+                   "triton runner entry; deepep runner unaffected)",
+        "backends": {
+            "triton": {"status": "production",
+                       "note": "stock kernel; default fallback"},
+            "aiter": {"status": "validated",
+                      "note": "DTK aiter_moe; blockwise->ASM tuned csv, "
+                              "channelwise->moe_c; rel 0.02-0.04 gate "
+                              "PASS (nmz18 gfx938); unlisted shapes "
+                              "auto-fallback to triton"},
+        },
+    },
     "per_token_quant": {
         "var": None,
         "summary": "per-token fp8/int8 quant (dynamic)",

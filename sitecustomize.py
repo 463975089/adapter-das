@@ -1180,3 +1180,21 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: deepgemm bridge not installed", exc_info=True
         )
+
+    # 10. DTK aiter fused-MoE bridge (2026-10-11): wraps the stock triton
+    #     runner's fused_experts entry; w8a8 bf16 calls first try DTK
+    #     aiter_moe (blockwise -> ASM tuned csv, channelwise -> moe_c),
+    #     unlisted shapes fall back to the stock triton kernel (log-once).
+    #     Knob: HCU_FUSED_MOE_IMPL = auto | aiter | triton (auto default).
+    #     Gate: nmz18 BW200/gfx938 rel 0.02-0.04 vs bf16 ref (see
+    #     sgl_kernel/_adapters/aiter_moe.py docstring).
+    try:
+        from sgl_kernel._adapters import aiter_moe as _amo
+
+        _amo.install()
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: aiter fused-MoE bridge not installed", exc_info=True
+        )

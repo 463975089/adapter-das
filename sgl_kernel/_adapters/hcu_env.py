@@ -151,6 +151,12 @@ REGISTRY = {
         "about": "rms_norm 后端档位：triton|aiter(rmsnorm_forward 桥)|torch；"
                  "fused_add_rmsnorm/gemma 变体恒走 triton(torch)",
     },
+    "HCU_FUSED_MOE_IMPL": {
+        "env": "HCU_FUSED_MOE_IMPL", "default": "auto",
+        "about": "fused MoE（triton runner 入口）后端档位：auto=先试 DTK "
+                 "aiter(aiter_moe，块量化走 ASM 调优表/通道量化走 moe_c)，"
+                 "无调优形状自动回 triton；aiter=同上但回退时告警；triton=关闭",
+    },
     # disaggregation / EP transfer
     "HCU_DEEPEP_BRIDGE": {
         "env": "HCU_DEEPEP_BRIDGE", "default": "1",
