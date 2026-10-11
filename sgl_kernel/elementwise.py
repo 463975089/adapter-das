@@ -19,36 +19,40 @@ import torch
 from .compat import HAS_ERF, HAS_TRITON, check_cuda_tensor, next_power_of_2
 
 _LIGHTOP_IMPL = None  # resolved once: None=probe-pending, (~)=unavailable
+_IMPL_CHOICE = None   # cached backend choice: "lightop" | "torch" | None
 
 
-def _lightop_silu_impl():
-    """Vendor backend (替换矩阵 lightop 档): lightop.fuse_silu_and_mul,
-    same (..., 2d) -> (..., d) contract with output-first signature
-    (out, input). Enabled only by HCU_SILU_MUL_IMPL=lightop (explicit);
-    auto stays on the triton path until this passes contract +
-    graph-replay stress. Probe result is cached — no per-call re-probe."""
-    global _LIGHTOP_IMPL
-    if _LIGHTOP_IMPL is None:
+def _resolve_impl():
+    """Backend choice for gated activations (config file > env > default).
+
+    Cached once -- HCU_SILU_MUL_IMPL / ops.silu_and_mul in
+    hcu_adapter.yaml both land here."""
+    global _IMPL_CHOICE, _LIGHTOP_IMPL
+    if _IMPL_CHOICE is None:
         try:
             from ._adapters import hcu_env
 
             impl, _src = hcu_env.resolve("HCU_SILU_MUL_IMPL")
-            # auto = triton (default); lightop only on explicit opt-in until
-            # it passes the full contract + graph-replay matrix.
-            if impl != "lightop":
-                _LIGHTOP_IMPL = False
-            else:
+            # auto = triton (default); lightop/torch only on explicit
+            # selection until lightop passes the graph-replay matrix and
+            # torch stays the reference/debug tier.
+            if impl == "lightop":
                 from lightop import fuse_silu_and_mul
 
                 _LIGHTOP_IMPL = fuse_silu_and_mul
+                _IMPL_CHOICE = "lightop"
+            elif impl == "torch":
+                _IMPL_CHOICE = "torch"
+            else:
+                _IMPL_CHOICE = "triton"
         except Exception:
             # visibility beats silence: a silent vendor-probe failure reads
             # as "auto mode" and hides a real wheel/env problem.
             import traceback
 
             traceback.print_exc()
-            _LIGHTOP_IMPL = False
-    return _LIGHTOP_IMPL or None
+            _IMPL_CHOICE = "triton"
+    return _IMPL_CHOICE
 
 if HAS_TRITON:
     from .compat import _tl_erf
@@ -120,6 +124,7 @@ def _gated_mul_impl(
     input: torch.Tensor,
     out: Optional[torch.Tensor],
     act: str,
+    force_native: bool = False,
 ) -> torch.Tensor:
     """Shared gate path for silu_and_mul / gelu_and_mul / gelu_tanh_and_mul."""
     d = input.shape[-1] // 2
@@ -134,7 +139,8 @@ def _gated_mul_impl(
             )
 
     use_triton = (
-        HAS_TRITON
+        not force_native
+        and HAS_TRITON
         and input.is_cuda
         and input.dtype in (torch.bfloat16, torch.float16, torch.float32)
         and input.shape[-1] % 2 == 0
@@ -174,14 +180,16 @@ def _gated_mul_impl(
 def silu_and_mul(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
     """out = silu(input[..., :d]) * input[..., d:]"""
     if input.is_cuda:
-        lo = _lightop_silu_impl()
-        if lo is not None:
+        choice = _resolve_impl()
+        if choice == "torch":
+            return _gated_mul_impl(input, out, "silu", force_native=True)
+        if choice == "lightop" and _LIGHTOP_IMPL is not None:
             if out is None:
                 out = torch.empty(
                     input.shape[:-1] + (input.shape[-1] // 2,),
                     device=input.device, dtype=input.dtype,
                 )
-            res = lo(input, out)  # lightop sig: (input, output, mask_m, expect_m)
+            res = _LIGHTOP_IMPL(input, out)  # lightop sig: (input, output)
             return out if res is None else res
     return _gated_mul_impl(input, out, "silu")
 

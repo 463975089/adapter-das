@@ -1,0 +1,75 @@
+# HCU Adapter 后端配置（hcu_adapter.yaml）
+
+## 是什么
+
+同一算子往往有多个可用来源：adapter 自带 triton 内核（`sgl_kernel`）、DTK vendor 轮
+（aiter / lightop）、以及 torch 参考实现。**选哪个后端是部署决策，写进配置文件**
+（用户口径 2026-10-12），不再靠环境变量。
+
+## 配置文件
+
+```yaml
+version: 1
+ops:
+  silu_and_mul: lightop     # triton | lightop | torch
+  rms_norm: aiter           # triton | aiter | torch
+  allreduce: custom         # custom | aiter | nccl
+  paged_mqa_logits: emu     # emu（aiter/lightop 规划中）
+```
+
+- **查找顺序**（先中先得）：`$HCU_CONFIG` 指定路径 → `./hcu_adapter.yaml|.yml|.json`
+  → adapter 根目录（sitecustomize.py 旁）同名文件。
+- **未写条目 = 生产默认**；文件里只写要覆盖的算子。
+- **校验是严格的**：未知算子名、未知后端值、选择 `planned` 状态的后端，都会在
+  加载时**响亮报错**（防手滑静默回退默认）。启动日志出现
+  `HCU adapter config: <路径> (ops: ...)` 一行即为生效。
+- 部署样例见仓根 `hcu_adapter.example.yaml`；交互式生成：
+  `python tools/hcu_config_wizard.py`（逐算子提示选择，只写入非默认项）。
+  `--list` 看后端目录表，`--show` 看当前生效配置，`--check 文件` 校验。
+
+## 优先级（裁决链）
+
+```
+显式环境变量（调试层，仅排查用）  >  配置文件 ops.<op>  >  平台自动规则  >  内置默认
+```
+
+环境变量降级为**调试覆盖**：临时一键回退无需改文件；正式部署**零环境变量**，
+全部选择落在配置文件里。启动汇总行标注每项来源（`explicit`/`config`/`auto`/`default`）。
+
+## 后端目录（BACKEND_CATALOG）
+
+`sgl_kernel/_adapters/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
+后端 → 状态与备注。向导和未来的 Web UI 都从它渲染，新后端接线后自动出现在选择项里。
+
+状态语义：
+
+| 状态 | 含义 |
+|---|---|
+| production | 生产默认，全套门禁通过 |
+| validated | 门禁全过，opt-in（或按 wheel 自动规则放行） |
+| candidate | 已接线，门禁矩阵待跑 |
+| planned | 仅入目录（UI 可见置灰），选择即报错 |
+
+当前目录（2026-10-12 实拍三家轮盘后的交集）：
+
+| 算子 | 可选后端 | 说明 |
+|---|---|---|
+| `silu_and_mul` | triton（默认）/ lightop / torch | aiter 是融合变体（silu+quant），非本算子后端，另行入目录 |
+| `rms_norm` | triton（默认）/ aiter / torch | 仅 plain rmsnorm；fused_add/gemma 恒 triton/torch |
+| `allreduce` | custom（默认）/ aiter / nccl | 复合键：custom=自制 host-shm AR；aiter=aiter.dist GraphSafe；nccl=回退（多卡须关 graph） |
+| `paged_mqa_logits` | emu（默认）/ aiter、lightop（planned） | DSA 线 |
+| `rotary_embedding` | triton（在用，无开关）；aiter / lightop（planned） | rope_fwd / rotary_embedding_fuse 家族待接 |
+| `moe_gate` | triton（在用，contract=torch）；aiter / lightop（planned） | topk_softmax/sigmoid/moe_fused_gate |
+| `per_token_quant` | torch（在用）；aiter / lightop（planned） | per_token_quant_hip / lightop 量化族 |
+
+## 与环境变量的关系（迁移口径）
+
+`docs/env-vars.md` 仍列全部变量，但从本文件起定位为**调试覆盖手册**。新功能一律
+只加配置项，不加环境变量；既有环境变量行为不变（仍高于配置文件），便于已部署环境
+平滑过渡。
+
+## 未来 UI
+
+配置文件 schema 即 UI 的数据契约：`version: 1` + `ops` 平面映射。前端按
+BACKEND_CATALOG 渲染下拉/单选（planned 置灰），生成的就是这份 YAML——CLI 向导
+（`tools/hcu_config_wizard.py`）即其命令行形态。

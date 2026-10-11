@@ -146,6 +146,11 @@ REGISTRY = {
         "about": "silu_and_mul 后端档位：auto=triton（lightop 过验证后转正），"
                  "triton|lightop|torch",
     },
+    "HCU_RMS_NORM_IMPL": {
+        "env": "HCU_RMS_NORM_IMPL", "default": "triton",
+        "about": "rms_norm 后端档位：triton|aiter(rmsnorm_forward 桥)|torch；"
+                 "fused_add_rmsnorm/gemma 变体恒走 triton(torch)",
+    },
     # disaggregation / EP transfer
     "HCU_DEEPEP_BRIDGE": {
         "env": "HCU_DEEPEP_BRIDGE", "default": "1",
@@ -191,6 +196,13 @@ def resolve(name):
     env = spec["env"]
     if os.environ.get(env, "") != "":
         return os.environ[env], "explicit"
+    # config file (deployment tier): below debug env, above auto rules.
+    # Invalid files raise here on first touch -- loud and early.
+    from . import hcu_config as _cfg
+
+    cv = _cfg.lookup(env)
+    if cv is not None:
+        return str(cv), "config"
     if "auto" in spec:
         try:
             v = spec["auto"]()
@@ -208,7 +220,12 @@ def enabled(name):
 
 
 def log_summary():
-    """One startup line listing every resolved var + its source."""
+    """Startup lines: config file in effect + every resolved var + source."""
+    from . import hcu_config as _cfg
+
+    cfg_line = _cfg.summary_line()
+    if cfg_line:
+        LOG.warning(cfg_line)
     parts = []
     for name in REGISTRY:
         v, src = resolve(name)

@@ -21,6 +21,45 @@ import torch
 
 from .compat import HAS_TRITON, check_cuda_tensor, next_power_of_2
 
+_RMS_IMPL = None  # cached backend choice: "triton" | "aiter" | "torch"
+
+
+def _resolve_rms_impl():
+    """rms_norm backend tier (config file > env > default triton).
+
+    Applies to the plain rmsnorm() entry only; fused_add_rmsnorm and the
+    gemma variants have no vendor equivalent and stay triton/torch."""
+    global _RMS_IMPL
+    if _RMS_IMPL is None:
+        _RMS_IMPL = "triton"
+        try:
+            from ._adapters import hcu_env
+
+            impl, _src = hcu_env.resolve("HCU_RMS_NORM_IMPL")
+            if impl in ("triton", "aiter", "torch"):
+                _RMS_IMPL = impl
+        except Exception:
+            import traceback
+
+            traceback.print_exc()
+    return _RMS_IMPL
+
+
+def _aiter_rmsnorm(input, weight, eps):
+    """aiter.rmsnorm_forward bridge: (x, w, eps, training) -> (out, ..).
+
+    Vendor kernel takes 2D rows; arbitrary leading dims are flattened and
+    restored. Returns a fresh tensor (caller copies into the out buffer)."""
+    import aiter
+
+    shape = input.shape
+    res = aiter.rmsnorm_forward(
+        input.contiguous().view(-1, shape[-1]), weight, eps, False
+    )
+    out = res[0] if isinstance(res, tuple) else res
+    return out.view(shape)
+
+
 if HAS_TRITON:
     import triton
     import triton.language as tl
@@ -124,6 +163,17 @@ def _do_rmsnorm(
         out = torch.empty_like(input)
     elif tuple(out.shape) != tuple(input.shape):
         raise ValueError(f"out shape {tuple(out.shape)} != {tuple(input.shape)}")
+
+    impl = _resolve_rms_impl()
+    if gemma and impl != "triton":
+        impl = "triton"  # vendor backend covers the plain norm only
+    if impl == "torch" or not input.is_cuda:
+        return _rmsnorm_native(input, weight, eps, gemma, out)
+    if impl == "aiter":
+        if input.dtype in (torch.bfloat16, torch.float16):
+            out.copy_(_aiter_rmsnorm(input, weight, eps))
+            return out
+        impl = "triton"  # vendor bf16/fp16 only; fall through
 
     use_triton = (
         HAS_TRITON

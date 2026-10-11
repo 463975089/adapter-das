@@ -1,0 +1,19 @@
+# HCU adapter backend selection -- deployment config.
+# Copy to hcu_adapter.yaml next to sitecustomize.py (or anywhere on the
+# search path: $HCU_CONFIG > ./hcu_adapter.yaml > adapter root) and edit.
+# Unset entries keep their production default; only overrides are needed.
+# Validate your file:  python tools/hcu_config_wizard.py --check <path>
+# Interactive builder: python tools/hcu_config_wizard.py
+version: 1
+ops:
+  # gated activation | triton | lightop | torch          (default triton)
+  # silu_and_mul: lightop
+
+  # RMSNorm (plain; fused_add/gemma stay triton)
+  # rms_norm: aiter                                      # triton|aiter|torch
+
+  # TP all-reduce (cuda-graph capture path) | custom | aiter | nccl
+  # allreduce: custom
+
+  # DSA paged MQA logits | emu (aiter/lightop planned)
+  # paged_mqa_logits: emu
