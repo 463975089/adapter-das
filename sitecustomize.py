@@ -213,6 +213,44 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: int8_scaled_mm bridge not installed", exc_info=True
         )
 
+    # FlashMLA decode backend: FlashMLABackend subclasses
+    # FlashInferMLAAttnBackend whose __init__ unconditionally constructs
+    # flashinfer wrappers (BatchMLAPagedAttentionWrapper,
+    # BatchPrefillWithRaggedKVCacheWrapper). flashinfer is unavailable on HCU
+    # and the availability-gated import at the module top never binds those
+    # names -> NameError at backend construction. The flashmla forward paths
+    # never plan()/run() the wrappers themselves (they call
+    # sgl_kernel.flash_mla directly, and EXTEND prefill is routed to another
+    # backend via --prefill-attention-backend), so construct-only stubs are
+    # sufficient: building them succeeds, any real use fails loudly.
+    try:
+        import sglang.srt.layers.attention.flashinfer_mla_backend as _fimla
+
+        if not hasattr(_fimla, "BatchMLAPagedAttentionWrapper"):
+
+            class _HcuFlashinferWrapperStub:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                def __getattr__(self, item):
+                    raise NotImplementedError(
+                        "hcu-adapter flashinfer: wrapper method "
+                        f"'{item}' reached — this attention path needs "
+                        "flashinfer, which is unavailable on HCU. Pair the "
+                        "flashmla decode backend with "
+                        "--prefill-attention-backend triton."
+                    )
+
+            _fimla.BatchMLAPagedAttentionWrapper = _HcuFlashinferWrapperStub
+            _fimla.BatchPrefillWithRaggedKVCacheWrapper = (
+                _HcuFlashinferWrapperStub
+            )
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: flashmla wrapper-stub bridge not installed",
+            exc_info=True,
+        )
+
     # Serve-time INT8 apply audit: HCU_DUMP_INT8=1 wraps
     # CompressedTensorsW8A8Int8.apply_weights and, for the first _N calls,
     # recomputes each output with plain torch (per-token-dequant x @

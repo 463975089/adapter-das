@@ -96,8 +96,12 @@ def flash_mla_with_kvcache(
     flat_k = k_cache.reshape(k_cache.shape[0], page_size, k_cache.shape[-1])
 
     # gather whole pages once per (request, page) pair: index row = page id,
-    # 2D-gather [bs, max_pages] page rows, then expand slots to token grid
-    page_ids = block_table.to(torch.int64)  # [bs, max_pages]
+    # 2D-gather [bs, max_pages] page rows, then expand slots to token grid.
+    # Rows past each request's length stay -1-padded by the backend's fill
+    # kernel (it only rewrites up to the current K len): clamp them to page 0
+    # so index_select stays in bounds — the seqlens mask below makes those
+    # columns' values irrelevant.
+    page_ids = block_table.to(torch.int64).clamp_min(0)  # [bs, max_pages]
     page_rows = torch.index_select(flat_k, 0, page_ids.reshape(-1)).reshape(
         bs, max_pages, page_size, d_qk
     )

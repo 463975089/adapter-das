@@ -15,6 +15,7 @@
 | 2026-10-10 | Qwen3-30B-A3B (MoE bf16) | 57G/1卡 | nmz26 dtk26041 官方 v0.5.21 | TP1, mem 0.85, triton attn, graph ON | ✅ | ✅ | ✅ SHORT 数学锚点+CHAT thinking 连贯 | ✅ LONG after-think 连贯 | MoE 128 专家独立验证；thinking 模型注意 max_new_tokens 给足 |
 | 2026-10-10 | Qwen3.8-27B-FP8 | 29G/1卡 | nmz26 dtk26041 官方 v0.5.21 | TP1, mem 0.85, triton attn, graph ON | ✅ | ✅ | ✅ CHAT=Paris | ✅ LONG after-think=Paris | **fp8 全链首验通过**：fp8_scaled_mm triton 后端 + capability HIP 桥（v0.5.21 Fp8ScaledMMOp AOT capacity=CUDA 拒 HIP）；长文注意 thinking 包裹（看 `</think>` 后文本） |
 | 2026-10-10 | Qwen3.6-27B-Channel-INT8-w8a8 | 55G/1卡 | nmz26 dtk26041 官方 v0.5.21 | TP1, triton attn, graph ON | ✅ | ✅ | ✅ SHORT 数学锚点 1397km；GSM8K-mini 11/12 | ✅ LONG 识别重复欺骗+总结 | **CT int-quantized 首验通过**：int8_scaled_mm triton 后端 + capability/int8 双桥；曾乱码——根因是 HCU_SLIMQUANT 的 safetensors shim 全局误伤（dequant→bf16 copy_ 进 int8 参数全零），已改为按 checkpoint format 门控（仅 slimquant_w4a8 格式生效） |
+| 2026-10-11 | DeepSeek-R1-L4（R1 截 4 层 fp8 MoE-MLA） | 17G/1卡 | nmz26 dtk26041 官方 v0.5.21 | TP1, **decode=flashmla** + prefill=triton 混合, page 64, graph OFF | ✅ | ✅ | ✅ 内核 6/6 单测（fp32 参考 diff≤4e-3）；e2e 对拍 triton 2/6 条 48 token 逐字全同，其余分叉点全部落在 bf16 平局（top2gap≤0.0625 且两侧候选对相同）；triton 自噪声 4e-4 为参照 | ✅ | **flashmla attention backend 首验通过**：emu 内核 + 三个新桥——wrapper 构造桩（FlashInferMLA 基类）、块表 -1 padding clamp、`--prefill-attention-backend triton` 混合（上游 FlashMLA prefill 本就依赖 flashinfer）。减层物料：163 shard 抽前 4 层+embed/lm_head 重打包单文件（config num_hidden_layers=4） |
 | 2026-10-10 | Qwen3.5-122B-A10B-AWQ | 77G/4卡 | nmz26 dtk26041 | TP4, trust-remote-code | 待验证 | | | | awq bits=4（Qwen3_5Moe arch）；AWQ 路径首验 |
 | 规划 | Qwen3.5-35B-A3B-W8A8 | 36G/1卡 | nmz26 | TP1 | 风险：config 无 quantization_config（裸 w8a8 打包，需 --quantization 显式或权重名自识别） | | | | 36G/14 分片无 quant 声明，格式待定 |
 
@@ -34,6 +35,8 @@
 | 现象 | 原因 | 解法 | 去向 |
 |---|---|---|---|
 | rust TreeCore 源码构建失败（Cargo） | 镜像无预编译 rust 扩展、cargo 半残；v0.5.21 默认后端=rust | `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python` | 官方自带 python 后端回退，低频写路径够用；确认后可进 hcu_env 自动规则 |
+| `--attention-backend flashmla` 构造即 NameError（BatchPrefillWithRaggedKVCacheWrapper） | FlashMLABackend 继承 FlashInferMLA 基类，`__init__` 无条件构造 flashinfer wrapper，而 flashinfer 在 HCU 不可得（import 被 is_flashinfer_available() 门控，名字从未绑定） | sitecustomize 构造桩桥（可构造、任何 plan/run 调用大声报错） | 已内置 adapter；wrapper 实际不被 flashmla 前向使用 |
+| flashmla 的 EXTEND prefill 依赖 flashinfer | 上游设计：FlashMLA 内核只管 decode/verify，prefill 走 flashinfer paged prefill | `--prefill-attention-backend triton --decode-attention-backend flashmla` 混合 | v0.5.21 原生支持混合后端（实验特性警告可忽略） |
 
 ## 验证口径
 
