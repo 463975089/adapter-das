@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HCU Adapter 配置台</title>
+<style>
+  :root{
+    --ink:#1c2333; --sub:#5a6478; --line:#d7dce6; --bg:#f5f7fb;
+    --mine:#e8f0fe; --mineline:#7d9bfd; --mineink:#27408b;
+    --ops:#eafaf1; --opsline:#79c998; --opsink:#1e5c3f;
+    --warn:#fff6e8; --warnline:#e8b968; --warnink:#7a5310;
+    --gate:#e8f6f8; --gateline:#5eb6c8; --gateink:#155e6c;
+    --bad:#fdecec; --badline:#e08585; --badink:#8a2222;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 24px 44px;font-family:"PingFang SC","Microsoft YaHei",
+    "Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--bg);line-height:1.5}
+  .page{max-width:1280px;margin:0 auto}
+  header h1{font-size:24px;margin:0 0 4px}
+  header .tag{color:var(--sub);font-size:13.5px;margin:0}
+  header .snap{margin-top:10px;border:1px solid var(--mineline);background:var(--mine);
+    color:var(--mineink);border-radius:8px;padding:7px 12px;font-size:13px}
+  h2{font-size:16.5px;margin:30px 0 10px;border-left:4px solid var(--mineline);padding-left:10px}
+  h2 small{font-weight:400;color:var(--sub);font-size:12.5px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  @media(max-width:1020px){.cols{grid-template-columns:1fr}}
+  .card{border:1.5px solid var(--line);background:#fff;border-radius:10px;padding:13px 15px}
+  .card h3{margin:0 0 4px;font-size:14.5px}
+  .card .desc{color:var(--sub);font-size:12.5px;margin:0 0 10px}
+
+  /* op rows */
+  .op{display:grid;grid-template-columns:150px 1fr 178px;gap:8px;align-items:center;
+    padding:7px 0;border-top:1px dashed var(--line);font-size:13px}
+  .op:first-of-type{border-top:none}
+  .op .nm{font-weight:600}
+  .op .sm{color:var(--sub);font-size:12px}
+  select,input[type=text],input[type=number],textarea{font:inherit;font-size:13px;
+    border:1px solid var(--line);border-radius:6px;padding:4px 7px;background:#fff;
+    color:var(--ink);max-width:100%}
+  textarea{width:100%}
+  .badge{display:inline-block;border-radius:5px;padding:0 6px;font-size:11px;
+    border:1px solid;vertical-align:1px;margin-left:6px}
+  .b-prod{color:var(--opsink);border-color:#9ed3b2;background:var(--ops)}
+  .b-vali{color:var(--mineink);border-color:#a9bef5;background:var(--mine)}
+  .b-cand{color:var(--warnink);border-color:#ecd3a4;background:var(--warn)}
+  .b-plan{color:var(--sub);border-color:#c4cbd8;background:#f1f3f7;text-decoration:line-through}
+  .note{color:var(--sub);font-size:11.5px}
+
+  /* yaml / cmd preview */
+  pre{background:#101623;color:#dce4f5;border-radius:8px;padding:11px 13px;font-size:12px;
+    line-height:1.55;overflow:auto;max-height:340px;margin:8px 0 0;white-space:pre;
+    font-family:Consolas,"Cascadia Mono",monospace}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+  button{font:inherit;font-size:13px;border-radius:7px;border:1px solid var(--mineline);
+    background:var(--mine);color:var(--mineink);padding:5px 14px;cursor:pointer}
+  button:hover{background:#dbe7fd}
+  button.ghost{background:#fff;border-color:var(--line);color:var(--sub)}
+  .ok-flash{outline:2px solid var(--opsline)}
+
+  /* parallel form */
+  .frm{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:8px 14px;font-size:13px}
+  .frm label{display:block;color:var(--sub);font-size:11.5px;margin-bottom:2px}
+  .frm .fld input,.frm .fld select{width:100%}
+  .chk{display:flex;align-items:center;gap:6px;padding-top:14px}
+  .chk input{transform:scale(1.15)}
+  .chips{display:flex;flex-direction:column;gap:5px;margin-top:9px}
+  .chip{border-radius:7px;padding:5px 10px;font-size:12.5px;border:1px solid}
+  .c-info{border-color:#a9d5de;background:var(--gate);color:var(--gateink)}
+  .c-warn{border-color:#ecd3a4;background:var(--warn);color:var(--warnink)}
+  .c-bad{border-color:#e0a3a3;background:var(--bad);color:var(--badink)}
+  .c-ok{border-color:#9ed3b2;background:var(--ops);color:var(--opsink)}
+
+  /* vram */
+  table{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:8px}
+  th,td{border-bottom:1px solid var(--line);padding:4px 7px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--sub);font-weight:600;font-size:11.5px}
+  .bar{height:16px;border-radius:8px;background:#eef1f6;border:1px solid var(--line);
+    overflow:hidden;margin-top:10px}
+  .bar>div{height:100%;background:linear-gradient(90deg,#7d9bfd,#5eb6c8)}
+  .bar-lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-top:3px}
+  .big{font-size:21px;font-weight:700}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-top:8px;font-size:13px}
+  details{margin-top:10px;font-size:12.5px;color:var(--sub)}
+  details summary{cursor:pointer;color:var(--mineink)}
+  footer{margin-top:34px;color:var(--sub);font-size:12.5px;border-top:1px solid var(--line);padding-top:10px}
+  code{background:var(--mine);border-radius:4px;padding:0 4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>HCU Adapter 配置台</h1>
+  <p class="tag">算子后端可视化选择 → 导出 <code>hcu_adapter.yaml</code> ／ 并行方案 → cookbook 启动命令 ／ 模型 config.json → 每卡权重显存评估。
+    纯离线单文件，数据不出本机。</p>
+  <div class="snap">算子目录 = <b>BACKEND_CATALOG</b> 快照（2026-10-12，唯一事实源 <code>sgl_kernel/_adapters/hcu_config.py</code>，目录变更需同步本页）；
+    启动配方 = <b>docs/cookbook.md</b> 已验证集；模型预设 = <b>docs/models.md</b>。导出文件用 <code>python tools/hcu_config_wizard.py --check</code> 校验。</div>
+</header>
+
+<!-- ================= A. adapter ops ================= -->
+<h2>① Adapter 算子后端 <small>——只导出非默认项（与 wizard 同语义；默认 = production 档）</small></h2>
+<div class="card">
+  <div id="oprows"></div>
+  <div class="btnrow">
+    <button id="btn-yaml-copy">复制 YAML</button>
+    <button id="btn-yaml-dl">下载 hcu_adapter.yaml</button>
+    <button class="ghost" id="btn-yaml-reset">全部恢复默认</button>
+  </div>
+  <pre id="yaml-pre"></pre>
+  <div class="note" id="yaml-note" style="margin-top:6px"></div>
+</div>
+
+<div class="cols">
+<!-- ================= B. parallel -> launch cmd ================= -->
+<div>
+<h2>② 并行方案 → 启动命令 <small>——从 cookbook 已验证配方生成</small></h2>
+<div class="card">
+  <div class="frm" id="pform">
+    <div class="fld"><label>模型路径 --model-path</label><input type="text" id="f-model" value="/root/models/Qwen3-0.6B"></div>
+    <div class="fld"><label>端口 --port</label><input type="number" id="f-port" value="30000"></div>
+    <div class="fld"><label>卡（HIP/CUDA_VISIBLE_DEVICES）</label><input type="text" id="f-gpus" value="6"></div>
+    <div class="fld"><label>TP --tp-size</label><input type="number" id="f-tp" value="1" min="1"></div>
+    <div class="fld"><label>attention 后端（恒显式！）</label>
+      <select id="f-attn">
+        <option value="triton">triton（通用）</option>
+        <option value="fa3">fa3（adapter emu，graph 安全）</option>
+        <option value="mla-mix">混合：prefill triton + decode flashmla（MLA）</option>
+      </select></div>
+    <div class="fld"><label>量化入口 --quantization</label>
+      <select id="f-quant">
+        <option value="">自动（bf16/fp8/int8 checkpoint 识别）</option>
+        <option value="moe_wna16">moe_wna16（AWQ 唯一正确入口）</option>
+      </select></div>
+    <div class="fld"><label>KV cache dtype</label>
+      <select id="f-kv"><option value="">默认 bf16</option><option value="fp8_e4m3">fp8_e4m3</option></select></div>
+    <div class="fld"><label>--mem-fraction-static</label><input type="number" id="f-mem" value="0.85" step="0.05" min="0.1" max="0.95"></div>
+    <div class="fld"><label>--page-size</label><input type="number" id="f-page" value="1" min="1"></div>
+    <div class="fld chk"><input type="checkbox" id="f-graph" checked><span>cuda graph（TP&gt;1 依赖 adapter custom AR，默认可用）</span></div>
+    <div class="fld chk"><input type="checkbox" id="f-dp"><span>dp-attention（--enable-dp-attention）</span></div>
+    <div class="fld"><label>DP --dp-size（须整除 TP）</label><input type="number" id="f-dps" value="2" min="1"></div>
+    <div class="fld chk"><input type="checkbox" id="f-ep"><span>EP（DeepEP，仅 bf16 MoE）</span></div>
+    <div class="fld"><label>--ep-size（须整除 TP）</label><input type="number" id="f-eps" value="2" min="1"></div>
+    <div class="fld"><label>--deepep-mode</label>
+      <select id="f-deepep"><option value="low_latency">low_latency</option><option value="auto">auto</option><option value="normal">normal</option></select></div>
+    <div class="fld chk"><input type="checkbox" id="f-cp"><span>prefill CP（HCU_PREFILL_CP=1）</span></div>
+    <div class="fld"><label>--attn-cp-size（≤TP，配 fa3）</label><input type="number" id="f-cps" value="2" min="1"></div>
+    <div class="fld chk"><input type="checkbox" id="f-mtp"><span>MTP 投机解码（EAGLE）</span></div>
+    <div class="fld"><label>draft 路径（同主模型可留空）</label><input type="text" id="f-draft" placeholder="同主模型路径"></div>
+    <div class="fld chk"><input type="checkbox" id="f-hicache"><span>hicache 分层 KV（dense 已验；GDN 暂缓）</span></div>
+    <div class="fld chk"><input type="checkbox" id="f-trc" checked><span>--trust-remote-code</span></div>
+    <div class="fld chk"><input type="checkbox" id="f-pd"><span>PD 分离（生成 prefill/decode/LB 三段命令）</span></div>
+    <div class="fld"><label>PD 传输</label>
+      <select id="f-pdt"><option value="mooncake_tcp">mooncake_tcp（节点内）</option><option value="mooncake">mooncake（RDMA）</option></select></div>
+    <div class="fld"><label>PD bootstrap 端口（两端一致）</label><input type="number" id="f-pdb" value="30590"></div>
+  </div>
+  <div class="chips" id="pwarn"></div>
+  <div class="btnrow"><button id="btn-cmd-copy">复制命令</button></div>
+  <pre id="cmd-pre"></pre>
+</div>
+</div>
+
+<!-- ================= C. vram estimator ================= -->
+<div>
+<h2>③ 每卡权重显存评估 <small>——粘贴 config.json 或选预设；并行参数取自 ②</small></h2>
+<div class="card">
+  <div class="frm">
+    <div class="fld"><label>预设（docs/models.md 已验模型）</label>
+      <select id="v-preset"><option value="">— 选预设或下方粘贴 —</option></select></div>
+    <div class="fld"><label>单卡显存（GiB）</label>
+      <select id="v-mem">
+        <option value="64">64（BW200 旧记录）</option>
+        <option value="96">96</option>
+        <option value="144" selected>144（nmz26 常态）</option>
+        <option value="154">154（nmz26 GPU7 大卡）</option>
+      </select></div>
+  </div>
+  <details style="margin-top:8px"><summary>粘贴模型 config.json（或选择本地文件）</summary>
+    <div style="margin-top:6px"><input type="file" id="v-file" accept=".json"></div>
+    <textarea id="v-json" rows="6" placeholder='{"hidden_size": 2048, "num_hidden_layers": 48, ...}' style="margin-top:6px"></textarea>
+    <div class="btnrow"><button class="ghost" id="v-parse">解析并评估</button></div>
+  </details>
+  <div id="v-dims"></div>
+  <div id="v-res"></div>
+  <details><summary>估算口径（假设与公式）</summary>
+    <ul style="margin:6px 0 0;padding-left:18px">
+      <li>参数量：GQA（q/kv/o）或 MLA（q_a 复制，q_b/kv_b/o 按 TP 切）；dense FFN 3·h·inter；MoE = E·3·h·moe_inter（EP≤TP 时每卡总量 = E·3·h·mi/TP，tp=ep 即整专家分布；first_k_dense_replace 前层按 dense 算）；shared expert 按 TP 切。tie_word_embeddings 决定 lm_head 是否单份。</li>
+      <li>字节/参数：bf16/fp16=2；fp8≈1.05（含 scale/元数据）；int8≈1.05；int4(AWQ/GPTQ/slimquant, g128)≈0.5625；embedding 按底模 dtype（量化模型的 embed 常驻高精度）。</li>
+      <li>切分：embedding/lm_head/dense FFN/MoE 按 TP；attention 按 TP（开 dp-attention 时按 TP/DP——attention 复制 DP 份）；CP 不切权重（只切序列/KV）。</li>
+      <li><b>不含</b>：KV cache、激活、CUDA graph 池、NCCL/通信 buffer；DeepEP low_latency 的 HIPC 运行时双份专家权重（②里已提示 mem 0.60）；MTP draft 权重（约 1 层 + lm_head）。</li>
+      <li>GDN/线性注意力（Qwen3.5/3.6 混合）结构未建模——解析到时给出警告，可用"其他/层"输入手补。</li>
+    </ul>
+  </details>
+</div>
+</div>
+</div>
+
+<footer>
+  配套：数据契约 docs/config.md · 环境变量 docs/env-vars.md · 配方出处 docs/cookbook.md ·
+  CLI 向导 tools/hcu_config_wizard.py · 机制总览 docs/architecture.md（配图 architecture.html）。
+  本页为静态快照工具，不联网、不上传。
+</footer>
+
+</div>
+
+<script>
+/*==PURE-BEGIN*/
+// ---- BACKEND_CATALOG snapshot (hcu_config.py, 2026-10-12). default = first prod entry.
+const CATALOG = {
+  silu_and_mul: {var:"HCU_SILU_MUL_IMPL", summary:"gated activation: silu(x[:,:d])*x[:,d:]",
+    backends:{triton:{s:"production",n:"默认（auto）；fp32 累加"},
+              lightop:{s:"validated",n:"lightop.fuse_silu_and_mul (input,output,mask_m,expect_m)"},
+              torch:{s:"production",n:"参考路径，eager 调试"}}},
+  rms_norm: {var:"HCU_RMS_NORM_IMPL", summary:"RMSNorm；fused_add/gemma 变体恒 triton",
+    backends:{triton:{s:"production",n:"默认"},
+              aiter:{s:"candidate",n:"aiter.rmsnorm_forward(x,w,eps,training)->(out,..)；仅 plain"},
+              torch:{s:"production",n:"参考路径"}}},
+  allreduce: {summary:"TP all-reduce（graph capture 路径）",
+    backends:{custom:{s:"production",n:"adapter host-shm custom AR；<512KB 快 NCCL ~2×"},
+              aiter:{s:"validated",n:"aiter.dist GraphSafe（15/15 图重放）"},
+              nccl:{s:"production",n:"兜底；多卡 graph 场景不走"}}},
+  paged_mqa_logits: {summary:"DSA paged MQA logits",
+    backends:{emu:{s:"production",n:"torch 仿真（gfx93* 默认开）"},
+              aiter:{s:"planned",n:"aiter.paged_mqa_logits；门禁未做"},
+              lightop:{s:"planned",n:"lightop.attention.paged_mqa_logits；门禁未做"}}},
+  rotary_embedding: {summary:"RoPE NeoX triton；GPT-J 交错=torch",
+    backends:{triton:{s:"production",n:"无需开关"},
+              aiter:{s:"planned",n:"rope_fwd/cached/thd 族"},
+              lightop:{s:"planned",n:"rotary_embedding_fuse 族"}}},
+  moe_gate: {summary:"topk_softmax/topk_sigmoid/moe_fused_gate（契约=torch 基线）",
+    backends:{triton:{s:"production",n:"无需开关"},
+              aiter:{s:"planned",n:"moe_fused_gate_sqrtsoftplus_v41_hcu 等"},
+              lightop:{s:"planned",n:"fast_topk_transform_* 族"}}},
+  fused_moe: {var:"HCU_FUSED_MOE_IMPL", summary:"w8a8 fused MoE 专家（标准 dispatch；deepep runner 不受影响）",
+    backends:{triton:{s:"production",n:"stock 内核；默认回退"},
+              aiter:{s:"validated",n:"DTK aiter_moe；blockwise→ASM 调优表，channelwise→moe_c；未列形状自动回退 triton"}}},
+  per_token_quant: {summary:"per-token fp8/int8 动态量化",
+    backends:{torch:{s:"production",n:"当前路径"},
+              aiter:{s:"planned",n:"per_token_quant_hip/_triton"},
+              lightop:{s:"planned",n:"per-token quant 族"}}},
+};
+const OP_DEFAULT = {silu_and_mul:"triton", rms_norm:"triton", allreduce:"custom",
+  paged_mqa_logits:"emu", rotary_embedding:"triton", moe_gate:"triton",
+  fused_moe:"triton", per_token_quant:"torch"};
+const OP_ENV = {allreduce:{custom:{HCU_TRITON_AR:"1"}, aiter:{HCU_TRITON_AR:"0",HCU_AITER_AR:"1"},
+                             nccl:{HCU_TRITON_AR:"0",HCU_AITER_AR:"0"}},
+                paged_mqa_logits:{emu:{HCU_MQA_EMU:"1"}}};
+
+function buildYaml(sel){ // sel: {op: backend} non-default only
+  const lines = ["# HCU adapter backend selection -- generated by tools/hcu_config_ui.html",
+    "# 放到 sitecustomize.py 同级或 $HCU_CONFIG 指向的路径；校验：",
+    "#   python tools/hcu_config_wizard.py --check hcu_adapter.yaml",
+    "version: 1","ops:"];
+  const picked = Object.keys(sel).filter(op => sel[op] !== OP_DEFAULT[op]);
+  if(!picked.length){
+    lines.push("  {}   # 全部默认（production 档）——此文件可省略");
+  } else {
+    for(const op of Object.keys(CATALOG)){
+      if(sel[op] !== OP_DEFAULT[op]){
+        const b = CATALOG[op].backends[sel[op]];
+        lines.push("  " + op + ": " + sel[op] + "    # " + b.s + " — " + b.n);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+// ---- launch command builder (cookbook recipes, sglang v0.5.21 + adapter) ----
+function buildCommand(f){ // f: form state {model,port,gpus,tp,attn,quant,kv,mem,page,graph,dp,dps,ep,eps,deepep,cp,cps,mtp,draft,hicache,trc,pd,pdt,pdb}
+  const warn = [];
+  const envs = ["SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python  # 恒带：rust TreeCore 在 HCU 无预编译扩展"];
+  const gpuEnv = (f.gpus||"").trim();
+  const vis = gpuEnv ? ("HIP_VISIBLE_DEVICES=" + gpuEnv + " CUDA_VISIBLE_DEVICES=" + gpuEnv) : "";
+  let flags = [];
+  let wrapEnv = [];
+  const P = f.port || 30000;
+
+  // attention backend (mandatory, explicit)
+  if(f.attn === "mla-mix"){
+    flags.push("--decode-attention-backend flashmla --prefill-attention-backend triton");
+    if((+f.page||1) < 64) { f.page = 64; warn.push(["warn","flashmla 混合配方要求 --page-size 64（已自动改写）"]); }
+  } else {
+    flags.push("--attention-backend " + f.attn);
+  }
+  if(f.trc) flags.push("--trust-remote-code");
+  const tp = Math.max(1, +f.tp||1);
+  if(tp>1) flags.push("--tp-size " + tp);
+  if(f.quant) flags.push("--quantization " + f.quant);
+  if(f.kv) flags.push("--kv-cache-dtype " + f.kv);
+  flags.push("--mem-fraction-static " + (+f.mem||0.85));
+  if((+f.page||1) > 1) flags.push("--page-size " + f.page);
+
+  // dp attention
+  let dps = 1;
+  if(f.dp){
+    dps = Math.max(1, +f.dps||2);
+    if(tp % dps) warn.push(["bad","dp-size " + dps + " 不整除 tp-size " + tp + "（sglang 要求 dp | tp）"]);
+    else if(dps>1){
+      flags.push("--dp-size " + dps + " --enable-dp-attention");
+      warn.push(["ok","dp-attention 已验证配方：TP" + tp + "+DP" + dps + " graph ON 零 adapter 改动（models.md 30198）"]);
+    } else warn.push(["warn","dp-attention 需要 dp-size ≥ 2"]);
+  }
+  // EP
+  if(f.ep){
+    const eps = Math.max(1, +f.eps||2);
+    if(![1,2,4,8].includes(eps) || eps>tp) { warn.push(["bad","ep-size " + eps + " 非法：须 ≤ tp-size 且 2 的幂"]); }
+    else if(tp % eps) warn.push(["bad","ep-size " + eps + " 不整除 tp-size " + tp]);
+    else {
+      flags.push("--ep-size " + eps + " --moe-a2a-backend deepep --deepep-mode " + f.deepep +
+                 " --moe-runner-backend deep_gemm");
+      wrapEnv.push("HCU_DEEPGEMM_BRIDGE=1 SGLANG_DEEPEP_BF16_DISPATCH=1");
+      flags.push("--disable-cuda-graph");   // DeepEP 三模式验证配方均为 eager（已自动加）
+      flags.push("--disable-radix-cache");
+      warn.push(["info","DeepEP 全模式（LL/auto/normal）实测为 eager + mem 0.60：HIPC 会在运行时双份缓存专家权重；--disable-radix-cache 是 low_latency buffer 的上游硬要求（两项已自动加）"]);
+      if(+f.mem > 0.7) { f.mem = 0.60; flags = flags.map(x=>x.startsWith("--mem-fraction")?"--mem-fraction-static 0.60":x);
+        warn.push(["warn","EP 配方 mem-fraction 已改写为 0.60（HIPC 双份权重余量，cookbook §3）"]); }
+      warn.push(["warn","EP 仅 bf16 MoE 已验证；FP8 DeepEP 仍锁（DTK a_scale row/tensor-wise ≠ sglang 128-block）"]);
+    }
+  }
+  // CP
+  if(f.cp){
+    const cps = Math.max(2, +f.cps||2);
+    if(cps > tp || tp % cps) warn.push(["bad","attn-cp-size " + cps + " 须整除 tp-size " + tp]);
+    else {
+      flags.push("--enable-prefill-cp --cp-strategy zigzag --attn-cp-size " + cps);
+      wrapEnv.push("HCU_PREFILL_CP=1");
+      warn.push(["ok","prefill CP 已验证：zigzag 输出对齐 TP 基线（891cba2）；建议 fa3 后端"]);
+      if(f.attn!=="fa3") warn.push(["warn","CP 验证配方用的是 fa3；triton 未验"]);
+    }
+  }
+  // MTP
+  if(f.mtp){
+    const d = (f.draft||"").trim();
+    flags.push("--speculative-algorithm EAGLE --speculative-num-steps 3 " +
+               "--speculative-eagle-topk 1 --speculative-num-draft-tokens 4" +
+               (d ? (" --speculative-draft-model-path " + d) : ""));
+    warn.push(["ok","MTP 已验证：EAGLE（NEXTN 是保留别名）；draft 与主模型同路径零重打包；Qwen3.5 系 checkpoint 自带 mtp.* 层"]);
+    if(f.attn!=="fa3") warn.push(["warn","MTP 验证配方用 fa3（含 qv 分支）；建议同选"]);
+  }
+  if(f.hicache){
+    flags.push("--enable-hierarchical-cache");
+    warn.push(["warn","hicache：dense 模型全通；GDN 混合模型 MAMBA 宿主状态迁移漂移待修，生产 GDN 暂不开"]);
+  }
+  if(!f.graph && !f.ep) flags.push("--disable-cuda-graph");
+
+  flags.push("--host 0.0.0.0 --port " + P);
+  let cmd;
+  if(f.pd){
+    // PD disaggregation: prefill/decode/LB three blocks (cookbook §3)
+    const ncclP = P + 390, ncclD = P + 391;
+    const pdCommon = "--disaggregation-transfer-backend " + f.pdt +
+      " --disaggregation-bootstrap-port " + (f.pdb||30590);
+    const pageFlag = " --page-size " + (f.page>1?f.page:64);
+    const g0 = gpuEnv ? gpuEnv.split(",")[0].trim() : "";
+    const g1 = gpuEnv ? (gpuEnv.split(",")[1] || gpuEnv.split(",")[0]).trim() : "";
+    const pf = ["--model-path " + f.model, f.trc?"--trust-remote-code":"", "--attention-backend triton",
+      "--disaggregation-mode prefill", pdCommon, "--nccl-port " + ncclP, "--tp 1", pageFlag,
+      "--host 0.0.0.0 --port " + (P+100)].filter(Boolean).join(" \\\n  ");
+    const df = ["--model-path " + f.model, f.trc?"--trust-remote-code":"", "--attention-backend triton",
+      "--disaggregation-mode decode", pdCommon, "--nccl-port " + ncclD, "--tp 1", pageFlag,
+      "--host 0.0.0.0 --port " + (P+101)].filter(Boolean).join(" \\\n  ");
+    const mcb = f.pdt==="mooncake_tcp" ? "MC_TCP_ENABLE_CONNECTION_POOL=true " : "";
+    cmd = "export PYTHONPATH=/root/hcu_t2:/root/sglang-v0521-src/python\n" +
+      "export " + envs[0] + "\n\n" +
+      "# 1) prefill 端（GPU " + g0 + "）\n" +
+      (g0 ? "CUDA_VISIBLE_DEVICES=" + g0 + " " : "") + mcb +
+      "python -m sglang.launch_server \\\n  " + pf + "\n\n" +
+      "# 2) decode 端（GPU " + g1 + "）\n" +
+      (g1 ? "CUDA_VISIBLE_DEVICES=" + g1 + " " : "") + mcb +
+      "python -m sglang.launch_server \\\n  " + df + "\n\n" +
+      "# 3) mini-LB（CPU；客户端打 " + P + "）\npython -m sglang_router.launch_router --pd-disaggregation --mini-lb \\\n" +
+      "  --prefill http://127.0.0.1:" + (P+100) + " --decode http://127.0.0.1:" + (P+101) + " \\\n  --host 0.0.0.0 --port " + P + "\n\n" +
+      "# ⚠ 勿加 --disaggregation-enable-kv-checksum（并发≥2 必误报）";
+    if(f.pdt==="mooncake")
+      warn.push(["warn","RDMA 版须 docker exec --privileged 启动两端 + 设备/cgroup/memlock 三步注入（cookbook §3 注入配方）"]);
+    warn.push(["info","PD 配方按 TP1×2 角色 + page 64 生成（已验证形态）；并行特性（EP/CP/MTP/DP）与 PD 的组合未验证，已忽略"]);
+  } else {
+    const lead = (wrapEnv.length? wrapEnv.join(" ") + " " : "");
+    cmd = "export PYTHONPATH=/root/hcu_t2:/root/sglang-v0521-src/python  # adapter 优先 + 官方 v0.5.21 源码\n" +
+      "export " + envs[0] + "\n" +
+      (vis ? "export " + vis + "\n" : "") +
+      "\n" + lead + "python -m sglang.launch_server \\\n  --model-path " + f.model + " \\\n  " +
+      flags.join(" \\\n  ");
+  }
+  return {cmd, warn};
+}
+
+// ---- VRAM estimator --------------------------------------------------------
+function classifyQuant(cfg){
+  const q = cfg.quantization_config || {};
+  const m = (q.quant_method || "") + " " + (q.format || "") + " " + (q.checkpoint_format || "");
+  if(cfg.dtype && String(cfg.dtype).includes("float32")) return {b:4, name:"fp32"};
+  if(/fp8/.test(m)) return {b:1.05, name:"fp8(+scale)"};
+  if(/slimquant|int4|awq|gptq|w4/.test(m)) return {b:0.5625, name:"int4(g128, 含 scale/zp)"};
+  if(/int8|w8/.test(m)) return {b:1.05, name:"int8"};
+  const dt = cfg.dtype || cfg.torch_dtype || "bfloat16";
+  return {b:2, name: String(dt).replace("bfloat","bf").replace("float","fp")};
+}
+function estimate(cfg, par){ // par: {tp, dp(0/1 flag->use dps), dps, ep, mtp}
+  const h = cfg.hidden_size, L = cfg.num_hidden_layers || 0;
+  const vocab = cfg.vocab_size || 0;
+  const tie = !!cfg.tie_word_embeddings;
+  const heads = cfg.num_attention_heads || 0;
+  const kvh = cfg.num_key_value_heads || heads;
+  const hd = cfg.head_dim || (heads ? h/heads : 0);
+  const mla = cfg.kv_lora_rank != null;
+  const tp = Math.max(1, par.tp||1);
+  const dpOn = !!par.dp, dps = dpOn ? Math.max(1, par.dps||1) : 1;
+  const attnTp = dpOn ? Math.max(1, tp/dps) : tp;   // dp-attention replicates attn
+  const q = classifyQuant(cfg);
+  const eb = 2, wb = q.b;                            // embedding stays base-dtype
+
+  let attnFull, attnRepl;   // per-layer attention params: sharded part / replicated part
+  if(mla){
+    const ql = cfg.q_lora_rank || cfg.kv_lora_rank, kl = cfg.kv_lora_rank;
+    const rope = cfg.qk_rope_head_dim || 64, nope = cfg.qk_nope_head_dim || 128, vh = cfg.v_head_dim || nope;
+    attnRepl = h*ql + h*(kl+rope);                                  // q_a + kv_a replicated
+    attnFull = ql*heads*(nope+rope) + kl*heads*(nope+vh) + heads*vh*h; // q_b + kv_b + o (sharded)
+  } else {
+    attnRepl = 0;
+    attnFull = h*heads*hd + 2*h*kvh*hd + heads*hd*h;
+  }
+  const inter = cfg.intermediate_size || 0;
+  const mi = cfg.moe_intermediate_size || 0;
+  const E = cfg.num_experts || cfg.n_routed_experts || 0;
+  const sharedI = cfg.shared_expert_intermediate_size || 0;
+  const densePrefix = Math.min(cfg.first_k_dense_replace || 0, L);
+  const step = cfg.decoder_sparse_step || (E?1:0);
+  const rest = L - densePrefix;
+  const nMoe = E ? (step > 1 ? Math.floor(rest/step) : rest) : 0;   // sparse_step>1 为近似
+  const nDenseFfn = E ? (rest - nMoe + densePrefix) : L;   // dense-FFN layers
+  const nMoeL = Math.max(0, nMoe);
+  const sharedPerLayer = sharedI ? 3*h*sharedI : 0;
+  const moePerModel = 3*h*mi*E;
+
+  // unknown structure warning (GDN / mamba / linear attn)
+  const lin = ["linear_attn_config","mamba","ssm","linear_attention","mamba_num_heads"]
+    .filter(k => cfg[k] != null);
+  const otherPerLayer = +(cfg.__other_per_layer || 0);
+
+  const embedParams = vocab*h, lmParams = tie?0:vocab*h;
+  const total = embedParams + lmParams + L*(attnFull+attnRepl) +
+    nDenseFfn*3*h*inter + nMoeL*(moePerModel + sharedPerLayer) + L*otherPerLayer;
+
+  const GiB = b => b/2**30;
+  const perCard = {
+    embed:  GiB(embedParams*eb/tp),
+    lm:     GiB(lmParams*eb/tp),
+    attn:   GiB(L*(attnFull/attnTp + attnRepl)*wb),
+    dense:  GiB(nDenseFfn*3*h*inter*wb/tp),
+    moe:    GiB(nMoeL*moePerModel*wb/tp + nMoeL*sharedPerLayer*wb/tp),
+    other:  GiB(L*otherPerLayer*wb/tp),
+  };
+  const cardBytes = Object.values(perCard).reduce((a,b)=>a+b,0);
+  return {h,L,vocab,tie,heads,kvh,hd,mla,E,mi,inter,sharedI,densePrefix,nDenseFfn,nMoeL,
+    attnFull,attnRepl,q,lin,otherPerLayer,total, perCard, cardGiB:cardBytes,
+    totalGiB: GiB(total*wb), attnTp, tp, ep:par.ep?Math.max(1,par.eps||1):1,
+    mtpOn: !!par.mtp};
+}
+
+// ---- model presets (docs/models.md; dims verified against public configs) ----
+const PRESETS = {
+  "Qwen3-0.6B (bf16, dense)": {fp16_gdn:false, cfg:{hidden_size:1024,num_hidden_layers:28,
+    intermediate_size:3072,num_attention_heads:16,num_key_value_heads:8,head_dim:128,
+    vocab_size:151936,tie_word_embeddings:true,dtype:"bfloat16"}},
+  "Qwen3-4B (bf16, dense)": {fp16_gdn:false, cfg:{hidden_size:2560,num_hidden_layers:36,
+    intermediate_size:9728,num_attention_heads:32,num_key_value_heads:8,head_dim:128,
+    vocab_size:151936,tie_word_embeddings:true,dtype:"bfloat16"}},
+  "Qwen3-30B-A3B (bf16, MoE 128e8)": {fp16_gdn:false, cfg:{hidden_size:2048,num_hidden_layers:48,
+    moe_intermediate_size:768,num_experts:128,num_experts_per_tok:8,
+    num_attention_heads:32,num_key_value_heads:4,head_dim:128,
+    vocab_size:151936,tie_word_embeddings:true,dtype:"bfloat16"}},
+  "DeepSeek-R1 (MLA+MoE, fp8 全量 671B)": {fp16_gdn:false, cfg:{hidden_size:7168,num_hidden_layers:61,
+    first_k_dense_replace:3, moe_intermediate_size:2048,num_experts:256,num_experts_per_tok:8,
+    num_attention_heads:128,kv_lora_rank:512,q_lora_rank:1536,qk_rope_head_dim:64,
+    qk_nope_head_dim:128,v_head_dim:128,vocab_size:129280,tie_word_embeddings:true,
+    quantization_config:{quant_method:"fp8",weight_block_size:[128,128]}}},
+};
+/*==PURE-END*/
+
+// ================= DOM wiring =================
+const $ = id => document.getElementById(id);
+
+// ---- A. ops panel ----
+const sel = {};
+function renderOps(){
+  const box = $("oprows"); box.innerHTML = "";
+  for(const [op,spec] of Object.entries(CATALOG)){
+    const row = document.createElement("div"); row.className = "op";
+    const d = document.createElement("div");
+    d.innerHTML = '<div class="nm">'+op+'</div><div class="sm">'+spec.summary+'</div>';
+    const s = document.createElement("select");
+    for(const [b,info] of Object.entries(spec.backends)){
+      const o = document.createElement("option");
+      o.value = b; o.textContent = b + " (" + info.s + (info.s==="planned"?"，未接线":"") + ")";
+      if(info.s==="planned") o.disabled = true;
+      s.appendChild(o);
+    }
+    s.value = sel[op] = (sel[op] || OP_DEFAULT[op]);
+    s.onchange = () => { sel[op] = s.value; refreshYaml(); };
+    const nt = document.createElement("div"); nt.className = "note";
+    row.append(d, s, nt); box.appendChild(row);
+    const upd = () => nt.textContent = spec.backends[s.value].n + "（env 映射：" +
+      (spec.var || (OP_ENV[op] ? JSON.stringify(OP_ENV[op][s.value]) : "无（无运行时开关）")) + "）";
+    s.addEventListener("change", upd); upd();
+  }
+}
+function refreshYaml(){
+  const y = buildYaml(sel);
+  $("yaml-pre").textContent = y;
+  const picked = Object.keys(sel).filter(op=>sel[op]!==OP_DEFAULT[op]);
+  $("yaml-note").textContent = picked.length
+    ? "非默认 " + picked.length + " 项（" + picked.join(", ") + "）。放到 $HCU_CONFIG 指向路径或 adapter 根目录即生效；env 显式设置仍可压制文件（调试层）。"
+    : "全部默认——正确部署零配置零环境变量；此文件可省略（导出仅含注释骨架）。";
+}
+$("btn-yaml-copy").onclick = () => copyText($("yaml-pre").textContent, $("btn-yaml-copy"));
+$("btn-yaml-reset").onclick = () => { for(const op of Object.keys(OP_DEFAULT)) sel[op]=OP_DEFAULT[op]; renderOps(); refreshYaml(); };
+$("btn-yaml-dl").onclick = () => download("hcu_adapter.yaml", $("yaml-pre").textContent);
+
+// ---- B. parallel panel ----
+function formState(){
+  return {model:$("f-model").value.trim(), port:+$("f-port").value||30000, gpus:$("f-gpus").value,
+    tp:+$("f-tp").value||1, attn:$("f-attn").value, quant:$("f-quant").value, kv:$("f-kv").value,
+    mem:+$("f-mem").value||0.85, page:+$("f-page").value||1, graph:$("f-graph").checked,
+    dp:$("f-dp").checked, dps:+$("f-dps").value||2, ep:$("f-ep").checked, eps:+$("f-eps").value||2,
+    deepep:$("f-deepep").value, cp:$("f-cp").checked, cps:+$("f-cps").value||2,
+    mtp:$("f-mtp").checked, draft:$("f-draft").value, hicache:$("f-hicache").checked,
+    trc:$("f-trc").checked, pd:$("f-pd").checked, pdt:$("f-pdt").value, pdb:+$("f-pdb").value||30590};
+}
+function refreshCmd(){
+  const {cmd, warn} = buildCommand(JSON.parse(JSON.stringify(formState())));
+  $("cmd-pre").textContent = cmd;
+  const box = $("pwarn"); box.innerHTML = "";
+  for(const [lv, msg] of warn){
+    const c = document.createElement("div");
+    c.className = "chip c-" + (lv==="ok"?"ok":lv==="warn"?"warn":lv==="bad"?"bad":"info");
+    c.textContent = (lv==="bad"?"✖ ":lv==="warn"?"⚠ ":"› ") + msg;
+    box.appendChild(c);
+  }
+  refreshVram();
+}
+for(const id of ["f-model","f-port","f-gpus","f-tp","f-attn","f-quant","f-kv","f-mem","f-page",
+  "f-dps","f-eps","f-deepep","f-cps","f-draft","f-pdt"])
+  $(id).addEventListener("input", refreshCmd);
+for(const id of ["f-graph","f-dp","f-ep","f-cp","f-mtp","f-hicache","f-trc","f-pd","f-port","f-pdb"])
+  $(id).addEventListener("change", refreshCmd);
+$("btn-cmd-copy").onclick = () => copyText($("cmd-pre").textContent, $("btn-cmd-copy"));
+
+// ---- C. vram panel ----
+let curCfg = null;
+(function initPresets(){
+  const s = $("v-preset");
+  for(const k of Object.keys(PRESETS)){ const o=document.createElement("option"); o.value=k; o.textContent=k; s.appendChild(o); }
+  s.onchange = () => { if(s.value){ curCfg = JSON.parse(JSON.stringify(PRESETS[s.value].cfg)); refreshVram(); } };
+})();
+$("v-parse").onclick = () => {
+  try{
+    curCfg = JSON.parse($("v-json").value);
+    $("v-preset").value = "";
+    refreshVram();
+  }catch(e){ $("v-res").innerHTML = '<div class="chip c-bad">✖ JSON 解析失败：' + e.message + "</div>"; curCfg=null; }
+};
+$("v-file").onchange = ev => {
+  const f = ev.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => { $("v-json").value = r.result; $("v-parse").onclick(); };
+  r.readAsText(f);
+};
+function refreshVram(){
+  const box = $("v-res");
+  if(!curCfg){ box.innerHTML = ""; $("v-dims").innerHTML = ""; return; }
+  const par = {tp:+$("f-tp").value||1, dp:$("f-dp").checked, dps:+$("f-dps").value||2,
+    ep:$("f-ep").checked, eps:+$("f-eps").value||2, mtp:$("f-mtp").checked};
+  const e = estimate(curCfg, par);
+  const memGiB = +$("v-mem").value;
+  const rows = [
+    ["Embedding" + (e.tie?"（tied，单份）":"") + " ×TP", e.perCard.embed, "vocab " + e.vocab + " × h " + e.h],
+    e.lm ? ["LM head ×TP", e.perCard.lm, "untied"] : null,
+    ["Attention ×" + e.L + " 层 ×" + (par.dp?("TP/DP=" + e.attnTp):("TP=" + e.tp)) +
+      (e.mla?"（MLA：a 投影复制）":""), e.perCard.attn,
+      e.mla ? "MLA lora 布局" : ("GQA " + e.heads + ":" + e.kvh + " hd" + e.hd)],
+    e.nDenseFfn ? ["Dense FFN ×" + e.nDenseFfn + " 层 ×TP", e.perCard.dense, "inter " + e.inter] : null,
+    e.nMoeL ? ["MoE 专家 ×" + e.nMoeL + " 层（E=" + e.E + (par.ep?("，EP=" + e.ep):"") + "）×TP", e.perCard.moe,
+      "moe_inter " + e.mi + (e.sharedI?(" + shared " + e.sharedI):"")] : null,
+    e.otherPerLayer ? ["其他/层（手填）×" + e.L, e.perCard.other, "GDN 等未建模结构"] : null,
+  ].filter(Boolean);
+  const pct = Math.min(100, e.cardGiB/memGiB*100);
+  const verdict = e.cardGiB/memGiB < 0.55 ? ["c-ok","✓ 放得下：权重占 " + (e.cardGiB/memGiB*100).toFixed(0) +
+      "%，余量可给 KV cache/激活/graph 池（经验：权重 ≤85% 可用）"]
+    : e.cardGiB/memGiB <= 0.85 ? ["c-warn","△ 偏紧：权重占 " + (e.cardGiB/memGiB*100).toFixed(0) +
+      "%，mem-fraction-static 相应下调，KV 池会偏小"]
+    : ["c-bad","✖ 超限：权重 " + e.cardGiB.toFixed(1) + " GiB > 单卡 " + memGiB + " GiB 的 85% —— 加 TP/EP 或换大卡"];
+  let html = '<div class="grid2">' +
+    '<div>总参数 <span class="big">' + (e.total/1e9).toFixed(2) + "B</span></div>" +
+    '<div>权重精度 <span class="big">' + e.q.name + "</span></div>" +
+    '<div>总权重（全部卡合计）<span class="big">' + e.totalGiB.toFixed(1) + " GiB</span></div>" +
+    '<div><b>每卡权重 <span class="big">' + e.cardGiB.toFixed(2) + " GiB</span></b>（TP" + e.tp +
+      (par.dp?"+DP"+par.dps:"") + (par.ep?"+EP"+e.ep:"") + "）</div></div>";
+  html += '<table><tr><th>组件</th><th>每卡 GiB</th><th>说明</th></tr>';
+  for(const [nm, v, note] of rows) html += "<tr><td>" + nm + "</td><td>" + v.toFixed(3) + "</td><td class='note'>" + note + "</td></tr>";
+  html += "</table>";
+  html += '<div class="bar"><div style="width:' + pct + '%"></div></div>' +
+    '<div class="bar-lbl"><span>每卡权重 ' + e.cardGiB.toFixed(2) + " GiB</span><span>单卡 " + memGiB + " GiB（" + pct.toFixed(0) + "%）</span></div>";
+  const chips = [];
+  chips.push(verdict);
+  if(e.lin.length) chips.push(["c-warn","⚠ 检测到未建模结构（" + e.lin.join(", ") + "，GDN/线性注意力）：上表缺这部分——展开『估算口径』下面的手填框补每层参数量"]);
+  if(par.ep && e.nMoeL) chips.push(["c-warn","⚠ DeepEP low_latency 会在运行时 HIPC 双份缓存专家权重：显存预算按 MoE 行 ×2 考虑（cookbook 配方 mem 0.60）"]);
+  if(par.mtp) chips.push(["c-info","MTP draft ≈ 1 层 + lm_head（同 TP 切分），未计入上表"]);
+  if(e.lin.length){
+    html += '<div class="frm" style="margin-top:8px"><div class="fld"><label>其他/层 参数量（GDN 等手补，如 3*h*h）</label>' +
+      '<input type="number" id="v-other" value="' + (curCfg.__other_per_layer||0) + '" step="1000000"></div></div>';
+  }
+  html += '<div class="chips">' + chips.map(([c,t])=>'<div class="chip '+c+'">'+t+"</div>").join("") + "</div>";
+  box.innerHTML = html;
+  const oc = $("v-other");
+  if(oc) oc.addEventListener("input", () => { curCfg.__other_per_layer = +oc.value||0; refreshVram(); });
+  $("v-dims").innerHTML = '<span class="note">解析：h=' + e.h + "，L=" + e.L + "，inter=" + e.inter +
+    "，moe_inter=" + e.mi + "（E=" + e.E + "），" + (e.mla?"MLA":"GQA " + e.heads + ":" + e.kvh) +
+    "，dense 前 " + e.densePrefix + " 层，量化=" + e.q.name + "</span>";
+}
+$("v-mem").addEventListener("change", refreshVram);
+
+// ---- helpers ----
+function copyText(t, btn){
+  const done = () => { btn.classList.add("ok-flash"); btn.textContent="已复制 ✓";
+    setTimeout(()=>{btn.classList.remove("ok-flash"); btn.textContent=btn.dataset.orig;}, 1200); };
+  btn.dataset.orig = btn.textContent;
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(done);
+  else { const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy"); ta.remove(); done(); }
+}
+function download(name, text){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], {type:"text/plain;charset=utf-8"}));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ---- init ----
+renderOps(); refreshYaml(); refreshCmd();
+// test hooks (browser smoke / console)
+window.HCU_UI = {CATALOG, PRESETS, buildYaml, buildCommand, estimate, classifyQuant,
+  setCfg: c => { curCfg = c; refreshVram(); }, getYaml: () => $("yaml-pre").textContent,
+  getCmd: () => $("cmd-pre").textContent};
+</script>
+</body>
+</html>

@@ -72,6 +72,9 @@ python -m sglang.launch_server --model-path <model> --port 30000 \
 - thinking 模型建议给足 `max_tokens` 或用
   `chat_template_kwargs: {"enable_thinking": false}`，否则思考文本会占满
   输出预算（评测误判的常见来源）。
+- 后端配置/启动命令生成/每卡显存评估可用浏览器直开
+  [tools/hcu_config_ui.html](tools/hcu_config_ui.html)（详见
+  [docs/config.md](docs/config.md)）。
 
 ## 测试
 

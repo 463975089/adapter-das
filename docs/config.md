@@ -69,8 +69,18 @@ ops:
 只加配置项，不加环境变量；既有环境变量行为不变（仍高于配置文件），便于已部署环境
 平滑过渡。
 
-## 未来 UI
+## Web 配置台
 
-配置文件 schema 即 UI 的数据契约：`version: 1` + `ops` 平面映射。前端按
-BACKEND_CATALOG 渲染下拉/单选（planned 置灰），生成的就是这份 YAML——CLI 向导
-（`tools/hcu_config_wizard.py`）即其命令行形态。
+配置文件 schema 即 UI 的数据契约：`version: 1` + `ops` 平面映射。浏览器直开
+`tools/hcu_config_ui.html`（自包含单文件，无需服务端）可视化完成三件事：
+
+1. **算子后端选择**：按 BACKEND_CATALOG 快照渲染下拉（planned 置灰），只导出
+   非默认项成 `hcu_adapter.yaml`（复制/下载）；
+2. **cookbook 启动命令生成**：按并行方案（TP/EP/DP/CP/PD/MTP/AWQ…）套用
+   [cookbook.md](cookbook.md) 已验证配方生成完整启动命令与警示项；
+3. **每卡权重显存评估**：读模型 config.json（或预设），按并行切分规则估算
+   每卡权重占用并判定可行性。
+
+CLI 向导（`tools/hcu_config_wizard.py`）是其命令行形态。注意 UI 内嵌的
+目录/配方是代码快照，BACKEND_CATALOG 或 cookbook 变更后需同步（纯函数段
+在文件内 `/*==PURE-BEGIN*/ ... /*==PURE-END*/` 标记之间）。
