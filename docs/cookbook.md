@@ -76,6 +76,7 @@ python -m sglang.launch_server \
 | fa3 attention backend | `--attention-backend fa3`（adapter emu，graph 安全） | ✅ |
 | fp8 KV cache | `--kv-cache-dtype fp8_e4m3`（triton 后端零 adapter 改动） | ✅ |
 | fa3 + fp8 KV + TP2 | 两者组合 + `--tp-size 2 --disable-cuda-graph` | ✅ |
+| dp-attention | `--tp-size 2 --dp-size 2 --enable-dp-attention`（graph ON，零 adapter 改动） | ✅ |
 | radix cache | 默认开（恒带 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`） | ✅ 命中门禁过：重发 cached 256 输出逐字一致、部分前缀命中 |
 | MTP 投机解码 | 见 §2.2 | ✅ 精度过；吞吐见 §2.2 注（emu 栈暂负收益，真 FA3 内核预期翻正） |
 | hicache 分层 KV | `--enable-hierarchical-cache`（需 adapter 的 get_device_accessible_ptr 桥，已内置） | ⚠ dense 模型全通（逐出-回迁保真）；**GDN 混合模型 MAMBA 状态宿主迁移输出漂移待修，生产 GDN 模型暂不开** |
