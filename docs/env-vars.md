@@ -38,6 +38,7 @@
 | `HCU_DEEPGEMM_BRIDGE` | 0 | —（EP 启动显式 =1） | DTK `deepgemm`（连写包名）别名成 `deep_gemm` + wrapper `ENABLE_JIT_DEEPGEMM` 翻转（HIP 平台门原样恒 False），解锁 deepep_ll/normal MoE runner——bf16 grouped GEMM（masked/contiguous）上游同名已验；fp8 的 scale 布局转换在 shim 里响亮 NotImplementedError（未验不瞎算）。EP 服务启动脚本必带 `=1` + `SGLANG_DEEPEP_BF16_DISPATCH=1` |
 | `HCU_TRITON_CONTIG` | 1 | —（随 DEEPGEMM 桥生效） | DeepEP normal/auto prefill 的 contiguous grouped GEMM 用 adapter triton 内核（`deep_gemm_contig_triton.py`，原生 [E,N,K] 权重 + mk-alignment get/set API），替代坏掉的 DTK w16a16 contiguous 内核（2D VMFault/3D 数字错）；=0 退回 DTK 原核仅作对照（会崩）。门禁 `tests/tools/_test_contig_triton.py` |
 | `HCU_FUSED_MOE_IMPL` | auto | auto / aiter / triton | fused MoE（standard dispatch，triton runner 入口 `fused_experts`）先试 DTK aiter `aiter_moe`：块量化(block_shape=[128,128])走 ASM 调优表 `tuned_fmoe_asm_w8a8_group.csv`，通道量化(block_shape=None)走 moe_c 配置；形状不在调优表 → 自动回 stock triton 内核（每形状 log 一次）。`aiter`=回退时告警；`triton`=关闭。仅 w8a8 + bf16 激活 + 无 bias/no_combine；deepep runner 不受影响。门禁 `tests/tools/_test_aiter_moe_gate.py`（nmz18 gfx938 rel 0.02-0.04 PASS） |
+| `HCU_AITER_MOE_DEBUG` | 空 | 1 | aiter fused-MoE 桥诊断：=1 时每个早退守卫/命中/回退决策打 warning 日志（定位某模型为何没走 aiter） |
 | `HCU_DUMP_LAYERS` | 0 | — | 调试：层 residual 流 dump（`_PATH`/`_T`/`_TOTAL` 配套） |
 | `HCU_DUMP_INNER` | 0 | — | 调试：L0/L1 xa/xb 张量 |
 | `HCU_DUMP_TOPK` | 0 | — | 调试：DSA topk 样本 |

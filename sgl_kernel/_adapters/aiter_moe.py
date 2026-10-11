@@ -31,6 +31,7 @@ Knob: HCU_FUSED_MOE_IMPL = auto | aiter | triton (auto default).
 from __future__ import annotations
 
 import logging
+import os
 
 import torch
 
@@ -42,6 +43,7 @@ _MODE_AITER_ONLY = ("aiter",)
 # (E, N1, N2, K, top_k, block_size) keys already logged as "no aiter
 # config" -- keep the serve log at one line per shape.
 _miss_log_once: set = set()
+_hit_log: set = set()
 
 # tensors already converted to the moe_c shuffled layout carry this attr
 _SHUF_FLAG = "_hcu_aiter_moe_c_shuffled"
@@ -52,6 +54,11 @@ def _mode() -> str:
 
     v, _src = hcu_env.resolve("HCU_FUSED_MOE_IMPL")
     return (v or "auto").strip().lower()
+
+
+def _dbg(reason: str):
+    if os.environ.get("HCU_AITER_MOE_DEBUG", ""):
+        LOG.warning("HCU aiter moe debug: %s", reason)
 
 
 def _activation_str(activation) -> str:
@@ -102,6 +109,7 @@ def try_aiter_fused_moe(
     back to the stock triton kernel."""
     mode = _mode()
     if mode in _MODE_TRITON:
+        _dbg(f"mode={mode}")
         return None
 
     if (
@@ -112,14 +120,20 @@ def try_aiter_fused_moe(
         or w1.dim() != 3
         or getattr(moe_runner_config, "no_combine", False)
     ):
+        _dbg(f"guard dtype={hidden_states.dtype} fp8={use_fp8_w8a8} "
+             f"i8={use_int8_w8a8} b1={b1 is not None} b2={b2 is not None} "
+             f"dim={w1.dim()} no_combine="
+             f"{getattr(moe_runner_config, 'no_combine', False)}")
         return None
     # v1 contract (validated): kernel quantizes activations itself
     if a1_scale is not None:
+        _dbg("a1_scale set (pre-quant path) -> triton")
         return None
 
     try:
         from aiter.moe import MoeQuantType, aiter_moe, get_aiter_moe_config
     except ImportError:
+        _dbg("aiter not importable")
         return None
 
     if use_fp8_w8a8:
@@ -127,6 +141,7 @@ def try_aiter_fused_moe(
     else:
         quant_type = getattr(MoeQuantType, "W8A8", None)
     if quant_type is None:
+        _dbg("quant enum missing")
         return None
 
     M, K = hidden_states.shape
@@ -149,8 +164,8 @@ def try_aiter_fused_moe(
     if not status:
         key = (E, N1, N2, K, top_k, block_size)
         if key not in _miss_log_once:
-            _miss_log_once[key] = True
-            LOG.info(
+            _miss_log_once.add(key)
+            LOG.warning(
                 "HCU aiter moe: no tuned config for E=%d N1=%d N2=%d K=%d "
                 "topk=%d block=%d -> triton kernel (log-once)", *key
             )
@@ -165,6 +180,12 @@ def try_aiter_fused_moe(
     aw2 = _shuffled(w2) if getattr(cfg, "need_shuffle", False) else w2
 
     routed = getattr(moe_runner_config, "routed_scaling_factor", None)
+    if len(_hit_log) < 3:
+        _hit_log.add((E, N1, N2, K, top_k, block_size))
+        LOG.warning(
+            "HCU aiter moe: kernel ENGAGED E=%d N1=%d N2=%d K=%d topk=%d "
+            "block=%d sol=%s", E, N1, N2, K, top_k, block_size,
+            getattr(cfg, "solution_type", "?"))
     output = aiter_moe(
         hidden_states,
         aw1,
@@ -251,4 +272,4 @@ def install():
             pkg.fused_experts = fused_experts_hcu
     except Exception:
         pass
-    LOG.info("HCU aiter moe bridge: fused_experts wrapped (mode=%s)", _mode())
+    LOG.warning("HCU aiter moe bridge: fused_experts wrapped (mode=%s)", _mode())
