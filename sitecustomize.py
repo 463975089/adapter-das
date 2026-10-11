@@ -1144,6 +1144,32 @@ if getattr(torch.version, "hip", None) is not None:
                 # NameError.
                 if not hasattr(_m, "deep_gemm"):
                     _m.deep_gemm = _sys.modules.get("deep_gemm")
+
+            # DeepEP-normal (bf16 contiguous) MoE runner: upstream computes
+            # `_legacy_silu_and_mul = silu_and_mul` only on CUDA, so HIP
+            # runs carry None and the prefill path dies on call. sglang's
+            # native silu_and_mul(input, out=None, ...) matches the runner's
+            # (x, out) call and lands on our AOT sgl_kernel op.
+            try:
+                import sglang.srt.layers.moe.moe_runner.deep_gemm as _dgr
+
+                if getattr(_dgr, "_legacy_silu_and_mul", None) is None:
+                    from sglang.kernels.ops.activation.activation import (
+                        silu_and_mul as _hcu_silu,
+                    )
+
+                    _dgr._legacy_silu_and_mul = _hcu_silu
+                    logging.getLogger("hcu.adapter").info(
+                        "HCU DeepGEMM bridge: _legacy_silu_and_mul bound to "
+                        "sglang silu_and_mul (upstream None on HIP)"
+                    )
+            except ImportError:
+                pass
+            except Exception:
+                logging.getLogger("hcu.adapter").warning(
+                    "HCU adapter: silu_and_mul binding failed", exc_info=True
+                )
+
             logging.getLogger("hcu.adapter").info(
                 "HCU DeepGEMM bridge: deep_gemm -> DTK deepgemm alias + "
                 "ENABLE_JIT_DEEPGEMM flipped (EP opt-in)"

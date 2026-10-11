@@ -159,6 +159,13 @@ REGISTRY = {
                  "（bf16 grouped GEMM 已验；fp8 scale 布局未验会响亮报错）；"
                  "=1 开 =0 关",
     },
+    "HCU_TRITON_CONTIG": {
+        "env": "HCU_TRITON_CONTIG", "default": "1",
+        "about": "DeepEP normal/auto prefill 的 contiguous grouped GEMM 用"
+                 " triton 内核（DTK w16a16 contiguous 内核坏：2D VMFault/3D"
+                 " 全错；同时补 mk-alignment get/set API）；=0 退回 DTK 原核"
+                 "（会崩）作对照",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},

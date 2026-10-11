@@ -119,4 +119,34 @@ def install():
     sys.modules["deep_gemm"] = shim
     sys.modules["deep_gemm.utils"] = utils
     sys.modules["deep_gemm.utils.layout"] = layout
+
+    # contiguous-layout grouped GEMM (DeepEP normal / auto prefill): the
+    # DTK w16a16 contiguous kernel is broken (2D input VMFault, 3D input
+    # wrong numbers) and the fork lacks the mk-alignment get/set pair the
+    # wrapper's contiguous_layout_alignment_scope needs. A triton
+    # reimplementation (native [E, N, K] weights, alignment-padded row
+    # blocks) replaces both unless HCU_TRITON_CONTIG=0 keeps the raw DTK
+    # escape hatch.
+    try:
+        from . import hcu_env as _env
+
+        if _env.enabled("HCU_TRITON_CONTIG"):
+            from . import deep_gemm_contig_triton as _ct
+
+            shim.m_grouped_bf16_gemm_nt_contiguous = (
+                _ct.m_grouped_bf16_gemm_nt_contiguous
+            )
+            shim.get_mk_alignment_for_contiguous_layout = (
+                _ct.get_mk_alignment_for_contiguous_layout
+            )
+            shim.set_mk_alignment_for_contiguous_layout = (
+                _ct.set_mk_alignment_for_contiguous_layout
+            )
+    except Exception:
+        import logging
+
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: triton contiguous grouped GEMM not installed",
+            exc_info=True,
+        )
     return shim
