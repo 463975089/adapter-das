@@ -68,10 +68,13 @@ class _OverlayLoader(importlib.abc.Loader):
       defines, so unknown wheel layouts are a no-op.
     """
 
-    def __init__(self, inner, extras, lib, fullname, guards=None):
+    def __init__(self, inner, extras, lib, fullname, guards=None, overrides=None,
+                 post_hooks=None):
         self._inner = inner
         self._extras = extras
         self._guards = dict(guards or {})
+        self._overrides = dict(overrides or {})
+        self._post_hooks = list(post_hooks or [])
         self._lib = lib
         self._fullname = fullname
 
@@ -86,6 +89,17 @@ class _OverlayLoader(importlib.abc.Loader):
         for attr, value in self._extras.items():
             if not hasattr(module, attr):
                 setattr(module, attr, value)
+        # replacements win over attrs the real module defines (unlike
+        # extras, which only fill gaps): used by bridges that must take
+        # over an upstream function wholesale (e.g. prefill-CP gate)
+        for attr, value in self._overrides.items():
+            setattr(module, attr, value)
+        # arbitrary post-load hooks (e.g. wrapping class methods)
+        for fn in self._post_hooks:
+            try:
+                fn(module)
+            except Exception:
+                pass
         if self._guards:
             from sgl_kernel._adapters import kill_switch as _ks
 
@@ -107,13 +121,25 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     NotImplementedError naming the missing kernel.
     """
 
-    def __init__(self, lib_name, allowlist=None):
+    def __init__(self, lib_name, allowlist=None, overrides=None, post_hooks=None):
         self.lib_name = lib_name
         # fullname -> absolute module attr -> value
         self.allowlist = dict(allowlist or {})
+        # fullname -> attr -> value, force-set after load (replacements)
+        self.overrides = dict(overrides or {})
+        # fullname -> fn(module) run after exec (class-method wrapping etc.)
+        self.post_hooks = dict(post_hooks or {})
 
     def _extra_attrs(self, fullname):
         return self.allowlist.get(fullname, {})
+
+    def _override_attrs(self, fullname):
+        return self.overrides.get(fullname, {})
+
+    def _post_hooks_for(self, fullname):
+        # values may be a single fn or an iterable of fns -> always a list
+        ph = self.post_hooks.get(fullname, ())
+        return [ph] if callable(ph) else list(ph)
 
     def _guard_attrs(self, fullname):
         """fullname -> {module attr: kill-switch op name}; subclasses override
@@ -132,9 +158,11 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         if real is not None:
             extras = self._extra_attrs(fullname)
             guards = self._guard_attrs(fullname)
-            if extras or guards:
+            ov = self._override_attrs(fullname)
+            ph = self._post_hooks_for(fullname)
+            if extras or guards or ov or ph:
                 real.loader = _OverlayLoader(
-                    real.loader, extras, self.lib_name, fullname, guards
+                    real.loader, extras, self.lib_name, fullname, guards, ov, ph
                 )
             return real
         return importlib.machinery.ModuleSpec(fullname, self, is_package=True)

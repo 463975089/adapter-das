@@ -84,6 +84,7 @@ python -m sglang.launch_server \
 | slimquant W4A8 | 零显式旗标（checkpoint 自动识别，nmz18 TP8 graph ON 验证） | ✅ GLM-5-W4A8_V2_6 |
 | PD 分离（节点内） | TCP 版命令块见下方（mooncake_tcp，无需 IB）；RDMA 版见同节（mooncake RoCE，需容器注入三步） | ✅ 双传输面均验：TCP 8 路并发零串扰；RDMA 同配方 5/6+确定性+8 路全过；⚠ `--disaggregation-enable-kv-checksum` 并发误报勿开 |
 | EP 低延迟（DeepEP） | 命令块见下方（LL 是 bf16 MoE 唯一可用 deepep 模式） | ✅ Qwen3-30B-A3B TP2+EP2（锚点+并发全对） |
+| prefill CP（上下文并行） | `HCU_PREFILL_CP=1` + `--enable-prefill-cp --cp-strategy zigzag --attn-cp-size 2`（与 `--tp-size 2` 成对，fa3） | ✅ Qwen3-30B-A3B nmz26 双卡：输出与 TP2 基线对齐（capital/long OK、arith 同因思考超长 MISS、determinism 基线亦 DIFF 非 CP 回归）。上游 HIP 门+两处语义补丁见 [env-vars.md](env-vars.md) `HCU_PREFILL_CP`；排查插桩 `HCU_PREFILL_CP_DEBUG=1`；物料 `tests/tools/_launch_cp2.sh` |
 | EP 高吞吐 / auto / normal | `--deepep-mode auto/normal`（bf16，同 LL 配方改 mode 即可） | ✅ contiguous grouped GEMM 已用 triton 重写替代坏掉的 DTK w16a16 内核（`HCU_TRITON_CONTIG=1` 默认开）：auto/纯 normal 均锚点+并发+确定性全过；**FP8 线仍锁**（a_scale row/tensor-wise ≠ sglang 128-block，非桥可解） |
 
 ```bash

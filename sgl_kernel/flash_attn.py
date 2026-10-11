@@ -39,6 +39,8 @@ batch dims, page-granular ``index_select`` gathers with ``clamp_min(0)``
 for the -1-padded tail of the block table.
 """
 
+import os
+
 import torch
 
 __all__ = [
@@ -342,6 +344,19 @@ def flash_attn_with_kvcache(
         else:
             maxL = max(int((cu_q[1:] - cu_q[:-1]).max()), 1)
     lens_q = (cu_q[1:] - cu_q[:-1]).to(torch.int64)
+
+    if os.environ.get("HCU_FA_EMU_DEBUG", "") and not torch.cuda.is_current_stream_capturing():
+        import logging
+
+        logging.getLogger("hcu.adapter").warning(
+            "FA_EMU kvcache: q %s cu_q=%s cache_seqlens=%s causal=%s "
+            "qsum=%.4f",
+            tuple(q.shape),
+            [int(v) for v in cu_q[:8].tolist()],
+            [int(v) for v in cache_seqlens[:8].tolist()],
+            causal,
+            float(q.float().sum()),
+        )
 
     qp, cell, _ = _pad_queries(q3, cu_q, bs, maxL, device)
     qvp = None

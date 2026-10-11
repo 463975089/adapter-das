@@ -157,6 +157,24 @@ REGISTRY = {
                  "aiter(aiter_moe，块量化走 ASM 调优表/通道量化走 moe_c)，"
                  "无调优形状自动回 triton；aiter=同上但回退时告警；triton=关闭",
     },
+    "HCU_PREFILL_CP": {
+        "env": "HCU_PREFILL_CP", "default": "0",
+        "about": "prefill 上下文并行（--enable-prefill-cp --cp-strategy "
+                 "zigzag|interleave --attn-cp-size N + fa3 系 attention）："
+                 "=1 开 HIP 平台门 + 两处 CP 语义补丁（rope 融合守卫、"
+                 "enable_fused_set_kv_buffer CP 守卫——否则 CP 下没人写 KV 池）；"
+                 "=0 保持上游拒绝行为",
+    },
+    "HCU_PREFILL_CP_DEBUG": {
+        "env": "HCU_PREFILL_CP_DEBUG", "default": "",
+        "about": "CP 排查插桩：zigzag 策略各阶段（shard/gather/"
+                 "materialize_full_kv）校验和日志（prefill_cp.py piece 4）",
+    },
+    "HCU_FA_EMU_DEBUG": {
+        "env": "HCU_FA_EMU_DEBUG", "default": "",
+        "about": "fa3 emu 调用日志（q 形状/cu_seqlens/cache_seqlens 校验和；"
+                 "graph capture 期间自动静默防 D2H 崩溃）",
+    },
     # disaggregation / EP transfer
     "HCU_DEEPEP_BRIDGE": {
         "env": "HCU_DEEPEP_BRIDGE", "default": "1",

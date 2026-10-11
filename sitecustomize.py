@@ -1198,3 +1198,18 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: aiter fused-MoE bridge not installed", exc_info=True
         )
+
+    # 11. Prefill context-parallel bridge (2026-10-12): stock v0.5.21
+    #     validate_prefill_cp_platform rejects HIP outright; HCU_PREFILL_CP=1
+    #     (opt-in) opens the gate so the upstream CP machinery (zigzag/
+    #     interleave, fa3 convention) can run on HCU.
+    try:
+        from sgl_kernel._adapters import prefill_cp as _pcp
+
+        _pcp.install()
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: prefill-CP bridge not installed", exc_info=True
+        )
