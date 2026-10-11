@@ -183,7 +183,7 @@ hcu-sglang-adapter/
 | # | 债 | 现状 | 计划 |
 |---|---|---|---|
 | 1 | `sitecustomize.py` 单体（1200+ 行顺序化桥） | 最大维护负债：所有桥共享一个命名空间，改动互相影响、review 困难 | **分阶段拆分**（见下），每阶段容器 e2e 复验后合入 |
-| 2 | `tests/tools/` 106 文件 | 已用 `_test_/_probe_/_launch_/_dbg_` 前缀语法事实上分层 | 语法固化为 README 规约（不搬迁：路径被 CI/文档/记忆引用，搬迁成本>收益） |
+| 2 | `tests/tools/` 90+ 文件 | 已用 `_test_/_probe_/_launch_/_dbg_` 前缀语法事实上分层；`_dbg_` 用完即删（2026-10 已清 12 个结案取证脚本） | 语法固化为 README 规约（不搬迁：路径被 CI/文档/记忆引用，搬迁成本>收益） |
 | 3 | `_adapters/` 混三类文件 | 语义分类未显式 | §7 三分类表归位约定：新桥一律独立文件，不再长入 sitecustomize |
 | 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（CONTRIBUTING §5）+ CI worktree 作为唯一第二执行面 |
 
