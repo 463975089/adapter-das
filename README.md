@@ -1,12 +1,24 @@
 # hcu-sglang-adapter
 
-不修改 sglang 官方代码、让社区版 sglang 直接跑在海光 HCU（DCU/DTK，HIP 路径）上的适配层。
+让社区版 sglang 官方代码的 **python 部分零修改**、直接跑在海光 HCU
+（DCU/DTK，HIP 路径）上的适配层（adapter）。
 
-核心是本仓库的 **`sgl_kernel` 包**（triton 实现）：sglang 的统一算子层
-`sglang.kernels`（RFC #29630 的 `BaseFusedOp` 多后端模型）在 HIP 平台上把
-**AOT 后端**（`forward_aot` → `import sgl_kernel`）作为默认内核路径
-（JIT triton 后端只注册给 CUDA）。因此只要提供一个同名的 `sgl_kernel`
-包，上游 sglang 零修改即可在 HCU 上解析到我们的内核。
+核心机制是**影子库替换**：对 sglang 直接引用的算子库（`sgl_kernel`、
+`aiter`、`flashinfer`、`flash_attn`、vllm `_custom_ops` 等）不做调用点
+改造，而是由本仓库提供同名/同 ABI 的影子实现并自动接管 import，官方代码
+拉下来就能跑。算子实现不绑定特定后端：**先用 triton 实现**保证正确性，
+**再做手写优化**；也支持直接封装 lightop / aiter / flash_attn / flash_mla
+等现有算子库（triton / vendor / torch 三档策略，见"影子库与适配桥"）。
+
+与 **plugin** 的分工：adapter 致力于"官方代码拉下来就能跑"，其中的算子
+同样持续做极致性能优化（自研手写或封装现有库皆可）；**plugin 将来承接
+追求极致性能的专项路径**，二者分工区分、互不阻塞。
+
+影子替换能严丝合缝的原因：sglang 的统一算子层 `sglang.kernels`
+（RFC #29630 的 `BaseFusedOp` 多后端模型）在 HIP 平台上把 **AOT 后端**
+（`forward_aot` → `import sgl_kernel`）作为默认内核路径（JIT triton 后端
+只注册给 CUDA）。因此只要提供一个同名的 `sgl_kernel` 包，上游 sglang
+零修改即可在 HCU 上解析到我们的内核。
 
 ## 安装
 
@@ -34,13 +46,14 @@ pip install -e .
 - GPU 路径禁用一切主机同步（`.item()` / `nonzero` / 布尔掩码索引），
   保证 decode CUDA-graph capture 链路可用（首个 MoE 模型实测暴露的坑）。
 
-## HIP 适配桥（sglang/vllm 零改动）
+## 影子库与适配桥（sglang/vllm python 零改动）
 
 | 组件 | 作用 |
 |---|---|
-| `sitecustomize.py` | PYTHONPATH 自动加载：桥接 vllm `_custom_ops` 的 `rms_norm` / `fused_add_rms_norm`（HIP 6 参形态）到本包；`apply_token_bitmask_inplace_cuda` → sglang 仓内 triton 实现 |
-| `sgl_kernel/_adapters/` | 元路径桩：`aiter` / `flashinfer` / `flash_attn` import 成功、未实现调用响亮报错；其中 `aiter.silu_and_mul` 用本包 triton 核真实现（官方 parity 测试通过） |
-| `sgl_kernel/kvcacheio.py` | PD 分离/分层 KV transfer 的完整 torch 移植 |
+| `sitecustomize.py` | PYTHONPATH 自动加载的 import 接管层：桥接 vllm `_custom_ops` 的 `rms_norm` / `fused_add_rms_norm`（HIP 6 参形态）到本包；`apply_token_bitmask_inplace_cuda` → sglang 仓内 triton 实现；flashmla backend 的 flashinfer wrapper 构造桩；int8/fp8 量化路径重绑定 |
+| `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径：elementwise / layernorm / rope / moe / kv cache io / fp8·int8 GEMM / flash_mla emu，API 逐字对齐官方 sgl-kernel |
+| `sgl_kernel/_adapters/` | 元路径影子库：`aiter` 真包（DTK vendor wheel）优先 + 缺口填空（`fused_clamp_act_mul` 等）、`flashinfer` / `flash_attn` 桩——import 成功、未实现调用响亮报错；另含 `hcu_env` 环境注册表、`kill_switch` 快关、slimquant / mqa_logits_emu / dsa_topk 模型级补丁 |
+| `sgl_kernel/kvcacheio.py` | PD 分离/分层 KV transfer（transfer_kv_* 契约，上游 mooncake 等 KV 传输路径的调用面）的完整 torch 移植 |
 
 ## 运行要点（HCU 实测）
 
@@ -92,3 +105,8 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
   按需 triton 化（混合适配方案，见任务 #240 结论）。
 - MoE gate（topk 系列）triton 化提性能：当前 torch 版正确性已验证，性能优化
   排期中。
+- mooncake（PD 分离 KV transfer vendor 本体）与 deepep（MoE EP 通信）：仓库
+  内尚无落点——transfer_kv_* 契约已由 `kvcacheio.py` torch 移植顶住，
+  mooncake 本体与多卡 EP 待适配。
+- plugin 极致性能路径（规划）：与 adapter 分工，承接热点算子的专项优化
+  （见文首）。
