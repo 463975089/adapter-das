@@ -161,6 +161,10 @@ CUDA_VISIBLE_DEVICES=6 SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m s
 # mooncake DTK 0.3.13 的 initialize 恰为 v0.5.21 的 4 参形态，无需 adapter 桥。
 ```
 
+## 3.5 CI（MR 自动测试）
+
+L0 结构门禁（零依赖秒级，Gitee Go 云端）+ L1 GPU 数值门禁（容器内自动挑空闲卡，MR watcher 评论回帖）+ L2 e2e（夜间/发版）。启用与归层规则见 [ci.md](ci.md)；入口 `ci/l0_gate.py` / `ci/l1_gpu_gate.sh` / `ci/mr_watcher.py`。
+
 ## 4. 平台约束（必读）
 
 1. **多卡 TP>1 + cuda graph 已解禁（911eeeb 起，默认生效）**：历史乱码根因不是 NCCL，是 aiter AR 图重放损坏 + `sgl_kernel.allreduce` 缺失（sglang 图内 AR 只能落 custom AR）双因叠加；adapter 自制 custom AR（信令+payload 走 host-shm，graph 安全，小消息快 NCCL ~2×，>512KB 自动回 NCCL）修复，TP2 graph e2e 已过（见 models.md 2026-10-11 行）。旧栈或显式 `HCU_TRITON_AR=0` 时仍需 `--disable-cuda-graph`。

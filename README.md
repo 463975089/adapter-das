@@ -112,3 +112,7 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
   mooncake 本体与多卡 EP 待适配。
 - plugin 极致性能路径（规划）：与 adapter 分工，承接热点算子的专项优化
   （见文首）。
+
+## CI
+
+MR 快速自动测试分层（L0 结构门禁云端秒级 / L1 GPU 数值门禁容器侧 / L2 e2e 夜间）：见 [docs/ci.md](docs/ci.md)。

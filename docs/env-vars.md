@@ -33,6 +33,7 @@
 | `HCU_DSA_PRESHUFFLE` | 1 | — | DSA aiter-preshuffle 路径；=0 回 legacy page_size=1 |
 | `HCU_DSA_PAGE_SIZE` | 空 | CLI `--page-size` 等效优先 | DSA page_size 覆盖，须为 index_kpool 倍数 |
 | `HCU_SLIMQUANT` | 1 | —（方法按 checkpoint 的 quantization_config 自选，非该格式则不激活） | slimquant_w4a8 注册；=0 隔离排查用 |
+| `HCU_RMS_NORM_IMPL` | triton | —（triton 生产档；aiter 档已过 GPU parity 门禁可显式切换） | rms_norm 后端档位：triton\|aiter(rmsnorm_forward 桥)\|torch；fused_add_rmsnorm/gemma 变体恒走 triton(torch) |
 | `HCU_SILU_MUL_IMPL` | auto | —（auto=triton；lightop 档过契约+图重放压测后 auto 转正） | 及格即转正不让客户改默认值；=lightop 显式启用 vendor 档（A/B：`tests/tools/_lightop_silu_ab.py`） |
 | `HCU_DEEPEP_BRIDGE` | 1 | —（签名探测：仅当 deep_ep 是 DTK fork 形 quant_type 且缺 use_fp8 时才打补丁） | deep_ep API 桥：sglang v0.5.21 `low_latency_dispatch(use_fp8=)` 调用形 → DTK fork（`topk_weight` 位置参 + quant_type 0=bf16/2=E4M3FNUZ/3=UE8M0 映射，权重从调用帧兜取）；=0 关闭 |
 | `HCU_DEEPGEMM_BRIDGE` | 0 | —（EP 启动显式 =1） | DTK `deepgemm`（连写包名）别名成 `deep_gemm` + wrapper `ENABLE_JIT_DEEPGEMM` 翻转（HIP 平台门原样恒 False），解锁 deepep_ll/normal MoE runner——bf16 grouped GEMM（masked/contiguous）上游同名已验；fp8 的 scale 布局转换在 shim 里响亮 NotImplementedError（未验不瞎算）。EP 服务启动脚本必带 `=1` + `SGLANG_DEEPEP_BF16_DISPATCH=1` |

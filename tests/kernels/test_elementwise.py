@@ -60,34 +60,34 @@ def test_gated_act_gpu_3d_out_kwarg(dtype):
 
 # --------------------------------------------------------------- lightop ----
 
+def _reset_impl_cache(ew):
+    ew._IMPL_CHOICE = None
+    ew._LIGHTOP_IMPL = None
+
+
 def test_silu_backend_default_is_triton(monkeypatch):
     """auto (=default) must stay on the triton path — lightop is opt-in
-    until it passes the full contract + graph-replay matrix. The cache must
-    read False (clean not-enabled), NOT a swallowed import error."""
+    until it passes the full contract + graph-replay matrix."""
     monkeypatch.delenv("HCU_SILU_MUL_IMPL", raising=False)
     import sgl_kernel.elementwise as ew
 
-    ew._LIGHTOP_IMPL = None  # re-probe with the cleaned env
+    _reset_impl_cache(ew)  # re-probe with the cleaned env
     try:
-        assert ew._lightop_silu_impl() is None
-        assert ew._LIGHTOP_IMPL is False, (
-            "probe failed silently (import error swallowed) — cache would "
-            "be False for the wrong reason; see traceback on stderr"
-        )
+        assert ew._resolve_impl() == "triton"
+        assert ew._LIGHTOP_IMPL is None
     finally:
-        ew._LIGHTOP_IMPL = None
+        _reset_impl_cache(ew)
 
 
 def test_silu_backend_gate_unknown_value_falls_to_triton(monkeypatch):
     monkeypatch.setenv("HCU_SILU_MUL_IMPL", "wat")
     import sgl_kernel.elementwise as ew
 
-    ew._LIGHTOP_IMPL = None
+    _reset_impl_cache(ew)
     try:
-        assert ew._lightop_silu_impl() is None
-        assert ew._LIGHTOP_IMPL is False
+        assert ew._resolve_impl() == "triton"
     finally:
-        ew._LIGHTOP_IMPL = None
+        _reset_impl_cache(ew)
 
 
 @requires_gpu
@@ -97,9 +97,9 @@ def test_silu_lightop_backend_parity(monkeypatch):
     monkeypatch.setenv("HCU_SILU_MUL_IMPL", "lightop")
     import sgl_kernel.elementwise as ew
 
-    ew._LIGHTOP_IMPL = None
+    _reset_impl_cache(ew)
     try:
-        if ew._lightop_silu_impl() is None:
+        if ew._resolve_impl() != "lightop":
             pytest.skip(
                 "lightop backend not active (no wheel on this host "
                 "or probe failed — traceback printed to stderr)")
@@ -113,4 +113,4 @@ def test_silu_lightop_backend_parity(monkeypatch):
                 y.float().flatten(), ref.flatten(), dim=0).item()
             assert cos >= 0.9999, f"lightop backend cos={cos:.6f} {dtype}"
     finally:
-        ew._LIGHTOP_IMPL = None
+        _reset_impl_cache(ew)
