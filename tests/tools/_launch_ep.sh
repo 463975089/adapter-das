@@ -12,7 +12,7 @@ export SGLANG_DEEPEP_BF16_DISPATCH=1
 export CUDA_VISIBLE_DEVICES=6,7
 mkdir -p /root/logs
 EXTRA=""
-if [ "$MODE" = "low_latency" ]; then EXTRA="--disable-radix-cache"; fi
+if [ "$MODE" = "low_latency" ] || [ "$MODE" = "auto" ]; then EXTRA="--disable-radix-cache"; fi
 exec python -m sglang.launch_server \
   --model-path /public/opendas/DL_DATA/llm-models/qwen3/Qwen3-30B-A3B \
   --trust-remote-code \

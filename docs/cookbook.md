@@ -81,6 +81,8 @@ python -m sglang.launch_server \
 | AWQ 量化 | `--quantization moe_wna16`（见 §2.1） | ✅ |
 | slimquant W4A8 | 零显式旗标（checkpoint 自动识别，nmz18 TP8 graph ON 验证） | ✅ GLM-5-W4A8_V2_6 |
 | PD 分离（节点内） | 三件套命令块见下方（mooncake_tcp，无需 IB） | ✅ 数据面（8 路并发正确零串扰）；⚠ `--disaggregation-enable-kv-checksum` 并发误报勿开 |
+| EP 低延迟（DeepEP） | 命令块见下方（LL 是 bf16 MoE 唯一可用 deepep 模式） | ✅ Qwen3-30B-A3B TP2+EP2（锚点+并发全对） |
+| EP 高吞吐 / auto | `--deepep-mode normal/auto` | ❌ 阻塞在 DTK deepgemm contiguous 内核（bf16 数字坏；fp8 scale 语义不匹配），vendor 修复后回归 `tests/tools/_test_dtk_deepgemm.py` 再攻 |
 
 ```bash
 # hicache 示例（dense 模型；小池可强制逐出验证回迁）
@@ -107,6 +109,23 @@ python -m sglang_router.launch_router --pd-disaggregation --mini-lb \
   --host 0.0.0.0 --port 30090
 # ⚠ 勿加 --disaggregation-enable-kv-checksum：并发≥2 必误报（数据面本身正确）；
 #   mooncake_tcp = mooncake 强制 TCP 传输（MC_FORCE_TCP），节点内无需 IB/RDMA。
+
+# EP 低延迟示例（DeepEP，Qwen3-30B-A3B TP2+EP2 于 GPU6/7 实测）
+#   关键旗标一个不能少：moe-runner-backend deep_gemm 是 deepep_ll 格式唯一注册的 runner；
+#   SGLANG_DEEPEP_BF16_DISPATCH=1 让 dispatch 输出 bf16（上游 env，等价 --deepep-dispatcher-output-dtype bf16）；
+#   mem 0.60：HIPC 权重打包会在运行时双份缓存专家权重，留出余量；
+#   --disable-radix-cache：LL buffer 固定槽位与 radix cache 不兼容（上游要求）。
+CUDA_VISIBLE_DEVICES=6,7 HCU_DEEPGEMM_BRIDGE=1 SGLANG_DEEPEP_BF16_DISPATCH=1 \
+SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m sglang.launch_server \
+  --model-path /public/opdas/DL_DATA/llm-models/qwen3/Qwen3-30B-A3B \
+  --trust-remote-code --attention-backend triton \
+  --tp-size 2 --ep-size 2 --moe-a2a-backend deepep --deepep-mode low_latency \
+  --moe-runner-backend deep_gemm --disable-radix-cache --disable-cuda-graph \
+  --mem-fraction-static 0.60 --nccl-port 30392 \
+  --host 0.0.0.0 --port 30193
+# ⚠ deepep normal（高吞吐）与 auto 暂不可用：见速查表——DTK deepgemm contiguous 内核
+#   语义缺陷（w16a16 2D 输入 VMFault/3D 数字错；fp8 contiguous 要求 row-wise scale
+#   与 sglang 128-block 不匹配），待 vendor 修复后回归 _test_dtk_deepgemm.py。
 ```
 
 ## 4. 平台约束（必读）
@@ -119,3 +138,4 @@ python -m sglang_router.launch_router --pd-disaggregation --mini-lb \
 6. `--page-size` 默认 1 可用；批次 suite 用过 64（R1/flashmla 等场景需要）。
 7. DeepSeek-R1-L4 + flashmla（`--decode-attention-backend flashmla --prefill-attention-backend triton --page-size 64`）为**验证 rig**（截层模型语义本坏，只测链路非精度），物料 `tests/tools/_launch_r1l4_*.sh`。
 8. **任何启动恒显式 `--attention-backend triton/fa3`**：不指定时默认解析到 aiter，dense prefill 的 `mha_batch_prefill_func` 是模块不可调用，首 forward 必崩（PD prefill 首测实测）。
+9. **DeepEP EP 并行只跑 `--deepep-mode low_latency`**（bf16 MoE）：normal/auto 阻塞在 DTK deepgemm contiguous 内核（见速查表）；且必须 `--moe-runner-backend deep_gemm` + `HCU_DEEPGEMM_BRIDGE=1` + bf16 dispatch env（见 §3 命令块）。
