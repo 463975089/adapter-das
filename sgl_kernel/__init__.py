@@ -32,6 +32,15 @@ from sgl_kernel.moe import (
 )
 from sgl_kernel.gemm_fp8 import fp8_scaled_mm
 from sgl_kernel.gemm_int8 import int8_scaled_mm
+from sgl_kernel.flash_attn import (  # noqa: F401
+    flash_attn_varlen_func,
+    flash_attn_with_kvcache,
+    merge_state_v2,
+)
+from sgl_kernel.flash_mla import (  # noqa: F401
+    flash_mla_with_kvcache,
+    get_mla_metadata,
+)
 
 # Register HCU shims for AMD/NVIDIA-only dependencies that upstream sglang
 # imports on HIP devices (`aiter`, `flashinfer`, `flash_attn`, ...). Must run

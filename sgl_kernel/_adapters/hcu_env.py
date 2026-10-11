@@ -100,6 +100,12 @@ REGISTRY = {
         "auto": _auto_mqa_emu,
         "about": "MQA logits torch 模拟：gfx93* 自动开（aiter 核门挡 gfx942/950）",
     },
+    "HCU_FA3_EMU": {
+        "env": "HCU_FA3_EMU", "default": "1",
+        "about": "fa3 attention backend torch 模拟（sgl_kernel.flash_attn emu）："
+                 "开=设 SGLANG_USE_SGL_FA3_KERNEL=1 并放行 _is_fa3_supported；"
+                 "=0 回上游行为（HIP 上 fa3 必 raise/落 fa2 坏 wheel）",
+    },
     "HCU_DSA_PRESHUFFLE": {
         "env": "HCU_DSA_PRESHUFFLE", "default": "1",
         "about": "DSA aiter-preshuffle 路径（DTK wheel 内核可用时）；=0 回 legacy",

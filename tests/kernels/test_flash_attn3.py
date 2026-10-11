@@ -1,0 +1,251 @@
+"""flash_attn (HCU emu, fa3 backend) contract tests against a dense CPU
+reference.
+
+Covers the surfaces the sglang fa3 backend actually calls:
+- flash_attn_with_kvcache: paged HND KV, GQA grouping, bottom-right causal
+  windows (decode len-1 and extend multi-token cu_seqlens), fp8 KV cache
+  with descale, window_size, softcap
+- flash_attn_varlen_func: ragged prefill, equal and unequal q/k lens
+- merge_state_v2: exact partial-state merge
+"""
+
+import torch
+
+from sgl_kernel.flash_attn import (
+    flash_attn_varlen_func,
+    flash_attn_with_kvcache,
+    merge_state_v2,
+)
+
+PAGE = 16
+
+
+def _make_paged_kv(bs, pages_per_req, H, Hk, D, Dv, seed=0):
+    g = torch.Generator().manual_seed(seed)
+    pool_k = torch.randn(bs * pages_per_req + 5, PAGE, Hk, D, generator=g)
+    pool_v = torch.randn(bs * pages_per_req + 5, PAGE, Hk, Dv, generator=g)
+    perm = torch.randperm(pool_k.shape[0], generator=g)
+    block_table = torch.stack(
+        [perm[i * pages_per_req : (i + 1) * pages_per_req] for i in range(bs)]
+    ).int()
+    seqlens = torch.randint(
+        1, pages_per_req * PAGE + 1, (bs,), generator=g
+    ).int()
+    return pool_k, pool_v, block_table, seqlens
+
+
+def _reference(q, pool_k, pool_v, block_table, seqlens, cu_q, scale, causal,
+               window=(-1, -1), softcap=0.0):
+    """Dense fp32 CPU reference: per-request, logical page order."""
+    bs = seqlens.shape[0]
+    H, D = q.shape[1], q.shape[2]
+    Hk = pool_k.shape[2]
+    Dv = pool_v.shape[3]
+    G = H // Hk
+    lens_q = (cu_q[1:] - cu_q[:-1]).tolist()
+    outs, lses = [], []
+    for b in range(bs):
+        s = int(seqlens[b])
+        Lq = lens_q[b]
+        k_all = pool_k[block_table[b].long()].reshape(-1, Hk, D)[:s]  # [s,Hk,D]
+        v_all = pool_v[block_table[b].long()].reshape(-1, Hk, Dv)[:s]
+        qb = q[int(cu_q[b]) : int(cu_q[b + 1])].float()  # [Lq,H,D]
+        sc = torch.zeros(Lq, H, s)
+        for h in range(H):
+            hk = h // G
+            sc[:, h, :] = (qb[:, h, :] @ k_all[:, hk, :].t()) * scale
+        qpos = torch.arange(s - Lq, s)[:, None]  # [Lq, 1]
+        keep = torch.ones(Lq, 1, s, dtype=torch.bool)
+        if causal:
+            keep = keep & (torch.arange(s)[None, None, :] <= qpos[:, :, None])
+        if window != (-1, -1):
+            left, right = window
+            rel = torch.arange(s)[None, None, :] - qpos[:, :, None]
+            keep = keep & (rel >= (-left if left >= 0 else -(10**9)))
+            keep = keep & (rel <= (right if right >= 0 else 10**9))
+        sc = sc.masked_fill(~keep, float("-inf"))
+        if softcap > 0:
+            sc = softcap * torch.tanh(sc / softcap)
+        p = torch.softmax(sc, dim=-1)
+        out = torch.zeros(Lq, H, Dv)
+        for h in range(H):
+            hk = h // G
+            out[:, h, :] = p[:, h, :] @ v_all[:, hk, :]
+        outs.append(out)
+        lses.append(torch.logsumexp(sc, dim=-1))  # [Lq, H]
+    return torch.cat(outs), torch.cat(lses)
+
+
+def _check_paged(name, bs, H, Hk, D, Dv, lens_q_list, pages_per_req, seed=0,
+                 fp8=False, window=(-1, -1), softcap=0.0, tol=2e-2):
+    torch.manual_seed(seed)
+    pool_k, pool_v, block_table, seqlens = _make_paged_kv(
+        bs, pages_per_req, H, Hk, D, Dv, seed=seed
+    )
+    if fp8:
+        # pool stores fp8 exactly like set_kv_buffer with scale 1.0:
+        # the emu receives an fp8-dtype tensor and must dequant on read
+        pool_k = pool_k.to(torch.float8_e4m3fn)
+        pool_v = pool_v.to(torch.float8_e4m3fn)
+        ref_k = pool_k.to(torch.float32)
+        ref_v = pool_v.to(torch.float32)
+    else:
+        ref_k, ref_v = pool_k, pool_v
+    device = torch.device("cuda")
+    pool_k = pool_k.to(device)
+    pool_v = pool_v.to(device)
+    block_table = block_table.to(device)
+    seqlens_d = seqlens.to(device)
+    maxL = max(lens_q_list)
+    # right-aligned windows: every request's q window ends at its seqlen;
+    # keep every seqlen >= the largest window (sglang's chunked-prefill
+    # domain — a window longer than the prefix never happens there)
+    seqlens_c = seqlens.clamp(min=maxL).int()
+    seqlens_d = seqlens_c.to(device)
+    g = torch.Generator().manual_seed(seed + 1)
+    M = sum(lens_q_list)
+    q = torch.randn(M, H, D, generator=g).to(torch.bfloat16).to(device)
+    cu_q = torch.tensor(
+        [0] + list(torch.tensor(lens_q_list).cumsum(0)), dtype=torch.int32
+    ).to(device)
+    scale = D**-0.5
+
+    o = flash_attn_with_kvcache(
+        q=q,
+        k_cache=pool_k,
+        v_cache=pool_v,
+        page_table=block_table,
+        cache_seqlens=seqlens_d,
+        cu_seqlens_q=cu_q,
+        softmax_scale=scale,
+        causal=True,
+        window_size=window,
+        softcap=softcap,
+    )
+    ref, lse_ref = _reference(
+        q.float().cpu(), ref_k.cpu(), ref_v.cpu(), block_table.cpu(),
+        seqlens_c.cpu(), cu_q.cpu(), scale, True, window, softcap,
+    )
+    diff = (o.float().cpu() - ref).abs().max().item()
+    assert o.shape == (M, H, Dv), f"{name}: shape {o.shape}"
+    assert diff < tol, f"{name}: max diff {diff}"
+    print(f"PASS {name}: shape={tuple(o.shape)} diff={diff:.5f}", flush=True)
+
+
+def test_decode_gqa_bs1():
+    _check_paged("decode GQA bs1", 1, 16, 4, 128, 128, [1], 8)
+
+
+def test_decode_gqa_bs4_varlen():
+    _check_paged("decode GQA bs4 varlen", 4, 16, 4, 128, 128, [1, 1, 1, 1], 16)
+
+
+def test_extend_window5():
+    _check_paged("extend win=5", 3, 8, 2, 64, 64, [5, 5, 5], 12)
+
+
+def test_extend_unequal_windows():
+    _check_paged("extend unequal", 3, 8, 2, 64, 64, [1, 7, 3], 12, seed=5)
+
+
+def test_extend_fp8_kv():
+    _check_paged(
+        "extend fp8 KV", 3, 8, 2, 64, 64, [5, 5, 5], 12, seed=7, fp8=True,
+        tol=6e-2,
+    )
+
+
+def test_window_size():
+    _check_paged(
+        "window (4,4)", 2, 8, 2, 64, 64, [3, 3], 10, seed=11, window=(4, 4)
+    )
+
+
+def test_softcap():
+    _check_paged(
+        "softcap 30", 2, 8, 2, 64, 64, [3, 3], 10, seed=13, softcap=30.0,
+        tol=5e-2,
+    )
+
+
+def test_varlen_prefill():
+    torch.manual_seed(21)
+    H, Hk, D, Dv = 8, 2, 64, 64
+    lens_q = [7, 3, 12]
+    lens_k = [7, 3, 12]  # prefill: q == k
+    g = torch.Generator().manual_seed(21)
+    q = torch.randn(sum(lens_q), H, D, generator=g).to(torch.bfloat16)
+    k = torch.randn(sum(lens_k), Hk, D, generator=g).to(torch.bfloat16)
+    v = torch.randn(sum(lens_k), Hk, Dv, generator=g).to(torch.bfloat16)
+    cu_q = torch.tensor([0] + list(torch.tensor(lens_q).cumsum(0)), dtype=torch.int32)
+    cu_k = torch.tensor([0] + list(torch.tensor(lens_k).cumsum(0)), dtype=torch.int32)
+    scale = D**-0.5
+    o = flash_attn_varlen_func(
+        q=q.cuda(), k=k.cuda(), v=v.cuda(),
+        cu_seqlens_q=cu_q.cuda(), cu_seqlens_k=cu_k.cuda(),
+        softmax_scale=scale, causal=True,
+    )
+    # reference
+    G = H // Hk
+    outs = []
+    for b in range(3):
+        qb = q[cu_q[b] : cu_q[b + 1]].float()
+        kb = k[cu_k[b] : cu_k[b + 1]].float()
+        vb = v[cu_k[b] : cu_k[b + 1]].float()
+        s = lens_k[b]
+        Lq = lens_q[b]
+        sc = torch.zeros(Lq, H, s)
+        for h in range(H):
+            sc[:, h, :] = (qb[:, h, :] @ kb[:, h // G, :].t()) * scale
+        qpos = torch.arange(s - Lq, s)[:, None]
+        sc = sc.masked_fill(
+            torch.arange(s)[None, None, :] > qpos[:, :, None], float("-inf")
+        )
+        p = torch.softmax(sc, dim=-1)
+        out = torch.zeros(Lq, H, Dv)
+        for h in range(H):
+            out[:, h, :] = p[:, h, :] @ vb[:, h // G, :]
+        outs.append(out)
+    ref = torch.cat(outs)
+    diff = (o.float().cpu() - ref).abs().max().item()
+    assert o.shape == (sum(lens_q), H, Dv)
+    assert diff < 2e-2, f"varlen prefill: max diff {diff}"
+    print(f"PASS varlen prefill: diff={diff:.5f}", flush=True)
+
+
+def test_merge_state_v2():
+    torch.manual_seed(31)
+    M, H, Dv = 9, 8, 64
+    # two partial attentions over disjoint KV halves of one sequence
+    k1 = torch.randn(M, H, Dv, generator=torch.Generator().manual_seed(31))
+    k2 = torch.randn(M, H, Dv, generator=torch.Generator().manual_seed(32))
+    w1 = torch.rand(M, H, generator=torch.Generator().manual_seed(33))
+    w2 = torch.rand(M, H, generator=torch.Generator().manual_seed(34))
+    # emulate lse = log(sum-of-weights): lse1=log(w1), o1=k1 (weighted avg of V=1 per unit)
+    lse1 = torch.log(w1)
+    lse2 = torch.log(w2)
+    o1 = k1
+    o2 = k2
+    om, lsem = merge_state_v2(o1.cuda(), lse1.cuda(), o2.cuda(), lse2.cuda())
+    # exact joint: o = (w1*o1 + w2*o2)/(w1+w2), lse = log(w1+w2)
+    ref_o = (w1.unsqueeze(-1) * o1 + w2.unsqueeze(-1) * o2) / (
+        w1 + w2
+    ).unsqueeze(-1)
+    ref_lse = torch.log(w1 + w2)
+    d1 = (om.float().cpu() - ref_o).abs().max().item()
+    d2 = (lsem.cpu() - ref_lse).abs().max().item()
+    assert d1 < 1e-3 and d2 < 1e-4, f"merge: o {d1} lse {d2}"
+    print(f"PASS merge_state_v2: o={d1:.6f} lse={d2:.6f}", flush=True)
+
+
+if __name__ == "__main__":
+    test_decode_gqa_bs1()
+    test_decode_gqa_bs4_varlen()
+    test_extend_window5()
+    test_extend_unequal_windows()
+    test_extend_fp8_kv()
+    test_window_size()
+    test_softcap()
+    test_varlen_prefill()
+    test_merge_state_v2()
+    print("ALL PASS")

@@ -251,6 +251,26 @@ if getattr(torch.version, "hip", None) is not None:
             exc_info=True,
         )
 
+    # fa3 attention backend: the ops layer (flash_attention_v3.py) hard-gates
+    # on NVIDIA — `_is_fa3_supported` returns False whenever torch.version.cuda
+    # is None (always on HIP), making flash_attn_with_kvcache raise and
+    # flash_attn_varlen_func fall back to the flash_attn wheel (numerically
+    # broken on this stack). The adapter ships a torch emulation in
+    # sgl_kernel.flash_attn; SGLANG_USE_SGL_FA3_KERNEL=1 routes _load_fa3_kernels
+    # to it directly (also skipping the kernels-community download attempt).
+    try:
+        from sgl_kernel._adapters import hcu_env as _henv
+
+        if _henv.enabled("HCU_FA3_EMU"):
+            os.environ.setdefault("SGLANG_USE_SGL_FA3_KERNEL", "1")
+            import sglang.kernels.ops.attention.flash_attention_v3 as _fa3v
+
+            _fa3v._is_fa3_supported = lambda device=None: True
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: fa3 emu routing bridge not installed", exc_info=True
+        )
+
     # Serve-time INT8 apply audit: HCU_DUMP_INT8=1 wraps
     # CompressedTensorsW8A8Int8.apply_weights and, for the first _N calls,
     # recomputes each output with plain torch (per-token-dequant x @
