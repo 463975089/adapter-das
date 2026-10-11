@@ -20,7 +20,9 @@
 只注册给 CUDA）。因此只要提供一个同名的 `sgl_kernel` 包，上游 sglang
 零修改即可在 HCU 上解析到我们的内核。
 
-分层架构与组件协调关系总览见 [docs/architecture.md](docs/architecture.md)。
+分层架构与组件协调关系总览见 [docs/architecture.md](docs/architecture.md)
+（配图 [architecture.html](architecture.html)，浏览器直开）；协作流程与红线见
+[CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 安装
 
@@ -92,11 +94,14 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
   题（thinking 原生模式）69%，错例为思考截断与模型自身水平，算子链路无损；
   GLM-5-W4A8_V2_6 TP8 + CUDA graph ON 零旗标验证连贯（短/长 prompt）。
 
-## 开发规约（skill）
+## 开发规约（skill）与协作
 
 改本仓库前先读 [`skills/hcu-adapter-dev/SKILL.md`](skills/hcu-adapter-dev/SKILL.md)：
 影子库矩阵与三档实现策略（triton/vendor/torch）、测试四质量维度、
 快关注册流程、精度定位流程、cookbook（NVIDIA 参数）降级矩阵。
+多人协作流程（分支/MR 门禁/三类改动 checklist/共享节点纪律）见
+[CONTRIBUTING.md](CONTRIBUTING.md)；`tests/tools/` 物料命名语法见
+[tests/tools/README.md](tests/tools/README.md)。
 
 ## 已知未覆盖 / 路线图
 

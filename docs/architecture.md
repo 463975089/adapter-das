@@ -122,5 +122,106 @@ python -m sglang.launch_server
                  ├─ vendor 封装（lightop / aiter / flash_mla …，hcu_env + 快关门控）
                  └─ torch 兜底
             └─ 其余 import 面：_adapters 元路径桩接管 aiter / flashinfer / flash_attn
-                 └─ PyTorch（HIP）→ DTK（驱动·编译器·运行时）→ 海光 HCU（DCU）
+                 └─ PyTorch（HIP）→ DTK（驱动·编译·运行时）→ 海光 HCU（DCU）
 ```
+
+---
+
+# 协作与长期维护（多人版）
+
+以上 §1–§6 是机制视图；以下面向"多人协作、长期升级"的组织视图：目录怎么读、
+设计目标如何收敛、已知架构债与演进计划、以及改动如何进门禁。
+
+## 7. 目录导览
+
+```
+hcu-sglang-adapter/
+├─ sitecustomize.py            # import 接管层（顺序化桥，§9 拆分计划）
+├─ sgl_kernel/                 # 同名影子包 = sglang 的 AOT 默认内核路径
+│   ├─ elementwise/layernorm/rope/allreduce/flash_attn.py …   # op 模块（三档路由）
+│   ├─ gemm_fp8.py / gemm_int8.py / flash_mla.py / kvcacheio.py
+│   └─ _adapters/              # 元路径影子库 + 机制层 + 模型级桥（见下三分类）
+├─ ci/                         # L0 结构门禁 / L1 GPU 门禁 / MR watcher
+├─ tests/
+│   ├─ test_ops_cpu.py         # torch 兜底路径（任何机器）
+│   ├─ kernels/                # GPU 单测 + parity + graph capture 回归
+│   ├─ vendor/                 # 高危 vendor 压测 + 快关 gate
+│   ├─ adapter/                # 接管机制本身（裁决链/桩行为）
+│   ├─ bench/                  # 性能
+│   └─ tools/                  # 门禁/探针/物料/调试（命名语法见其 README）
+├─ docs/                       # architecture / env-vars / models / cookbook / config / ci
+├─ skills/hcu-adapter-dev/     # 开发规约 skill（AI 协作与人的排查手册）
+├─ hcu_adapter.yaml            # 部署层配置示例（BACKEND_CATALOG 的使用面）
+├─ CONTRIBUTING.md             # 分支/MR/checklist/纪律（协作入口）
+└─ architecture.html           # 本文档配图（自包含，浏览器直开）
+```
+
+`_adapters/` 内部三分类（新文件按此归位）：
+
+| 类 | 文件 | 说明 |
+|---|---|---|
+| 机制层 | `_base.py` `hcu_env.py` `hcu_config.py` `kill_switch.py` | LibStubFinder 双通道（extras 填空 / overrides 夺回 / post_hooks 后处理 / guards 快关）、环境注册表、配置裁决、快关——**改这些 = 全仓生效，MR 需 e2e 冒烟** |
+| 域桥 | `aiter_moe.py` `prefill_cp.py` `slimquant.py` `triton_ar.py` `deep_gemm_*.py` `dsa_topk.py` `mqa_logits_emu.py` `hadamard.py` | 每座桥解决一个上游判定/能力缺口，必须带根因注释 + 开关 |
+| vendor 桩目录 | `aiter/` `flash_attn/` `flashinfer/` | 真包优先、缺口填空（aiter）；import 成功、未实现调用响亮报错（flashinfer/flash_attn） |
+
+## 8. 设计目标收敛（不变量）
+
+多人协作下容易被局部最优侵蚀的四条不变量，评审时对照：
+
+1. **sglang python 零修改**——一切适配经 import 面进入：影子包 / 元路径桩 /
+   sitecustomize 桥。出现"顺手改一下上游文件"的冲动时，答案永远是加桥。
+2. **三档路由**（triton 首档 → vendor 封装 → torch 兜底）——正确性优先，
+   性能在档内演进；任何 op 至少有 torch 兜底保证 import 永不失败。
+3. **配置裁决链** env > `hcu_adapter.yaml` > arch/wheel 自动探测 > 默认值；
+   `BACKEND_CATALOG` 四状态（production/validated/candidate/planned）是后端
+   成熟度的唯一事实源，L0 交叉一致门禁锁死 REGISTRY↔docs↔catalog↔yaml。
+4. **质量收敛在 adapter 层**——CI/UT 只测本仓（契约对拍 + graph 回归 +
+   快关门禁）；"adapter 全绿 ⇒ 官方 sglang 可用"，不背上游的测试债。
+
+## 9. 已知架构债与演进计划
+
+| # | 债 | 现状 | 计划 |
+|---|---|---|---|
+| 1 | `sitecustomize.py` 单体（1200+ 行顺序化桥） | 最大维护负债：所有桥共享一个命名空间，改动互相影响、review 困难 | **分阶段拆分**（见下），每阶段容器 e2e 复验后合入 |
+| 2 | `tests/tools/` 106 文件 | 已用 `_test_/_probe_/_launch_/_dbg_` 前缀语法事实上分层 | 语法固化为 README 规约（不搬迁：路径被 CI/文档/记忆引用，搬迁成本>收益） |
+| 3 | `_adapters/` 混三类文件 | 语义分类未显式 | §7 三分类表归位约定：新桥一律独立文件，不再长入 sitecustomize |
+| 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（CONTRIBUTING §5）+ CI worktree 作为唯一第二执行面 |
+
+**sitecustomize 拆分计划**（容器停机期只规划，不执行）：
+
+- **P1（无风险）**：把纯函数桥（rms_norm 重绑定、int8/fp8 重绑定、
+  flashinfer 构造桩等）抽到 `sgl_kernel/_bridges/<域>.py`，sitecustomize
+  只保留"探测 + 注册"的编排调用。行为等价，import 顺序不变。
+- **P2（需 e2e）**：判定词类桥（model_overrides wrap、CP gate 等）迁到
+  `_adapters` post_hooks，sitecustomize 缩成 <200 行编排器 + vllm 专用桥。
+- **P3**：P2 全量 e2e（cookbook 冒烟套件）通过后，sitecustomize 正式声明为
+  "编排器"，新桥禁入。
+
+## 10. 协作流程与门禁
+
+分支模型、checklist、节点纪律见 [CONTRIBUTING.md](../CONTRIBUTING.md)；
+CI 细节见 [ci.md](ci.md)。一张图看 MR 全程：
+
+```mermaid
+flowchart LR
+    DEV["本地分支 feat/*<br/>编辑树唯一改码处"] -->|"push"| MR["Gitee MR"]
+    MR -->|"自动"| L0["L0 结构门禁<br/>Gitee Go 云端·秒级"]
+    MR -->|"watcher 轮询"| L1["L1 GPU 数值门禁<br/>容器空闲卡·~10min<br/>结果评论回帖"]
+    L0 -->|"绿"| GATE{"L1 绿?<br/>改 import 接管则加 e2e 冒烟"}
+    L1 --> GATE
+    GATE -->|yes| MERGE["合入 master"]
+    GATE -->|no / 排队| RETRY["修复 / 无空闲卡自动重试"]
+    RETRY --> MR
+    MERGE --> L2["L2 e2e 夜间 / 发版套件"]
+```
+
+```mermaid
+flowchart TB
+    subgraph OWN["职责归属（评审对照）"]
+        O1["op 模块作者：sgl_kernel/*.py + tests 三层"]
+        O2["桥作者：_adapters/<域>.py + 根因注释 + 开关"]
+        O3["机制 owner：_base/hcu_env/hcu_config/kill_switch<br/>（少数人守护，MR 强制 e2e）"]
+        O4["CI owner：ci/ + watcher 运维 + 卡池协调"]
+    end
+```
+
