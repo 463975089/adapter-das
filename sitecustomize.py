@@ -190,6 +190,38 @@ if getattr(torch.version, "hip", None) is not None:
             return _orig_sat(self, platform)
 
         _CR.is_satisfied_by = _hcu_is_satisfied_by
+
+        # The relaxation above can make upstream CUDA-declared specs eligible
+        # alongside a spec that natively declares HIP — e.g. moe.topk_softmax
+        # registers AOT(sgl_kernel, _HIP) + JIT(_CUDA): on real ROCm only AOT
+        # is eligible, but with the bridge both pass and select_kernel raises
+        # "multiple backends usable". (moe_align_block_size, same shape, is
+        # explicitly pinned to AOT upstream.) Disambiguate the way the platform
+        # intends: when our forcing created the ambiguity, prefer the specs
+        # whose capability requirement is satisfied WITHOUT the relaxation.
+        import sglang.kernels.selector as _sel
+        from sglang.kernels.registry import registry as _kreg
+
+        _orig_select_kernel = _sel.select_kernel
+
+        def _hcu_select_kernel(op, backend=None):
+            try:
+                return _orig_select_kernel(op, backend=backend)
+            except ValueError as e:
+                if "multiple backends usable" not in str(e):
+                    raise
+                platform = _sel._platform()
+                native = [
+                    s
+                    for s in _kreg.get(op)
+                    if s.is_available(platform)
+                    and all(_orig_sat(c, platform) for c in s.capabilities)
+                ]
+                if len(native) == 1:
+                    return native[0]
+                raise
+
+        _sel.select_kernel = _hcu_select_kernel
     except Exception:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: capability HIP bridge not installed", exc_info=True
@@ -269,6 +301,34 @@ if getattr(torch.version, "hip", None) is not None:
     except Exception:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: fa3 emu routing bridge not installed", exc_info=True
+        )
+
+    # moe_wna16 quant config: upstream get_quant_method runs the
+    # modules_to_not_convert check BEFORE any isinstance guard, so a
+    # RadixAttention layer whose prefix substring-matches a skipped module
+    # (AWQ checkpoints list "self_attn", which also catches
+    # "...self_attn.attn") gets an UnquantizedLinearMethod — and RadixAttention
+    # then calls create_weights(layer) with one arg against its 6-arg
+    # signature. Every other config returns None for layers it doesn't
+    # handle; restore that contract for non-linear layers.
+    try:
+        import sglang.srt.layers.quantization.moe_wna16 as _wna
+
+        _hcu_orig_wna_gqm = _wna.MoeWNA16Config.get_quant_method
+
+        def _hcu_wna_gqm(self, layer, prefix):
+            from sglang.srt.layers.linear import LinearBase
+            from sglang.srt.layers.moe.fused_moe_triton import FusedMoE
+
+            if not isinstance(layer, (LinearBase, FusedMoE)):
+                return None
+            return _hcu_orig_wna_gqm(self, layer, prefix)
+
+        _wna.MoeWNA16Config.get_quant_method = _hcu_wna_gqm
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: moe_wna16 RadixAttention guard not installed",
+            exc_info=True,
         )
 
     # Serve-time INT8 apply audit: HCU_DUMP_INT8=1 wraps
