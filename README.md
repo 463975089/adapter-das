@@ -20,6 +20,8 @@
 只注册给 CUDA）。因此只要提供一个同名的 `sgl_kernel` 包，上游 sglang
 零修改即可在 HCU 上解析到我们的内核。
 
+分层架构与组件协调关系总览见 [docs/architecture.md](docs/architecture.md)。
+
 ## 安装
 
 ```bash
