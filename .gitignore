@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 tests/golden/*.local.json
+*.so
+*.bak
+*.awq_bak

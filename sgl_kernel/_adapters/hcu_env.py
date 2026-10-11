@@ -94,6 +94,27 @@ REGISTRY = {
         "auto": _auto_aiter_ar,
         "about": "gfx93* 旧 aiter AR 自动拒用（图重放损坏）；=1 显式夺回",
     },
+    "HCU_TRITON_AR": {
+        "env": "HCU_TRITON_AR", "default": "1",
+        "about": "custom AR（sgl_kernel.allreduce，host-shm 信令 + HIP IPC "
+                 "拉读，graph 安全）：=1 路由 sglang CustomAllreduce 至自家"
+                 "实现并视 fabric 全通（真 P2P 能力在 init 由 IPC open 兜底）"
+                 "；=0 回退 aiter AR 自动规则",
+    },
+    "HCU_TRITON_AR_SLOTS": {
+        "env": "HCU_TRITON_AR_SLOTS", "default": "",
+        "about": "custom AR 轮转槽数（默认按 WS 取 8/4/2）",
+    },
+    "HCU_TRITON_AR_BUDGET": {
+        "env": "HCU_TRITON_AR_BUDGET", "default": "100000000",
+        "about": "custom AR 每次自旋预算（PCIe 轮询次数，超出降级继续并计 "
+                 "diag；默认 1e8 ≈ 2.5 分钟）",
+    },
+    "HCU_TRITON_AR_MAX_KB": {
+        "env": "HCU_TRITON_AR_MAX_KB", "default": "512",
+        "about": "custom AR 尺寸上限（KB）：≤此值走 custom AR（host-shm，"
+                 "小消息快于 NCCL ~2x），更大走 NCCL；0 = 不设限",
+    },
     # DSA / attention
     "HCU_MQA_EMU": {
         "env": "HCU_MQA_EMU", "default": "0",
