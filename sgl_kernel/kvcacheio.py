@@ -23,6 +23,8 @@ them correct-first, triton ports can replace the hot loops later.
 
 from __future__ import annotations
 
+import ctypes
+import glob
 import os
 from typing import List, Optional
 
@@ -53,14 +55,84 @@ def _row_index(t: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     return t.index_select(0, indices.to(torch.long))
 
 
+_HIP_HOST_GET_DEV_PTR = None  # None until resolved; False when unavailable
+
+
+def _hip_host_get_device_pointer():
+    """ctypes handle on hipHostGetDevicePointer from the DTK HIP runtime.
+
+    DTK keeps the runtime at /opt/dtk/hip/lib/libamdhip64.so (not the
+    libamdhipcuda.so name upstream ROCm uses); tolerate both layouts.
+    """
+    global _HIP_HOST_GET_DEV_PTR
+    if _HIP_HOST_GET_DEV_PTR is None:
+        _HIP_HOST_GET_DEV_PTR = False
+        candidates = (
+            glob.glob("/opt/dtk*/hip/lib/libamdhip64.so")
+            + glob.glob("/opt/dtk*/lib/libamdhip64.so")
+            + glob.glob("/opt/rocm*/lib/libamdhip64.so")
+            + ["libamdhip64.so"]
+        )
+        for path in candidates:
+            try:
+                lib = ctypes.CDLL(path)
+                fn = getattr(lib, "hipHostGetDevicePointer", None)
+            except OSError:
+                continue
+            if fn is not None:
+                fn.restype = ctypes.c_int
+                fn.argtypes = [
+                    ctypes.POINTER(ctypes.c_void_p),
+                    ctypes.c_void_p,
+                    ctypes.c_uint,
+                ]
+                _HIP_HOST_GET_DEV_PTR = fn
+                break
+    return _HIP_HOST_GET_DEV_PTR or None
+
+
 def get_device_accessible_ptr(tensor: torch.Tensor, device_index: int) -> int:
     """Address a kernel on ``device_index`` must use for ``tensor``.
 
-    Torch allocations on the active HIP device are directly accessible; the
-    CUDA variant of this helper exists for multi-device pointer isolation we
-    do not need on single-rank HCU.
+    HIP does not guarantee UVA: registered host memory may carry a
+    device-side address distinct from the host VA (upstream sglang-kernel
+    ships this op for exactly that). Query hipHostGetDevicePointer; when the
+    runtime reports the memory is directly accessible (HCU/DTK pinned pages
+    return dev == host, measured) or the query is unavailable, the host
+    pointer itself is device-accessible, so fall back to it.
     """
-    return tensor.data_ptr()
+    fn = _hip_host_get_device_pointer()
+    host_ptr = tensor.data_ptr()
+    if fn is None:
+        return host_ptr
+    dev_ptr = ctypes.c_void_p()
+    rc = fn(ctypes.byref(dev_ptr), ctypes.c_void_p(host_ptr), 0)
+    if rc != 0 or dev_ptr.value is None:
+        return host_ptr
+    return dev_ptr.value
+
+
+_TORCH_OP_LIB = None  # keep the Library handle alive: GC unregisters its ops
+
+
+def _register_torch_op() -> None:
+    # sglang's hicache host-pool resolver accepts this helper only when BOTH
+    # the python symbol and torch.ops.sgl_kernel.get_device_accessible_ptr
+    # exist (upstream ships it as an AOT torch op; we mirror the namespace).
+    global _TORCH_OP_LIB
+    if hasattr(torch.ops.sgl_kernel, "get_device_accessible_ptr"):
+        return
+    lib = torch.library.Library("sgl_kernel", "FRAGMENT")
+    lib.define("get_device_accessible_ptr(Tensor tensor, int device_index) -> int")
+    lib.impl(
+        "get_device_accessible_ptr",
+        lambda tensor, device_index: get_device_accessible_ptr(tensor, device_index),
+        "CPU",
+    )
+    _TORCH_OP_LIB = lib
+
+
+_register_torch_op()
 
 
 def transfer_kv_per_layer(
