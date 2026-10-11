@@ -72,6 +72,32 @@ def install():
     shim.__file__ = getattr(deepgemm, "__file__", None)
     shim.dtk_deepgemm = deepgemm  # escape hatch to the raw fork
 
+    _dtk_masked = getattr(deepgemm, "m_grouped_bf16_gemm_nt_masked", None)
+    if _dtk_masked is not None:
+
+        def _bf16_masked(a, b, d, masked_m=None, expected_m=None,
+                         expected_m_per_group=None, config=None, **unknown):
+            # sglang names the 5th arg `expected_m` (entrypoint positional,
+            # compile_utils warmup passes it as a kwarg); the DTK fork calls
+            # it `expected_m_per_group` and puts `config` last.
+            if unknown:
+                raise TypeError(
+                    f"m_grouped_bf16_gemm_nt_masked: unexpected kwargs "
+                    f"{sorted(unknown)}"
+                )
+            if expected_m is None:
+                expected_m = expected_m_per_group
+            if masked_m is None or expected_m is None:
+                raise TypeError(
+                    "m_grouped_bf16_gemm_nt_masked: masked_m and "
+                    "expected_m are required"
+                )
+            if config is not None:
+                return _dtk_masked(a, b, d, masked_m, expected_m, config)
+            return _dtk_masked(a, b, d, masked_m, expected_m)
+
+        shim.m_grouped_bf16_gemm_nt_masked = _bf16_masked
+
     utils = types.ModuleType("deep_gemm.utils")
     layout = _make_layout_module()
     utils.layout = layout

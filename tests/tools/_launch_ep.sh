@@ -20,6 +20,7 @@ exec python -m sglang.launch_server \
   --tp-size 2 --ep-size 2 \
   --moe-a2a-backend deepep \
   --deepep-mode $MODE \
+  --moe-runner-backend deep_gemm \
   $EXTRA \
   --disable-cuda-graph \
   --mem-fraction-static 0.80 \
