@@ -23,7 +23,7 @@ exec python -m sglang.launch_server \
   --moe-runner-backend deep_gemm \
   $EXTRA \
   --disable-cuda-graph \
-  --mem-fraction-static 0.80 \
+  --mem-fraction-static 0.60 \
   --nccl-port 30392 \
   --host 0.0.0.0 --port $PORT \
   > $LOG 2>&1

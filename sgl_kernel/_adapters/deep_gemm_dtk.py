@@ -73,13 +73,19 @@ def install():
     shim.dtk_deepgemm = deepgemm  # escape hatch to the raw fork
 
     _dtk_masked = getattr(deepgemm, "m_grouped_bf16_gemm_nt_masked", None)
+    _dtk_pack_bf16 = getattr(deepgemm, "pack_bf16_masked_weight", None)
     if _dtk_masked is not None:
+
+        _bf16_packed = {}  # (data_ptr, shape, dtype) -> packed weight
 
         def _bf16_masked(a, b, d, masked_m=None, expected_m=None,
                          expected_m_per_group=None, config=None, **unknown):
             # sglang names the 5th arg `expected_m` (entrypoint positional,
             # compile_utils warmup passes it as a kwarg); the DTK fork calls
-            # it `expected_m_per_group` and puts `config` last.
+            # it `expected_m_per_group` and puts `config` last. The default
+            # masked mode (2000, BM64/BN256/BK128 HIPC) reads the weight in a
+            # packed layout — raw (G,N,K) weights give garbage numbers, so
+            # weights are packed once and cached by storage identity.
             if unknown:
                 raise TypeError(
                     f"m_grouped_bf16_gemm_nt_masked: unexpected kwargs "
@@ -92,6 +98,13 @@ def install():
                     "m_grouped_bf16_gemm_nt_masked: masked_m and "
                     "expected_m are required"
                 )
+            if _dtk_pack_bf16 is not None and b.dim() == 3:
+                key = (b.data_ptr(), tuple(b.shape), b.dtype)
+                packed = _bf16_packed.get(key)
+                if packed is None:
+                    packed = _dtk_pack_bf16(b.contiguous())
+                    _bf16_packed[key] = packed
+                b = packed
             if config is not None:
                 return _dtk_masked(a, b, d, masked_m, expected_m, config)
             return _dtk_masked(a, b, d, masked_m, expected_m)
