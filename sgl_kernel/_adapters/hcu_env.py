@@ -125,6 +125,12 @@ REGISTRY = {
         "about": "silu_and_mul 后端档位：auto=triton（lightop 过验证后转正），"
                  "triton|lightop|torch",
     },
+    # disaggregation / EP transfer
+    "HCU_DEEPEP_BRIDGE": {
+        "env": "HCU_DEEPEP_BRIDGE", "default": "1",
+        "about": "deep_ep API 桥：sglang v0.5.21 low_latency_dispatch(use_fp8)"
+                 " -> DTK fork（quant_type/topk_weight 位置参）调用形翻译；=0 关闭",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},
