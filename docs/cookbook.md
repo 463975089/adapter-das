@@ -80,12 +80,33 @@ python -m sglang.launch_server \
 | hicache 分层 KV | `--enable-hierarchical-cache`（需 adapter 的 get_device_accessible_ptr 桥，已内置） | ⚠ dense 模型全通（逐出-回迁保真）；**GDN 混合模型 MAMBA 状态宿主迁移输出漂移待修，生产 GDN 模型暂不开** |
 | AWQ 量化 | `--quantization moe_wna16`（见 §2.1） | ✅ |
 | slimquant W4A8 | 零显式旗标（checkpoint 自动识别，nmz18 TP8 graph ON 验证） | ✅ GLM-5-W4A8_V2_6 |
+| PD 分离（节点内） | 三件套命令块见下方（mooncake_tcp，无需 IB） | ✅ 数据面（8 路并发正确零串扰）；⚠ `--disaggregation-enable-kv-checksum` 并发误报勿开 |
 
 ```bash
 # hicache 示例（dense 模型；小池可强制逐出验证回迁）
 python -m sglang.launch_server --model-path /root/models/Qwen3-0.6B \
   --attention-backend fa3 --enable-hierarchical-cache \
   --host 0.0.0.0 --port 30087
+
+# PD 分离示例（节点内两卡 + CPU mini-LB；Qwen3-0.6B 实测）
+# 1) prefill（GPU6）——bootstrap-port 两端一致；nccl-port 各自独立防撞
+CUDA_VISIBLE_DEVICES=6 MC_TCP_ENABLE_CONNECTION_POOL=true python -m sglang.launch_server \
+  --model-path /root/models/Qwen3-0.6B --trust-remote-code --attention-backend triton \
+  --disaggregation-mode prefill --disaggregation-transfer-backend mooncake_tcp \
+  --disaggregation-bootstrap-port 30590 --nccl-port 30390 --tp 1 --page-size 64 \
+  --host 0.0.0.0 --port 30190
+# 2) decode（GPU7）
+CUDA_VISIBLE_DEVICES=7 MC_TCP_ENABLE_CONNECTION_POOL=true python -m sglang.launch_server \
+  --model-path /root/models/Qwen3-0.6B --trust-remote-code --attention-backend triton \
+  --disaggregation-mode decode --disaggregation-transfer-backend mooncake_tcp \
+  --disaggregation-bootstrap-port 30590 --nccl-port 30391 --tp 1 --page-size 64 \
+  --host 0.0.0.0 --port 30191
+# 3) mini-LB（CPU，客户端打 30090）
+python -m sglang_router.launch_router --pd-disaggregation --mini-lb \
+  --prefill http://127.0.0.1:30190 --decode http://127.0.0.1:30191 \
+  --host 0.0.0.0 --port 30090
+# ⚠ 勿加 --disaggregation-enable-kv-checksum：并发≥2 必误报（数据面本身正确）；
+#   mooncake_tcp = mooncake 强制 TCP 传输（MC_FORCE_TCP），节点内无需 IB/RDMA。
 ```
 
 ## 4. 平台约束（必读）
@@ -97,3 +118,4 @@ python -m sglang.launch_server --model-path /root/models/Qwen3-0.6B \
 5. Qwen3.5 全系是 VLM（视觉塔自动加载，纯文本请求正常工作）。
 6. `--page-size` 默认 1 可用；批次 suite 用过 64（R1/flashmla 等场景需要）。
 7. DeepSeek-R1-L4 + flashmla（`--decode-attention-backend flashmla --prefill-attention-backend triton --page-size 64`）为**验证 rig**（截层模型语义本坏，只测链路非精度），物料 `tests/tools/_launch_r1l4_*.sh`。
+8. **任何启动恒显式 `--attention-backend triton/fa3`**：不指定时默认解析到 aiter，dense prefill 的 `mha_batch_prefill_func` 是模块不可调用，首 forward 必崩（PD prefill 首测实测）。
