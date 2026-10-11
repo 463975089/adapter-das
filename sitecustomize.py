@@ -1060,12 +1060,21 @@ if getattr(torch.version, "hip", None) is not None:
             for _mn in (
                 "sglang.srt.layers.deep_gemm_wrapper.configurer",
                 "sglang.srt.layers.deep_gemm_wrapper.entrypoint",
+                "sglang.srt.layers.deep_gemm_wrapper.compile_utils",
                 "sglang.srt.layers.deep_gemm_wrapper",
             ):
                 _m = _sys.modules.get(_mn)
-                if _m is not None and hasattr(_m, "ENABLE_JIT_DEEPGEMM"):
+                if _m is None:
+                    continue
+                if hasattr(_m, "ENABLE_JIT_DEEPGEMM"):
                     _m.ENABLE_JIT_DEEPGEMM = True
                     _m.HCU_DEEPGEMM_BRIDGE_FLIPPED = True
+                # entrypoint/compile_utils bind `deep_gemm` under a module
+                # level `if ENABLE_JIT_DEEPGEMM:` that already ran with the
+                # pre-flip False -- rebind the name or their functions hit
+                # NameError.
+                if not hasattr(_m, "deep_gemm"):
+                    _m.deep_gemm = _sys.modules.get("deep_gemm")
             logging.getLogger("hcu.adapter").info(
                 "HCU DeepGEMM bridge: deep_gemm -> DTK deepgemm alias + "
                 "ENABLE_JIT_DEEPGEMM flipped (EP opt-in)"
