@@ -48,7 +48,8 @@ python -m sglang.launch_server \
   --host 0.0.0.0 --port 30078
 # ⚠ --quantization moe_wna16 是唯一正确入口：默认无旗标会被 capability=(9,3)≥80
 #   骗去自动转 awq_marlin，而 HIP 分支 awq_marlin_repack=None 必炸。
-#   多卡必须 --disable-cuda-graph（见 §4 平台约束）。
+#   多卡 graph 已解禁（911eeeb+ adapter custom AR，见 §4 平台约束）——本例
+#   AWQ 验证时为 eager，graph 版可去掉 --disable-cuda-graph 重验。
 ```
 
 ### 2.2 Qwen3.5-4B + MTP 投机解码（EAGLE，8/8 锚点，accept ~3.0/4）
@@ -157,7 +158,7 @@ CUDA_VISIBLE_DEVICES=6 SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m s
 
 ## 4. 平台约束（必读）
 
-1. **nmz26 多卡必须 `--disable-cuda-graph`**：TP>1 + cuda graph 输出乱码（NCCL/aiter AR 均坏、triton/fa3 均坏；TP1 graph 正常、TP2 eager 正常；nmz18 TP8 graph 曾通过——两机栈差异待深挖）。
+1. **多卡 TP>1 + cuda graph 已解禁（911eeeb 起，默认生效）**：历史乱码根因不是 NCCL，是 aiter AR 图重放损坏 + `sgl_kernel.allreduce` 缺失（sglang 图内 AR 只能落 custom AR）双因叠加；adapter 自制 custom AR（信令+payload 走 host-shm，graph 安全，小消息快 NCCL ~2×，>512KB 自动回 NCCL）修复，TP2 graph e2e 已过（见 models.md 2026-10-11 行）。旧栈或显式 `HCU_TRITON_AR=0` 时仍需 `--disable-cuda-graph`。
 2. **AWQ 永远显式 `--quantization moe_wna16`**（理由见 §2.1）。
 3. **fp16 底模 GDN 模型加 `SGLANG_MAMBA_CONV_DTYPE=float16`**。
 4. thinking 模型（Qwen3-30B-A3B 等）：锚点判定给足 `max_new_tokens`，长文看 `</think>` 后文本。

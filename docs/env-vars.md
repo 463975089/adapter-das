@@ -18,7 +18,11 @@
 | 变量 | 默认 | 自动规则 | 说明 |
 |---|---|---|---|
 | `HCU_DISABLE_OPS` | 空 | —（快关只应显式） | 快关总闸，逗号分隔：`aiter_ar`（拒用→NCCL 回退）、`aiter_fa`（调用时报错）。精度排查用，见 skills/…/kill-switches.md |
-| `HCU_AITER_AR` | 0 | gfx93\* 且检测到**旧版** aiter（`aiter.ops.triton.custom_all_reduce`）→ 自动拒用（图重放损坏，1eb038d）；新版 `aiter.dist` GraphSafe 类已过全套压测 → 自动允许 | =1 显式夺回（压测先行：`pytest tests/vendor/test_allreduce.py`） |
+| `HCU_AITER_AR` | 0 | gfx93\* 且检测到**旧版** aiter（`aiter.ops.triton.custom_all_reduce`）→ 自动拒用（图重放损坏，1eb038d）；新版 `aiter.dist` GraphSafe 类已过全套压测 → 自动允许 | =1 显式夺回（压测先行：`pytest tests/vendor/test_allreduce.py`）。**custom AR 在位时本变量不参与**（sglang 直接路由到 `sgl_kernel.allreduce`，aiter AR 不会再被选中） |
+| `HCU_TRITON_AR` | 1 | —（custom AR 的 sgl_kernel.allreduce 模块随包装载） | 自制 custom AR（graph 安全 TP all-reduce）：=1 路由 sglang CustomAllreduce 至自家实现（`sgl_kernel/_adapters/triton_ar.py` + `libhcu_ar.so`，信令+payload 走 host-shm）；=0 回退 aiter AR 自动规则（多卡 graph 会坏，须 `--disable-cuda-graph`）。门禁 `tests/tools/_test_hcu_ar2.py` |
+| `HCU_TRITON_AR_SLOTS` | 空（按 WS 取 8/4/2） | — | custom AR 轮转槽数 S（槽复用由 DONE 标志守卫，槽越多容忍的乱序越深） |
+| `HCU_TRITON_AR_BUDGET` | 100000000 | — | custom AR 每次自旋预算（PCIe 轮询次数，≈1.4µs/次；超出降级继续并计 diag 计数器——`TritonARState.read_sync_words()` 可读） |
+| `HCU_TRITON_AR_MAX_KB` | 512 | —（实测交叉点：4/64/256KB 快 NCCL 2.6/2.1/1.5×，1MB 起 NCCL 快） | custom AR 尺寸上限：≤此值走 custom AR，更大 sglang 自动走 NCCL；0=不设限 |
 | `HCU_MQA_EMU` | 0 | gfx93\* 自动开（aiter MQA 核硬断言 gfx942/950，gfx936 无 fp8、gfx938 暂仍被门挡）；DTK 放开门槛后 gfx938 分支转自动关 | paged/ragged MQA logits 的 torch 模拟；显式 0/1 覆盖 |
 | `HCU_FA3_EMU` | 1 | — | fa3 attention backend 的 torch 模拟（`sgl_kernel.flash_attn`）：开=设 `SGLANG_USE_SGL_FA3_KERNEL=1` 并放行 `_is_fa3_supported`（HIP 上原样必 raise/落 fa2 坏 wheel）；=0 回上游行为。fp8 KV（descale）与 fp8-q 路径已含 |
 | `HCU_DSA_PRESHUFFLE` | 1 | — | DSA aiter-preshuffle 路径；=0 回 legacy page_size=1 |
