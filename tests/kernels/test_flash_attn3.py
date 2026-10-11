@@ -168,6 +168,75 @@ def test_softcap():
     )
 
 
+def test_mla_split_qv():
+    """FA3 MLA split form (sglang ROCm absorbed path, forward_absorb_rocm_core):
+    q = rope query (H, Dr), qv = w_kc-absorbed latent query (H, Dv),
+    logits = (q.k + qv.v) * scale, output = P @ v. MQA (Hk=1), K and V
+    dims differ — mirrors DeepSeek MLA with page 64."""
+    torch.manual_seed(41)
+    bs, H, Hk, Dr, Dv = 3, 8, 1, 64, 512
+    lens_q = [5, 1, 8]
+    pages_per_req = 12
+    pool_k, pool_v, block_table, seqlens = _make_paged_kv(
+        bs, pages_per_req, H, Hk, Dr, Dv, seed=41
+    )
+    maxL = max(lens_q)
+    seqlens_c = seqlens.clamp(min=maxL).int()
+    device = torch.device("cuda")
+    g = torch.Generator().manual_seed(42)
+    M = sum(lens_q)
+    q = torch.randn(M, H, Dr, generator=g).to(torch.bfloat16)
+    qv = torch.randn(M, H, Dv, generator=g).to(torch.bfloat16)
+    cu_q = torch.tensor(
+        [0] + list(torch.tensor(lens_q).cumsum(0)), dtype=torch.int32
+    )
+    scale = Dr**-0.5
+
+    o = flash_attn_with_kvcache(
+        q=q.to(device),
+        qv=qv.to(device),
+        k_cache=pool_k.to(device),
+        v_cache=pool_v.to(device),
+        page_table=block_table.to(device),
+        cache_seqlens=seqlens_c.to(device),
+        cu_seqlens_q=cu_q.to(device),
+        softmax_scale=scale,
+        causal=True,
+    )
+
+    # dense reference: logits_ij = (q_i.k_j + qv_i.v_j) * scale
+    outs = []
+    G = H // Hk
+    lens = lens_q
+    for b in range(bs):
+        s = int(seqlens_c[b])
+        Lq = lens[b]
+        k_all = pool_k[block_table[b].long()].reshape(-1, Hk, Dr)[:s]
+        v_all = pool_v[block_table[b].long()].reshape(-1, Hk, Dv)[:s]
+        qb = q[int(cu_q[b]) : int(cu_q[b + 1])].float()
+        qvb = qv[int(cu_q[b]) : int(cu_q[b + 1])].float()
+        sc = torch.zeros(Lq, H, s)
+        for h in range(H):
+            sc[:, h, :] = (
+                qb[:, h, :] @ k_all[:, h // G, :].t()
+                + qvb[:, h, :] @ v_all[:, h // G, :].t()
+            ) * scale
+        qpos = torch.arange(s - Lq, s)[:, None]
+        sc = sc.masked_fill(
+            torch.arange(s)[None, None, :] > qpos[:, :, None], float("-inf")
+        )
+        p = torch.softmax(sc, dim=-1)
+        out = torch.zeros(Lq, H, Dv)
+        for h in range(H):
+            out[:, h, :] = p[:, h, :] @ v_all[:, h // G, :]
+        outs.append(out)
+    ref = torch.cat(outs)
+    diff = (o.float().cpu() - ref).abs().max().item()
+    assert o.shape == (M, H, Dv), f"mla qv: shape {o.shape}"
+    assert diff < 2e-2, f"mla qv: max diff {diff}"
+    print(f"PASS mla split qv (Dr={Dr},Dv={Dv},MQA): diff={diff:.5f}", flush=True)
+
+
 def test_varlen_prefill():
     torch.manual_seed(21)
     H, Hk, D, Dv = 8, 2, 64, 64

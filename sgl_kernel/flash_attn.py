@@ -175,10 +175,13 @@ def _merge_acc(o_acc, lse_acc, o_c, lse_c):
 
 
 def _attend_chunked(qp, kv_src, seqlens, q_start, scale, causal, window_size,
-                    softcap, k_descale, v_descale, out_dtype, total_tokens):
+                    softcap, k_descale, v_descale, out_dtype, total_tokens,
+                    qvp=None):
     """Online-softmax attention over logical-order KV in token chunks.
 
     qp: (bs, maxL, H, D) fp32 zero-padded queries
+    qvp: optional (bs, maxL, H, D_v) fp32 "value query" — the FA3 MLA split
+    form (sglang's ROCm absorbed path): logits = q.k + qv.v, output = P@v.
     kv_src(c0, c1) -> (k, v) (bs, C, H_kv, D) fp32 chunks in logical order
     seqlens/q_start: (bs,) int64; maxL folded into qp.
     total_tokens: STATIC full width (page-aligned block-table span). The
@@ -203,6 +206,8 @@ def _attend_chunked(qp, kv_src, seqlens, q_start, scale, causal, window_size,
         k_c = _descale(k_descale, k_c, Hk)
         v_c = _descale(v_descale, v_c, Hk)
         scores = _grouped_scores(qp, k_c, scale)  # (bs, maxL, H, C)
+        if qvp is not None:
+            scores = scores + _grouped_scores(qvp, v_c, scale)
 
         col = torch.arange(c0, c1, device=device)
         valid = col[None, :] < seqlens[:, None]  # (bs, C)
@@ -294,9 +299,9 @@ def flash_attn_with_kvcache(
 ):
     if q.dim() not in (3, 4):
         raise ValueError(f"flash_attn emu: q must be 3D/4D, got {q.dim()}")
-    if q_descale is not None or sinks is not None or qv is not None:
+    if q_descale is not None or sinks is not None or only_qv:
         raise NotImplementedError(
-            "flash_attn (HCU emu): q_descale/sinks/qv paths not supported"
+            "flash_attn (HCU emu): q_descale/sinks/only_qv paths not supported"
         )
     if rotary_cos is not None or k is not None:
         raise NotImplementedError(
@@ -339,6 +344,18 @@ def flash_attn_with_kvcache(
     lens_q = (cu_q[1:] - cu_q[:-1]).to(torch.int64)
 
     qp, cell, _ = _pad_queries(q3, cu_q, bs, maxL, device)
+    qvp = None
+    if qv is not None:
+        # FA3 MLA split form: qv is the w_kc-absorbed latent query whose dot
+        # with the compressed KV adds to the logits (rope dot covers the
+        # rest). Same padding grid as q.
+        qv3 = qv.reshape(-1, qv.shape[-2], qv.shape[-1]).to(torch.float32)
+        if qv3.shape[0] != M or qv3.shape[1] != H:
+            raise ValueError(
+                f"flash_attn emu: qv {tuple(qv.shape)} mismatches q "
+                f"{tuple(q.shape)}"
+            )
+        qvp, _, _ = _pad_queries(qv3, cu_q, bs, maxL, device)
 
     src_k = _PagedKV(k_cache, page_table)
     src_v = _PagedKV(v_cache, page_table)
@@ -354,6 +371,7 @@ def flash_attn_with_kvcache(
         qp, kv_pair, seqlens, q_start, scale, causal, window_size, softcap,
         k_descale, v_descale, dtype,
         total_tokens=page_table.shape[1] * k_cache.shape[1],
+        qvp=qvp,
     )
     flat_o = o_pad.reshape(-1, *o_pad.shape[2:])  # (bs*maxL, H, Dv)
     o = flat_o[cell]  # (M, H, Dv) back in caller token order

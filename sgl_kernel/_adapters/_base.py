@@ -81,7 +81,8 @@ class _OverlayLoader(importlib.abc.Loader):
         return self._inner.create_module(spec)
 
     def exec_module(self, module):
-        self._inner.exec_module(module)
+        if self._inner is not None:  # namespace package: no code to exec
+            self._inner.exec_module(module)
         for attr, value in self._extras.items():
             if not hasattr(module, attr):
                 setattr(module, attr, value)
