@@ -80,7 +80,7 @@ python -m sglang.launch_server \
 | hicache 分层 KV | `--enable-hierarchical-cache`（需 adapter 的 get_device_accessible_ptr 桥，已内置） | ⚠ dense 模型全通（逐出-回迁保真）；**GDN 混合模型 MAMBA 状态宿主迁移输出漂移待修，生产 GDN 模型暂不开** |
 | AWQ 量化 | `--quantization moe_wna16`（见 §2.1） | ✅ |
 | slimquant W4A8 | 零显式旗标（checkpoint 自动识别，nmz18 TP8 graph ON 验证） | ✅ GLM-5-W4A8_V2_6 |
-| PD 分离（节点内） | 三件套命令块见下方（mooncake_tcp，无需 IB） | ✅ 数据面（8 路并发正确零串扰）；⚠ `--disaggregation-enable-kv-checksum` 并发误报勿开 |
+| PD 分离（节点内） | TCP 版命令块见下方（mooncake_tcp，无需 IB）；RDMA 版见同节（mooncake RoCE，需容器注入三步） | ✅ 双传输面均验：TCP 8 路并发零串扰；RDMA 同配方 5/6+确定性+8 路全过；⚠ `--disaggregation-enable-kv-checksum` 并发误报勿开 |
 | EP 低延迟（DeepEP） | 命令块见下方（LL 是 bf16 MoE 唯一可用 deepep 模式） | ✅ Qwen3-30B-A3B TP2+EP2（锚点+并发全对） |
 | EP 高吞吐 / auto | `--deepep-mode normal/auto` | ❌ 阻塞在 DTK deepgemm contiguous 内核（bf16 数字坏；fp8 scale 语义不匹配），vendor 修复后回归 `tests/tools/_test_dtk_deepgemm.py` 再攻 |
 
@@ -126,6 +126,33 @@ SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m sglang.launch_server \
 # ⚠ deepep normal（高吞吐）与 auto 暂不可用：见速查表——DTK deepgemm contiguous 内核
 #   语义缺陷（w16a16 2D 输入 VMFault/3D 数字错；fp8 contiguous 要求 row-wise scale
 #   与 sglang 128-block 不匹配），待 vendor 修复后回归 _test_dtk_deepgemm.py。
+
+# PD 分离 RDMA 版（mooncake RoCE 直传；Qwen3-0.6B 实测 30195/30196/30091）
+#   与 TCP 版唯一差异：--disaggregation-transfer-backend mooncake（默认即 RDMA）。
+#   ⚠ 必须用 `docker exec --privileged` 启动两端服务（memlock 见下方注入配方）。
+#
+# —— 非特权容器接入 RDMA 三步（一次性，容器重启需重做第 1/2 步）——
+# 1) 设备节点：容器默认无 /dev/infiniband，CAP_MKNOD 在，直接建：
+#    for i in $(seq 0 9); do mknod /dev/infiniband/uverbs$i c 231 $((192+i));
+#      mknod /dev/infiniband/issm$i c 231 $((64+i)); done; chmod 666 /dev/infiniband/*
+# 2) cgroup devices 白名单（否则 open 报 EPERM；需 docker 组权限，只动自己的容器）：
+#    docker run --rm --privileged lzg-mtv-img:latest sh -c \
+#      'mkdir -p /tmp/cg && mount -t cgroup -o devices none /tmp/cg && \
+#       echo "c 231:* rwm" > /tmp/cg/docker/<容器长ID>/devices.allow'
+#    （daemon 禁挂 cgroup 路径时改用 --pid host + nsenter -t 1 -m 进宿主 mount ns 执行）
+# 3) memlock：容器默认 64MB，RDMA CQ 创建报 ENOMEM [12]——
+#    `docker exec --privileged` 启动服务即解（CAP_IPC_LOCK 豁免 pinned 记账；
+#    runc exec 每次按容器 spec 重置 rlimits，运行时改 PID1 不传播，硬限 64 也提不动）。
+#   传输面验证：两端日志 `Using RDMA transport (RoCE/iWARP)` + `Found N HCAs`
+#   （TCP 版对应行是 TcpTransport listen）；decode 侧 #transfer-req 为在途传输。
+# prefill 端（GPU6）：
+CUDA_VISIBLE_DEVICES=6 SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m sglang.launch_server \
+  --model-path /root/models/Qwen3-0.6B --trust-remote-code --attention-backend triton \
+  --disaggregation-mode prefill --disaggregation-transfer-backend mooncake \
+  --disaggregation-bootstrap-port 30591 --nccl-port 30395 --tp 1 --page-size 64 \
+  --host 0.0.0.0 --port 30195
+# decode 端同参数改 --disaggregation-mode decode、--port 30196、--nccl-port 30396；
+# mooncake DTK 0.3.13 的 initialize 恰为 v0.5.21 的 4 参形态，无需 adapter 桥。
 ```
 
 ## 4. 平台约束（必读）

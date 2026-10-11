@@ -1,0 +1,17 @@
+#!/bin/bash
+# PD RDMA decode (GPU7, port 30196)
+python3 -c "import resource; resource.setrlimit(resource.RLIMIT_MEMLOCK, (-1,-1))" 2>/dev/null
+export PYTHONPATH=/root/hcu_t2:/root/sglang-v0521-src/python
+export SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python
+export CUDA_VISIBLE_DEVICES=7
+exec python -m sglang.launch_server \
+  --model-path /root/models/Qwen3-0.6B \
+  --trust-remote-code \
+  --attention-backend triton \
+  --disaggregation-mode decode \
+  --disaggregation-transfer-backend mooncake \
+  --disaggregation-bootstrap-port 30591 \
+  --nccl-port 30396 \
+  --tp 1 --page-size 64 \
+  --host 0.0.0.0 --port 30196 \
+  > /root/logs/pd_rdma_decode_30196.log 2>&1
