@@ -1018,3 +1018,47 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: deep_ep bridge not installed", exc_info=True
         )
+
+    # 9. DeepGEMM DTK bridge (EP, 2026-10-11): opt-in HCU_DEEPGEMM_BRIDGE=1.
+    #    The deepep_ll/deepep_normal MoE formats have no triton runner; the
+    #    only reachable compute backends are DeepGEMM (CUDA) / aiter / npu,
+    #    and the wrapper's platform gate hard-disables DeepGEMM on HIP even
+    #    though the DTK deepgemm wheel carries upstream-named grouped GEMMs
+    #    (incl. m_grouped_bf16_gemm_nt_masked/_contiguous). Two pieces:
+    #    (a) sgl_kernel._adapters.deep_gemm_dtk aliases DTK `deepgemm` as
+    #        `deep_gemm` in sys.modules;
+    #    (b) the overlay finder flips configurer.ENABLE_JIT_DEEPGEMM to True
+    #        after its (platform-gated) computation, which routes DeepEP MoE
+    #        to the modern FusedMoE runner path. fp8 DeepEP stays unverified:
+    #        scale-layout transforms raise loudly in the shim until validated.
+    try:
+        if _he is not None and _he.enabled("HCU_DEEPGEMM_BRIDGE"):
+            from sgl_kernel._adapters import deep_gemm_dtk as _dgd
+
+            _dgd.install()
+
+            from sgl_kernel._adapters._base import (
+                LibStubFinder as _LSF,
+                register_finder as _reg,
+            )
+
+            _reg(
+                _LSF(
+                    "sglang.srt.layers.deep_gemm_wrapper",
+                    allowlist={
+                        "sglang.srt.layers.deep_gemm_wrapper.configurer": {
+                            "ENABLE_JIT_DEEPGEMM": True
+                        }
+                    },
+                )
+            )
+            logging.getLogger("hcu.adapter").info(
+                "HCU DeepGEMM bridge: deep_gemm -> DTK deepgemm alias + "
+                "ENABLE_JIT_DEEPGEMM flipped (EP opt-in)"
+            )
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: deepgemm bridge not installed", exc_info=True
+        )

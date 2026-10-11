@@ -131,6 +131,13 @@ REGISTRY = {
         "about": "deep_ep API 桥：sglang v0.5.21 low_latency_dispatch(use_fp8)"
                  " -> DTK fork（quant_type/topk_weight 位置参）调用形翻译；=0 关闭",
     },
+    "HCU_DEEPGEMM_BRIDGE": {
+        "env": "HCU_DEEPGEMM_BRIDGE", "default": "0",
+        "about": "DeepGEMM 桥（EP 显式开启）：DTK deepgemm 别名为 deep_gemm +"
+                 " wrapper ENABLE_JIT_DEEPGEMM 翻转，解锁 deepep MoE runner"
+                 "（bf16 grouped GEMM 已验；fp8 scale 布局未验会响亮报错）；"
+                 "=1 开 =0 关",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},
