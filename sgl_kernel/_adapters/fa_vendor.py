@@ -150,6 +150,106 @@ _KV_FALLBACK_KEYS = (
 _VENDOR_Q_LIM = 64
 
 
+def _install_triton_decode(_sk_fa, registry):
+    """Route the decode kvcache face (L=1 uniform windows on the paged
+    pool) to the in-tree triton kernel; everything else keeps the emu.
+    Also rebinds the upstream ops layer (stable kwargs) so capture paths
+    entering via the v3 wrapper land here cleanly."""
+    from sgl_kernel.paged_attn_triton import paged_attention_decode_triton
+
+    _emu_kvcache = _sk_fa.flash_attn_with_kvcache
+    _names = (
+        "q,k_cache,v_cache,k,v,rotary_cos,rotary_sin,cache_seqlens,"
+        "cache_batch_idx,cache_leftpad,page_table,cu_seqlens_q,"
+        "cu_seqlens_k_new,max_seqlen_q,rotary_seqlens,q_descale,"
+        "k_descale,v_descale,softmax_scale,causal,window_size,"
+        "attention_chunk,softcap,rotary_interleaved,scheduler_metadata,"
+        "num_splits,pack_gqa,only_qv,sm_margin,return_softmax_lse,sinks,"
+        "out"
+    ).split(",")
+
+    def flash_attn_with_kvcache(*args, **kw):
+        p = dict(zip(_names, args))
+        p.update(kw)
+        q = p.get("q")
+        triton_ok = (
+            q is not None
+            and q.dim() == 4
+            and q.shape[1] == 1
+            and p.get("page_table") is not None
+            and p.get("cache_seqlens") is not None
+            and p.get("cu_seqlens_q") is None
+            and p.get("qv") is None
+            and not p.get("only_qv")
+            and all(p.get(k) is None for k in _KV_FALLBACK_KEYS)
+            and (p.get("window_size") or (-1, -1)) == (-1, -1)
+            and (p.get("softcap") or 0.0) == 0.0
+        )
+        if triton_ok:
+            o, lse = paged_attention_decode_triton(
+                q,
+                p["k_cache"],
+                p["v_cache"],
+                p["page_table"],
+                p["cache_seqlens"],
+                softmax_scale=p.get("softmax_scale"),
+            )
+            return (o, lse) if p.get("return_softmax_lse") else o
+        return _emu_kvcache(**p)
+
+    _sk_fa.flash_attn_with_kvcache = flash_attn_with_kvcache
+    registry.register(
+        "flash_attention",
+        flash_attn_with_kvcache,
+        target="sgl_kernel.flash_attn:flash_attn_with_kvcache",
+        mechanism=registry.MECH_REBIND,
+        detail="decode L=1 -> triton kernel; rest -> emu (HCU_FA_IMPL=triton)",
+    )
+
+    # ops-layer rebind (kwargs-stable), mirroring the vendor branch but
+    # delegating varlen straight to the emu (widow windows keep emu)
+    try:
+        import sglang.kernels.ops.attention.flash_attention_v3 as _fa3v
+
+        def _ops_kvcache(
+            q, k_cache, v_cache,
+            k=None, v=None, qv=None, rotary_cos=None, rotary_sin=None,
+            cache_seqlens=None, cache_batch_idx=None, cache_leftpad=None,
+            page_table=None, cu_seqlens_q=None, cu_seqlens_k_new=None,
+            max_seqlen_q=None, rotary_seqlens=None, q_descale=None,
+            k_descale=None, v_descale=None, softmax_scale=None,
+            causal=False, window_size=(-1, -1), attention_chunk=None,
+            softcap=0.0, rotary_interleaved=True, scheduler_metadata=None,
+            num_splits=0, pack_gqa=None, only_qv=False, sm_margin=0,
+            return_softmax_lse=False, sinks=None, out=None,
+        ):
+            return flash_attn_with_kvcache(
+                q=q, k_cache=k_cache, v_cache=v_cache,
+                page_table=page_table, cache_seqlens=cache_seqlens,
+                cache_batch_idx=cache_batch_idx, cu_seqlens_q=cu_seqlens_q,
+                max_seqlen_q=max_seqlen_q, softmax_scale=softmax_scale,
+                causal=causal, window_size=window_size, softcap=softcap,
+                return_softmax_lse=return_softmax_lse, out=out,
+            )
+
+        _fa3v.flash_attn_with_kvcache = _ops_kvcache
+        registry.register(
+            "flash_attention",
+            _ops_kvcache,
+            target="sglang...flash_attention_v3:flash_attn_with_kvcache",
+            mechanism=registry.MECH_REBIND,
+            detail="ops-layer rebind; triton decode route",
+        )
+    except Exception:
+        LOG.warning(
+            "HCU adapter: ops-layer triton rebind skipped", exc_info=True
+        )
+    LOG.warning(
+        "HCU adapter: fa3 decode routed to the triton paged kernel "
+        "(HCU_FA_IMPL=triton; wide windows stay emu)"
+    )
+
+
 def install():
     try:
         import flash_attn as _probe  # noqa: F401
@@ -163,6 +263,14 @@ def install():
     from sgl_kernel import flash_attn as _sk_fa
 
     mode, _src = hcu_env.resolve("HCU_FA_IMPL")
+    triton_mode = mode == "triton"
+    if triton_mode:
+        # tier-③ triton route: decode kvcache (L=1 windows) -> our triton
+        # kernel (numerics gate: tests/tools/_test_paged_attn_triton.py
+        # ALL-PASS on gfx936+gfx938); wide windows/prefill stay on the emu.
+        # Vendor wheel untouched (its paged path remains gap-listed).
+        _install_triton_decode(_sk_fa, registry)
+        return
     vendor_enabled = mode == "vendor"
     if mode == "emu" or mode == "auto":
         if mode == "auto":
@@ -174,7 +282,7 @@ def install():
             pass
         LOG.warning(
             "HCU adapter: HCU_FA_IMPL=%s -- fa3 attention stays on the "
-            "torch emulation (vendor wheel gated to =vendor)", mode
+            "torch emulation (triton decode route available via =triton)", mode
         )
         return
 

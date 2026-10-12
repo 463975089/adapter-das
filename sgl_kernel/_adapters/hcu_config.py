@@ -189,6 +189,9 @@ BACKEND_CATALOG = {
             "emu": {"status": "production",
                     "note": "chunked online-softmax torch 模拟（默认；全契约 "
                             "graph-safe）"},
+            "triton": {"status": "candidate",
+                       "note": "decode L=1 分页查表 triton 核（自研，fp32 "
+                               "累加；门禁 5/5 双卡型 ALL-PASS），宽窗仍 emu"},
         },
     },
     "sampling": {
