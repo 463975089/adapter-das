@@ -26,6 +26,7 @@
 | 日期 | 模型 | 规模/卡 | 节点/栈 | 参数要点 | 启动 | 生成 | 精度 | 长文 | 备注 |
 |---|---|---|---|---|---|---|---|---|---|
 | 2026-10-08 | Qwen3-0.6B (bf16) | 1.2G/1卡 | nmz26 dtk2604 py2.5-era | TP1, triton attn | ✅ | ✅ | ✅ 对话正确 | ✅ | 首个 dense e2e；需 --attention-backend triton |
+| 2026-10-12 | Qwen3-0.6B (bf16) | 1.2G/1卡 | **bw7 BW200-UBB BW1000 (gfx936)** dtk26041 torch2.11 + 官方 v0.5.21 | TP1, **fa3 attn (HCU_FA_IMPL=auto→emu)**, no-graph, radix=python | ✅ | ✅ | ✅ 推理连贯零词汤 | ✅ 1.3K | **BW1000/200 栈首验 + is_cuda 语义路线首航**；seam 平台判定+11 桥全绿；vendor wheel paged 短窗词汤缺口清单（triton 核待写）；实参细节见 env-vars HCU_FA_IMPL |
 | 2026-10-08 | Qwen3.6-35B-A3B (GDN+MoE bf16) | 67G/1卡 | nmz26 | TP1 144G, mem 0.80 | ✅ | ✅ | ✅ GSM8K-100 69% | ✅ | MoE+线性注意力；graph capture 经 moe_align triton 化修复 (527ad97) |
 | 2026-10-10 | GLM-5-W4A8_V2_6 (slimquant int4-int8 MoE) | ~G/8卡 | nmz18 dtk26041 torch2.11 | TP8 graph ON 零旗标 | ✅ | ✅ | ✅ 语义/长文锚点 | ✅ | 两 bug 破案（fbc540c rope / 1eb038d aiter AR）；NSA emu 短路验证 |
 | 2026-10-10 | Qwen3-4B (bf16) | 7.6G/1卡 | nmz26 dtk26041 torch2.11 + **官方 v0.5.21 release** | TP1, triton attn, graph ON | ✅ | ✅ | ✅ GSM8K-100 68%（16并发46s，无算子错例） | ✅ | 首个官方 release 版；需 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`（rust TreeCore 无预编译扩展，见下） |

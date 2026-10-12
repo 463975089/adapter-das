@@ -44,6 +44,21 @@ _BOUND = {}
 TEXT_PATCH_ALLOWLIST = {
     ("fused_moe", "assert _is_cuda or _is_xpu, ("),
     ("kda", "t < t_slot"),  # prefill-CP rope fused guard, same pattern
+    # torch2.11 cannot infer dtype from numpy scalars (np.prod int64) when
+    # building the KV-pool stride tensor (dlpack route); int() restores the
+    # pre-dlpack behavior "python int infers an integer dtype".
+    ("kv_pool_strides", "np.prod(x.shape[1:]) * x.dtype.itemsize"),
+    # gfx936 DTK hipcc (clang) rejects nvcc-isms in upstream JIT rope:
+    # bare __syncwarp() (needs mask arg via portability shim) and structured
+    # bindings into HIP_vector_type (anonymous union). Patch both to
+    # portable equivalents at JIT-source-read time.
+    ("rotary_embedding", "  __syncwarp();  // to avoid warp divergence"),
+    ("rotary_embedding", "      const auto [x0, x1] = cast<fp32x2_t>(input_vec_x[j]);"),
+    # torch2.11 exports numpy arrays through DLPack; numpy 1.25 cannot signal
+    # the read-only flag, so the frombuffer payload must be a writable copy
+    # before ByteTensor construction (source-level: every import path binds
+    # the patched body).
+    ("dist_broadcast", "torch.ByteTensor(\n                np.frombuffer(serialized_data, dtype=np.uint8)\n            )"),
 }
 
 

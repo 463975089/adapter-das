@@ -13,6 +13,12 @@ import importlib.machinery
 import sys
 import types
 
+# allowlist sentinel: means "this attr must NOT exist" — module __getattr__
+# raises AttributeError so upstream feature-detection (`hasattr`) reports
+# absent and takes its own fallback path. Use when reporting-broken is worse
+# than reporting-absent (e.g. flashinfer allreduce_fusion API probes).
+ABSENT = object()
+
 
 class Missing:
     """Lazy failure handle: attribute access keeps returning handles (so
@@ -32,6 +38,7 @@ class Missing:
             "__getattr__",
             "__code__",
             "__wrapped__",
+            "__signature__",
         )
     )
 
@@ -50,6 +57,21 @@ class Missing:
             f"HCU yet. The upstream code path that calls it needs a real "
             f"adapter entry (triton port) in sgl_kernel._adapters.{self._lib}."
         )
+
+    def __mro_entries__(self, bases):
+        # class-inheritance protocol: upstream CUDA-branch modules sometimes
+        # subclass a missing symbol (e.g. flashinfer.comm.mnnvl.CommBackend).
+        # Let the class statement close over object; constructed classes with
+        # no real base raise AttributeError at first use of an inherited
+        # method -- loud enough, and import must not break.
+        import logging
+
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: '%s' missing from %s -- subclassed as plain object;"
+            " inherited-method calls will fail loudly (gap list)",
+            self._name, self._lib,
+        )
+        return (object,)
 
     def __dir__(self):
         return []
@@ -87,6 +109,14 @@ class _OverlayLoader(importlib.abc.Loader):
         if self._inner is not None:  # namespace package: no code to exec
             self._inner.exec_module(module)
         for attr, value in self._extras.items():
+            if value is ABSENT:
+                # deny an attr a real module actually defines (feature probes)
+                if hasattr(module, attr):
+                    try:
+                        delattr(module, attr)
+                    except (AttributeError, TypeError):
+                        setattr(module, attr, None)  # last resort: make it falsy-none
+                continue
             if not hasattr(module, attr):
                 setattr(module, attr, value)
         # replacements win over attrs the real module defines (unlike
@@ -121,7 +151,8 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     NotImplementedError naming the missing kernel.
     """
 
-    def __init__(self, lib_name, allowlist=None, overrides=None, post_hooks=None):
+    def __init__(self, lib_name, allowlist=None, overrides=None, post_hooks=None,
+                 deny=None):
         self.lib_name = lib_name
         # fullname -> absolute module attr -> value
         self.allowlist = dict(allowlist or {})
@@ -129,6 +160,10 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         self.overrides = dict(overrides or {})
         # fullname -> fn(module) run after exec (class-method wrapping etc.)
         self.post_hooks = dict(post_hooks or {})
+        # fullnames that must NOT resolve: find_spec returns None so the real
+        # import machinery raises ModuleNotFoundError (upstream except ImportError
+        # fallbacks). Prefix match covers submodules.
+        self._deny = tuple(deny or ())
 
     def _extra_attrs(self, fullname):
         return self.allowlist.get(fullname, {})
@@ -151,6 +186,8 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             fullname == self.lib_name or fullname.startswith(self.lib_name + ".")
         ):
             return None
+        if any(fullname == d or fullname.startswith(d + ".") for d in self._deny):
+            return None  # module must not exist -> upstream takes ImportError path
         try:
             real = importlib.machinery.PathFinder.find_spec(fullname, path)
         except Exception:
@@ -175,7 +212,13 @@ class LibStubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
 
         def _getattr(item, _name=spec.name, _ok=attrs, _lib=self.lib_name):
             if item in _ok:
-                return _ok[item]
+                v = _ok[item]
+                if v is ABSENT:
+                    raise AttributeError(
+                        f"{_name}.{item} is explicitly absent on HCU"
+                        " (adapter deny list)"
+                    )
+                return v
             return Missing(f"{_name}.{item}", _lib)
 
         mod.__getattr__ = _getattr

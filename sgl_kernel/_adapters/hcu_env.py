@@ -93,6 +93,12 @@ REGISTRY = {
         "env": "HCU_ADAPTER_DUMP", "default": "",
         "about": "启动时落 runtime dump JSON（每算子活跃实现+安装方式；1=打进日志）",
     },
+    # platform semantics — governance §0.5 is_cuda 路线（platform_seam.py）
+    "HCU_PLATFORM_SEMANTICS": {
+        "env": "HCU_PLATFORM_SEMANTICS", "default": "cuda",
+        "about": "sglang 平台判定语义：cuda=上游判定统一回 CUDA（新模型天然"
+                 "走 CUDA 分支，§0.5）；hip=legacy 适配路线（调试/A-B 对照）",
+    },
     # custom all-reduce
     "HCU_AITER_AR": {
         "env": "HCU_AITER_AR", "default": "0",
@@ -131,6 +137,13 @@ REGISTRY = {
         "about": "fa3 attention backend torch 模拟（sgl_kernel.flash_attn emu）："
                  "开=设 SGLANG_USE_SGL_FA3_KERNEL=1 并放行 _is_fa3_supported；"
                  "=0 回上游行为（HIP 上 fa3 必 raise/落 fa2 坏 wheel）",
+    },
+    "HCU_FA_IMPL": {
+        "env": "HCU_FA_IMPL", "default": "auto",
+        "about": "fa3 注意力面档位：auto=emu（宽窗；缺 vendor 轮自动全 emu）"
+                 "|vendor=decode/verify 短窗走 DTK flash_attn wheel（gfx936 "
+                 "wheel paged 短窗存在词汤级数值问题，2026-10-12 bw7 实测，"
+                 "待 DTK 修）|emu=恒 torch 模拟",
     },
     "HCU_DSA_PRESHUFFLE": {
         "env": "HCU_DSA_PRESHUFFLE", "default": "1",

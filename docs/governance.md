@@ -65,6 +65,18 @@ CUDA 语义的调用面，把每个符号路由到 HCU 侧最合适的实现：
 - 性能在"跑通"之后按 §3 裁决链逐点做：triton 先行产物转 ref 备胎，
   lightop/aiter 等价核就位后路由切 vendor（catalog 状态演进）。
 
+**落地形态（2026-10-12 bw7 首验）**：`sgl_kernel/_adapters/platform_seam.py`
+（编排器在 sitecustomize 最先调它——`common.py` import 时就用 is_hip()
+冻结 FP8_E4M3_MAX，判定函数必须抢在所有 sglang import 前换掉）。合成态
+三原则：**模型层 CUDA 语义 + 内核层 HIP 真值 + 硬件层不动**——只翻
+sglang 的判定 seam（is_cuda/is_hip/alike、platforms 解析、
+is_flashinfer_available、external-event 口、CUDA 版本特性门统一 False、
+FP8 常量重算 fn），torch.version / triton 编译后端 / vllm HIP 构建 /
+kernels 选核层全保持真值。开关 `HCU_PLATFORM_SEMANTICS=cuda|hip`（hip=
+legacy 路线，A-B 对照）。is_cuda 语义放大的缝隙类型（缺 vendor 库裸
+import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms）
+逐点按 §3 裁决链落桥，registry dump 逐条可见。
+
 **验收口径**：新模型在 CUDA 语义下过四判定（启动/生成/精度/长文）即算
 支持达成，性能不设门槛。stub 每次真实触发记录为**缺口清单**条目
 （符号+调用点+频次）——这张表就是 triton 排期与向 DTK 提 vendor 需求的输入。

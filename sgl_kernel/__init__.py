@@ -33,6 +33,17 @@ from sgl_kernel.moe import (
 )
 from sgl_kernel.gemm_fp8 import fp8_scaled_mm
 from sgl_kernel.gemm_int8 import int8_scaled_mm
+from sgl_kernel.weak_ref import weak_ref_tensor, weak_ref_tensors  # noqa: F401
+from sgl_kernel import utils as _utils_mod  # noqa: F401  # arch helper surface
+from sgl_kernel import utils as _sk_utils  # re-export for `sgl_kernel.utils.X`
+
+_sk_utils.is_arch_support_pdl = _utils_mod.is_arch_support_pdl
+from sgl_kernel.sampling import (  # §0.5 is_cuda sampler surface
+    min_p_sampling_from_probs,
+    top_k_renorm_prob,
+    top_k_top_p_sampling_from_probs,
+    top_p_renorm_prob,
+)
 from sgl_kernel.flash_attn import (  # noqa: F401
     flash_attn_varlen_func,
     flash_attn_with_kvcache,

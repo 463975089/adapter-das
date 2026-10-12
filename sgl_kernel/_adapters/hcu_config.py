@@ -129,6 +129,60 @@ BACKEND_CATALOG = {
                         "note": "fast_topk_transform_* family"},
         },
     },
+    "platform_detect": {
+        "var": "HCU_PLATFORM_SEMANTICS",
+        "summary": "sglang 平台判定语义（§0.5 is_cuda 路线的落地点）",
+        "backends": {
+            "cuda": {"status": "production",
+                     "note": "default (§0.5)；sglang is_cuda/is_hip/platforms "
+                             "统一回 CUDA 语义，新模型天然走 CUDA 分支"},
+            "hip": {"status": "validated",
+                    "note": "legacy 适配路线；降级调试 / A-B 对照"},
+        },
+    },
+    "kv_pool_strides": {
+        "var": None,
+        "summary": "KV 池 stride 张量构造（行为还原：torch2.11 不能从 "
+                   "numpy 标量推 dtype）",
+        "backends": {
+            "text-patch": {"status": "production",
+                           "note": "int(np.prod(...))，白名单 needle"},
+        },
+    },
+    "dist_broadcast": {
+        "var": None,
+        "summary": "TP init 广播 payload（行为还原：torch2.11 dlpack 只读 "
+                   "BufferError）",
+        "backends": {
+            "writable-copy": {"status": "production",
+                              "note": "common.np.frombuffer 代理返回可写副本"},
+        },
+    },
+    "flash_attention": {
+        "var": "HCU_FA_IMPL",
+        "summary": "fa3 backend 注意力面（kvcache 分页/统一窗 + varlen prefill）",
+        "backends": {
+            "vendor": {"status": "candidate",
+                       "note": "DTK flash_attn 2.8.4 wheel（gfx93x kernel）；"
+                               "uniform-window 离线对拍逐位等，但真实 decode "
+                               "词汤（2026-10-12 bw7，gfx936 wheel paged 内核"
+                               "问题）；=vendor 显式 opt-in 做 A-B"},
+            "emu": {"status": "production",
+                    "note": "chunked online-softmax torch 模拟（默认；全契约 "
+                            "graph-safe）"},
+        },
+    },
+    "sampling": {
+        "var": None,
+        "summary": "top-k/top-p/min-p renorm+sample（§0.5 is_cuda sampler 面）",
+        "backends": {
+            "torch": {"status": "production",
+                      "note": "masked filter->renorm->multinomial，fp32；"
+                              "每 decode 一步一次，torch 档合理起步"},
+            "triton": {"status": "planned",
+                       "note": "与 flashinfer renorm 核对拍后可选"},
+        },
+    },
     "fused_moe": {
         "var": "HCU_FUSED_MOE_IMPL",
         "summary": "w8a8 fused MoE experts (standard dispatch, "

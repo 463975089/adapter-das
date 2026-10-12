@@ -34,6 +34,68 @@ if getattr(torch.version, "hip", None) is not None:
         _he.log_summary()
     except Exception:
         _he = None
+    # platform semantics seam (governance §0.5 is_cuda route) MUST be the
+    # first sglang-touching step: common.py freezes FP8_E4M3_MAX from
+    # is_hip() at import time and every module's `from ... import is_hip`
+    # binds constants then too. Everything below imports sglang.
+    try:
+        from sgl_kernel._adapters import platform_seam
+
+        platform_seam.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: platform semantics seam not installed", exc_info=True
+        )
+    # TP init-broadcast payload fix (torch2.11 dlpack readonly BufferError);
+    # needs sglang.srt.utils.common importable -- after the seam above.
+    try:
+        from sgl_kernel._adapters import dist_bc
+
+        dist_bc.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: dist broadcast bridge not installed", exc_info=True
+        )
+    # KV-pool stride tensor fix (torch2.11 numpy-scalar dtype infer); text
+    # patch per governance §3 tier-3, allowlist entry "kv_pool_strides".
+    try:
+        from sgl_kernel._adapters import kv_fix
+
+        kv_fix.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: kv stride text patch not installed", exc_info=True
+        )
+    # JIT rope portability (gfx936 hipcc rejects bare __syncwarp + HIP vector
+    # structured bindings); text patch on the .cuh kernel source.
+    try:
+        from sgl_kernel._adapters import jit_rope
+
+        jit_rope.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit rope portability patch not installed", exc_info=True
+        )
+    # JIT cuda-header forwarders (cuda_bf16.h et al -> hip equivalents) in
+    # the DTK include root the JIT toolchain already puts on the compile line.
+    try:
+        from sgl_kernel._adapters import jit_compat
+
+        jit_compat.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit cuda-header forwarders not installed", exc_info=True
+        )
+    # fa3 attention vendor routing (DTK flash_attn wheel; emu fallback).
+    # Needs sgl_kernel.flash_attn importable (below pulls it in).
+    try:
+        from sgl_kernel._adapters import fa_vendor
+
+        fa_vendor.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: fa vendor router not installed", exc_info=True
+        )
     try:
         import vllm._custom_ops as _vco
 
