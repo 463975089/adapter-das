@@ -35,7 +35,7 @@
 | `HCU_TRITON_AR_MAX_KB` | 512 | —（实测交叉点：4/64/256KB 快 NCCL 2.6/2.1/1.5×，1MB 起 NCCL 快） | custom AR 尺寸上限：≤此值走 custom AR，更大 sglang 自动走 NCCL；0=不设限 |
 | `HCU_MQA_EMU` | 0 | gfx93\* 自动开（aiter MQA 核硬断言 gfx942/950，gfx936 无 fp8、gfx938 暂仍被门挡）；DTK 放开门槛后 gfx938 分支转自动关 | paged/ragged MQA logits 的 torch 模拟；显式 0/1 覆盖 |
 | `HCU_FA3_EMU` | 1 | — | fa3 attention backend 的 torch 模拟（`sgl_kernel.flash_attn`）：开=设 `SGLANG_USE_SGL_FA3_KERNEL=1` 并放行 `_is_fa3_supported`（HIP 上原样必 raise/落 fa2 坏 wheel）；=0 回上游行为。fp8 KV（descale）与 fp8-q 路径已含 |
-| `HCU_FA_IMPL` | auto | — | fa3 注意力面档位：auto=宽窗 emu（契约全、graph-safe）|vendor=显式 opt-in 走 DTK flash_attn wheel（gfx936 wheel paged 内核真实 decode 词汤，2026-10-12 bw7，缺口清单待 DTK 修）|emu=恒模拟 |
+| `HCU_FA_IMPL` | auto | — | fa3 注意力面档位：auto=宽窗 emu（契约全、graph-safe）|**triton=decode L=1 走自研 triton 分页核**（`sgl_kernel/paged_attn_triton.py`，fp32 累加，门禁 5/5 双卡型 ALL-PASS，decode 4.7× emu；宽窗仍 emu）|vendor=显式 opt-in 走 DTK flash_attn wheel（gfx936 wheel paged 内核真实 decode 词汤，2026-10-12 bw7，缺口清单待 DTK 修）|emu=恒模拟 |
 | `HCU_DSA_PRESHUFFLE` | 1 | — | DSA aiter-preshuffle 路径；=0 回 legacy page_size=1 |
 | `HCU_DSA_PAGE_SIZE` | 空 | CLI `--page-size` 等效优先 | DSA page_size 覆盖，须为 index_kpool 倍数 |
 | `HCU_SLIMQUANT` | 1 | —（方法按 checkpoint 的 quantization_config 自选，非该格式则不激活） | slimquant_w4a8 注册；=0 隔离排查用 |
