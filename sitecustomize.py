@@ -86,6 +86,27 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: jit cuda-header forwarders not installed", exc_info=True
         )
+    # triton extra.cuda libdevice -> hip/OCML redirect (is_cuda semantics
+    # picks the cuda libdevice package; hcu backend rejects __nv_* LLVM).
+    try:
+        from sgl_kernel._adapters import triton_libdev
+
+        triton_libdev.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: triton libdevice redirect not installed", exc_info=True
+        )
+    # strip triton-emitted griddepcontrol.* asm (capability>=9 enables PDL
+    # upstream; gfx936 assembler rejects the instructions, and removing
+    # them == PDL-off semantics).
+    try:
+        from sgl_kernel._adapters import triton_pdl
+
+        triton_pdl.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "hcu adapter: triton pdl stripper not installed", exc_info=True
+        )
     # fa3 attention vendor routing (DTK flash_attn wheel; emu fallback).
     # Needs sgl_kernel.flash_attn importable (below pulls it in).
     try:

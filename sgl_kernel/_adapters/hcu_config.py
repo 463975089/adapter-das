@@ -158,6 +158,25 @@ BACKEND_CATALOG = {
                               "note": "common.np.frombuffer 代理返回可写副本"},
         },
     },
+    "triton_pdl": {
+        "var": None,
+        "summary": "triton 编译期 PDL 指令剥离（行为还原：gfx936 无 "
+                   "griddepcontrol）",
+        "backends": {
+            "strip": {"status": "production",
+                      "note": "make_amdgcn 输出剔除 griddepcontrol.* 两行，"
+                              "语义=PDL 关"},
+        },
+    },
+    "triton_libdevice": {
+        "var": None,
+        "summary": "triton extra.cuda libdevice -> hip/OCML 重定向（is_cuda "
+                   "语义选路修正）",
+        "backends": {
+            "hip-redirect": {"status": "production",
+                             "note": "__nv_* -> __ocml_*；hip 缺的名响亮 stub"},
+        },
+    },
     "flash_attention": {
         "var": "HCU_FA_IMPL",
         "summary": "fa3 backend 注意力面（kvcache 分页/统一窗 + varlen prefill）",
