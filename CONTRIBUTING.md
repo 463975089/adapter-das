@@ -45,6 +45,23 @@ docs: architecture collaboration chapter + html diagram
 5. 高危算子（allreduce / attention 类）接入即配：压测（尺寸×dtype×graph-replay
    变输入）+ `kill_switch` 快关。
 
+0. **平台语义前置**（governance §0.5）：接入点的平台语义走 is_cuda 分支——
+   上游新符号（含 flashinfer/trtllm 等专有库调用）按四级路由找归宿：
+   lightop → aiter → **triton 先行**（先跑通）→ 响亮 stub；fp8 fnuz 等
+   语义护栏白名单锁定不随翻。triton 先行产物在 vendor 就位后转 ref 档。
+
+### 3a. 加 / 改算子（`sgl_kernel/*.py`）
+
+1. API 签名与官方 `sgl-kernel` **逐字对齐**（含 `out=`、占位参数、destination-passing）。
+2. 按三档实现：triton 首档（fp32 累加、零主机同步）→ vendor 封装 → torch 兜底。
+3. 单测三层归位：`tests/test_ops_cpu.py`（torch 兜底）、`tests/kernels/`（GPU +
+   CUDA-graph capture 回归）、`tests/vendor/`（高危 vendor 压测 + 快关 gate）。
+4. 走 op 级 env / yaml 开关的，同步登记：`hcu_env.py` REGISTRY +
+   `docs/env-vars.md` + `hcu_adapter.yaml` 示例键 + `hcu_config.py`
+   BACKEND_CATALOG——**L0 交叉一致检查会挡缺漏**。
+5. 高危算子（allreduce / attention 类）接入即配：压测（尺寸×dtype×graph-replay
+   变输入）+ `kill_switch` 快关。
+
 ### 3b. 加桥 / 加 plugin（先分仓，再落位）
 
 1. **先读 [docs/governance.md](docs/governance.md)**：双仓边界、sitecustomize

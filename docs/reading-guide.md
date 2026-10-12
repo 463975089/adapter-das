@@ -21,7 +21,7 @@
 | 文档 | 一句话定位 | 失效信号 |
 |---|---|---|
 | README.md | 项目是什么、装怎么装、 empirically 跑通了什么 | 覆盖范围表与 sgl_kernel 实际导出不符 |
-| docs/architecture.md | 分层机制：影子库/import 缝/三档路由/横向机制（配 architecture.html 一页图） | §3 图与 `_adapters/` 目录结构不符 |
+| docs/architecture.md | 分层机制：影子库/is_cuda 语义路由/三档路由/横向机制（配 architecture.html 一页图） | §3 图与 `_adapters/` 目录结构不符 |
 | **docs/governance.md** | **治理宪法**：双仓边界（adapter=行为还原 / plugin 独立仓=性能新能力）、seam→rebind→text-patch 裁决链、active-ref 角色、运行时注册表与 dump | 与 ci/l0_gate.py 三规则或 `_adapters/registry.py` 行为不符 |
 | CONTRIBUTING.md | 协作流程：分支/MR/checklist/节点纪律（红线） | 与 Gitee 实际门禁行为不符 |
 | docs/ci.md | CI 分层：L0 秒级 → L1 GPU ~10min → L2 夜间 | GATES 列表与 l1_gpu_gate.sh 不符 |
@@ -35,6 +35,9 @@
 ## 不变量（写在多处，改代码前背一遍）
 
 1. **sglang python 零修改**——一切经 import 面进入（影子包/元路径桩/sitecustomize）。
+1b. **平台语义走 is_cuda 分支**（不走 is_hip 路线；fnuz 等语义护栏白名单锁定）——
+    NVIDIA 库符号按四级路由：lightop → aiter → triton 先行 → 响亮 stub
+    （governance §0.5）。
 2. **算子数学只在 `sgl_kernel/`**；桥与编排器只写 glue（L0 `glue-numerics` 强制）。
 3. **一个 catalog 算子一个 active 实现**；ref 实现只活在离线测试里。
 4. **sitecustomize 不新增实现体**（新桥直接落 `_adapters/<域>.py`）。

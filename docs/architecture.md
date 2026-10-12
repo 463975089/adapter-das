@@ -8,15 +8,24 @@
 
 让社区版 sglang 官方代码的 **python 部分零修改**、直接跑在海光 HCU（DCU/DTK，HIP 路径）上。
 
+**平台语义路线（2026-10-12 定）**：上游的平台判定由 adapter 统一回答
+**CUDA 语义**——新模型/新功能在上游总是先落在 `_is_cuda` 分支（NVIDIA 生态
+先发），走 CUDA 分支让新模型**不经适配天然入库**，这是卡商追新的关键路径；
+**不走 is_hip 分支路线**（个别翻转后会静默改数值语义的判定——如 fp8 fnuz——
+由平台层白名单锁定 HIP 语义，见 governance.md §0.5）。
+
 核心机制是**影子库替换**：对 sglang 直接引用的算子库（`sgl_kernel`、`aiter`、
 `flashinfer`、`flash_attn`、vllm `_custom_ops` 等）不做调用点改造，而是由本仓库
 提供同名/同 ABI 的影子实现并自动接管 import，官方代码拉下来就能跑。
+**影子库走路由路线**：守住 CUDA 语义的调用面，HCU 没有的 NVIDIA 库符号按
+**四级路由**找归宿——① lightop（vendor 首选，DTK 官方维护）→ ② aiter
+（vendor 次选）→ ③ **triton 自研先行**（保证新模型先跑通）→ ④ 响亮 stub
+（import 成功、调用报错带指引）。
 
-影子替换能严丝合缝的原因：sglang 的统一算子层 `sglang.kernels`（RFC #29630 的
-`BaseFusedOp` 多后端模型）在 HIP 平台上把 **AOT 后端**（`forward_aot` →
-`import sgl_kernel`）作为默认内核路径（JIT triton 后端只注册给 CUDA）。因此提供
-一个同名的 `sgl_kernel` 包，上游 sglang 零修改即可在 HCU 上解析到我们的内核；
 其余 import 面（vllm 桥、vendor 库桩）由 `sitecustomize.py` 随进程自动接管。
+sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端模型）
+在 HIP 平台默认 AOT 后端（`forward_aot` → `import sgl_kernel`），同名影
+子包即零修改插入点；CUDA 语义模式下算子层照常经 catalog/三档路由取实现。
 
 算子实现不绑定特定后端，按**三档路由**：
 
