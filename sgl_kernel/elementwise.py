@@ -107,6 +107,33 @@ if HAS_TRITON:
         y = x * tl.sigmoid(1.702 * x)
         tl.store(Y + offs, y.to(Y.dtype.element_ty), mask=mask)
 
+    @triton.jit
+    def _silu_mul_clamp_kernel(
+        X,  # *input, row-major, (M, 2D)
+        Y,  # *output, row-major, (M, D)
+        x_stride,
+        y_stride,
+        D,
+        limit,
+        BLOCK: tl.constexpr,
+    ):
+        # DSV4/GLM swiglu-clamp: gate caps its max only, up clamps both
+        # sides (glm5_next.swiglu_clamped reference semantics).
+        row = tl.program_id(0).to(tl.int64)
+        cols = tl.arange(0, BLOCK)
+        mask = cols < D
+        x_base = X + row * x_stride
+        gate = tl.load(x_base + cols, mask=mask, other=0.0).to(tl.float32)
+        up = tl.load(x_base + D + cols, mask=mask, other=0.0).to(tl.float32)
+        gate = tl.minimum(gate, limit)
+        up = tl.minimum(tl.maximum(up, -limit), limit)
+        g = gate * tl.sigmoid(gate)
+        tl.store(
+            Y + row * y_stride + cols,
+            (g * up).to(Y.dtype.element_ty),
+            mask=mask,
+        )
+
 
 def _silu_native(x: torch.Tensor) -> torch.Tensor:
     return x * torch.sigmoid(x)
@@ -233,3 +260,49 @@ def gelu_quick(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
         num_warps=4,
     )
     return out
+
+
+def silu_and_mul_clamp(
+    input: torch.Tensor, output: torch.Tensor, limit: float
+) -> None:
+    """DSV4/GLM swiglu-clamp gated activation (upstream CUDA/XPU-only op).
+
+        gate, up = input[..., :d], input[..., d:]
+        out = silu(clamp_max(gate, limit)) * clamp(up, -limit, limit)
+
+    The gate half caps its max only (OAI/GLM convention, matching
+    glm5_next.swiglu_clamped); the up half clamps both sides. Destination-
+    passing like the upstream dsv4 op; fp32 math, CUDA-graph capture safe.
+    """
+    d = input.shape[-1] // 2
+    if tuple(output.shape) != tuple(input.shape[:-1] + (d,)):
+        raise ValueError(
+            f"output shape {tuple(output.shape)} != "
+            f"{tuple(input.shape[:-1] + (d,))}"
+        )
+    if (
+        HAS_TRITON
+        and input.is_cuda
+        and input.dtype in (torch.bfloat16, torch.float16, torch.float32)
+        and input.shape[-1] % 2 == 0
+    ):
+        check_cuda_tensor(input, output)
+        x_2d = input.reshape(-1, input.shape[-1])
+        y_2d = output.reshape(-1, d)
+        block = next_power_of_2(d)
+        num_warps = 8 if block >= 2048 else (4 if block >= 512 else 2)
+        _silu_mul_clamp_kernel[(x_2d.shape[0],)](
+            x_2d,
+            y_2d,
+            x_2d.stride(0),
+            y_2d.stride(0),
+            d,
+            float(limit),
+            BLOCK=block,
+            num_warps=num_warps,
+        )
+        return
+    gate, up = input[..., :d], input[..., d:]
+    gate = gate.float().clamp(max=limit)
+    up = up.float().clamp(min=-limit, max=limit)
+    output.copy_((_silu_native(gate) * up).to(output.dtype))

@@ -5,3 +5,7 @@ tests/golden/*.local.json
 *.so
 *.bak
 *.awq_bak
+.payload.json
+.r.json
+.bridge_result.json
+tools/tunnel_ssh.py

@@ -221,6 +221,120 @@ def check_bare_environ(r, reg):
                 )
 
 
+# --- governance rules (docs/governance.md §3/§4) ----------------------------
+# The glue layer routes, the kernel library computes. These three keep the
+# boundary machine-checked so the team can grow without re-blurring it.
+
+NUMERIC_CODE_GLUE_FILES = ("sitecustomize.py",)
+NUMERIC_CODE_PATTERNS = [
+    (re.compile(r"^\s*@triton\.jit", re.M), "@triton.jit kernel"),
+    (re.compile(r"^\s*import\s+triton\b", re.M), "import triton"),
+    (re.compile(r"\btl\.\w+"), "triton language reference"),
+]
+
+
+def check_glue_has_no_numerics(r):
+    """HARD: sitecustomize.py is routing glue only -- no operator math.
+
+    Kernels belong in sgl_kernel/*.py (or _adapters/<domain>.py for
+    mechanism bridges). Diagnosing 'which implementation served this
+    tensor' is impossible when the glue layer itself computes.
+    """
+    for rp in NUMERIC_CODE_GLUE_FILES:
+        p = os.path.join(ROOT, rp)
+        if not os.path.isfile(p):
+            continue
+        src = open(p, encoding="utf-8").read()
+        # strip comments so root-cause notes can name the mechanism
+        stripped = "\n".join(
+            ln.split("#")[0] if not ln.lstrip().startswith("#") else ""
+            for ln in src.split("\n")
+        )
+        for pat, what in NUMERIC_CODE_PATTERNS:
+            m = pat.search(stripped)
+            if m:
+                line = stripped[: m.start()].count("\n") + 1
+                r.fail("glue-numerics", f"{rp}:{line} has {what}; highway "
+                      f"for kernels is sgl_kernel/ (governance §3)")
+
+
+def _parse_allowlist():
+    """Text-patch needles allowed, parsed from registry.py (no import)."""
+    src = open(os.path.join(
+        ROOT, "sgl_kernel/_adapters/registry.py"), encoding="utf-8").read()
+    body = re.search(
+        r"TEXT_PATCH_ALLOWLIST\s*=\s*\{(.*?)\n\}", src, re.S)
+    if not body:
+        return set(), False
+    allow = True
+    needles = set()
+    for op, needle in re.findall(r'\("([\w_]+)",\s*"((?:[^"\\]|\\.)*)"\)', body.group(1)):
+        needles.add((op, needle))
+    return needles, allow
+
+
+def check_text_patch_allowlist(r):
+    """HARD: source-replace recompiles are allowlisted in registry.py.
+
+    Every `assert _is_cuda or _is_xpu`-style needle patched in
+    sitecustomize.py must appear in the registry's TEXT_PATCH_ALLOWLIST
+    (governance review each time this ladder rung is used). We count the
+    literal `_is_cuda or _is_xpu` replace targets -- the only pattern in
+    play; new needles must be added to the allowlist AND this check.
+    """
+    needles, ok = _parse_allowlist()
+    if not ok:
+        r.fail("text-patch", "cannot parse TEXT_PATCH_ALLOWLIST from "
+               "sgl_kernel/_adapters/registry.py")
+        return
+    p = os.path.join(ROOT, "sitecustomize.py")
+    if not os.path.isfile(p):
+        return
+    src = open(p, encoding="utf-8").read()
+    allowed_needles = {n for _, n in needles}
+    # candidate needles: any quoted string starting with `assert _is_cuda`
+    # that a .replaceepatch is feeding (first arg of .replace( — the
+    # upstream text being replaced)
+    for m in re.finditer(
+            r"\.replace\(\s*[rbf]?['\"]([^'\"]*)['\"]", src):
+        needle = m.group(1)
+        if "_is_cuda" not in needle:
+            continue
+        # allowlist entries are the `_old` constant strings upstream uses
+        if not any(needle in a or a in needle for a in allowed_needles):
+            line = src[: m.start()].count("\n") + 1
+            r.fail("text-patch", f"sitecustomize.py:{line} patches source"
+                   f" text {needle!r} not in registry TEXT_PATCH_ALLOWLIST")
+    # count distinct patch installs vs allowlist size: allowlist shrinks
+    # only via governance review; hidden extra sites fail the needle scan
+    n_installs = len(re.findall(r"\.replace\(\s*\"", src))
+    if n_installs > len(needles):
+        r.warn("text-patch", f"sitecustomize.py has {n_installs} .replace("
+               f") sites vs {len(needles)} allowlisted needles -- review")
+
+
+def check_registry_ops_in_catalog(r):
+    """HARD: every registry.register(op=...) names a BACKEND_CATALOG op."""
+    cat = open(os.path.join(ROOT, "sgl_kernel/_adapters/hcu_config.py"),
+               encoding="utf-8").read()
+    ops = set(re.findall(r'^\s{4}"([a-z0-9_]+)":\s*\{', cat, re.M))
+    pat = re.compile(
+        r"registry\.register\(\s*\n?\s*(?:op\s*=\s*)?\"([a-z0-9_]+)\"")
+    for p in iter_files(".py"):
+        rp = rel(p)
+        if "/_adapters/" not in rp and rp != "sitecustomize.py":
+            continue
+        try:
+            src = open(p, encoding="utf-8").read()
+        except Exception:
+            continue
+        for m in pat.finditer(src):
+            if m.group(1) not in ops:
+                line = src[: m.start()].count("\n") + 1
+                r.fail("registry-ops", f"{rp}:{line} registers op "
+                       f"'{m.group(1)}' not in BACKEND_CATALOG")
+
+
 # ---------------------------------------------------------------------------
 
 def main():
@@ -241,6 +355,9 @@ def main():
     check_sitecustomize_imports(r)
     check_example_yaml(r)
     check_bare_environ(r, reg)
+    check_glue_has_no_numerics(r)
+    check_text_patch_allowlist(r)
+    check_registry_ops_in_catalog(r)
 
     print(f"l0 gate: scanned {n_py} py / {n_sh} sh / {n_sec} text files")
     for w in r.warns:

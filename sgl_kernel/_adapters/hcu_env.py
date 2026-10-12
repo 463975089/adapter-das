@@ -88,6 +88,11 @@ REGISTRY = {
         "env": "HCU_DISABLE_OPS", "default": "",
         "about": "快关总闸：逗号分隔禁用高危算子（aiter_ar,aiter_fa）",
     },
+    # runtime dump — path for JSON (<summary>/1 = log a dict, debug tier)
+    "HCU_ADAPTER_DUMP": {
+        "env": "HCU_ADAPTER_DUMP", "default": "",
+        "about": "启动时落 runtime dump JSON（每算子活跃实现+安装方式；1=打进日志）",
+    },
     # custom all-reduce
     "HCU_AITER_AR": {
         "env": "HCU_AITER_AR", "default": "0",
@@ -260,3 +265,11 @@ def log_summary():
         LOG.warning("HCU adapter env: " + " ".join(parts))
     else:
         LOG.warning("HCU adapter env: all defaults (no explicit HCU_* vars)")
+    from . import registry as _reg
+
+    _reg.log_summary(LOG)
+    out = os.environ.get("HCU_ADAPTER_DUMP", "")
+    if out:
+        d = _reg.dump(out if out != "1" else None)
+        if out == "1":
+            LOG.warning("HCU adapter dump: %s", d)

@@ -27,8 +27,9 @@
    部分和（norm≈1/8），唯一可靠捕获点 = 各层 `input_layernorm` 的
    forward_pre_hook（归约后）。
 4. **e2e**：短 prompt（语义锚 "Paris"）+ 2700-token 长 prompt
-   （>index_topk=2048，覆盖 sparse decode 变体）vs golden
-   （`tests/golden/e2e_greedy.json`；`--update-golden` 记录基线）。
+   （>index_topk=2048，覆盖 sparse decode 变体）。判定用分布级锚点
+   （见 run_triage.py 实际实现与 docs/models.md 验证口径；无 golden JSON
+   基线文件，跑分记录以 models.md 行为准）。
 
 ## 方法论要点（历史沉淀）
 

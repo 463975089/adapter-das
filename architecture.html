@@ -119,12 +119,12 @@
       <div class="bt">应用层 · 上游（不动）</div>
       <div class="chips">
         <div class="chip"><b>sglang 官方代码</b><small>python 零修改 · 零 fork</small></div>
-        <div class="chip"><b>plugin</b><small>规划：算子融合/调度优化，同一 import 面</small></div>
+        <div class="chip"><b>plugin</b><small>独立仓·性能优化：算子融合/专项内核/新后端，经 seam 接入或直调底层库</small></div>
         <div class="chip"><b>vllm（HIP 版）</b><small>_custom_ops 等被 sglang 复用</small></div>
       </div>
     </div>
 
-    <div class="arrow"><span><b>import 同名算子库</b>（同名 · 同 ABI · 零调用点改造）</span></div>
+    <div class="arrow"><span><b>import 同名算子库</b>（同名 · 同 ABI · 零调用点改造）· plugin 两条路：经 seam 接入 adapter，<b>或直调 lightop/aiter 等底层库</b></span></div>
 
     <div class="band mine">
       <div class="bt">import 缝 · 接管机制（本仓库）</div>
@@ -223,6 +223,10 @@
       <div class="seamnote" style="margin-top:9px">BACKEND_CATALOG 四状态 = 后端成熟度唯一事实源；
         启动日志逐项打印生效值与来源；L0 门禁锁死
         REGISTRY ↔ env-vars.md ↔ catalog ↔ yaml 交叉一致。</div>
+      <div class="seamnote" style="margin-top:9px">实现选位裁决链（governance.md）：
+        <b>上游 seam → rebind 换绑 → text-patch 白名单</b>，不许跳级；
+        双仓判别：上游 AMD/CUDA 有的行为缺口归本仓，上游也没有的功能
+        归独立 plugin 仓（可直调 lightop/aiter，登记进运行时注册表）。</div>
     </div>
 
     <div class="rail warm">

@@ -14,6 +14,7 @@ from sgl_kernel.elementwise import (
     gelu_quick,
     gelu_tanh_and_mul,
     silu_and_mul,
+    silu_and_mul_clamp,
 )
 from sgl_kernel.layernorm import (
     fused_add_rmsnorm,
@@ -71,6 +72,7 @@ __all__ = [
     "__version__",
     # elementwise
     "silu_and_mul",
+    "silu_and_mul_clamp",
     "gelu_and_mul",
     "gelu_tanh_and_mul",
     "gelu_quick",

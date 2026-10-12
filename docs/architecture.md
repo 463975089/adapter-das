@@ -50,7 +50,7 @@
 flowchart TB
     subgraph APP["应用层"]
         SGLANG["sglang 官方代码（python 零修改）"]
-        PLUGIN["plugin（规划）：算子融合 / 调度逻辑 / 平台无关优化"]
+        PLUGIN["plugin（独立仓）：算子融合 / 新内核 / 新后端（性能优化）"]
     end
     subgraph ADPT["适配层：adapter 影子库替换（本仓库）"]
         SC["sitecustomize.py 自动接管 import"]
@@ -65,7 +65,8 @@ flowchart TB
         TODO["deepgemm · mooncake · deepep（待适配）"]
     end
     SGLANG -->|"import 同名算子库（同名 · 同 ABI）"| ADPT
-    PLUGIN -.->|"同一 import 面（规划）"| ADPT
+    PLUGIN -->|"经 seam 接入：实现登记进 adapter 注册表"| ADPT
+    PLUGIN -->|"亦可直调底层库"| OPS
     ADPT -->|"三档路由：triton → 手写/vendor → torch"| OPS
     OPS --> TORCH["运行时层：PyTorch（HIP 版）"]
     TORCH --> DTK["驱动 · 工具链层：DTK（HIP/ROCm）"]
@@ -94,16 +95,25 @@ flowchart TB
 | mooncake | 待适配 | PD 分离/分层 KV transfer 的 `transfer_kv_*` 契约由 `sgl_kernel/kvcacheio.py` torch 移植顶住调用面，mooncake 本体待接 |
 | deepep | 待适配 | MoE EP 通信库，仓库内尚无落点（TP1 单机绕过），多卡 EP 时再评估 |
 
-### plugin（规划）
+### plugin（独立仓，规划中）
 
-与 adapter 分工：adapter 致力于「官方代码拉下来就能跑」（三档实现，配合 skill
-快速排查定位精度问题）；**plugin 承接算子融合 / 调度逻辑优化 / 硬件平台无关的
-优化**，追求极致的性能优化，完成后经**同一 import 面**替换 / 增强默认路径。
+与 adapter 分工（判别问句与裁决链见 [governance.md](governance.md) §0/§3）：
+adapter 只做**行为还原**（上游在 AMD/CUDA 上有的行为，HCU 补齐到一致）；
+**上游没有的能力**归独立 plugin 仓，其目的同样是**性能优化**——算子融合、
+专项内核、新调度路径等官方代码没有的功能，只是以"新增能力"形态承载：
+经上游 seam 接入 adapter 的注册表与归因设施，**或直接调用 lightop / aiter
+等底层库**（不强制穿过 adapter 路由）。plugin 仓的接入同样登记运行时
+注册表，保证 `HCU_ADAPTER_DUMP` 看到完整图景。
 
 ## 5. 横切机制
 
-- **环境变量注册表**（`hcu_env.py`）：显式 env > 自动规则（arch/wheel 探测）> 默认值；
-  启动日志打印每个生效值及来源，正确部署零环境变量。手册见 [env-vars.md](env-vars.md)。
+- **配置裁决**（`hcu_env.py` + `hcu_config.py`）：显式 env > `hcu_adapter.yaml`
+  > 自动规则（arch/wheel 探测）> 默认值；启动日志打印每个生效值及来源，
+  正确部署零环境变量。手册见 [env-vars.md](env-vars.md)、配置层见
+  [config.md](config.md)。
+- **运行时注册表**（`_adapters/registry.py`）：每算子活跃实现+安装机制登记，
+  启动日志 `HCU adapter runtime:` 逐项打印；`HCU_ADAPTER_DUMP=路径` 出 JSON
+  供归因与配置级二分。规约见 [governance.md](governance.md) §4。
 - **快关**（`kill_switch.py`）：`HCU_DISABLE_OPS=aiter_ar,aiter_fa` 一翻开关绕开
   疑似算子复跑，高危 vendor 算子接入即配压测 + 快关。
 - **质量设施**：契约对拍官方 CUDA 核语义（gate 排序/tie-break、padding/cumsum 契约）、
@@ -178,6 +188,12 @@ hcu-sglang-adapter/
 4. **质量收敛在 adapter 层**——CI/UT 只测本仓（契约对拍 + graph 回归 +
    快关门禁）；"adapter 全绿 ⇒ 官方 sglang 可用"，不背上游的测试债。
 
+> 推广协作前请先读 [governance.md](governance.md)：双仓边界（adapter=行为
+> 还原，plugin 仓=新能力/性能优化）、实现层授权边界、active/ref 角色模型、
+> seam→rebind→text-patch 裁决链、运行时注册表与 HCU_ADAPTER_DUMP 归因流。
+> 它的三条 HARD 规则已并入 L0（`glue-numerics` / `text-patch` /
+> `registry-ops`）。
+
 ## 9. 已知架构债与演进计划
 
 | # | 债 | 现状 | 计划 |
@@ -187,15 +203,21 @@ hcu-sglang-adapter/
 | 3 | `_adapters/` 混三类文件 | 语义分类未显式 | §7 三分类表归位约定：新桥一律独立文件，不再长入 sitecustomize |
 | 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（CONTRIBUTING §5）+ CI worktree 作为唯一第二执行面 |
 
-**sitecustomize 拆分计划**（容器停机期只规划，不执行）：
+**sitecustomize 拆分计划**（容器停机期只规划，不执行；目标终态见
+governance.md §0——adapter 职能 = 影子库/算子路由/质量检测的**行为还原**，
+上游没有的功能归**独立 plugin 仓**（经上游 seam/注册机制接入），
+sitecustomize 只剩编排器）：
 
 - **P1（无风险）**：把纯函数桥（rms_norm 重绑定、int8/fp8 重绑定、
-  flashinfer 构造桩等）抽到 `sgl_kernel/_bridges/<域>.py`，sitecustomize
-  只保留"探测 + 注册"的编排调用。行为等价，import 顺序不变。
+  flashinfer 构造桩等）抽到 `sgl_kernel/_adapters/<域>.py`（install() +
+  开关 + registry.register），sitecustomize 只保留"探测 + 调 install()"
+  的编排调用。行为等价，import 顺序不变。
 - **P2（需 e2e）**：判定词类桥（model_overrides wrap、CP gate 等）迁到
   `_adapters` post_hooks，sitecustomize 缩成 <200 行编排器 + vllm 专用桥。
 - **P3**：P2 全量 e2e（cookbook 冒烟套件）通过后，sitecustomize 正式声明为
-  "编排器"，新桥禁入。
+  "编排器"，新桥禁入——这已从计划升格为规约（governance §0 / CONTRIBUTING
+  §3b），**现在起新需求先过双仓判别：行为还原才进本仓，功能扩展落
+  plugin 仓**；本仓的新域桥也直接落 `_adapters/<域>.py`，不等 P1-P3 完成。
 
 ## 10. 协作流程与门禁
 

@@ -45,19 +45,56 @@ docs: architecture collaboration chapter + html diagram
 5. 高危算子（allreduce / attention 类）接入即配：压测（尺寸×dtype×graph-replay
    变输入）+ `kill_switch` 快关。
 
-### 3b. 加桥（`sitecustomize.py` / `sgl_kernel/_adapters/`）
+### 3b. 加桥 / 加 plugin（先分仓，再落位）
 
-1. **先写根因注释**：上游哪个文件哪个判定漏了什么、为什么桥是解法（现存每座桥
-   都是范本）。没有根因注释的桥不予合入。
-2. 优先用 `_base.py` 的机制通道，不动上游源码：
+1. **先读 [docs/governance.md](docs/governance.md)**：双仓边界、sitecustomize
+   收敛终态、裁决链（seam → rebind → text-patch 白名单）、active/ref 角色
+   都在那里，本文是执行项。
+2. **先分仓**：上游在 AMD/CUDA 上**有**而 HCU 上缺的行为 → adapter 仓的域桥；
+   上游**也没有**的能力 → **独立 plugin 仓**（经上游 seam 或注册机制接入，
+   可直调 lightop/aiter 等底层库），MR 不进本仓。注意 plugin 的目的同样是
+   **性能优化**（算子融合、专项内核、新调度路径）——动机是性能不改变选仓，
+   判据始终是"上游有没有这个行为"。
+3. **本仓落位**：行为还原实现体一律放 `_adapters/<域>.py`（install() 入口 +
+   开关 + 安装成功 `registry.register(...)` 登记），sitecustomize 只加一行
+   调用（或 `_base.py` 机制通道里的注册）——**不新增**实现体到
+   sitecustomize，review 拒收。
+4. **先写根因注释**：上游哪个文件哪个判定漏了什么、为什么桥是解法（现存每座
+   域桥都是范本）。没有根因注释的桥不予合入。
+5. 优先用 `_base.py` 的机制通道，不动上游源码：
    - `extras`（allowlist 填空）——真包缺的符号我们补；
    - `overrides`——需要整体夺回某函数时；
    - `post_hooks`——包加载后 wrap 类方法 / 判定词；
-   - 模型文件级判定词才用 sitecustomize 的 post-hook wrap（按名 import 的模块
+   - 模型文件级判定词才用 post-hook wrap（按名 import 的模块
      必须走这条，直接改属性不生效）。
-3. 桥必须有开关（env / yaml），默认行为与上游一致或已验证更优。
-4. 新桥文件归位 `_adapters/<域>.py`（如 `prefill_cp.py`、`slimquant.py`），
-   不要再往 `sitecustomize.py` 单体里追加长桥（见 architecture.md §8 拆分计划）。
+6. 桥必须有开关（env / yaml），默认行为与上游一致或已验证更优。
+7. **登记运行时注册表**：`registry.register(op, impl, target, mechanism)`——
+   op 是 catalog 键，mechanism ∈ seam/rebind/text-patch（text-patch 针串需在
+   `TEXT_PATCH_ALLOWLIST` 在册）。这一步换来启动日志"每算子一行谁在跑"
+   和 `HCU_ADAPTER_DUMP` 机读 JSON；L0 `registry-ops`/`text-patch` 会挡漏登。
+8. **域桥/编排器里都只准写 glue**（路由/签名适配/断言放宽），不准出现
+   triton import、`@triton.jit`、`tl.*`——算子数学一律放 `sgl_kernel/`
+   （governance §1 红线，L0 `glue-numerics`）。
+9. ref（诊断）实现同样登记 `role="ref"`，但**永久留在离线测试路径**
+   （`tests/kernels/`），任何桥不得把它 bind 进运行时。
+10. 存量 sitecustomize 长桥的迁出按 architecture.md §9 P1-P3 节奏做，
+    每次迁移容器 e2e 复验；不要在别的 MR 里顺手搬（迁移与改逻辑分离）。
+
+## 3d. 推广边界（团队协作红线）
+
+adapter 仓与独立 plugin 仓并存后，防止边界随时间模糊的五条（违反即 review 拒）：
+
+0. **先分仓再写码**：上游没有的新能力（算子融合/专项内核/新后端/新机制，
+   即便动机是性能优化）不进本仓，落 plugin 仓经 seam/注册接入或直调底层库；
+   本仓只收行为还原（governance §0 判别问句）。
+1. **选位不跳级**：行为还原需求按 governance §3 裁决链选实现手段，
+   MR 描述里写明选位理由（"seam 不可行因为…"）。
+2. **单 active 指针**：一个 catalog 算子同一时刻只有一个生产实现；想换实现
+   = 改注册表指针 + 走门禁，不是再抄一份。
+3. **登记即存在**：没有 catalog 条目、没有 register 记录的实现不存在
+   ——排障只认 `HCU_ADAPTER_DUMP` 的输出（plugin 仓的接入同样要求登记）。
+4. **组合归因不重跑矩阵**：集成问题先看 dump（谁在跑），再 yaml 翻单条目
+   二分；禁止"全绿矩阵跑三遍"式排查（governance §4）。
 
 ### 3c. 加环境变量 / 配置键
 
@@ -84,7 +121,9 @@ yaml 示例键，缺一被 L0 挡。
 - **本地仓（编辑树）是唯一改码处**；HCU 容器内的仓只做运行验证，**禁止在容器里
   改代码再手拷回来**——两树漂移曾造成 API 对不上的实 bug（elementwise 事故）。
   容器树与 master 漂移时，以 Gitee master 为准：`git fetch && git reset origin/master`。
-- 共享 GPU 节点上**只操作自己标识（lzg*）的容器与进程**；杀进程按端口精杀，
+- 共享 GPU 节点上**只操作自己标识前缀的容器与进程**（每人用自己的名字
+  缩写做前缀命名容器，如 `zhang3_*`、`li4_*`；只动带自己前缀的，别人的不碰）；
+  杀进程按端口精杀，
   不做宽匹配 `pkill -f`。长任务必须 `timeout N` 前缀。容器内改码/部署走脚本
   文件，不拼超长内联命令。
 - 任何令牌（Gitee push token、CI token）**不落仓库、不进 commit**；临时写入

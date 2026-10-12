@@ -10,9 +10,14 @@
 **再做手写优化**；也支持直接封装 lightop / aiter / flash_attn / flash_mla
 等现有算子库（triton / vendor / torch 三档策略，见"影子库与适配桥"）。
 
-与 **plugin** 的分工：adapter 致力于"官方代码拉下来就能跑"，其中的算子
-同样持续做极致性能优化（自研手写或封装现有库皆可）；**plugin 将来承接
-追求极致性能的专项路径**，二者分工区分、互不阻塞。
+与 **plugin** 的分工（[docs/governance.md](docs/governance.md) §0）：adapter
+只做**行为还原**——sglang 在 AMD/CUDA 上有的行为，HCU 上补齐到一致（影子库/
+算子路由/质量门禁），并在一致约束下持续优化性能（三档档内演进、vendor 竞速）；
+**上游没有的能力**归**独立 plugin 仓**——plugin 的目的同样是**性能优化**
+（算子融合、专项内核、新调度路径等官方代码没有的功能），只是以"新增能力"
+形态承载：经上游 seam 或注册机制接入、可直调 lightop/aiter 等底层库，
+其代码不进本仓。判别问句："上游在参照平台上有没有这个行为？"——性能
+不决定选仓，这个问句才决定。
 
 影子替换能严丝合缝的原因：sglang 的统一算子层 `sglang.kernels`
 （RFC #29630 的 `BaseFusedOp` 多后端模型）在 HIP 平台上把 **AOT 后端**
@@ -20,9 +25,12 @@
 只注册给 CUDA）。因此只要提供一个同名的 `sgl_kernel` 包，上游 sglang
 零修改即可在 HCU 上解析到我们的内核。
 
-分层架构与组件协调关系总览见 [docs/architecture.md](docs/architecture.md)
-（配图 [architecture.html](architecture.html)，浏览器直开）；协作流程与红线见
-[CONTRIBUTING.md](CONTRIBUTING.md)。
+**ai/新人上手请先读 [docs/reading-guide.md](docs/reading-guide.md)**（30 秒
+任务路由 + 文档地图 + 不变量速查）。分层架构与组件协调关系总览见
+[docs/architecture.md](docs/architecture.md)（配图
+[architecture.html](architecture.html)，浏览器直开）；协作流程与红线见
+[CONTRIBUTING.md](CONTRIBUTING.md)；算子治理（实现选位裁决链、active/ref
+角色、运行时注册表与 dump）见 [docs/governance.md](docs/governance.md)。
 
 ## 安装
 
@@ -108,18 +116,21 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
 
 ## 已知未覆盖 / 路线图
 
-- 量化路径：compressed-tensors（w4a8/int8 GEMM）、fp8 blockwise 等未做；
-  跑共享盘 GLM-5.3-Flash INT4 量化版（160G）前需补齐。
-- `sgl_kernel.allreduce`（TP 多卡 custom allreduce）：TP1 不需要，多卡待补。
+（已验证特性与模型清单以 [docs/models.md](docs/models.md) 为准——custom
+allreduce、EP 三模式、PD 分离（TCP/RDMA）、fa3/fp8 KV、AWQ、MTP、
+dp-attention 等已通；此处只列未覆盖项。）
+
+- 量化路径：compressed-tensors float-quantized 格式（Qwen3-4B-Channel-FP8
+  实测未覆盖，见 models.md）、FP8 DeepEP normal（a_scale 语义 ≠ 128-block）。
 - aiter attention 的 AMD 原生符号（`paged_attention_ragged` / `mla_*`）：
   按需 triton 化（混合适配方案，见任务 #240 结论）。
 - MoE gate（topk 系列）triton 化提性能：当前 torch 版正确性已验证，性能优化
   排期中。
-- mooncake（PD 分离 KV transfer vendor 本体）与 deepep（MoE EP 通信）：仓库
-  内尚无落点——transfer_kv_* 契约已由 `kvcacheio.py` torch 移植顶住，
-  mooncake 本体与多卡 EP 待适配。
-- plugin 极致性能路径（规划）：与 adapter 分工，承接热点算子的专项优化
-  （见文首）。
+- hicache 的 GDN 混合模型 MAMBA 状态宿主迁移输出漂移待修（dense 全通）。
+- GLM-5.3-Flash（KDA+DSA 混合架构）排查暂停中，词汤根因剩三嫌疑
+  （TP8 RCCL allreduce 数值 / DSA 路径 / KDA 融合投影 TP 分片加载）。
+- plugin 仓（独立仓库，规划中）：上游没有的新能力，目的即性能优化——算子
+  融合/专项内核/新调度路径，经 seam 接入或直调底层库（见文首分工）。
 
 ## CI
 

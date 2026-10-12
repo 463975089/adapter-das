@@ -15,6 +15,7 @@
 | `aiter` | 真包优先 + 缺口填空 + 高危守卫 | `sgl_kernel/_adapters/aiter/` | 生产 |
 | `flashinfer` | 填空桥 + 响亮 stub | `sgl_kernel/_adapters/flashinfer/` | 生产 |
 | `flash_attn` / `flash_attn_interface` | 响亮 stub；装 HCU flash_attn wheel 后真包自动胜出（零改动切 vendor 档） | `sgl_kernel/_adapters/flash_attn/` | 生产 |
+| `lightop` | vendor 直调档（不出现在 import 面，按 ops 路由调用；见下盘点） | 系统包直调 | silu/MQA 已入 catalog |
 
 **flash_attn wheel 兼容性现状**（2026-10-10 实测）：共享盘
 `/public/share/dtk_fa_whl/*/flash_attn-2.6.1+das.opt1.dtk2604-cp310`
@@ -22,7 +23,6 @@
 vendor 出新轮。轮子就位后 `tests/vendor/test_flash_attn.py` 的探针会自动
 切到真包跑全场景矩阵（sglang-das 侵入仓同款回退链
 `kernels → sgl_kernel.flash_attn → flash_attn 包`）。
-| `lightop` | **待接**（DTK 0.6.0 内置，见下） | — | 规划 |
 
 ## 三档实现策略
 
@@ -36,8 +36,10 @@ destination-passing、占位参数）：
 3. **torch（参考档）**：语义金标 + 功能兜底（慢但永远正确），也是
    契约测试的参考实现来源。
 
-路由统一走 env（规划中，接入 lightop 时落地）：
-`HCU_<OP>_IMPL=auto|triton|vendor|torch`，`auto` = 探测+压测结论决定。
+路由已落地（env + yaml 双层）：`HCU_SILU_MUL_IMPL` / `HCU_RMS_NORM_IMPL` /
+`HCU_FUSED_MOE_IMPL` 等已在册（hcu_env REGISTRY），正式机制是
+`hcu_adapter.yaml` 的 ops 键（见 docs/config.md 与 BACKEND_CATALOG），
+`auto` = 探测+压测结论决定；新算子接入时同步登记 catalog。
 
 ## lightop 接入盘点（DTK 0.6.0，nmz26 dtk26041 实测 export 面与 aiter 交集）
 

@@ -1,12 +1,13 @@
 # CI 分层设计（MR 快速自动测试）
 
 目标：**别人提 MR → 分钟级自动反馈**。约束：数值/内核测试必须跑在真实 HCU
-（gfx938 + DTK 栈）上，而 Gitee Go 云端 runner 只有 CPU；GPU 在共享容器里
-（nmz26 lzg_pr418_test），不能被 CI 无脑抢占。因此分三层，层间用不同触发面：
+（gfx938 + DTK 栈）上，而 Gitee Go 云端 runner 只有 CPU；GPU 在共享节点的
+容器里（CI 用自己的容器，不影响他人），不能被 CI 无脑抢占。因此分三层，
+层间用不同触发面：
 
 | 层 | 内容 | 环境 | 耗时 | 触发 |
 |---|---|---|---|---|
-| **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（Gitee Go 云端，`.workflow/l0-gate.yml`） |
+| **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性、治理三规则（`glue-numerics`=sitecustomize 无 triton 数学 / `text-patch`=源码补丁必在 TEXT_PATCH_ALLOWLIST / `registry-ops`=register 的 op 必须 catalog）；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（Gitee Go 云端，`.workflow/l0-gate.yml`） |
 | **L1 GPU 数值门禁** | `ci/l1_gpu_gate.sh`：L0 + pytest（test_ops_cpu / kernels / adapter）+ 精选 tools 门禁（config 目录、fa3-emu CP 形状、rope 三路一致、aiter-MoE 分发、deepgemm contiguous triton）+ vendor wheel 探针（WARN 级） | HCU 容器，1 卡，自动挑空闲（VRAM<5%） | 5-15min | MR watcher（`ci/mr_watcher.py` 轮询开放 MR，新 head sha 即测） |
 | **L2 e2e** | 0.6B 四判定（launch/生成/锚点/长文）+ 多卡项（AR/EP/PD）= `tests/tools/run_model_suite.sh` / cookbook 配方 | HCU 容器，1-2 卡 | ~1h | 夜间 / 发版 / 手动（勿挂 MR，太慢太占卡） |
 
@@ -26,6 +27,9 @@
    即生效（schema 有出入时以控制台生成模板对齐 stages 块）。
 2. **L1（容器侧）**：
    ```bash
+   # 仓库位置是部署配置不是代码（迁仓只改这里）：
+   mkdir -p ~/hcu_ci && echo -n <owner>/<repo> > ~/hcu_ci/repo_slug
+   #   （或 export HCU_CI_REPO=<owner>/<repo>）
    # 令牌只放这里（绝不进仓库/git 配置）：
    echo -n <gitee-token> > ~/.hcu_ci_token && chmod 600 ~/.hcu_ci_token
    # 前台试一轮（不回帖）：
@@ -52,6 +56,9 @@
 新增 L1 门禁：把脚本加进 `ci/l1_gpu_gate.sh` 的 GATES 列表即入 CI。
 新增环境变量：`hcu_env.py::REGISTRY` + `docs/env-vars.md` 行——**L0 会强制
 这对成对出现**（漏文档直接 RED），catalog 引用不存在的变量同样 RED。
+桥/plugin 治理规则（glue-numerics / text-patch / registry-ops）的语义见
+[governance.md](governance.md)；运行时归因用 `HCU_ADAPTER_DUMP`（JSON：
+每算子活跃实现+机制+env 生效值），集成问题的配置级二分以它为起点。
 
 ## 设计取舍备忘
 

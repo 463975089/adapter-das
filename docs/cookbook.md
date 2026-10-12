@@ -1,6 +1,6 @@
 # HCU sglang 启动 Cookbook（已验证配方）
 
-所有配方均在 **nmz26 容器 lzg_pr418_test + 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（Gitee master）** 实测通过（GLM-5-W4A8 在 nmz18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
+所有配方均在 **nmz26 验证容器（容器名 lzg_pr418_test，验证者个人前缀命名，仅作环境记录）+ 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（Gitee master）** 实测通过（GLM-5-W4A8 在 nmz18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
 
 ## 0. 公共环境（每个配方都带）
 

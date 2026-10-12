@@ -35,7 +35,20 @@ import time
 import urllib.request
 
 API = "https://gitee.com/api/v5"
-REPO_SLUG = os.environ.get("HCU_CI_REPO", "lizhigong/hcu-sglang-adapter")
+# repo location is deployment config, not code: always set HCU_CI_REPO
+# (e.g. via env or ~/.hcu_ci_env) — survives repo migration to another host.
+REPO_SLUG = os.environ.get("HCU_CI_REPO", "")
+if not REPO_SLUG:
+    REPO_SLUG_FILE = os.path.join(
+        os.environ.get("HCU_CI_WORKDIR", os.path.expanduser("~/hcu_ci")),
+        "repo_slug")
+    try:
+        REPO_SLUG = open(REPO_SLUG_FILE, encoding="utf-8").read().strip()
+    except OSError:
+        pass
+if not REPO_SLUG:
+    sys.exit("mr_watcher: set HCU_CI_REPO=<owner>/<repo> (or write it to"
+             " ~/hcu_ci/repo_slug) — repo location is deployment config")
 
 WORKDIR = os.environ.get("HCU_CI_WORKDIR", os.path.expanduser("~/hcu_ci"))
 STATE_FILE = os.path.join(WORKDIR, "state.json")
