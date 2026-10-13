@@ -26,6 +26,16 @@ Serving strategy (HCU, 64 GB cards cannot hold unpacked experts):
   no sglang module is modified.
 
 Gated by env ``HCU_SLIMQUANT=1``.
+
+Governance note (2026-10-13): slimquant_w4a8 is an lmslim-private checkpoint
+format — upstream sglang (AMD/CUDA) has no such quant_method, so per the
+governance boundary test ("does upstream have this behavior?") this is NOT
+adapter debt; it lives here as **plugin-track legacy** (predates the dual-repo
+rule) and stays only because GLM-5-W4A8 e2e depends on it today. Planned move:
+port to the plugin repo (governance §5.1 trajectory); before the move,
+document the format contract above (nibble order, scale/16 semantics) as the
+plugin's first-class contract tests. Do notextend with new formats here —
+new private-format support starts in the plugin repo directly.
 """
 
 import logging
