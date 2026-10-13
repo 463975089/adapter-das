@@ -307,6 +307,102 @@ def test_merge_state_v2():
     print(f"PASS merge_state_v2: o={d1:.6f} lse={d2:.6f}", flush=True)
 
 
+# --- 3D packed-q decode normalization (ce53d06, #333: decode 400x fix) -----
+#
+# Real serving decode passes 3D packed q (n_tok, H, D); the triton kernel
+# takes 4D (B, sq, H, D). The fa_vendor bridge normalizes, choosing B from
+# cu_seqlens_q when present (FA3 form) or from the page table when not
+# (metadata form), gating on n_tok == B (=uniform L=1). These tests drive
+# the ROUTER face (sgl_kernel.flash_attn.flash_attn_with_kvcache, i.e. the
+# installed bridge) with both 3D forms and cross-check against the
+# CPU reference AND the explicit-4D call.
+
+
+def _decode_fixture(bs, H, Hk, D, seed=41):
+    torch.manual_seed(seed)
+    pages = 4
+    page = 16
+    g = torch.Generator().manual_seed(seed)
+    pool_k = torch.randn(bs * pages + 3, page, Hk, D, generator=g).cuda()
+    pool_v = torch.randn(bs * pages + 3, page, Hk, D, generator=g).cuda()
+    perm = torch.randperm(pool_k.shape[0], generator=g)
+    page_table = torch.stack(
+        [perm[i * pages:(i + 1) * pages] for i in range(bs)]
+    ).int().cuda()
+    cache_seqlens = torch.randint(3, pages * page + 1, (bs,), generator=g).int().cuda()
+    q3d = torch.randn(bs, H, D, generator=g).to(torch.bfloat16).cuda()
+    cu_no = None
+    return pool_k, pool_v, page_table, cache_seqlens, q3d
+
+
+def test_decode_3d_packed_q_with_cu():
+    from sgl_kernel.paged_attn_triton import paged_attention_decode_triton
+
+    pool_k, pool_v, pt, sl, q3d = _decode_fixture(4, 8, 2, 128)
+    B, H, D = q3d.shape
+    cu = torch.arange(0, B + 1, dtype=torch.int32).cuda()
+    o_3d = flash_attn_with_kvcache(
+        q=q3d, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+        cache_seqlens=sl, cu_seqlens_q=cu, softmax_scale=D**-0.5,
+        causal=True,
+    )
+    o_4d = paged_attention_decode_triton(
+        q3d.reshape(B, 1, H, D), pool_k, pool_v, pt, sl,
+        softmax_scale=D**-0.5,
+    )[0].reshape(B, H, D)
+    d = (o_3d.float() - o_4d.float()).abs().max().item()
+    assert d <= 2e-2, f"3D(cu) vs 4D triton: {d}"
+    print(f"PASS decode 3D packed (cu_seqlens form): router-vs-kernel {d:.5f}")
+
+
+def test_decode_3d_packed_q_no_cu():
+    from sgl_kernel.paged_attn_triton import paged_attention_decode_triton
+
+    pool_k, pool_v, pt, sl, q3d = _decode_fixture(3, 16, 4, 64, seed=43)
+    B, H, D = q3d.shape
+    o_3d = flash_attn_with_kvcache(
+        q=q3d, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+        cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
+    )
+    o_4d = paged_attention_decode_triton(
+        q3d.reshape(B, 1, H, D), pool_k, pool_v, pt, sl,
+        softmax_scale=D**-0.5,
+    )[0].reshape(B, H, D)
+    d = (o_3d.float() - o_4d.float()).abs().max().item()
+    assert d <= 2e-2, f"3D(no cu) vs 4D triton: {d}"
+    print(f"PASS decode 3D packed (metadata form): router-vs-kernel {d:.5f}")
+
+
+def test_decode_3d_capture_safe():
+    """The normalization runs inside graph capture: no host-device syncs,
+    and replay tracks the refreshed q/pages."""
+    pool_k, pool_v, pt, sl, q3d = _decode_fixture(4, 8, 2, 128, seed=47)
+    B, H, D = q3d.shape
+    static_q = torch.zeros_like(q3d)
+    flash_attn_with_kvcache(  # warmup (compiles triton) off capture
+        q=q3d, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+        cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
+    )
+    g = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(g):
+        o = flash_attn_with_kvcache(
+            q=static_q, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+            cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
+        )
+    g2 = torch.Generator().manual_seed(53)
+    new_q = torch.randn(B, H, D, generator=g2).to(torch.bfloat16).cuda()
+    static_q.copy_(new_q)
+    g.replay()
+    torch.cuda.synchronize()
+    want = flash_attn_with_kvcache(
+        q=new_q, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+        cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
+    )
+    d = (o.float() - want.float()).abs().max().item()
+    assert d == 0.0, f"graph replay must track fresh q exactly, got {d}"
+    print("PASS decode 3D capture+replay: replay tracks fresh inputs")
+
+
 if __name__ == "__main__":
     test_decode_gqa_bs1()
     test_decode_gqa_bs4_varlen()
@@ -315,6 +411,9 @@ if __name__ == "__main__":
     test_extend_fp8_kv()
     test_window_size()
     test_softcap()
+    test_decode_3d_packed_q_with_cu()
+    test_decode_3d_packed_q_no_cu()
+    test_decode_3d_capture_safe()
     test_varlen_prefill()
     test_merge_state_v2()
     print("ALL PASS")

@@ -261,58 +261,52 @@ def _moe_align_block_size_torch(
 ):
     numel = topk_ids.numel()
     flat = topk_ids.flatten().to(torch.long)
-    if ignore_invalid_expert:
-        valid = (flat >= 0) & (flat < num_experts)
-    elif numel:
-        # The upstream AOT kernel never raises on EP sentinel lanes (-1):
-        # with its internal +1 offset they land in slot 0 and the fused
-        # kernel masks them via zeroed topk_weights. Skip them here too —
-        # dropping a sentinel is strictly safer than counting it into
-        # expert 0's slot (the AOT kernel's behavior) — and keep the
-        # graph-capture contract (no host syncs, no data-dependent raises).
-        valid = (flat >= 0) & (flat < num_experts)
-    else:
-        valid = torch.zeros_like(flat, dtype=torch.bool)
-
+    # Upstream AOT semantics (the contract the fused kernel + filter_expert
+    # rely on): sentinel/invalid lanes (-1 on EP ranks) are counted into a
+    # dedicated LAST bucket, occupy a block-aligned segment in the total,
+    # and the blocks owned by that bucket are flagged expert id -1 so the
+    # fused kernel's filter_expert branch ZEROES those output rows.
+    # Dropping the lanes (prior behavior) left cache slots unwritten.
+    nb = num_experts + 1  # bucket count: real experts 0..E-1 + sentinel bucket E
+    bucket = flat.clamp(0, num_experts)  # -1 (and any stray) -> bucket E
     sorted_token_ids.fill_(numel)
 
-    flat_v = flat[valid]
-    counts = torch.bincount(flat_v, minlength=num_experts)
+    counts = torch.bincount(bucket, minlength=nb)
     block_counts = (counts + block_size - 1) // block_size * block_size
-    cumsum = torch.zeros(num_experts + 1, dtype=torch.int32, device=topk_ids.device)
+    cumsum = torch.zeros(nb + 1, dtype=torch.int32, device=topk_ids.device)
     cumsum[1:] = block_counts.cumsum(0).to(torch.int32)
 
-    if cumsum_buffer.shape[0] >= num_experts + 1:
-        cumsum_buffer[: num_experts + 1].copy_(cumsum)
+    if cumsum_buffer.shape[0] >= nb:
+        cumsum_buffer[:nb].copy_(cumsum[:nb])
     else:
         cumsum_buffer.copy_(cumsum[: cumsum_buffer.shape[0]])
-    total = int(cumsum[num_experts].item())
+    total = int(cumsum[nb].item())
     num_tokens_post_pad.fill_(total)
 
     max_blocks = experts_ids.shape[0]
     if numel == 0 or max_blocks == 0:
-        experts_ids.fill_(num_experts)
+        experts_ids.fill_(nb)  # tail marker = num_buckets, same as triton
         return
 
     # Stable sort by expert id keeps the CUDA kernel's per-expert FIFO fill
-    # order (tokens of one expert keep their original flat order). `order`
-    # indexes the compacted valid array; map back to original flat positions.
-    order = torch.argsort(flat_v, stable=True)
-    orig_pos = valid.nonzero(as_tuple=False).squeeze(1)  # (num_valid,)
-    e_sorted = flat_v[order]
+    # order (tokens of one expert keep their original flat order).
+    order = torch.argsort(bucket, stable=True)
+    e_sorted = bucket[order]
     starts = torch.cumsum(counts, 0).to(torch.long) - counts.to(torch.long)
     rank = torch.arange(order.numel(), device=order.device) - starts[e_sorted]
     dest = cumsum[e_sorted].to(torch.long) + rank
-    sorted_token_ids[dest] = orig_pos[order].to(torch.int32)
+    sorted_token_ids[dest] = order.to(torch.int32)  # order IS the flat pos now
 
     n_blocks = min(total // block_size, max_blocks)
     block_starts = torch.arange(n_blocks, device=topk_ids.device) * block_size
     expert_of_block = torch.searchsorted(
         cumsum[1:].to(torch.long), block_starts, right=True
     ).to(torch.int32)
+    # blocks owned by the sentinel bucket (bucket index num_experts) become -1
+    expert_of_block[expert_of_block == num_experts] = -1
     experts_ids[:n_blocks].copy_(expert_of_block)
     if max_blocks > n_blocks:
-        experts_ids[n_blocks:].fill_(num_experts)
+        experts_ids[n_blocks:].fill_(nb)
 
 
 def moe_align_block_size(
@@ -334,8 +328,14 @@ def moe_align_block_size(
       - experts_ids[b] = expert of block b for b < ceil(total/block); tail = num_experts
       - num_tokens_post_pad (1,) int32 = total padded length
       - cumsum_buffer[i] = exclusive prefix sum of block-aligned per-expert counts
-    With ignore_invalid_expert=True, ids outside [0, num_experts) (e.g. the EP
-    sentinel -1) are skipped entirely.
+    Upstream semantics for invalid ids (the EP sentinel -1, matching the AOT
+    kernel's +1-offset convention that the runner relies on): they are
+    counted into a dedicated LAST bucket, occupy a block-aligned segment of
+    the total, and the blocks owned by that bucket carry expert id -1 — the
+    fused kernel's filter_expert branch zeroes those output rows. Dropping
+    the lanes instead leaves cache slots unwritten (garbage combine).
+    ignore_invalid_expert is accepted for call-compatibility; both values
+    take this AOT-compatible path.
 
     Runs on GPU via fully device-side triton kernels: the CUDA-graph capture
     path of the fused_moe pipeline calls this every step, so host syncs
@@ -364,34 +364,32 @@ def moe_align_block_size(
     if flat.dtype not in (torch.int32, torch.int64):
         flat = flat.to(torch.int64)
     numel = flat.numel()
-    # EP runs pass sentinel -1 lanes; the upstream AOT kernel tolerates
-    # them (internal +1 offset): sentinels land in bucket E (this is the
-    # +1-offset convention, shifted to the last slot here), which
-    # block_expert maps to expert id -1 for the fused kernel's
-    # zero-output branch. No host-side min() probes (capture-safe).
+    # Upstream AOT semantics (matches the runner's +1-offset call and the
+    # fused kernel's filter_expert zero-output branch): sentinel lanes (-1
+    # on EP ranks) are counted into a dedicated LAST bucket, occupy a
+    # block-aligned segment of the total, and blocks owned by that bucket
+    # are flagged expert id -1 so filter_expert ZEROES those rows.
+    # Dropping the lanes left intermediate_cache slots unwritten (garbage
+    # combine). NB_ = number of buckets = real experts + sentinel bucket.
+    nb = num_experts + 1
     sorted_token_ids.fill_(numel)
-    counts = torch.zeros(num_experts + 1, dtype=torch.int32, device=topk_ids.device)
-    cursor = torch.empty(num_experts + 1, dtype=torch.int32, device=topk_ids.device)
+    counts = torch.zeros(nb, dtype=torch.int32, device=topk_ids.device)
+    cursor = torch.empty(nb, dtype=torch.int32, device=topk_ids.device)
 
     block_hist = 1024
-    # EP sentinel lanes (-1) get their own bucket E: block_expert maps that
-    # bucket to expert id -1, which the upstream fused_moe triton kernel's
-    # filter_expert branch turns into zeroed output blocks (the AOT family
-    # does the same via its internal +1 offset slot). Skipping sentinels
-    # entirely would leave those cache slots unwritten -> garbage combine.
     if numel:
         grid = (triton.cdiv(numel, block_hist),)
         _moe_align_hist_kernel[grid](
-            flat, numel, counts, num_experts + 1, True, BLOCK=block_hist
+            flat, numel, counts, nb, BLOCK=block_hist
         )
-    block_e = max(16, next_power_of_2(num_experts + 1))
-    write_extra = 1 if cumsum_buffer.shape[0] > num_experts + 1 else 0
+    block_e = max(16, next_power_of_2(nb))
+    write_extra = 1 if cumsum_buffer.shape[0] > nb else 0
     _moe_align_scan_kernel[(1,)](
         counts,
         cumsum_buffer,
         cursor,
         num_tokens_post_pad,
-        num_experts + 1,
+        nb,
         block_size,
         write_extra,
         BLOCK_E=block_e,
@@ -402,8 +400,7 @@ def moe_align_block_size(
             numel,
             cursor,
             sorted_token_ids,
-            num_experts + 1,
-            True,
+            nb,
             BLOCK=block_hist,
         )
     if experts_ids.shape[0]:
@@ -411,7 +408,7 @@ def moe_align_block_size(
             cumsum_buffer,
             experts_ids,
             num_tokens_post_pad,
-            num_experts,
+            nb,
             block_size,
             BLOCK_E=block_e,
         )
@@ -424,18 +421,17 @@ if HAS_TRITON:
         ids_ptr,
         numel,
         counts_ptr,
-        num_experts,
-        IGNORE_INVALID: tl.constexpr,
+        num_buckets,
         BLOCK: tl.constexpr,
     ):
         offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
         inb = offs < numel
         e = tl.load(ids_ptr + offs, mask=inb, other=-1)
-        if IGNORE_INVALID:
-            ok = inb & (e >= 0) & (e < num_experts)
-        else:
-            ok = inb
-        tl.atomic_add(counts_ptr + e, 1, mask=ok)
+        # AOT-compatible crash-free mapping: valid experts keep their id,
+        # sentinel (-1) and any stray out-of-range value fall into the LAST
+        # bucket (the +1-offset convention's sentinel slot).
+        b = tl.where((e >= 0) & (e < num_buckets - 1), e, num_buckets - 1)
+        tl.atomic_add(counts_ptr + b, 1, mask=inb)
 
     @triton.jit
     def _moe_align_scan_kernel(
@@ -469,26 +465,25 @@ if HAS_TRITON:
         numel,
         cursor_ptr,
         sorted_ptr,
-        num_experts,
-        IGNORE_INVALID: tl.constexpr,
+        num_buckets,
         BLOCK: tl.constexpr,
     ):
         offs = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
         inb = offs < numel
         e = tl.load(ids_ptr + offs, mask=inb, other=-1)
-        if IGNORE_INVALID:
-            ok = inb & (e >= 0) & (e < num_experts)
-        else:
-            ok = inb
-        pos = tl.atomic_add(cursor_ptr + e, 1, mask=ok)
-        tl.store(sorted_ptr + pos, offs.to(tl.int32), mask=ok)
+        # same bucket mapping as hist: sentinels write their token id into
+        # the sentinel segment (the block gets expert -1 -> filter zeroes
+        # the output; the row itself stays inert)
+        b = tl.where((e >= 0) & (e < num_buckets - 1), e, num_buckets - 1)
+        pos = tl.atomic_add(cursor_ptr + b, 1, mask=inb)
+        tl.store(sorted_ptr + pos, offs.to(tl.int32), mask=inb)
 
     @triton.jit
     def _moe_align_block_expert_kernel(
         cumsum_ptr,
         experts_ptr,
         post_pad_ptr,
-        num_experts,
+        num_buckets,
         block_size,
         BLOCK_E: tl.constexpr,
     ):
@@ -498,18 +493,19 @@ if HAS_TRITON:
         if b < padded:
             s = b * block_size
             offs = tl.arange(0, BLOCK_E)
-            # bucket E (== num_experts) is the sentinel bucket: map blocks
-            # from it to expert id -1 (the fused kernel zeroes those).
-            em = offs < num_experts + 1
+            # bucket num_buckets-1 is the sentinel bucket: blocks from it
+            # carry expert id -1 (the fused kernel's filter_expert zero
+            # branch); tail blocks beyond total carry num_buckets as before.
+            em = offs < num_buckets
             start = tl.load(cumsum_ptr + offs, mask=em, other=1 << 30)
             end = tl.load(cumsum_ptr + offs + 1, mask=em, other=-1)
             # exactly one non-empty expert's [start, end) contains s; pick it
             hit = ((start <= s) & (s < end)).to(tl.int32) * (offs + 1)
             eid = tl.max(hit, 0).to(tl.int32) - 1
-            sentinel = eid == num_experts
+            sentinel = eid == num_buckets - 1
             tl.store(experts_ptr + b, -1 if sentinel else eid)
         else:
-            tl.store(experts_ptr + b, num_experts)
+            tl.store(experts_ptr + b, num_buckets)
 
 
 def moe_sum(input_tensor: torch.Tensor, output_tensor: torch.Tensor):
