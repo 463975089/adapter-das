@@ -11,6 +11,7 @@
 | 提 MR / 改代码 | CONTRIBUTING.md（§1 流程、§3 checklist、§5 红线）→ docs/ci.md |
 | 加/改一个算子 | skills/…/SKILL.md → references/shadow-matrix.md → references/test-suite.md |
 | 加一座桥 / 新功能选位 | docs/governance.md（§0 双仓判别 → §3 裁决链 → §4 登记/dump）→ CONTRIBUTING §3b |
+| 向算子组/供应商提需求 | docs/operator-requests.md（锚定 sglang 契约面，机器数据先行） |
 | 配置后端 / 部署 | docs/config.md → hcu_adapter.example.yaml → docs/env-vars.md（调试覆盖） |
 | 跑一个模型 | docs/cookbook.md（找配方）→ docs/models.md（看先例与坑）→ cookbook.md §4 平台约束 |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
@@ -26,6 +27,7 @@
 | CONTRIBUTING.md | 协作流程：分支/MR/checklist/节点纪律（红线） | 与 Gitee 实际门禁行为不符 |
 | docs/ci.md | CI 分层：L0 秒级 → L1 GPU ~10min → L2 夜间 | GATES 列表与 l1_gpu_gate.sh 不符 |
 | docs/config.md | hcu_adapter.yaml 部署配置 + BACKEND_CATALOG 状态语义 | catalog 键集与 hcu_config.py 不符 |
+| docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
 | docs/env-vars.md | 全量环境变量手册（调试覆盖定位） | REGISTRY 键集与 hcu_env.py 不符（L0 会抓） |
 | docs/cookbook.md | 已验证启动配方（按模型/特性），§4 平台约束必读 | 配方与最新 master 行为不符 |
 | docs/models.md | 模型验证记录表（一天一行，判定四门）+ 组合特性清单 | 新模型跑完未加行 |

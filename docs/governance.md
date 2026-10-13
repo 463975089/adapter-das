@@ -133,7 +133,10 @@ sitecustomize.py 不 import triton、不出现 `@triton.jit`、不引用 `tl.*`�
 上游同样没有的能力不修桥、不放宽断言，落 plugin 仓经 seam 接入或直调
 底层库——即便动机是性能优化（算子融合等）也不例外：**性能不决定选仓，
 "上游有没有这个行为"才决定**。裁决链 2/3 的产物是"让 HCU 表现得像
-参照平台"，不是"绕过参照平台的缺失"。
+参照平台"，不是"绕过参照平台的缺失"。缺失的能力若属于**外部算子组/
+供应商的交付范围**（向其提需求而非自己实现），按
+[operator-requests.md](operator-requests.md) 标准提报——契约锚定上游
+sglang 符号面，shim 妥协不进契约。
 
 全局翻转平台身份（把 `is_hip` 判定改成 `is_cuda`）**禁止**：它把所有
 `elif _is_cuda:` 的不可移植分支（flashinfer/trtllm 独有符号）一并打进
