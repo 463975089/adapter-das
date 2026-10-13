@@ -190,8 +190,12 @@ BACKEND_CATALOG = {
                     "note": "chunked online-softmax torch 模拟（默认；全契约 "
                             "graph-safe）"},
             "triton": {"status": "candidate",
-                       "note": "decode L=1 分页查表 triton 核（自研，fp32 "
-                               "累加；门禁 5/5 双卡型 ALL-PASS），宽窗仍 emu"},
+                       "note": "分页 triton 核（自研，fp32 累加）：decode L=1 "
+                               "+ 宽窗 L>1 bottom-right causal 全接（"
+                               "tests/tools/_test_paged_attn_triton.py 10/10 "
+                               "双卡型 ALL-PASS；decode 4.7×、prefill ~7× "
+                               "emu）；varlen/paged-decode 之外的面仍 emu；"
+                               "页号 int64 展开"},
         },
     },
     "sampling": {

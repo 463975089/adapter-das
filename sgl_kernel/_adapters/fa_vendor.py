@@ -155,7 +155,10 @@ def _install_triton_decode(_sk_fa, registry):
     pool) to the in-tree triton kernel; everything else keeps the emu.
     Also rebinds the upstream ops layer (stable kwargs) so capture paths
     entering via the v3 wrapper land here cleanly."""
-    from sgl_kernel.paged_attn_triton import paged_attention_decode_triton
+    from sgl_kernel.paged_attn_triton import (
+        paged_attention_decode_triton,
+        paged_attention_prefill_triton,
+    )
 
     _emu_kvcache = _sk_fa.flash_attn_with_kvcache
     _names = (
@@ -175,7 +178,6 @@ def _install_triton_decode(_sk_fa, registry):
         triton_ok = (
             q is not None
             and q.dim() == 4
-            and q.shape[1] == 1
             and p.get("page_table") is not None
             and p.get("cache_seqlens") is not None
             and p.get("cu_seqlens_q") is None
@@ -185,8 +187,21 @@ def _install_triton_decode(_sk_fa, registry):
             and (p.get("window_size") or (-1, -1)) == (-1, -1)
             and (p.get("softcap") or 0.0) == 0.0
         )
-        if triton_ok:
+        if triton_ok and q.shape[1] == 1:
             o, lse = paged_attention_decode_triton(
+                q,
+                p["k_cache"],
+                p["v_cache"],
+                p["page_table"],
+                p["cache_seqlens"],
+                softmax_scale=p.get("softmax_scale"),
+            )
+            return (o, lse) if p.get("return_softmax_lse") else o
+        if triton_ok and q.shape[1] > 1 and p.get("causal"):
+            # paged extend: whole q window against the pool, bottom-right
+            # causal (non-causal wide windows keep the emu; no LLM face
+            # issues one today)
+            o, lse = paged_attention_prefill_triton(
                 q,
                 p["k_cache"],
                 p["v_cache"],
@@ -203,7 +218,7 @@ def _install_triton_decode(_sk_fa, registry):
         flash_attn_with_kvcache,
         target="sgl_kernel.flash_attn:flash_attn_with_kvcache",
         mechanism=registry.MECH_REBIND,
-        detail="decode L=1 -> triton kernel; rest -> emu (HCU_FA_IMPL=triton)",
+        detail="decode L=1 + paged wide windows -> triton kernel; rest -> emu (HCU_FA_IMPL=triton)",
     )
 
     # ops-layer rebind (kwargs-stable), mirroring the vendor branch but
@@ -238,15 +253,15 @@ def _install_triton_decode(_sk_fa, registry):
             _ops_kvcache,
             target="sglang...flash_attention_v3:flash_attn_with_kvcache",
             mechanism=registry.MECH_REBIND,
-            detail="ops-layer rebind; triton decode route",
+            detail="ops-layer rebind; triton decode + wide-window route",
         )
     except Exception:
         LOG.warning(
             "HCU adapter: ops-layer triton rebind skipped", exc_info=True
         )
     LOG.warning(
-        "HCU adapter: fa3 decode routed to the triton paged kernel "
-        "(HCU_FA_IMPL=triton; wide windows stay emu)"
+        "HCU adapter: fa3 paged faces (decode + wide windows) routed to the "
+        "triton kernels (HCU_FA_IMPL=triton); ragged/varlen stays emu"
     )
 
 
@@ -265,10 +280,11 @@ def install():
     mode, _src = hcu_env.resolve("HCU_FA_IMPL")
     triton_mode = mode == "triton"
     if triton_mode:
-        # tier-③ triton route: decode kvcache (L=1 windows) -> our triton
-        # kernel (numerics gate: tests/tools/_test_paged_attn_triton.py
-        # ALL-PASS on gfx936+gfx938); wide windows/prefill stay on the emu.
-        # Vendor wheel untouched (its paged path remains gap-listed).
+        # tier-③ triton route: paged kvcache faces (L=1 decode windows +
+        # L>1 causal extend windows) -> in-tree triton kernels (numerics
+        # gate: tests/tools/_test_paged_attn_triton.py ALL-PASS on
+        # gfx936+gfx938); ragged/varlen faces stay on the emu. Vendor wheel
+        # untouched (its paged path remains gap-listed).
         _install_triton_decode(_sk_fa, registry)
         return
     vendor_enabled = mode == "vendor"
