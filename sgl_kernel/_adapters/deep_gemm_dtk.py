@@ -21,6 +21,8 @@ from __future__ import annotations
 import sys
 import types
 
+import torch
+
 
 def _make_layout_module() -> types.ModuleType:
     mod = types.ModuleType("deep_gemm.utils.layout")
@@ -98,6 +100,13 @@ def install():
                     "m_grouped_bf16_gemm_nt_masked: masked_m and "
                     "expected_m are required"
                 )
+            if a.dtype != torch.bfloat16:
+                # dispatch can hand us fp8/fp32 activations depending on the
+                # runner dtype config; the DTK masked bf16 kernel is strictly
+                # bf16-in — upcast a (b is handled by the pack path below).
+                a = a.to(torch.bfloat16)
+            if b.dtype != torch.bfloat16:
+                b = b.to(torch.bfloat16)
             if _dtk_pack_bf16 is not None and b.dim() == 3:
                 key = (b.data_ptr(), tuple(b.shape), b.dtype)
                 packed = _bf16_packed.get(key)

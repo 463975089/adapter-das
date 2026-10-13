@@ -264,14 +264,13 @@ def _moe_align_block_size_torch(
     if ignore_invalid_expert:
         valid = (flat >= 0) & (flat < num_experts)
     elif numel:
-        flat_min = int(flat.min().item())
-        flat_max = int(flat.max().item())
-        if flat_min < 0 or flat_max >= num_experts:
-            raise ValueError(
-                "topk_ids contains expert ids outside [0, num_experts); "
-                "pass ignore_invalid_expert=True for EP sentinel lanes"
-            )
-        valid = torch.ones_like(flat, dtype=torch.bool)
+        # The upstream AOT kernel never raises on EP sentinel lanes (-1):
+        # with its internal +1 offset they land in slot 0 and the fused
+        # kernel masks them via zeroed topk_weights. Skip them here too —
+        # dropping a sentinel is strictly safer than counting it into
+        # expert 0's slot (the AOT kernel's behavior) — and keep the
+        # graph-capture contract (no host syncs, no data-dependent raises).
+        valid = (flat >= 0) & (flat < num_experts)
     else:
         valid = torch.zeros_like(flat, dtype=torch.bool)
 
@@ -365,34 +364,34 @@ def moe_align_block_size(
     if flat.dtype not in (torch.int32, torch.int64):
         flat = flat.to(torch.int64)
     numel = flat.numel()
-    capturing = torch.cuda.is_current_stream_capturing()
-    if not ignore_invalid_expert and numel and not capturing:
-        flat_min = int(flat.min().item())
-        flat_max = int(flat.max().item())
-        if flat_min < 0 or flat_max >= num_experts:
-            raise ValueError(
-                "topk_ids contains expert ids outside [0, num_experts); "
-                "pass ignore_invalid_expert=True for EP sentinel lanes"
-            )
-
+    # EP runs pass sentinel -1 lanes; the upstream AOT kernel tolerates
+    # them (internal +1 offset): sentinels land in bucket E (this is the
+    # +1-offset convention, shifted to the last slot here), which
+    # block_expert maps to expert id -1 for the fused kernel's
+    # zero-output branch. No host-side min() probes (capture-safe).
     sorted_token_ids.fill_(numel)
-    counts = torch.zeros(num_experts, dtype=torch.int32, device=topk_ids.device)
-    cursor = torch.empty(num_experts, dtype=torch.int32, device=topk_ids.device)
+    counts = torch.zeros(num_experts + 1, dtype=torch.int32, device=topk_ids.device)
+    cursor = torch.empty(num_experts + 1, dtype=torch.int32, device=topk_ids.device)
 
     block_hist = 1024
+    # EP sentinel lanes (-1) get their own bucket E: block_expert maps that
+    # bucket to expert id -1, which the upstream fused_moe triton kernel's
+    # filter_expert branch turns into zeroed output blocks (the AOT family
+    # does the same via its internal +1 offset slot). Skipping sentinels
+    # entirely would leave those cache slots unwritten -> garbage combine.
     if numel:
         grid = (triton.cdiv(numel, block_hist),)
         _moe_align_hist_kernel[grid](
-            flat, numel, counts, num_experts, ignore_invalid_expert, BLOCK=block_hist
+            flat, numel, counts, num_experts + 1, True, BLOCK=block_hist
         )
-    block_e = max(16, next_power_of_2(num_experts))
+    block_e = max(16, next_power_of_2(num_experts + 1))
     write_extra = 1 if cumsum_buffer.shape[0] > num_experts + 1 else 0
     _moe_align_scan_kernel[(1,)](
         counts,
         cumsum_buffer,
         cursor,
         num_tokens_post_pad,
-        num_experts,
+        num_experts + 1,
         block_size,
         write_extra,
         BLOCK_E=block_e,
@@ -403,8 +402,8 @@ def moe_align_block_size(
             numel,
             cursor,
             sorted_token_ids,
-            num_experts,
-            ignore_invalid_expert,
+            num_experts + 1,
+            True,
             BLOCK=block_hist,
         )
     if experts_ids.shape[0]:
@@ -499,12 +498,16 @@ if HAS_TRITON:
         if b < padded:
             s = b * block_size
             offs = tl.arange(0, BLOCK_E)
-            em = offs < num_experts
+            # bucket E (== num_experts) is the sentinel bucket: map blocks
+            # from it to expert id -1 (the fused kernel zeroes those).
+            em = offs < num_experts + 1
             start = tl.load(cumsum_ptr + offs, mask=em, other=1 << 30)
             end = tl.load(cumsum_ptr + offs + 1, mask=em, other=-1)
             # exactly one non-empty expert's [start, end) contains s; pick it
             hit = ((start <= s) & (s < end)).to(tl.int32) * (offs + 1)
-            tl.store(experts_ptr + b, tl.max(hit, 0).to(tl.int32) - 1)
+            eid = tl.max(hit, 0).to(tl.int32) - 1
+            sentinel = eid == num_experts
+            tl.store(experts_ptr + b, -1 if sentinel else eid)
         else:
             tl.store(experts_ptr + b, num_experts)
 

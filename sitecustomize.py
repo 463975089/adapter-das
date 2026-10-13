@@ -76,6 +76,17 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: jit rope portability patch not installed", exc_info=True
         )
+    # JIT per-token-group-quant fp8: CUDA trait reference without the HIP
+    # member; patch the cuh onto the DTK conversion family (EP deep_gemm
+    # runner's bf16-in/fp8-out activation quant needs this kernel).
+    try:
+        from sgl_kernel._adapters import jit_quant_fp8
+
+        jit_quant_fp8.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit fp8-quant patch not installed", exc_info=True
+        )
     # JIT cuda-header forwarders (cuda_bf16.h et al -> hip equivalents) in
     # the DTK include root the JIT toolchain already puts on the compile line.
     try:
@@ -214,6 +225,27 @@ if getattr(torch.version, "hip", None) is not None:
     # row count before quant (graph-safe: same buffers, no host sync).
     try:
         import sglang.kernels.ops.quantization.fp8_kernel as _fpk
+
+        # is_cuda-seam ordering guard: this module reads is_cuda()/is_hip()
+        # at import time into module globals, and in some boot orders its
+        # first import predates the platform_seam patch of common, leaving
+        # _is_hip=True / _is_cuda=False (HIP semantics) cached here while
+        # everything else answers CUDA. Re-assert the seam values (and pull
+        # the CUDA-only per_token_group_quant import the _is_cuda gate
+        # skipped) — cheap idempotent setattr, keeps the EP fp8 path on the
+        # same semantics as the rest of the runtime.
+        if not getattr(_fpk, "_is_cuda", False):
+            _fpk._is_cuda = True
+            _fpk._is_hip = False
+            if not hasattr(_fpk, "per_token_group_quant"):
+                try:
+                    from sglang.kernels.ops.quantization.per_token_group_quant import (
+                        per_token_group_quant as _ptgq,
+                    )
+
+                    _fpk.per_token_group_quant = _ptgq
+                except Exception:
+                    pass
 
         _orig_spq = _fpk.scaled_fp8_quant
 

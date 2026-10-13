@@ -134,6 +134,40 @@ def _extra(fullname):
         return {"fused_clamp_act_mul": _hcu_fused_clamp_act_mul}
     if fullname == "aiter.ops.cache":
         return {"cp_gather_indexer_k_quant_cache": _hcu_cp_gather_indexer_k_quant_cache}
+    if fullname in (
+        "aiter.ops.triton.gemm",
+        "aiter.ops.triton.gemm.fused",
+        "aiter.ops.triton.gemm.fused.fused_gemm_afp4wfp4_split_cat",
+    ):
+        # The quark W4A4-MXFP4 scheme top-level-imports three kernels under
+        # this subpackage plus fused_gemm_afp4wfp4_split_cat. The DTK wheel
+        # ships the three plain ones as TOP-LEVEL modules (no gemm/ package);
+        # only split_cat is missing. Re-export the real ones so the import
+        # chain clears, and give split_cat the loud LibStub default (model
+        # registry scans of quark-quantized models stay warning-free; actual
+        # use raises loudly with the gap name).
+        out = {}
+        try:
+            import importlib
+
+            for sub, names in (
+                ("aiter.ops.triton.gemm_afp4wfp4",
+                 ("gemm_afp4wfp4",)),
+                ("aiter.ops.triton.gemm_afp4wfp4_pre_quant_atomic",
+                 ("gemm_afp4wfp4_pre_quant",)),
+                ("aiter.ops.triton.quant",
+                 ("dynamic_mxfp4_quant",)),
+            ):
+                try:
+                    real = importlib.import_module(sub)
+                    for n in names:
+                        if hasattr(real, n):
+                            out[n] = getattr(real, n)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return out
     if fullname == "aiter.ops.triton.pa_mqa_logits":
         # Newer aiter moved pa_mqa_logits under ops.triton.attention; sglang
         # still imports the old path. Re-export the wheel's real kernels —

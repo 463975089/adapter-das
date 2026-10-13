@@ -59,6 +59,30 @@ TEXT_PATCH_ALLOWLIST = {
     # before ByteTensor construction (source-level: every import path binds
     # the patched body).
     ("dist_broadcast", "torch.ByteTensor(\n                np.frombuffer(serialized_data, dtype=np.uint8)\n            )"),
+    # JIT per-token-group-quant fp8: the CUDA DTypeTrait<fp8>::kFloatMax
+    # member is compiled out under USE_ROCM; the HIP-side packed convert is
+    # not the CUDA intrinsic. Repoint the clamp constant at the literal
+    # 448.0f and the packed convert at the DTK __hip_cvt family (OCP e4m3
+    # == CUDA e4m3_fn; deep_gemm EP runner needs this JIT kernel).
+    ("per_token_quant", "static constexpr float kMaxValue = DTypeTrait<fp8_e4m3_t>::kFloatMax;"),
+    (
+        "per_token_quant",
+        "  SGL_DEVICE static packed2_t quant(const float2 v) {\n"
+        "    return packed2_t{float2{fminf(v.x, kMaxValue), fminf(v.y, kMaxValue)}};\n"
+        "  }",
+    ),
+    (
+        "per_token_quant",
+        "#else\n"
+        "      value = Trait::reduce(value, __shfl_xor(value, mask, kStart));\n"
+        "#endif",
+    ),
+    (
+        "per_token_quant",
+        "#else\n"
+        "      value = Trait::reduce(value, __shfl_xor(value, mask, kFinish));\n"
+        "#endif",
+    ),
 }
 
 
