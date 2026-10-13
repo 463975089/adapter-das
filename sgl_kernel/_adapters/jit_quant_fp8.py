@@ -70,8 +70,8 @@ _NEEDLE_SHFL2 = (
 _REPL_SHFL2 = _REPL_SHFL.replace("mask, kStart", "mask, kFinish")
 
 _PATCHES_WARP = (
-    ("include/sgl_kernel/warp.cuh", _NEEDLE_SHFL, _REPL_SHFL),
-    ("include/sgl_kernel/warp.cuh", _NEEDLE_SHFL2, _REPL_SHFL2),
+    ("warp.cuh", _NEEDLE_SHFL, _REPL_SHFL),
+    ("warp.cuh", _NEEDLE_SHFL2, _REPL_SHFL2),
 )
 
 
@@ -86,6 +86,7 @@ def install():
         [(csrc, r, n, rp) for (r, n, rp) in _PATCHES]
         + [(inc, r, n, rp) for (r, n, rp) in _PATCHES_WARP]
     ):
+        # _PATCHES_WARP rel paths are already relative to inc
         p = base / rel
         text = p.read_text(encoding="utf-8")
         if repl in text:
