@@ -149,6 +149,8 @@ _KV_FALLBACK_KEYS = (
 # budget). Verified by shape sweep 8..64 ok / 65+ fail (2026-10-12 bw7).
 _VENDOR_Q_LIM = 64
 
+_DECODE_HITS = 0
+
 
 def _install_triton_decode(_sk_fa, registry):
     """Route the decode kvcache face (L=1 uniform windows on the paged
@@ -175,6 +177,35 @@ def _install_triton_decode(_sk_fa, registry):
         p = dict(zip(_names, args))
         p.update(kw)
         q = p.get("q")
+        cu_q = p.get("cu_seqlens_q")
+        # Decode feeds 3D packed q, sometimes with cu_seqlens_q (FA3-style),
+        # sometimes without (metadata form; B comes from the page table).
+        # Normalize to the 4D (B,1,H,D) form the triton kernel takes.
+        # Graph-capture safe: no host-device syncs — the uniform L=1
+        # contract comes from max_seqlen_q/n_tok consistency, not an
+        # .all() probe.
+        if (
+            q is not None
+            and q.dim() == 3
+            and p.get("page_table") is not None
+            and p.get("cache_seqlens") is not None
+        ):
+            n_tok, H, D = q.shape
+            if cu_q is not None and hasattr(cu_q, "numel"):
+                B = cu_q.numel() - 1
+                msq = p.get("max_seqlen_q")
+                uniform_l1 = (
+                    n_tok == B  # every window is exactly 1 token
+                    and (msq is None
+                         or (not torch.is_tensor(msq) and int(msq) <= 1))
+                )
+            else:
+                B = p["page_table"].shape[0]
+                uniform_l1 = n_tok == B  # one token per row == decode
+            if uniform_l1 and B > 0:
+                q = q.reshape(n_tok, 1, H, D)
+                p["q"] = q
+                p["cu_seqlens_q"] = None
         triton_ok = (
             q is not None
             and q.dim() == 4
@@ -188,6 +219,13 @@ def _install_triton_decode(_sk_fa, registry):
             and (p.get("softcap") or 0.0) == 0.0
         )
         if triton_ok and q.shape[1] == 1:
+            global _DECODE_HITS
+            _DECODE_HITS += 1
+            if _DECODE_HITS == 1 or _DECODE_HITS % 20000 == 0:
+                LOG.warning(
+                    "HCU adapter: triton decode face hit #%d (B=%d)",
+                    _DECODE_HITS, q.shape[0],
+                )
             o, lse = paged_attention_decode_triton(
                 q,
                 p["k_cache"],
@@ -255,6 +293,24 @@ def _install_triton_decode(_sk_fa, registry):
             mechanism=registry.MECH_REBIND,
             detail="ops-layer rebind; triton decode + wide-window route",
         )
+        # The public dispatcher sglang.kernels.ops.attention.flash_attention
+        # did `from .flash_attention_v3 import flash_attn_with_kvcache as
+        # fa3_flash_attn_with_kvcache` at import time, so rebinding the v3
+        # module attr above does not affect its module global. The fa3
+        # backend calls the *dispatcher*, so rebind the dispatcher's global
+        # too (graph-safe: attribute assignment, no sync).
+        import sglang.kernels.ops.attention.flash_attention as _fapub
+
+        if hasattr(_fapub, "fa3_flash_attn_with_kvcache"):
+            _fapub.fa3_flash_attn_with_kvcache = _ops_kvcache
+            registry.register(
+                "flash_attention",
+                _ops_kvcache,
+                target="sglang...ops.attention.flash_attention:fa3_flash_attn_with_kvcache global",
+                mechanism=registry.MECH_REBIND,
+                detail="dispatcher global rebind (from-import copy); backend "
+                       "calls land in the triton route",
+            )
     except Exception:
         LOG.warning(
             "HCU adapter: ops-layer triton rebind skipped", exc_info=True
