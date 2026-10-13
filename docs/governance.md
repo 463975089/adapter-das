@@ -173,6 +173,35 @@ sitecustomize.py 不 import triton、不出现 `@triton.jit`、不引用 `tl.*`�
 - **变更面**：改 KERNEL 实现 → 跑该算子 ref 测试 + L1.5；改 sitecustomize/
   `_base.py`/注册表 → 加 e2e 冒烟（CONTRIBUTING §1 既有规则）。
 
+### 5.1 plugin 的演进轨迹（接入 → 上游化 → 退役）
+
+plugin 承载的"上游没有的新能力"（自研量化格式、新算子、新后端）不是终点
+形态，而是一段演进路径的起点。标准轨迹四阶段，每阶段的准入/退出都有实证
+要求：
+
+1. **plugin 接入**：独立代码仓，经上游 seam（若该类能力在上有挂载点，
+   如 `--quantization` 注册、attention/moe-runner backend registry）或
+   自带注册入口接入；直调 lightop/aiter 等底层库不强制穿 adapter 路由。
+   准出条件：端到端跑通 + 数值门禁绿（ref 实现落 `tests/kernels/`）。
+2. **证据积累**：性能对照（vs 现有 active 路径，如 channel-wise vs
+   block-wise、W4A8 vs W4A16 的格点数据）、生产窗口稳定运行记录。数据
+   是后续一切的弹药——**格式契约（scale 布局、packed 排布、量化 axis
+   约定）从第一天起固化成文档 + 契约单测**，这是将来上游 PR 的核心内容。
+3. **上游 push（择机）**：以正式 PR 向上游贡献格式解析 + runner 注册点
+   （核实现可留在 plugin 仓，经 seam 引用）。参照范本：上游 AWQ-MoE 的
+   `quantization_config.quant_method` → `--quantization` 解析 → runner
+   注册三级结构。合并即意味着该能力的"上游在 AMD/CUDA 上有"成立。
+4. **桥/影子实现退役**：上游合并后，adapter/plugin 里对应的过渡实现
+   （影子库寄居代码、monkeypatch 级桥）逐 MR 降级删除，active 指针归位
+   上游实现——§5 退役条款在此生效（`production → deprecated → removed`，
+   不留注释掉的桥）。HCU 侧受益于上游生态对格式的原生认知，非 HCU
+   部署同样可用该格式。
+
+反模式：**跳过阶段 3 长期停在阶段 1**——plugin 永久靠注册入口自挂载、
+格式永不固化为契约，结果是该能力永远只有单一平台认识它，上游升级时
+独自承担全部兼容成本。若某能力确定无上游化价值（纯平台私有优化），须
+在 plugin 仓 README 明示"不上游化"决定及其理由，避免默认处于悬置态。
+
 ## 6. L0 静态规约速查（ci/l0_gate.py）
 
 | 检查名 | 级别 | 规则 |

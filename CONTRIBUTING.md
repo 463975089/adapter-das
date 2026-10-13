@@ -71,7 +71,9 @@ docs: architecture collaboration chapter + html diagram
    上游**也没有**的能力 → **独立 plugin 仓**（经上游 seam 或注册机制接入，
    可直调 lightop/aiter 等底层库），MR 不进本仓。注意 plugin 的目的同样是
    **性能优化**（算子融合、专项内核、新调度路径）——动机是性能不改变选仓，
-   判据始终是"上游有没有这个行为"。
+   判据始终是"上游有没有这个行为"。plugin 有意上游化时（自研格式/新算子
+   push 上游拿正式 seam），按 governance **§5.1 演进轨迹**走：接入 → 证据
+   积累（格式契约提前固化为文档+契约单测）→ 上游 PR → 过渡桥退役。
 3. **本仓落位**：行为还原实现体一律放 `_adapters/<域>.py`（install() 入口 +
    开关 + 安装成功 `registry.register(...)` 登记），sitecustomize 只加一行
    调用（或 `_base.py` 机制通道里的注册）——**不新增**实现体到
