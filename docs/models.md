@@ -71,7 +71,7 @@
 - [x] MTP（投机解码）（Qwen3.5-4B EAGLE：8/8 锚点 + accept len ~3.0/4；R1-L4 NEXTN 链路 rig；**2026-10-13 现代栈 27B 复调：正确性保持、吞吐负收益定位到 spec-worker host 每步 ~0.8s 固定开销（k=2 判决+GDN 双臂排除），见同日验证行——下一手 torch profiler**）
 - [x] hicache（分层 KV cache）（dense 模型全通含逐出-回迁保真；GDN 混合模型 MAMBA 状态宿主迁移漂移待修；get_device_accessible_ptr 桥已入 adapter）
 - [x] 并发多请求（GSM8K-100 c=16 通过，图内批处理正常）
-- [ ] EP 高吞吐（expert parallel）——阻塞在 DTK deepgemm contiguous 内核（bf16 数字坏/VMFault；fp8 scale 语义 row-wise ≠ 128-block），vendor 修复后用 `tests/tools/_test_dtk_deepgemm.py` 回归再攻
+- [x] EP 高吞吐（expert parallel）（**2026-10-11 解锁**：normal/auto 的 contiguous GEMM 用 triton 重写替代 DTK 坏核 5acbcd3，见同日验证行；**2026-10-13 is_cuda 分支 bw7 复现+纵深**：bf16 dispatch 32 并发 1012 tok/s，#335，见同日验证行。仍开缺口=FP8 dispatch/normal 线：gfx936 contig triton 编不了 fp8e4nv、DTK fp8 GEMM scale 语义 row-wise ≠ sglang 128-block，待 vendor）
 - [x] EP 低延迟（Qwen3-30B-A3B TP2+EP2 deepep_ll：锚点+并发全对；七层坑各一修，见验证行；**2026-10-13 is_cuda 分支 bw7 复现同过**——5/5 锚点+6/6 并发，配方差异见同日验证行）
 - [x] PD 分离（节点内 mooncake_tcp：prefill/decode 分工实证 + 8 路并发正确；`--disaggregation-enable-kv-checksum` 并发误报勿开；**RDMA 传输版同配方验证通过**：mooncake RoCE 直传，容器注入三坑见验证行；**2026-10-13 is_cuda 分支 bw7 复现同过**——8/8 差异化零串扰，rust 树回退+9 桶 prefill graph 两坑见同日验证行）
 - [ ] dspark
