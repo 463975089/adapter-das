@@ -78,6 +78,7 @@ python -m sglang.launch_server \
 | fa3 + fp8 KV + TP2 | 两者组合 + `--tp-size 2 --disable-cuda-graph` | ✅ |
 | dp-attention | `--tp-size 2 --dp-size 2 --enable-dp-attention`（graph ON，零 adapter 改动） | ✅ |
 | radix cache | 默认开（恒带 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`） | ✅ 命中门禁过：重发 cached 256 输出逐字一致、部分前缀命中 |
+| prefill CUDA graph | 默认 58 桶（weak_ref vendor 直通修复后**可全捕**，27B 捕完仍余 16G）；**GDN 混合模型建议 `--disable-prefill-cuda-graph`**：判决矩阵三场景全负（命中增量 1.5-1.8 vs eager 0.77s、COLD 11.6 vs 6.1s、16 并发 13.6 vs 4.2s——breakable 每层 eager break 桥接+桶 pad 的 host 面在 GDN/Mamba 混合上比纯 eager 更贵，2026-10-14 双 rig 判决） | ⚠ graph ON 不再 OOM，但 GDN 混合当前仅"能开"非"该开"；dense 模型的高频小桶场景待复测 |
 | MTP 投机解码 | 见 §2.2 | ✅ 精度过；吞吐见 §2.2 注（emu 栈暂负收益，真 FA3 内核预期翻正） |
 | hicache 分层 KV | `--enable-hierarchical-cache`（需 adapter 的 get_device_accessible_ptr 桥，已内置） | ⚠ dense 模型全通（逐出-回迁保真）；**GDN 混合模型 MAMBA 状态宿主迁移输出漂移待修，生产 GDN 模型暂不开** |
 | AWQ 量化 | `--quantization moe_wna16`（见 §2.1） | ✅ |
