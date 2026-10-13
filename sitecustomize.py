@@ -117,6 +117,17 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: fa vendor router not installed", exc_info=True
         )
+    # GDN / gated-delta-rule linear attention aiter routing (opt-in via
+    # HCU_LINEAR_ATTN_GDN=aiter; default keeps upstream triton fla).
+    # Requires sglang importable (imports the fla modules it rebinds).
+    try:
+        from sgl_kernel._adapters import gdn_aiter
+
+        gdn_aiter.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: gdn aiter router not installed", exc_info=True
+        )
     try:
         import vllm._custom_ops as _vco
 

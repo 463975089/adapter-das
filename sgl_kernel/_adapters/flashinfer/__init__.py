@@ -19,6 +19,15 @@ Per-subtask #229/#234 findings, the main import surfaces covered:
     - comm.allreduce_fusion 族       -> ABSENT（上游 hasattr 探测失败走
                                         standard-allreduce 回退 + unavailable
                                         旗标，与 HCU 自家 AR 路线一致）
+    - flashinfer.gdn_prefill/gdn_decode/gdn_kernels
+                                     -> deny（上游 _get_flashinfer_gdn_kernels
+                                        except ImportError 兜底答 available=
+                                        False → flashinfer_gdn_prefill_default
+                                        回 None → GDN prefill 回 triton；
+                                        2026-10-13：Qwen3.5-27B e2e 首验暴露，
+                                        此前响亮 stub 让 loader 内 except 只接
+                                        ImportError 不接 NotImplementedError，
+                                        未皂数）
 """
 
 from sgl_kernel._adapters._base import ABSENT, LibStubFinder, is_registered
@@ -34,7 +43,12 @@ class _FlashInferFinder(LibStubFinder):
                     "create_allreduce_fusion_workspace": ABSENT,
                 },
             },
-            deny=("flashinfer.comm.mnnvl",),
+            deny=(
+                "flashinfer.comm.mnnvl",
+                "flashinfer.gdn_prefill",
+                "flashinfer.gdn_decode",
+                "flashinfer.gdn_kernels",
+            ),
         )
 
 

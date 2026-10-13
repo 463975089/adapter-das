@@ -209,6 +209,22 @@ BACKEND_CATALOG = {
                        "note": "与 flashinfer renorm 核对拍后可选"},
         },
     },
+    "linear_attn_gdn": {
+        "var": "HCU_LINEAR_ATTN_GDN",
+        "summary": "GDN/gated-delta-rule 线性注意力（sglang fla 面）",
+        "backends": {
+            "triton": {"status": "production",
+                       "note": "上游 fla triton 核（auto 默认；gfx93x "
+                               "wave64 友好，BT=64）"},
+            "aiter": {"status": "validated",
+                      "note": "DTK aiter CK/triton 核路由（fwd_h 状态递推 "
+                              "blockdim64 + packed decode 同契约直换绑，"
+                              "K=V=128）：门禁 6/6（h 逐位一致、状态池写回 "
+                              "≤1e-4 fp32 舍入）+ Qwen3.5-27B TP4 e2e 四锚点"
+                              "全对（2026-10-13 bw7）；decode graph 36 桶捕"
+                              "获 577s→20.9s；=aiter 显式启用"} ,
+        },
+    },
     "fused_moe": {
         "var": "HCU_FUSED_MOE_IMPL",
         "summary": "w8a8 fused MoE experts (standard dispatch, "

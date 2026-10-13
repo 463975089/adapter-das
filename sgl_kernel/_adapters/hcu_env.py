@@ -145,6 +145,12 @@ REGISTRY = {
                  "wheel paged 短窗存在词汤级数值问题，2026-10-12 bw7 实测，"
                  "待 DTK 修）|emu=恒 torch 模拟",
     },
+    "HCU_LINEAR_ATTN_GDN": {
+        "env": "HCU_LINEAR_ATTN_GDN", "default": "auto",
+        "about": "GDN/gated-delta-rule 线性注意力档位：auto|triton=上游 triton "
+                 "fla（现状默认）；aiter=aiter CK 核路由（fwd_h 状态递推 + "
+                 "packed decode；K=V=128，state pool gather/scatter）",
+    },
     "HCU_DSA_PRESHUFFLE": {
         "env": "HCU_DSA_PRESHUFFLE", "default": "1",
         "about": "DSA aiter-preshuffle 路径（DTK wheel 内核可用时）；=0 回 legacy",
