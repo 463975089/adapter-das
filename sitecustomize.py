@@ -26,6 +26,18 @@ import sys
 import torch
 
 if getattr(torch.version, "hip", None) is not None:
+    # is_cuda semantics hard-depends on vllm only for `_custom_ops` symbol
+    # stubs (bound elsewhere). The vllm_hcu platform plugin, however,
+    # hangs the process on this stack (apply_platform_patches under our
+    # import order — observed live on nmz26 dtk26041: "Platform plugin hcu
+    # is activated" then silence until watchdog). sglang resolves its own
+    # platforms via the seam below; the plugin is dead weight here.
+    # Gate value must be a NON-empty allowlist (vllm envs treats an unset
+    # var as None = load-all, and "" would be racy against vllm envs being
+    # imported before sitecustomize); "none" is a name no real plugin has,
+    # so the filter keeps nothing regardless of import order. Operator can
+    # still opt in by exporting VLLM_PLUGINS explicitly (setdefault).
+    os.environ.setdefault("VLLM_PLUGINS", "none")
     # env registry first: every bridge below resolves its knobs through it
     # (docs/env-vars.md). One startup line lists effective values + sources.
     try:
@@ -76,6 +88,73 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: jit rope portability patch not installed", exc_info=True
         )
+    # JIT DSA indexer k-cache store (GLM-5.2-DSA unfused path): HIP fp8x2
+    # alias has no brace ctor + two HIP-vector binding decomposes.
+    try:
+        from sgl_kernel._adapters import jit_store_cache
+
+        jit_store_cache.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit dsa store-cache portability patch not installed",
+            exc_info=True,
+        )
+    # JIT warp reduce: HIP arm hardcodes a __hip_bfloat162 shuffle receiver,
+    # making reduce<T> un-compilable for every non-bf16 T (fp32 warp max in
+    # the DSA k-cache store, integer/float reduces elsewhere).
+    try:
+        from sgl_kernel._adapters import jit_warp
+
+        jit_warp.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit warp reduce portability patch not installed",
+            exc_info=True,
+        )
+    # JIT concat_mla (MLA-absorb q concat): hand-written PTX helpers
+    # (%laneid register / L1::no_allocate st+ld / prefetch) -> HIP-portable
+    # C++ equivalents.
+    try:
+        from sgl_kernel._adapters import jit_concat_mla
+
+        jit_concat_mla.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit concat_mla portability patch not installed",
+            exc_info=True,
+        )
+    # JIT dot_product (tiny_gemm inner): fp32x2 structured binding ->
+    # .x/.y member reads (rope.cuh / store_cache.cuh ABI fact, third site).
+    try:
+        from sgl_kernel._adapters import jit_dot_product
+
+        jit_dot_product.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit dot_product portability patch not installed",
+            exc_info=True,
+        )
+    # fused-MoE triton tile guard: HCU 64KB LDS vs the ~72KB NV default
+    # config — clamp oversized tiles at the durable resolution seam.
+    try:
+        from sgl_kernel._adapters import moe_config_guard
+
+        moe_config_guard.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: moe config smem guard not installed", exc_info=True
+        )
+    # MLA-absorb fp8 bmm: upstream gemm.bmm_fp8 spec resolves to
+    # fp8_utils:bmm_fp8 which only exists behind flashinfer import. Supply a
+    # torch-native dequant-bmm (scales applied in the epilogue role).
+    try:
+        from sgl_kernel._adapters import bmm_fp8_bridge
+
+        bmm_fp8_bridge.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: bmm_fp8 bridge not installed", exc_info=True
+        )
     # JIT per-token-group-quant fp8: CUDA trait reference without the HIP
     # member; patch the cuh onto the DTK conversion family (EP deep_gemm
     # runner's bf16-in/fp8-out activation quant needs this kernel).
@@ -117,6 +196,23 @@ if getattr(torch.version, "hip", None) is not None:
     except Exception:
         logging.getLogger("hcu.adapter").warning(
             "hcu adapter: triton pdl stripper not installed", exc_info=True
+        )
+    # KDA (Glm5Next linear-attention) prefill emulator: gfx938's triton
+    # chunk_kda computes a wrong Aqk (noise-level vs step reference; gate
+    # test kernels/test_kda_chunk_gfx938.py stays red for it) which turns
+    # all 42 KDA layers into noise on prefill. Swap TritonKDAKernel.extend
+    # to the torch step emulator (same math as the healthy decode kernel).
+    # HCU_KDA_PREFILL_EMU=0 keeps the triton pipeline.
+    try:
+        from sgl_kernel._adapters import hcu_env as _kda_env
+
+        if _kda_env.enabled("HCU_KDA_PREFILL_EMU"):
+            from sgl_kernel._adapters import kda_prefill_emu
+
+            kda_prefill_emu.install_patch()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: kda prefill emu not installed", exc_info=True
         )
     # fa3 attention vendor routing (DTK flash_attn wheel; emu fallback).
     # Needs sgl_kernel.flash_attn importable (below pulls it in).
@@ -940,6 +1036,33 @@ if getattr(torch.version, "hip", None) is not None:
                 exc_info=True,
             )
 
+    # DSV4/GLM-5.2-DSA fused q/k norm+rope: upstream elementwise module
+    # routes on module-level `_is_hip`/`_is_xpu` constants frozen at import.
+    # Under the is_cuda seam both read False -> the CUDA JIT arm
+    # (main_norm_rope.cuh) compiles for gfx938 and fails (__shfl_xor_sync,
+    # __syncwarp, HIP vector decompose). The HIP arms are exactly what HCU
+    # wants: plain rope falls to the upstream triton kernel; q/k norm_rope
+    # call torch.ops.sgl_kernel.dsv4_* which the DTK AOT wheel ships as real
+    # kernels. Flip the constants on the module (import-time rebind; the
+    # loader may not even have imported it yet, so also pre-import to be
+    # sure). The FP4-indexer arm keeps its loud CUDA-only raise (we don't
+    # enable enable_deepseek_v4_fp4_indexer).
+    try:
+        import sglang.kernels.ops.attention.dsv4.elementwise as _dsew
+        from sglang.srt.utils import common as _seam_common  # noqa: F401
+
+        _dsew._is_hip = True
+        _dsew._is_xpu = False
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: DSV4 norm_rope elementwise routed to HIP arms"
+            " (triton rope + dsv4_* AOT kernels)"
+        )
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: dsv4 elementwise bridge not installed",
+            exc_info=True,
+        )
+
     # Layer-output audit (triage tooling): HCU_LAYER_AUDIT=1 wraps
     # nn.Module.__call__ and appends per-module output magnitudes for
     # decoder-layer / linear-attn / DSA / MoE classes to
@@ -1069,6 +1192,77 @@ if getattr(torch.version, "hip", None) is not None:
     except Exception:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: dsa topk bridge not installed", exc_info=True
+        )
+
+    # DSA indexer rotate_activation: the upstream hadamard op is CUDA-only JIT
+    # (warp-shuffle intrinsics the DTK toolchain rejects); the HIP arm of the
+    # caller imports fast_hadamard_transform, which this wheel set lacks. Route
+    # the ops/quantization entry to the torch reference (rounding-neutral on
+    # the 128/256-wide indexer heads; capture-safe fixed shapes).
+    try:
+        import sglang.kernels.ops.quantization.hadamard as _had
+
+        from sgl_kernel._adapters.hadamard_ref import hadamard_transform
+
+        _had.hadamard_transform = hadamard_transform
+        for _nm in ("hadamard_transform_12n", "hadamard_transform_20n",
+                    "hadamard_transform_28n", "hadamard_transform_40n"):
+            setattr(_had, _nm, hadamard_transform)
+        logging.getLogger("hcu.adapter").info(
+            "HCU adapter: hadamard_transform -> torch reference"
+        )
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: hadamard bridge not installed", exc_info=True
+        )
+
+    # DSA prefill/decode backend validator: the upstream constraint check
+    # refuses the triton DSA backends off-HIP ("ROCm/HIP only"), but it
+    # receives hip=get_platform().is_hip — which the platform seam flips to
+    # False. The triton DSA kernels are precisely what runs on HCU hardware
+    # (a ROCm-class card): validate the constraint with the hardware truth
+    # (hip=True) while every other judgement keeps the CUDA semantics.
+    # Governance §0.5: judgement layers translated, hardware stays truthful.
+    try:
+        import sgl_kernel._adapters.registry as _hreg
+        import sglang.srt.arg_groups.overrides as _dsa_ov
+
+        def _hcu_dsa_constraint_hook(module):
+            _orig = module._check_dsa_backend_constraints
+
+            def _hcu_check(kv_cache_dtype, prefill_backend, decode_backend, *, hip):
+                return _orig(
+                    kv_cache_dtype,
+                    prefill_backend,
+                    decode_backend,
+                    hip=True,
+                )
+
+            _hreg.register(
+                "platform_detect",
+                _hcu_check,
+                target="sglang.srt.arg_groups.overrides:_check_dsa_backend_constraints",
+                mechanism=_hreg.MECH_SEAM,
+                detail="dsa-backend-validator hip=hardware-truth",
+            )
+            return _hcu_check
+
+        _fn = _hcu_dsa_constraint_hook(_dsa_ov)
+        _dsa_ov._check_dsa_backend_constraints = _fn
+        for _m in list(sys.modules.values()):
+            _d = getattr(_m, "__dict__", None)
+            if _d and _d.get("_check_dsa_backend_constraints") is not _fn and (
+                getattr(_d.get("_check_dsa_backend_constraints", None), "__module__", "")
+                == "sglang.srt.arg_groups.overrides"
+            ):
+                _d["_check_dsa_backend_constraints"] = _fn
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: DSA backend validator seam installed "
+            "(hip=hardware truth inside cuda semantics)"
+        )
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: DSA validator seam not installed", exc_info=True
         )
 
     # Custom all-reduce: sglang's CustomAllreduce resolves its ops through

@@ -52,6 +52,14 @@ _PATCHES = (
         "      const auto [sin_0, sin_1] = sin_pair[j];",
         "      const auto sin_0 = sin_pair[j].x, sin_1 = sin_pair[j].y;",
     ),
+    # rope_rotate_head non-neox arm (hit by GLM-5.2-DSA indexer rope on
+    # gfx938 DTK hipcc -- same anonymous-union ABI as the bindings above)
+    (
+        "elementwise/rope.cuh",
+        "      const auto [x, y] = cast<fp32x2_t>(input_vec[j]);",
+        "      fp32x2_t _vxy = cast<fp32x2_t>(input_vec[j]);"
+        " const auto x = _vxy.x, y = _vxy.y;",
+    ),
 )
 
 # shim appended to rope.cuh: mask-form syncwarp for HIP; identity on CUDA

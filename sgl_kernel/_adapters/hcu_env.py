@@ -219,6 +219,12 @@ REGISTRY = {
                  " 全错；同时补 mk-alignment get/set API）；=0 退回 DTK 原核"
                  "（会崩）作对照",
     },
+    "HCU_KDA_PREFILL_EMU": {
+        "env": "HCU_KDA_PREFILL_EMU", "default": "1",
+        "about": "KDA（Glm5Next 线性注意力 42 层）prefill 走 torch 步进 emu："
+                 "gfx938 triton chunk_kda 的 Aqk 全错（噪声级，gate 测试红），"
+                 "emu 与健康的 decode kernel 同数学；=0 退回 triton（词汤）",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},

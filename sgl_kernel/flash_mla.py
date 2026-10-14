@@ -22,7 +22,13 @@ paths belong to the DSA/NSA backends, not this one.
 
 import torch
 
-__all__ = ["flash_mla_with_kvcache", "get_mla_metadata"]
+# DSA sparse attention emu lives in its own module (imported as
+# `sgl_kernel.flash_mla_sparse`); re-export here so the historical import
+# path `from sgl_kernel.flash_mla import flash_mla_sparse_fwd` (dsa_backend
+# _forward_flashmla_sparse) resolves to the emu without upstream edits.
+from sgl_kernel.flash_mla_sparse import flash_mla_sparse_fwd  # noqa: F401
+
+__all__ = ["flash_mla_with_kvcache", "get_mla_metadata", "flash_mla_sparse_fwd"]
 
 
 def get_mla_metadata(

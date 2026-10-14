@@ -403,6 +403,63 @@ def test_decode_3d_capture_safe():
     print("PASS decode 3D capture+replay: replay tracks fresh inputs")
 
 
+def test_only_qv_no_k_cache():
+    """GLM-5.x DSA sparse decode path (dsa_backend flashmla_sparse over the
+    fa3 emu via forward_absorb_prepare's only_qv=True form): k_cache=None,
+    only the c_kv pool is passed as v_cache, qa/k scale folded into qv on
+    the bridge so logits = (qv.folded . v) with zero K-side contribution.
+    Exercises the line-342 fix (Hk derived from v_cache when k_cache is
+    None) + src_k=None + total_tokens from page_table x v shape."""
+    torch.manual_seed(43)
+    bs, H, Dv = 3, 8, 512
+    lens_q = [4, 2, 6]
+    pages_per_req = 10
+    # v-only pool: no K tensor at all
+    _, pool_v, block_table, seqlens = _make_paged_kv(
+        bs, pages_per_req, H, 1, 64, Dv, seed=43
+    )
+    maxL = max(lens_q)
+    seqlens_c = seqlens.clamp(min=maxL).int()
+    device = torch.device("cuda")
+    g = torch.Generator().manual_seed(44)
+    M = sum(lens_q)
+    qv = torch.randn(M, H, Dv, generator=g).to(torch.bfloat16)
+    cu_q = torch.tensor([0] + list(torch.tensor(lens_q).cumsum(0)), dtype=torch.int32)
+    scale = Dv**-0.5
+
+    o = flash_attn_with_kvcache(
+        q=None,
+        qv=qv.to(device),
+        k_cache=None,
+        v_cache=pool_v.to(device),
+        page_table=block_table.to(device),
+        cache_seqlens=seqlens_c.to(device),
+        cu_seqlens_q=cu_q.to(device),
+        softmax_scale=scale,
+        causal=True,
+    )
+
+    # reference: logits_ij = qv_i . v_j * scale (K side absent by contract)
+    outs = []
+    for b in range(bs):
+        s = int(seqlens_c[b])
+        Lq = lens_q[b]
+        v_all = pool_v[block_table[b].long()].reshape(-1, 1, Dv)[:s].squeeze(1)
+        qvb = qv[int(cu_q[b]) : int(cu_q[b + 1])].float()
+        sc = torch.einsum("lhd,sd->lhs", qvb, v_all) * scale
+        qpos = torch.arange(s - Lq, s)[:, None]
+        sc = sc.masked_fill(
+            torch.arange(s)[None, None, :] > qpos[:, :, None], float("-inf")
+        )
+        p = torch.softmax(sc, dim=-1)
+        outs.append(torch.einsum("lhs,sd->lhd", p, v_all))
+    ref = torch.cat(outs)
+    diff = (o.float().cpu() - ref).abs().max().item()
+    assert o.shape == (M, H, Dv), f"only_qv: shape {o.shape}"
+    assert diff < 2e-2, f"only_qv: max diff {diff}"
+    print(f"PASS only_qv k_cache=None (DSA sparse decode): diff={diff:.5f}", flush=True)
+
+
 if __name__ == "__main__":
     test_decode_gqa_bs1()
     test_decode_gqa_bs4_varlen()
@@ -414,6 +471,8 @@ if __name__ == "__main__":
     test_decode_3d_packed_q_with_cu()
     test_decode_3d_packed_q_no_cu()
     test_decode_3d_capture_safe()
+    test_mla_split_qv()
     test_varlen_prefill()
     test_merge_state_v2()
+    test_only_qv_no_k_cache()
     print("ALL PASS")

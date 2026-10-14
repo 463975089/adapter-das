@@ -204,12 +204,16 @@ def _attend_chunked(qp, kv_src, seqlens, q_start, scale, causal, window_size,
     for c0 in range(0, T, chunk):
         c1 = min(c0 + chunk, T)
         k_c, v_c = kv_src(c0, c1)
-        Hk = k_c.shape[2]
+        Hk = v_c.shape[2] if k_c is None else k_c.shape[2]
         k_c = _descale(k_descale, k_c, Hk)
         v_c = _descale(v_descale, v_c, Hk)
-        scores = _grouped_scores(qp, k_c, scale)  # (bs, maxL, H, C)
-        if qvp is not None:
-            scores = scores + _grouped_scores(qvp, v_c, scale)
+        if k_c is None:
+            # only_qv: logits = qv·v alone (zero query slab contributes nothing)
+            scores = _grouped_scores(qvp, v_c, scale)  # (bs, maxL, H, C)
+        else:
+            scores = _grouped_scores(qp, k_c, scale)  # (bs, maxL, H, C)
+            if qvp is not None:
+                scores = scores + _grouped_scores(qvp, v_c, scale)
 
         col = torch.arange(c0, c1, device=device)
         valid = col[None, :] < seqlens[:, None]  # (bs, C)
@@ -299,12 +303,40 @@ def flash_attn_with_kvcache(
     out=None,
     **_ignored,
 ):
+    if (
+        q is None
+        and not only_qv
+        and qv is not None
+        and k_cache is None
+    ):
+        # GLM-5.x DSA sparse decode (dsa_backend flashmla_sparse route over
+        # the fa3 router) calls flash_attn_with_kvcache(q=None, qv=...,
+        # k_cache=None, v_cache=c_kv) WITHOUT the only_qv kwarg: with no k
+        # side at all there is nothing q could attend, so qv is necessarily
+        # the only query — infer the flag instead of rejecting (§0.5: the
+        # upstream call-shape is the contract).
+        only_qv = True
+    if q is None and not only_qv:
+        raise ValueError("flash_attn emu: q is None but only_qv is False")
+    if only_qv:
+        if qv is None:
+            raise ValueError("flash_attn emu: only_qv requires qv")
+        if q_descale is not None or sinks is not None:
+            raise NotImplementedError(
+                "flash_attn (HCU emu): q_descale/sinks paths not supported"
+            )
+        # FA3 only_qv=true (MLA absorbed decode with rope dim 0): qv is the
+        # sole query; logits = qv.v (the k side is a zero slab so the shared
+        # chunked scorer degenerates to it), softmax scale applies to the
+        # qv·v dot itself — folded into qvp below.
+        q_shape = qv.shape
+        q = torch.zeros(q_shape[:-1] + (1,), dtype=qv.dtype, device=qv.device)
+    if q is None or (not only_qv and (q_descale is not None or sinks is not None)):
+        raise NotImplementedError(
+            "flash_attn (HCU emu): q_descale/sinks paths not supported"
+        )
     if q.dim() not in (3, 4):
         raise ValueError(f"flash_attn emu: q must be 3D/4D, got {q.dim()}")
-    if q_descale is not None or sinks is not None or only_qv:
-        raise NotImplementedError(
-            "flash_attn (HCU emu): q_descale/sinks/only_qv paths not supported"
-        )
     if rotary_cos is not None or k is not None:
         raise NotImplementedError(
             "flash_attn (HCU emu): in-kernel cache update / rotary not "
@@ -324,7 +356,9 @@ def flash_attn_with_kvcache(
     q3 = q.reshape(-1, q.shape[-2], q.shape[-1])
     M, H, D = q3.shape
     bs = page_table.shape[0]
-    Hk = k_cache.shape[2]
+    # only_qv (kq_rope_dim==0 DSA decode upstream passes k_cache=None): the
+    # zero query slab makes q·k identically zero, so any K geometry works
+    Hk = k_cache.shape[2] if k_cache is not None else H
     if H % Hk:
         raise ValueError(f"flash_attn emu: GQA {H} not divisible by {Hk}")
 
@@ -358,9 +392,25 @@ def flash_attn_with_kvcache(
             float(q.float().sum()),
         )
 
+    scale = softmax_scale if softmax_scale is not None else (
+        qv.shape[-1] ** -0.5 if only_qv else D**-0.5
+    )
     qp, cell, _ = _pad_queries(q3, cu_q, bs, maxL, device)
     qvp = None
-    if qv is not None:
+    if only_qv:
+        # zero out the rope-dot side of the logit fusion below by clearing q;
+        # upstream's softmax_scale applies to the fused (q.k + qv.v) and with
+        # q.k absent it belongs entirely to the qv·v term — fold into qvp and
+        # feed _attend_chunked scale=1.
+        qv3 = qv.reshape(-1, qv.shape[-2], qv.shape[-1]).to(torch.float32)
+        if qv3.shape[0] != M or qv3.shape[1] != H:
+            raise ValueError(
+                f"flash_attn emu: qv {tuple(qv.shape)} mismatches q "
+                f"{tuple(q.shape)}"
+            )
+        qvp = _pad_queries(qv3 * scale, cu_q, bs, maxL, device)[0]
+        scale = 1.0
+    elif qv is not None:
         # FA3 MLA split form: qv is the w_kc-absorbed latent query whose dot
         # with the compressed KV adds to the logits (rope dot covers the
         # rest). Same padding grid as q.
@@ -371,21 +421,21 @@ def flash_attn_with_kvcache(
                 f"{tuple(q.shape)}"
             )
         qvp, _, _ = _pad_queries(qv3, cu_q, bs, maxL, device)
-
-    src_k = _PagedKV(k_cache, page_table)
+    src_k = None if k_cache is None else _PagedKV(k_cache, page_table)
     src_v = _PagedKV(v_cache, page_table)
 
     seqlens = cache_seqlens.to(torch.int64)
     q_start = seqlens - lens_q  # bottom-right aligned window start
-    scale = softmax_scale if softmax_scale is not None else D**-0.5
 
     def kv_pair(c0, c1):
+        if src_k is None:
+            return None, src_v(c0, c1)
         return src_k(c0, c1), src_v(c0, c1)
 
     o_pad, lse_pad = _attend_chunked(
         qp, kv_pair, seqlens, q_start, scale, causal, window_size, softcap,
         k_descale, v_descale, dtype,
-        total_tokens=page_table.shape[1] * k_cache.shape[1],
+        total_tokens=page_table.shape[1] * v_cache.shape[1],
         qvp=qvp,
     )
     flat_o = o_pad.reshape(-1, *o_pad.shape[2:])  # (bs*maxL, H, Dv)

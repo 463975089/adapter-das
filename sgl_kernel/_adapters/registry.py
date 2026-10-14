@@ -83,6 +83,88 @@ TEXT_PATCH_ALLOWLIST = {
         "      value = Trait::reduce(value, __shfl_xor(value, mask, kFinish));\n"
         "#endif",
     ),
+    # --- GLM-5.2-DSA (gfx938, box16) launch chain: three more hipcc
+    # --- portability text patches, same evidence class as the rope ones.
+    # DSA indexer k-cache store: HIP fp8x2 alias is a bare uint16_t (no
+    # brace ctor) -> delegate pack_fp8 to the proven deepseek_v4 software
+    # packer (E4M3FN 448 clip == this file's kFP8E4M3Max assumption).
+    (
+        "per_token_quant",
+        "#include <sgl_kernel/vec.cuh>\n#include <sgl_kernel/warp.cuh>",
+    ),
+    (
+        "per_token_quant",
+        "[[maybe_unused]]\n"
+        "SGL_DEVICE fp8x2_e4m3_t pack_fp8(float x, float y) {\n"
+        "  return fp8x2_e4m3_t{fp32x2_t{fp8_e4m3_clip(x), fp8_e4m3_clip(y)}};\n"
+        "}",
+    ),
+    (
+        "per_token_quant",
+        "  const auto [x0, x1] = cast<fp32x2_t>(elems[0]);",
+    ),
+    (
+        "per_token_quant",
+        "  const auto [y0, y1] = cast<fp32x2_t>(elems[1]);",
+    ),
+    # warp.cuh reduce<T>: HIP arm hardcodes a __hip_bfloat162 shuffle
+    # receiver -> reduce<T> un-compilable for every non-bf16 T (fp32 warp
+    # max in the store kernel). Receiver type widened to T.
+    ("per_token_quant", "__hip_bfloat162 _v;"),
+    # concat_mla.cuh: hand-written PTX (laneid register, L1::no_allocate
+    # st/ld with "l" constraint, prefetch.global.L2) -> HIP-portable
+    # equivalents (utils.cuh lane identity / plain volatile derefs).
+    (
+        "platform_detect",
+        "SGL_DEVICE int get_lane_id() {\n"
+        "  int lane_id;\n"
+        '  asm("mov.s32 %0, %laneid;" : "=r"(lane_id));\n'
+        "  return lane_id;\n"
+        "}",
+    ),
+    (
+        "platform_detect",
+        "SGL_DEVICE void st_na_global_v1(const int* ptr, int v) {\n"
+        '  asm volatile("st.global.L1::no_allocate.s32 [%0], %1;" ::"l"(ptr), "r"(v) : "memory");\n'
+        "}",
+    ),
+    (
+        "platform_detect",
+        "SGL_DEVICE void st_na_global_v2(const int2* ptr, const int2& v) {\n"
+        '  asm volatile("st.global.L1::no_allocate.v2.s32 [%0], {%1, %2};" ::"l"(ptr), "r"(v.x), "r"(v.y) : "memory");\n'
+        "}",
+    ),
+    (
+        "platform_detect",
+        "SGL_DEVICE int ld_na_global_v1(const int* ptr) {\n"
+        "  int r;\n"
+        '  asm volatile("ld.global.nc.L1::no_allocate.s32 %0, [%1];" : "=r"(r) : "l"(ptr));\n'
+        "  return r;\n"
+        "}",
+    ),
+    (
+        "platform_detect",
+        "SGL_DEVICE int2 ld_na_global_v2(const int2* ptr) {\n"
+        "  int2 r;\n"
+        '  asm volatile("ld.global.nc.L1::no_allocate.v2.s32 {%0, %1}, [%2];" : "=r"(r.x), "=r"(r.y) : "l"(ptr));\n'
+        "  return r;\n"
+        "}",
+    ),
+    # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
+    # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
+    # indirection in utils.cuh exists for this reason). Six identical sites.
+    ("platform_detect", "        .with_device<kDLCUDA>(device)"),
+    # gemm/dot_product.cuh: bf16 dot-product accumulation decomposes
+    # fp32x2_t (HIP float2, anonymous union) — third site of the same ABI
+    # fact after rope.cuh / fused_store_index_cache.cuh. .x/.y member reads.
+    (
+        "platform_detect",
+        "    const auto [a0, a1] = cast<fp32x2_t>(a[i]);",
+    ),
+    (
+        "platform_detect",
+        "    const auto [b0, b1] = cast<fp32x2_t>(b[i]);",
+    ),
 }
 
 

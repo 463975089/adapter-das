@@ -42,8 +42,45 @@ _TARGETS = (
 )
 
 
+def _install_gfx_probe_guard(_common):
+    """Neutralize is_gfx*_supported arch probes.
+
+    Their bodies call torch.cuda.get_device_properties(0) after the
+    torch.version.hip truthy check (which we deliberately keep truthful)
+    and blow up with "No CUDA GPUs are available" when visible devices are
+    an offset set (HIP_VISIBLE_DEVICES=8..15) probed before CUDA init —
+    exactly sitecustomize's early import order. HCU is gfx93x: every one
+    of these NVIDIA/RDMA-next gates is semantically False.
+
+    Patches BOTH namespaces: `sglang.srt.utils.common` and the re-export
+    layer `sglang.srt.utils` (its __init__ does `from .common import *`,
+    so late `from sglang.srt.utils import is_gfx*_supported` consumers --
+    e.g. kernels/ops/quantization/fp8_kernel -- must not pick the
+    ORIGINAL probe out of the package namespace). Works without _common
+    too (module-import fallback for the legacy-hip/no-GPU paths).
+    """
+    import sglang.srt.utils as _pkg  # noqa: PLC0415 -- cheap; usually loaded
+    import sglang.srt.utils.common as _c  # noqa: PLC0415 -- cheap; usually loaded
+
+    def _false():
+        return False
+
+    targets = [_pkg, _c]
+    if _common is not None and _common not in targets:
+        targets.append(_common)
+    for target in targets:
+        for _name in list(vars(target)):
+            if _name.startswith("is_gfx") and _name.endswith("_supported"):
+                setattr(target, _name, _false)
+    LOG.warning(
+        "HCU adapter: gcn arch probes (is_gfx*) guarded to False"
+        " (early-import safe under partitioned visibility)"
+    )
+
+
 def install():
     import os
+    import time
 
     import torch
 
@@ -55,18 +92,40 @@ def install():
     os.environ.setdefault("SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK", "1")
 
     sem, _src = hcu_env.resolve("HCU_PLATFORM_SEMANTICS")
-    if sem == "hip":
-        LOG.warning(
-            "HCU adapter: platform semantics=hip (legacy adapter route;"
-            " set HCU_PLATFORM_SEMANTICS=cuda for the §0.5 is_cuda route)"
-        )
-        return
     if sem != "cuda":
-        raise ValueError(
-            f"HCU_PLATFORM_SEMANTICS={sem!r} invalid (cuda|hip)"
+        LOG.warning(
+            "HCU adapter: platform semantics=%r (legacy adapter route;"
+            " set HCU_PLATFORM_SEMANTICS=cuda for the §0.5 is_cuda route)",
+            sem,
         )
-    if not torch.cuda.is_available():
+        # legacy hip 路线也要装 gcn 探针守卫：torch.version.hip 真值分支下
+        # is_gfx*_supported 会裸调 get_device_properties(0)，卡分区可见性
+        # （HIP_VISIBLE_DEVICES 非从 0 起）+ CUDA 未 init 的早期 import 即炸。
+        _install_gfx_probe_guard(_common=None)
         return
+    if not torch.cuda.is_available():
+        if torch.version.hip is None:
+            # 非 HIP 构建且 GPU 面完全不可见（无卡开发机等）：seam 无从谈
+            # 起，gcn 守卫同样装上——后续任何 import 碰到 is_gfx* 都能拿到
+            # 安全 False 而不是炸。
+            _install_gfx_probe_guard(_common=None)
+            return
+        # HIP 构建但首轮 CUDA 探测瞬时失败：新容器里驱动枚举会与并发编译
+        # （tvm_ffi dlpack 等）赛跑，数分钟后同 env 复测 device_count=8。
+        # 不因瞬态弃装——下方 seam 只重写 sglang 的平台判定答案，全部是
+        # 常量函数，不需要活的 CUDA 上下文；稍候重试后仍不可见则带告警
+        # 照装（真正无卡时后续初始化自会响亮失败）。
+        for _ in range(8):
+            time.sleep(2)
+            if torch.cuda.is_available():
+                break
+        else:
+            LOG.warning(
+                "HCU adapter: CUDA face unavailable at install() on a HIP"
+                " build (torch.version.hip=%r) -- installing seam anyway"
+                " (semantics-only, needs no live CUDA context)",
+                torch.version.hip,
+            )
 
     from sglang.srt import platforms as _pf
     from sglang.srt.utils import common as _common
@@ -144,6 +203,13 @@ def install():
             and _inner.func is getattr(_common, "_check_cuda_device_version", None)
         ):
             setattr(_common, _name, lambda: False)
+
+    # gcn 架构探针（is_gfx950_supported / is_gfx1250_supported，@lru_cache 无
+    # __wrapped__）：原实现走 torch.version.hip 真值分支后裸调
+    # get_device_properties(0) ——卡分区可见性（HIP_VISIBLE_DEVICES=8..15）
+    # 且 CUDA 尚未 init 的 sitecustomize 早期 import 顺序下直接
+    # "No CUDA GPUs are available"。HCU 是 gfx93x，这些门恒 False。
+    _install_gfx_probe_guard(_common)
 
     impls = {
         "sglang.srt.utils.common:is_cuda": _hcu_is_cuda,

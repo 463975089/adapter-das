@@ -108,13 +108,17 @@ def install():
 
     import sgl_kernel._adapters.registry as _reg
 
-    _reg.register(
-        "per_token_quant",
-        "gfx936-hipcc-fp8-cvt",
-        target="text:sglang/kernels/jit/csrc/gemm/per_token_group_quant.cuh",
-        mechanism=_reg.MECH_TEXT,
-        detail="kFloatMax literal + __hip_cvt_float2_to_fp8x2",
-    )
+    # TEXT_PATCH_ALLOWLIST keys are (op, exact needle); the registry gate
+    # fingerprints a text patch by its detail, so each needle registers as
+    # its own record (same op on the same file target is not a conflict).
+    for r, n, _rp in _PATCHES + _PATCHES_WARP:
+        _reg.register(
+            "per_token_quant",
+            "gfx936-hipcc-fp8-cvt",
+            target=f"text:sglang/kernels/jit/csrc/{r if r.startswith('gemm/') else 'include/sgl_kernel/' + r}",
+            mechanism=_reg.MECH_TEXT,
+            detail=n,
+        )
     LOG.warning(
         "HCU adapter: JIT per-token-group-quant fp8 patch installed "
         "(%d edits)", applied,
