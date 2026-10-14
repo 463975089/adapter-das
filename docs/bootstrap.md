@@ -107,6 +107,85 @@ PY
 何时需要重做：**每换新容器/新镜像整节重跑**（依赖和预热缓存不跨容器）；
 同容器内只更新 adapter 代码 → 只做 §1。
 
+## 7. 手工跑全量测试（L0 + L1，~5-15 分钟）
+
+CI 的 MR watcher 干的就是这两步，手工验证等价于直接跑同款脚本（都在
+仓内，容器内执行）：
+
+```bash
+cd /work                # adapter tree 根（git clone 或 §1 的 tar 解包处）
+
+# L0 结构门禁（秒级，无 GPU 依赖）：语法/RLF/密钥扫描/catalog 三交叉
+python3 ci/l0_gate.py                   # 期望末行: l0 gate: GREEN
+
+# L1 GPU 数值门禁（~5-15min，占一张卡）：
+bash ci/l1_gpu_gate.sh                  # 自动挑 VRAM<5% 的空卡
+bash ci/l1_gpu_gate.sh 6                # 或指定卡号
+# 期望末行: L1: GREEN (gpu=N)
+# 内部段: l0 → cpu(test_ops_cpu) → kernels(tests/kernels+adapter)
+#         → gates(config/fa3-emu-CP/rope/aiter-MoE/contig 五个 tools 门禁)
+#         → vendor(flash_attn wheel 探针, WARN 级不挡门)
+# 各段日志在 /tmp/l1_<段名>.log，FAIL 时自动打 tail
+```
+
+**单独跑某个域**（细粒度排查时）：
+
+```bash
+export PYTHONPATH=/work:/work/official-sglang/python    # 部分门禁需上游源码
+export HIP_VISIBLE_DEVICES=$N CUDA_VISIBLE_DEVICES=$N    # 圈一张空卡
+
+python3 -m pytest tests/test_ops_cpu.py -q              # 纯 torch 契约层
+python3 -m pytest tests/kernels tests/adapter -q        # triton 数值 vs 参照
+python3 tests/tools/_test_hcu_config.py                 # 单个 tools 门禁
+python3 tests/tools/_test_hcu_ar2.py                    # custom AR 门禁（占 2 卡）
+```
+
+判读约定：`_test_*` 脚本全 assert 无输出=过；pytest 末行 `passed` 数
+即绿；vendor 段的 FAIL 是环境事实（坏 wheel）不是回归，见 ci.md 分层。
+跑完若要压性能格点，物料在 `tests/tools/_bench_*.py` 与 `_probe_*.py`
+（命名规约见 tests/tools/README.md）。
+
+## 8. 手工拉起一个 sglang 服务（最小可用示例）
+
+前提：§1-§6 全绿。以下即 cookbook §1 基线配方（细节/其他模型展开看
+[cookbook.md](cookbook.md)）：
+
+```bash
+export PYTHONPATH=/work:/work/official-sglang/python      # adapter 优先
+export SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python       # 恒带（rust 无扩展必炸）
+export CUDA_VISIBLE_DEVICES=6                              # 圈卡；多卡写 0,1
+
+python3 -m sglang.launch_server \
+    --model-path /root/models/Qwen3-0.6B \
+    --host 0.0.0.0 --port 30000 \
+    --mem-fraction-static 0.45 2>&1 | tee /tmp/sglang_30000.log
+```
+
+**启动正确的signature**（日志里按序出现才算起活）：
+
+1. `HCU adapter config: …`（sitecustomize 挂载成功，逐项后端来源行）；
+2. `Loading weights …`→`Capture …`（graph 桶逐个捕完，无 OOM）；
+3. `The server is fired up and ready to roll!`（监听就绪）。
+
+**冒烟一发**（另开终端）：
+
+```bash
+curl -s http://127.0.0.1:30000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"default","messages":[{"role":"user",
+        "content":"法国的首都是哪里？只答城市名。"}]}' | python3 -m json.tool
+# 期望 content 含"巴黎"
+```
+
+**收尾**：`pkill -f "sglang.launch_server"`（注意模式别写进同条命令的
+其他参数，防自杀）；确认显存已还（`hy-smi`/`rocm-smi` 该卡 VRAM% 回
+≈0；kill -9 遗留 defunct 时不还卡，换卡或重建容器）。
+
+更复杂的形态——单测即配方的模板库：TP 多卡/EP/PD/MTP/CP/hicache/AWQ
+各有实测 launch 物料 `tests/tools/_launch_*.sh`（容器内改卡号端口即
+用），组合特性的门禁与探针是同名 `_test_*.py`/`_probe_*.py`。出问题
+先查 cookbook.md §4 平台约束与 models.md 同模型行备注，再怀疑环境。
+
 ---
 维护注：本文的版本钉与坑清单源自 2026-10-10~14 的多容器实测（models.md
 对应行沿链可查）；镜像换代时先在旧表加注再按新实测修订本文件。
