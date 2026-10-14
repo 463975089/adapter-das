@@ -14,6 +14,7 @@
 | 向算子组/供应商提需求 | docs/operator-requests.md（锚定 sglang 契约面，机器数据先行） |
 | 配置后端 / 部署 | docs/config.md → hcu_adapter.example.yaml → docs/env-vars.md（调试覆盖） |
 | 跑一个模型 | docs/cookbook.md（找配方）→ docs/models.md（看先例与坑）→ cookbook.md §4 平台约束 |
+| **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
 | 改 CI / 加门禁 | docs/ci.md → ci/l0_gate.py（治理三规则在此实现） |
 
@@ -30,6 +31,7 @@
 | docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
 | docs/env-vars.md | 全量环境变量手册（调试覆盖定位） | REGISTRY 键集与 hcu_env.py 不符（L0 会抓） |
 | docs/cookbook.md | 已验证启动配方（按模型/特性），§4 平台约束必读 | 配方与最新 master 行为不符 |
+| docs/bootstrap.md | 新容器 Bootstrap 手册：依赖套件版本钉、tvm-ffi 手工预热、镜像差异表、四条自检 | 镜像换代后版本钉失效（快照与镜像不符） |
 | docs/models.md | 模型验证记录表（一天一行，判定四门）+ 组合特性清单 | 新模型跑完未加行 |
 | skills/hcu-adapter-dev/SKILL.md | 开发规约入口 + 任务路由（references/ 下五份专篇） | 黄金法则与代码内守卫不符 |
 | tests/tools/README.md | 物料命名语法（_test_/_probe_/_launch_/_dbg_） | 新物料未按前缀归位 |
