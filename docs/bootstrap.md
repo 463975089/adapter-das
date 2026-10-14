@@ -7,20 +7,36 @@
 > 三类必做事项：**①依赖套件按版本重打 ②tvm-ffi 首次编译手工预热
 > ③adapter tree 整体同步 + PYTHONPATH**。
 
-## 1. adapter tree 同步（整 tar，别逐文件）
+## 1. adapter tree 同步：git pull 优先（仓库已开源）
+
+仓库已 public 开源：`https://gitee.com/lizhigong/hcu-sglang-adapter`，
+容器内免凭据直拉，**git 为主、tar 仅作隧道断连时的应急**。
 
 ```bash
-# 本地（Windows，仓库根）：
-tar czf adapter_tree.tgz sgl_kernel sitecustomize.py pyproject.toml
-base64 adapter_tree.tgz > adapter_tree.b64          # scp 被节点 sshd 拒
-# base64-of-ssh 通道落宿主 → docker cp 进容器 /work/，容器内：
-mkdir -p /work/adapter-tree && tar xzf /work/adapter_tree.tgz -C /work/adapter-tree
-export PYTHONPATH=/work:/work/official-sglang/python   # 指树根（tar 解包处），不是子目录
+# 首次（容器内，免凭据）：
+cd /work
+git clone https://gitee.com/lizhigong/hcu-sglang-adapter.git adapter-tree
+export PYTHONPATH=/work/adapter-tree:/work/official-sglang/python
+
+# 日常更新（增量、带版本对账）：
+cd /work/adapter-tree && git pull && git log -1 --oneline   # 记住跑的版本
 ```
 
-**为什么整 tar**：逐文件补丁必漏新桥（历史事故：漏 platform_seam 后 spawn
-子进程用旧 adapter，输出形态诡异）；PYTHONPATH 指 `/work` 树根而非
-`/work/adapter-tree`（tar 根解包的对齐关系）。
+**为什么 git 为主**：自带版本对账（`git log -1` 即答"容器里跑的哪个
+commit"，排查第一步）；增量同步；与 CI mirror mirror（L1 也是 clone+check）
+同一语义——本地=唯一编辑树、容器=只跑验证、"容器里是什么"永远可考。
+
+**应急：tar+base64 过 ssh**（仅当 git 通道不可达，如隧道断连/内网隔离）：
+
+```bash
+# 本地：tar czf adapter_tree.tgz sgl_kernel sitecustomize.py pyproject.toml
+# base64 过 ssh 落宿主 → docker cp 容器内解包（scp -P 被节点 sshd 拒）
+```
+
+**红线（两法通用）**：PYTHONPATH 指树根；绝不用逐文件补丁方式同步
+（必漏新桥——历史事故：漏 platform_seam 后 spawn 子进程用旧 adapter）。
+内部迭代期若用**私有 fork** 推拉，令牌只落 `/root/.git-credentials`，
+不进 /work、不进 PYTHONPATH、永不 commit。
 
 ## 2. 依赖套件重打（每个新容器各做一次）
 

@@ -1,5 +1,8 @@
 # hcu-sglang-adapter
 
+> **已 public 开源**（2026-10-14）：`git clone https://gitee.com/lizhigong/hcu-sglang-adapter.git`；
+> 从镜像到跑通的手工部署看 [docs/bootstrap.md](docs/bootstrap.md)。
+
 让社区版 sglang 官方代码的 **python 部分零修改**、直接跑在海光 HCU
 （DCU/DTK，HIP 路径）上的适配层（adapter）。
 
