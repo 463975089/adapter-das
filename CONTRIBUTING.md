@@ -80,6 +80,18 @@ docs: architecture collaboration chapter + html diagram
    sitecustomize，review 拒收。
 4. **先写根因注释**：上游哪个文件哪个判定漏了什么、为什么桥是解法（现存每座
    域桥都是范本）。没有根因注释的桥不予合入。
+4b. **测试先行顺序**（新模块默认"先单测后 e2e"，比"先跑模型再解问题"省一
+   整轮起服务-爆-倒查循环；实证：contig-triton/fa3-emu 单测先行均 e2e 首过，
+   moe_align/slimquant 反序付出 e2e 倒查代价）：
+   - **算子/数学类**（triton 核、emu、量化路径）：单测先行是**硬门槛**——
+     有了 ref 对拍 + 形状矩阵 + 容差判据，再上 e2e；脚手架照
+     `tests/kernels/test_gemm_int8.py` 三段式（参照/形状矩阵/容差），pattern
+     见 skill `references/test-suite.md`。
+   - **seam/接缝类**（import 时序、capture 交互、平台判定、跨卡织物）：
+     单测表达不了的（如 graph capture 里的主机同步）先以 e2e/探针探路，
+     但**"one pit, one test"**——探明的每个坑，修复 MR 必带能离线复现该坑
+     的单测，无离线复现不予合入（沉淀进 tests/ 即质量资产，L1 自动收集）。
+   - e2e 前先跑既有相关门禁（`tests/tools/_test_*`），L1 全绿是 MR 准入。
 5. 优先用 `_base.py` 的机制通道，不动上游源码：
    - `extras`（allowlist 填空）——真包缺的符号我们补；
    - `overrides`——需要整体夺回某函数时；

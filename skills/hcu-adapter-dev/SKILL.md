@@ -35,6 +35,12 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
    ImportError 如 hcu_alloc_decode_kernel、module 解析到镜像路径）。
    清理命令见 references/cookbook-matrix.md。
 
+9. **测试先行顺序**：算子/数学类新实现——单测先于 e2e（ref 对拍+形状矩阵
+   +容差，脚手架见 references/test-suite.md 三段式）；seam/接缝类——e2e 探路
+   可以，但 "one pit, one test"：探明的坑修复时必带离线复现单测，否则不予
+   合入。实证对照：contig-triton/fa3-emu 单测先行 e2e 首过 vs
+   moe_align/slimquant 反序付 e2e 倒查代价（CONTRIBUTING §3.4b）。
+
 ## 任务路由（做某类事之前先读对应参考文档）
 
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
