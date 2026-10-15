@@ -8,7 +8,7 @@ the invariants that historically broke us (see docs/ci.md):
     1. every .py parses (ast)                      -- catches half-edited MRs
     2. every .sh is LF-only                        -- CRLF kills bash silently
                                                      ( bitten 2026-10-11 )
-    3. no secrets in tracked files                 -- gitee/TaskHub tokens
+    3. no secrets in tracked files                 -- gitee/tokens
     4. every HCU_* var in hcu_env REGISTRY has a docs/env-vars.md row
     5. every var referenced by BACKEND_CATALOG exists in REGISTRY
     6. every sgl_kernel module sitecustomize imports resolves to a file
