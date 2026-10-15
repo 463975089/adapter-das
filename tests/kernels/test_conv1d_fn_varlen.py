@@ -7,8 +7,8 @@ uncorrelated with the per-token step reference AND identical whether the
 cache line is random or zero — the initial-state read is dead. State
 write-back is also wrong (maxdiff > 2). All 42 KDA layers of GLM-5.3-Flash
 run their prefill through this kernel, so logits are noise from token one
-until the DTK triton bug is fixed; ``conv1d_fn_emu`` (installed by
-sitecustomize under ``HCU_CONV1D_FN_EMU=1``) transcribes the contract in
+until the DTK triton bug is fixed; ``conv1d_fn_emu`` (selected via
+``HCU_CONV1D_IMPL=emu`` in fla_hcu_router) transcribes the contract in
 torch and must stay exact.
 
 Structure per test-suite.md:
@@ -114,7 +114,7 @@ def test_triton_parity():
     print(f"[gate] triton varlen: cos={cos:.6f} maxdiff={md:.4f} (red until DTK fix)")
     assert False, (
         f"gfx938 triton conv1d_fn still broken: cos={cos:.6f} maxdiff={md:.4f}; "
-        "emu carries e2e (HCU_CONV1D_FN_EMU=1)"
+        "emu carries e2e (HCU_CONV1D_IMPL=emu)"
     )
 
 

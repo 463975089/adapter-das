@@ -11,6 +11,8 @@ gates) with dual metrics cos + rel-rms, plus the conv state write-back
 which must be bit-exact.
 
 Run: python tests/kernels/test_fla_hcu_fork_gfx938.py   (GPU)
+Shape sweep: GATE_T1 / GATE_T2 override the two varlen seq lens
+(default 1536/512) of the chunk test, e.g. GATE_T1=64 GATE_T2=5.
 """
 
 from __future__ import annotations

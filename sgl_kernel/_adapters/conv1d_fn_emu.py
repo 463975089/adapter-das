@@ -18,8 +18,9 @@ torch transcription of the documented contract:
 
 `has_initial_state[b]`=False treats the pre-window as zeros (fresh request);
 x full channels [dim, cu_seqlen] (channel-last strides as the launcher
-asserts) and [T, dim] both accepted. Enable with HCU_CONV1D_FN_EMU=1
-(default on until DTK fixes the kernel). Sequential in T — correctness
+asserts) and [T, dim] both accepted. Selected via HCU_CONV1D_IMPL=emu
+(hip default; =fork routes to the vendored fixed kernel — see
+fla_hcu_router). Sequential in T — correctness
 path, not a production-throughput kernel.
 """
 

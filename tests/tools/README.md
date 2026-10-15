@@ -39,3 +39,9 @@ e2e 级（不在 L1，回归时手工跑）：`_test_hcu_ar2.py`（triton AR + 3
   `python tests/tools/_probe_vendor_inventory.py`。
 - 生产配方按模型名搜 `_launch_<model>*.sh`；配方里的端口/env 是实测拍板值，
   复用时先核 `docs/env-vars.md` 是否仍一致。
+- vendored sglang-das 内核 A/B 对拍+微基准：`python tests/tools/_probe_fla_hcu_ab.py`
+  （standalone 内核级证据；serving 门在 `tests/kernels/test_fla_hcu_fork_gfx938.py`
+  + e2e 锚点，二者区别见 skills/hcu-adapter-dev/references/precision-triage.md）。
+- 性能定性三件套：`_probe_moe_decode_bench.py`（E=288 stock triton MoE decode）、
+  `_probe_mhc_prepost_bench.py`（unfuse 后 mHC 链耗时+dispatch 计数，standalone
+  坑见文件头）、`_probe_graph_launch_bench.py`（裸图发射开销，换 DTK 后复测）。

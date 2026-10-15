@@ -6,7 +6,7 @@ Ported files (imports rewritten to this package, bodies verbatim):
 - kda.py / chunk_delta_h.py / chunk_intra.py /
   chunk_intra_token_parallel.py / l2norm.py  — KDA prefill chunk pipeline
   (fixes the gfx938 wrong-Aqk of the stock chunk_kda that
-  HCU_KDA_PREFILL_EMU works around)
+  HCU_KDA_PREFILL_IMPL=emu works around)
 - fused_sigmoid_gating_recurrent.py — KDA decode recurrent kernel
 - cumsum.py / index.py / op.py / utils.py — fla helpers (fork versions)
 - conv1d_triton.py — causal_conv1d_fn / causal_conv1d_update with the

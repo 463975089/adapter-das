@@ -12,7 +12,8 @@ s0*w0 + s1*w1 + s2*w2 + x*w3); conv_state slides left by 1 and appends x.
 This emulator implements exactly that for the flags the KDA path uses
 (2-D x single-token, conv_state_indices continuous batching, silu). The
 torch math is exact; cost is trivial at (tokens, dim) decode sizes.
-Enable with HCU_CONV1D_UPDATE_EMU=1 (default on).
+Selected via HCU_CONV1D_IMPL=emu (hip default; =fork routes to the vendored
+fixed kernel — see fla_hcu_router).
 """
 
 from __future__ import annotations

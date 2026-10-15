@@ -42,3 +42,11 @@
 - **分布级断言**：bf16 噪声会重排 top1，判定用 cos/top-k 集合/文本锚点。
 - **短序列 DSA 注意**：kv_len ≤ index_topk 走 k_only 快速路径，MQA emu
   根本不被调、logits 全零是设计内——别在这里白排查。
+- **搬内核先对拍"入参语义"再对拍数值**（2026-10-16 vendoring sglang-das
+  fla/hcu）：fork chunk_kda 期望已激活（sigmoid 过）的 beta，喂 raw beta
+  得 cos 0.37 且层层查内核都"对"——入参约定（beta_is_raw/gate ndim）先
+  核实，别急着怀疑 kernel。
+- **standalone 门 ≠ serving 门**：fork 内核 standalone 对拍全绿（含服务
+  形状、非连续状态视图）但 serving 中 Berlin 锚点确定性翻转；emu/fork
+  启动二分 + 干净重启复现可实锤"内核在服务上下文特有"。任何内核替换默认
+  不启用，e2e 锚点门过了才转默认。

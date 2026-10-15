@@ -275,7 +275,7 @@ REGISTRY = {
                  "关融合后走 hc_post+hc_ffn_pre 纯 torch 链（HCU 上 aiter 需 "
                  "gfx950、tilelang 被 not is_hip 挡）。=0 恢复融合快路",
     },
-    # debug dumps (see references/precision-triage.md)
+    # debug dumps (see skills/hcu-adapter-dev/references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},
     "HCU_DUMP_INNER": {"env": "HCU_DUMP_INNER", "default": "0",

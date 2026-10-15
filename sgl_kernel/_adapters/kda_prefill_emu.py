@@ -26,8 +26,9 @@ conventions (validated against the triton decode):
 - final state written back to the same slot.
 
 Varlen via cu_seqlens when provided (extend batches), else dense [B, T].
-Enable with ``HCU_KDA_PREFILL_EMU=1`` in sitecustomize (default on until
-the triton bug is fixed). Not for production throughput — sequential in
+Selected via ``HCU_KDA_PREFILL_IMPL=emu`` (hip default; the =fork option
+and its serving-gate caveat live in fla_hcu_router). Not for production
+throughput — sequential in
 T; meant to unblock functional bring-up.
 """
 
