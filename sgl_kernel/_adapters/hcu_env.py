@@ -253,6 +253,28 @@ REGISTRY = {
                  "→ prefill topk score 全零 → 词汤。emu 用与写侧同一 16-tile "
                  "映射解排（CPU/GPU roundtrip 全等）。=0 退回 aiter 内核",
     },
+    "HCU_MHC_EMU": {
+        "env": "HCU_MHC_EMU", "default": "0",
+        "about": "GLM-5.3-Flash MHC 超连接 mix/combine 走 torch emu：官方 "
+                 "fused_hc_mix（persistent kernel + device-scope atomics）与 "
+                 "hc_combine（.cuh tvm_ffi JIT）只按形状+is_cuda 门控，HIP 上"
+                 "直接启用且 gfx938 正确性未验证；每 forward 45 层×2 次调用，"
+                 "combine 微错=残差流渐变污染（rms 1.4→5.4、max→194、平分布"
+                 "词汤签名）。emu 为 hyperconnection.py 同文件参考数学的 fp32 "
+                 "转录。=0 走官方内核（注：glm5_next 实际不消费这两个内核，"
+                 "该开关是无效操作，留作其他 mHC 模型用）",
+    },
+    "HCU_MHC_UNFUSE": {
+        "env": "HCU_MHC_UNFUSE", "default": "1",
+        "about": "强制 SGLANG_OPT_FUSE_MHC_POST_PRE=false（HIP 上）：跨层融合"
+                 "门控 is_cross_layer_mhc_fusion_enabled 只查环境开关（全默认"
+                 "True）不查 is_hip，gfx938 上每层 attn→ffn 边界都跑 aiter "
+                 "triton fused mhc_post_pre，实测（HCU_DUMP_MHC dump 对拍）其"
+                 "FFN 段 h_post 与 _mhc_pre_torch 参考在相同输入下 z 偏移"
+                 "+0.5~+5——每层污染残差流，即 GLM-5.3-Flash 词汤主病灶。"
+                 "关融合后走 hc_post+hc_ffn_pre 纯 torch 链（HCU 上 aiter 需 "
+                 "gfx950、tilelang 被 not is_hip 挡）。=0 恢复融合快路",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},

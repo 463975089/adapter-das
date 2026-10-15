@@ -2334,3 +2334,352 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: prefill-CP bridge not installed", exc_info=True
         )
+
+    # 11c. GLM-5.3-Flash fused mhc_post_pre bypass (2026-10-16): the cross-
+    #      layer fusion gate (deepseek_v4_fused_mhc.is_cross_layer_mhc_
+    #      fusion_enabled) checks only SGLANG_OPT_FUSE_MHC_POST_PRE /
+    #      USE_TILELANG_MHC_{PRE,POST} — all default True — and never
+    #      is_hip, so on gfx938 every decoder layer's attn->ffn boundary
+    #      runs the aiter triton fused mhc_post_pre kernel. Runtime dump
+    #      /tmp/hcu_mhcpost_003.pt (HCU_DUMP_MHC=1) proves it computes
+    #      wrong FFN-stage h_post/h_res: identical inputs give
+    #      2*sigmoid(z)=[0.881, 0.616, 0.001, 1.020] from the fused kernel
+    #      vs [0.856, 0.006, 0.001, 0.014] from the pure-torch reference
+    #      (kernels/ops/layernorm/mhc.py _mhc_pre_torch) — z shifted +0.5..+5
+    #      per stream. The corrupted post/comb propagate into every layer's
+    #      residual streams (word soup; all modules — KDA/DSA/MoE/conv/
+    #      router — verify clean against checkpoint references). HCU_MHC_
+    #      UNFUSE=1 (default on HIP) forces the unfused chain: hc_post +
+    #      hc_ffn_pre, both _mhc_*_torch on HIP (aiter needs gfx950,
+    #      tilelang is hip-gated off).
+    if os.environ.get("HCU_MHC_UNFUSE", "1") == "1" and torch.version.hip:
+        os.environ["SGLANG_OPT_FUSE_MHC_POST_PRE"] = "false"
+        print(
+            "[HCU mhcunfuse] SGLANG_OPT_FUSE_MHC_POST_PRE forced false"
+            " (aiter triton mhc_post_pre wrong on gfx938)",
+            flush=True,
+        )
+
+    # 11b. GLM-5.3-Flash mHC boundary dump (2026-10-16): HCU_DUMP_MHC=1 wraps
+    #      kernels/ops/layernorm/mhc.{hc_pre,hc_post} (the torch path HCU
+    #      actually takes — aiter needs gfx950, tilelang is hip-gated off)
+    #      and saves every T==HCU_DUMP_LAYERS_T call's inputs/outputs on
+    #      rank 0. Must run BEFORE the layer-probe block imports
+    #      sglang.srt.models.glm5_next, whose module-level
+    #      `from ...mhc import hc_pre` would otherwise bind the original.
+    if os.environ.get("HCU_DUMP_MHC") == "1":
+        try:
+            import sglang.kernels.ops.layernorm.mhc as _mhcmod
+
+            _mhcd = {
+                "want_t": int(os.environ.get("HCU_DUMP_LAYERS_T", "0") or 0),
+                "max": int(os.environ.get("HCU_DUMP_MHC_MAX", "200")),
+                "pre": 0,
+                "post": 0,
+                "rank": None,
+            }
+
+            def _mhcd_rank():
+                if _mhcd["rank"] is None:
+                    _mhcd["rank"] = (
+                        torch.distributed.get_rank()
+                        if torch.distributed.is_initialized()
+                        else 0
+                    )
+                return _mhcd["rank"]
+
+            def _mhcd_ok(t):
+                return (
+                    isinstance(t, torch.Tensor)
+                    and t.dim() == 2
+                    and t.is_floating_point()
+                    and t.shape[0] > 1
+                    and (
+                        not _mhcd["want_t"] or t.shape[0] == _mhcd["want_t"]
+                    )
+                    and not torch.cuda.is_current_stream_capturing()
+                    and _mhcd_rank() == 0
+                )
+
+            _mhcd_orig_pre = _mhcmod.hc_pre
+            _mhcd_orig_post = _mhcmod.hc_post
+
+            def _hcu_hc_pre_dump(x, *a, **kw):
+                res = _mhcd_orig_pre(x, *a, **kw)
+                try:
+                    if _mhcd_ok(x) and _mhcd["pre"] < _mhcd["max"]:
+                        torch.save(
+                            {
+                                "x": x.detach().float().cpu(),
+                                "layer_input": res[0].detach().float().cpu(),
+                                "comb": res[1].detach().float().cpu(),
+                                "post": res[2].detach().float().cpu(),
+                            },
+                            f"/tmp/hcu_mhcpre_{_mhcd['pre']:03d}.pt",
+                        )
+                        _mhcd["pre"] += 1
+                except Exception:
+                    pass
+                return res
+
+            def _hcu_hc_post_dump(x, residual, h_post, h_res, *a, **kw):
+                out = _mhcd_orig_post(x, residual, h_post, h_res, *a, **kw)
+                try:
+                    if _mhcd_ok(x) and _mhcd["post"] < _mhcd["max"]:
+                        torch.save(
+                            {
+                                "x": x.detach().float().cpu(),
+                                "residual": residual.detach().float().cpu(),
+                                "h_post": h_post.detach().float().cpu(),
+                                "h_res": h_res.detach().float().cpu(),
+                                "out": out.detach().float().cpu(),
+                            },
+                            f"/tmp/hcu_mhcpost_{_mhcd['post']:03d}.pt",
+                        )
+                        _mhcd["post"] += 1
+                except Exception:
+                    pass
+                return out
+
+            _mhcmod.hc_pre = _hcu_hc_pre_dump
+            _mhcmod.hc_post = _hcu_hc_post_dump
+            print(
+                "[HCU mhcdump] hc_pre/hc_post dump wrappers installed",
+                flush=True,
+            )
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: mhc dump wrappers not installed", exc_info=True
+            )
+
+    # 12. GLM-5.3-Flash layer-boundary precision probe (2026-10-16):
+    #     HCU_DUMP_LAYERS=1 wraps every Glm5Next decoder layer plus its
+    #     self_attn/mlp submodules on rank 0 and prints per-block stats
+    #     (in/out rms + max abs + nan/inf counts + last-token delta rms)
+    #     for small prefill passes. glm53f is mhc=True (4-way
+    #     hyper-connection residual) so the inter-layer stream is not a
+    #     plain residual and norm hooks would see partial transforms —
+    #     the layer boundary is the only clean seam. HCU_DUMP_LAYERS_T
+    #     pins the token count (e.g. 5 for the Berlin anchor) so warmup
+    #     passes stay out of the log; HCU_DUMP_LAYERS_FIRES caps prints
+    #     per hook (default 2). CUDA-graph capture passes through
+    #     untouched (a sync inside capture would abort the capture).
+    if os.environ.get("HCU_DUMP_LAYERS") == "1":
+        try:
+            import sglang.srt.models.glm5_next as _g5n
+
+            _lp = {
+                "rank": None,
+                "fires": {},
+                "max": int(os.environ.get("HCU_DUMP_LAYERS_FIRES", "2")),
+                "want_t": int(os.environ.get("HCU_DUMP_LAYERS_T", "0")),
+                "save": {
+                    int(x)
+                    for x in os.environ.get(
+                        "HCU_DUMP_LAYERS_SAVE", ""
+                    ).split(",")
+                    if x.strip().isdigit()
+                },
+                "saved": set(),
+            }
+
+            def _lp_rank():
+                if _lp["rank"] is None:
+                    _lp["rank"] = (
+                        torch.distributed.get_rank()
+                        if torch.distributed.is_initialized()
+                        else 0
+                    )
+                return _lp["rank"]
+
+            def _lp_pick(cands):
+                for t in cands:
+                    if (
+                        isinstance(t, torch.Tensor)
+                        and t.dim() >= 2
+                        and t.is_floating_point()
+                        and 1 < t.shape[0] <= 64
+                        and (
+                            not _lp["want_t"] or t.shape[0] == _lp["want_t"]
+                        )
+                    ):
+                        return t
+                return None
+
+            def _lp_stats(x):
+                f = x.detach().float()
+                return (
+                    float(f.pow(2).mean().sqrt()),
+                    float(f.abs().max()),
+                    int(torch.isnan(f).sum()) + int(torch.isinf(f).sum()),
+                )
+
+            def _lp_wrap(mod, idx, tag, is_lin):
+                key = (idx, tag)
+                orig = mod.forward
+
+                def fwd(*a, **kw):
+                    # The MoE runner is inplace (writes into hidden_states and
+                    # returns the same tensor), so the input must be snapshotted
+                    # BEFORE the call or the wrapper is blind.
+                    snap = None
+                    try:
+                        if (
+                            not torch.cuda.is_current_stream_capturing()
+                            and _lp_rank() == 0
+                            and _lp["fires"].get(key, 0) < _lp["max"]
+                        ):
+                            tin0 = _lp_pick(a)
+                            if tin0 is None:
+                                tin0 = _lp_pick(list(kw.values()))
+                            if tin0 is not None:
+                                snap = (
+                                    tin0.detach().float().clone(),
+                                    tin0.shape[0],
+                                )
+                    except Exception:
+                        snap = None
+                    out = orig(*a, **kw)
+                    try:
+                        if snap is None:
+                            return out
+                        if torch.cuda.is_current_stream_capturing():
+                            return out
+                        _lp["fires"][key] = _lp["fires"].get(key, 0) + 1
+                        i_f, T0 = snap
+                        outs = out if isinstance(out, (tuple, list)) else (out,)
+                        tout = _lp_pick(outs)
+                        if tout is None or tout.shape[0] != T0:
+                            return out
+                        i_rms, i_mx, i_bad = _lp_stats(i_f)
+                        o_rms, o_mx, o_bad = _lp_stats(tout)
+                        row_out = tout.detach().float().flatten(1)[-1]
+                        d = float((row_out - i_f.flatten(1)[-1]).pow(2).mean().sqrt())
+                        am = int(row_out.abs().argmax())
+                        print(
+                            f"[HCU L45] i={idx:02d} "
+                            f"{'K' if is_lin else 'F'} {tag} T={T0}"
+                            f" in(rms={i_rms:.4g},max={i_mx:.4g})"
+                            f" out(rms={o_rms:.4g},max={o_mx:.4g})"
+                            f" d={d:.4g} bad={i_bad}+{o_bad} am={am}",
+                            flush=True,
+                        )
+                        once = os.environ.get("HCU_DUMP_LAYERS_ONCE", "1") == "1"
+                        if idx in _lp["save"] and (
+                            not once or (idx, tag) not in _lp["saved"]
+                        ):
+                            _lp["saved"].add((idx, tag))
+                            torch.save(
+                                {
+                                    "in": i_f.cpu(),
+                                    "out": tout.detach().float().cpu(),
+                                },
+                                f"/tmp/hcu_sv_{tag}_{idx:02d}.pt",
+                            )
+                            print(
+                                f"[HCU L45] saved /tmp/hcu_sv_{tag}_{idx:02d}.pt",
+                                flush=True,
+                            )
+                    except Exception as _e:
+                        if _lp["fires"].get(key, 0) < 1:
+                            print(
+                                f"[HCU L45] i={idx} {tag} err {_e}", flush=True
+                            )
+                            _lp["fires"][key] = _lp["fires"].get(key, 0) + 1
+                    return out
+
+                mod.forward = fwd
+                return orig
+
+            def _lp_init(_orig_init):
+                def init(self, *a, **k):
+                    _orig_init(self, *a, **k)
+                    m = getattr(self, "model", self)
+                    layers = getattr(m, "layers", None)
+                    if layers is None:
+                        for attr in ("language_model", "text_model"):
+                            mm = getattr(self, attr, None)
+                            if mm is not None:
+                                layers = getattr(mm, "layers", None)
+                                if layers is not None:
+                                    break
+                    if layers is None:
+                        print("[HCU L45] no layers found", flush=True)
+                        return
+                    for i, lyr in enumerate(layers):
+                        is_lin = bool(getattr(lyr, "is_linear_attn", False))
+                        _lp_wrap(lyr, i, "LYR", is_lin)
+                        if getattr(lyr, "self_attn", None) is not None:
+                            _lp_wrap(lyr.self_attn, i, "ATT", is_lin)
+                        if getattr(lyr, "mlp", None) is not None:
+                            _lp_wrap(lyr.mlp, i, "MLP", is_lin)
+                    # final norm (post hc_contract collapse): its input is the
+                    # (T, hidden) final hidden feeding lm_head — the cleanest
+                    # tail anchor for lm_head/logit debugging.
+                    _mnorm = getattr(self.model, "norm", None)
+                    if _mnorm is not None:
+                        _lp_wrap(_mnorm, 99, "NRM", False)
+                    print(
+                        f"[HCU L45] probe on {len(layers)} layers"
+                        f" (want_t={_lp['want_t'] or 'any'})",
+                        flush=True,
+                    )
+
+                return init
+
+            _g5n.Glm5NextForConditionalGeneration.__init__ = _lp_init(
+                _g5n.Glm5NextForConditionalGeneration.__init__
+            )
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: glm5 layer probe not installed", exc_info=True
+            )
+
+    # 13. GLM-5.3-Flash MHC hyper-connection emu (2026-10-16): official
+    #     v0.5.21 gates the fused mix/combine fast kernels only on shape and
+    #     is_cuda — both hold on HIP — so every layer boundary (2x45 calls
+    #     per forward) runs fused_hc_mix (persistent CUDA kernel with
+    #     device-scope atomics) and the hc_combine .cuh tvm_ffi JIT, neither
+    #     ever validated on gfx938. A subtly wrong combine pollutes the
+    #     residual stream gradually, matching the word-soup signature
+    #     (stream rms 1.4 -> 5.4, max -> 194, flat logits). HCU_MHC_EMU=1
+    #     routes both to the pure-torch reference math transcribed verbatim
+    #     from hyperconnection.py's _mix_compute/_combine_compute (fp32).
+    if os.environ.get("HCU_MHC_EMU") == "1":
+        try:
+            import torch.nn.functional as _Fm
+
+            import sglang.kernels.ops.elementwise.hc_combine as _hcc
+            import sglang.srt.layers.hyperconnection as _hy
+
+            def _hcu_hc_combine(*a, **kw):
+                block_output, residual, normed_residual, w_inject = a[:4]
+                hc, hs = int(a[4]), int(a[5])
+                bo = block_output.float()
+                r = residual.float().unflatten(-1, (hc, hs))
+                gate = 2.0 * torch.sigmoid(
+                    _Fm.linear(normed_residual.float(), w_inject.float()) / hc
+                )
+                inj = bo.unsqueeze(-2) * gate.unsqueeze(-1)
+                out = (r + inj).flatten(-2)
+                return out.to(block_output.dtype)
+
+            def _hcu_fused_hc_mix(x, w_down, w_up, hc, hs):
+                xf = x.float()
+                m = _Fm.silu(_Fm.linear(xf, w_down.float()) / hc)
+                m = _Fm.linear(m, w_up.float())
+                m = torch.sigmoid(m).unflatten(-1, (hc, hs))
+                out = (m * xf.unflatten(-1, (hc, hs))).mean(dim=-2)
+                return out.to(x.dtype)
+
+            _hy.fused_hc_mix = _hcu_fused_hc_mix
+            _hcc.hc_combine = _hcu_hc_combine
+            _hcc.hc_combine_split = _hcu_hc_combine
+            print(
+                "[HCU mhcemu] fused_hc_mix + hc_combine routed to torch emu",
+                flush=True,
+            )
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: mhc emu not installed", exc_info=True
+            )
