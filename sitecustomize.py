@@ -214,6 +214,20 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: kda prefill emu not installed", exc_info=True
         )
+    # causal_conv1d_update emu: gfx938 triton kernel returns correlation
+    # noise (cos 0.26 vs reference, weight-flip 0.50); runs on every KDA
+    # layer per decode step (42 x steps). HCU_CONV1D_UPDATE_EMU=1 default.
+    try:
+        from sgl_kernel._adapters import hcu_env as _conv_env
+
+        if _conv_env.enabled("HCU_CONV1D_UPDATE_EMU"):
+            from sgl_kernel._adapters import conv1d_update_emu
+
+            conv1d_update_emu.install_patch()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: conv1d update emu not installed", exc_info=True
+        )
     # fa3 attention vendor routing (DTK flash_attn wheel; emu fallback).
     # Needs sgl_kernel.flash_attn importable (below pulls it in).
     try:

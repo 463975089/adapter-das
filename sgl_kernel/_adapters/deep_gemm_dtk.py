@@ -64,8 +64,18 @@ def fp8_gemm_nt_dequant(lhs, rhs, out):
     a, a_s = lhs[0], lhs[1]
     b, b_s = rhs[0], rhs[1]
     m, k = a.shape
-    block_k = k // a_s.reshape(m, -1).shape[-1]
-    n_block = b_s.shape[0]  # [N/128, K/128] blocks or [N, K/128] rows
+    a_s_groups = a_s.reshape(m, -1).shape[-1] if a_s.numel() and m else 0
+    if a_s_groups == 0 or k % a_s_groups != 0:
+        # Degenerate warmup/compile probe (empty scales, m=0, non-divisible
+        # k): no valid block semantics exist — produce zeros rather than
+        # SIGFPE-ing in the view math (rank dies mid-warmup otherwise).
+        out.zero_()
+        return out
+    block_k = k // a_s_groups
+    n_block = b_s.shape[0] if b_s.numel() else 0
+    if n_block == 0 or b.shape[0] % n_block != 0:
+        out.zero_()
+        return out
     block_n = b.shape[0] // n_block
     a_dq = (
         a.to(torch.float32).view(m, -1, block_k)

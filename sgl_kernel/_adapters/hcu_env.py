@@ -225,6 +225,11 @@ REGISTRY = {
                  "gfx938 triton chunk_kda 的 Aqk 全错（噪声级，gate 测试红），"
                  "emu 与健康的 decode kernel 同数学；=0 退回 triton（词汤）",
     },
+    "HCU_CONV1D_UPDATE_EMU": {
+        "env": "HCU_CONV1D_UPDATE_EMU", "default": "1",
+        "about": "causal_conv1d_update（KDA 每层每步 decode conv）走 torch emu："
+                 "gfx938 triton 内核为相关噪声（对拍 cos 0.26）；=0 退回 triton",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},

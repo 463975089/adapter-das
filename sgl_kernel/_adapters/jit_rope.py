@@ -60,6 +60,20 @@ _PATCHES = (
         "      fp32x2_t _vxy = cast<fp32x2_t>(input_vec[j]);"
         " const auto x = _vxy.x, y = _vxy.y;",
     ),
+    # pos_enc.cuh DISPATCH macro names nv_bfloat16 (CUDA-only builtin) and
+    # lacks the bf16 header entirely. Include the shim's HIP-alias header and
+    # alias to __nv_bfloat16 (which DTK hipcc knows via cuda_bf16.h pull-in
+    # from sgl_kernel headers); keep one patch per needle.
+    (
+        "elementwise/pos_enc.cuh",
+        "#include <cuda_fp16.h>",
+        '#include <cuda_fp16.h>\n#include <cuda_bf16.h>  // HCU: nv_bfloat16 alias source on HIP',
+    ),
+    (
+        "elementwise/pos_enc.cuh",
+        "launch_kernel<nv_bfloat16, IS_NEOX>(__VA_ARGS__);",
+        "launch_kernel<__hip_bfloat16, IS_NEOX>(__VA_ARGS__);",
+    ),
 )
 
 # shim appended to rope.cuh: mask-form syncwarp for HIP; identity on CUDA
