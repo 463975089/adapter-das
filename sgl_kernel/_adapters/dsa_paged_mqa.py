@@ -53,6 +53,15 @@ def fp8_paged_mqa_logits(
     clean_logits=False,
     **_ignored,
 ):
+    if os.environ.get("HCU_DUMP_TOPK") == "1" and not getattr(fp8_paged_mqa_logits, "_hcu_p", False):
+        fp8_paged_mqa_logits._hcu_probe_done = True
+    if os.environ.get("HCU_DUMP_TOPK") == "1":
+        try:
+            qs = float(q_fp8.float().abs().sum()) if hasattr(q_fp8, "float") else -1
+            ks = float(kv_cache_fp8.float().abs().sum()) if hasattr(kv_cache_fp8, "float") else -1
+            print(f"[HCU mqain] q_abs={qs:.4f} kv_abs={ks:.4f} qshape={tuple(q_fp8.shape)} kvshape={tuple(kv_cache_fp8.shape)}", flush=True)
+        except Exception as e:
+            print("[HCU mqain] err", e, flush=True)
     if max_context_len is None:
         max_context_len = int(block_table.shape[1]) * 64
     N = q_fp8.shape[0] if q_fp8.dim() == 3 else q_fp8.shape[0] * q_fp8.shape[1]

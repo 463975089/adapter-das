@@ -237,6 +237,22 @@ REGISTRY = {
                  "且状态写回为垃圾（gate 测试红）；KDA 全部层 prefill conv 走此路；"
                  "=0 退回 triton（首 token 即噪声 logits）",
     },
+    "HCU_KPOOL_WRITE_EMU": {
+        "env": "HCU_KPOOL_WRITE_EMU", "default": "0",
+        "about": "DSA kpool 指数 K 缓存三写内核的 torch emu。初判 kernel 坏后"
+                 "复核为 probe 侧 buf 布局错误（kernel 传 (pages,8448) 2D，"
+                 "shape[1]=8448 正确；误造 (pages,64,1,384) 四维 probe 使"
+                 " shape[1]=64 当页字节数）——kernel 配合正确 loc 写到位，"
+                 "默认=0 直通 triton；留作内核回归 watch",
+    },
+    "HCU_KPOOL_READ_EMU": {
+        "env": "HCU_KPOOL_READ_EMU", "default": "1",
+        "about": "index-K 缓存 gather 读（GetKAndS.aiter → aiter "
+                 "cp_gather_indexer_k_quant_cache preshuffle 臂）走 torch emu："
+                 "该 aiter 内核在 gfx938 非法地址访问/返回零（定罪 probe GPU4）"
+                 "→ prefill topk score 全零 → 词汤。emu 用与写侧同一 16-tile "
+                 "映射解排（CPU/GPU roundtrip 全等）。=0 退回 aiter 内核",
+    },
     # debug dumps (see references/precision-triage.md)
     "HCU_DUMP_LAYERS": {"env": "HCU_DUMP_LAYERS", "default": "0",
                         "about": "层 residual 流 dump（精度定位用）"},

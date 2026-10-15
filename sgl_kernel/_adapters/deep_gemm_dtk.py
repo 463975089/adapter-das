@@ -239,6 +239,17 @@ def install():
     sys.modules["deep_gemm.utils"] = utils
     sys.modules["deep_gemm.utils.layout"] = layout
 
+    # One-shot imports that ran before this install leave the sglang
+    # `try: import deep_gemm except ImportError as e: deep_gemm = e` pattern
+    # bound to the exception object (dsa_indexer_kpool.py does exactly this
+    # at module level) — rebind those names to the shim.
+    for _m in list(sys.modules.values()):
+        if not isinstance(_m, types.ModuleType):
+            continue
+        _v = getattr(_m, "deep_gemm", None)
+        if isinstance(_v, BaseException):
+            _m.deep_gemm = shim
+
     # contiguous-layout grouped GEMM (DeepEP normal / auto prefill): the
     # DTK w16a16 contiguous kernel is broken (2D input VMFault, 3D input
     # wrong numbers) and the fork lacks the mk-alignment get/set pair the
