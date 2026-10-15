@@ -54,6 +54,10 @@
 | `HCU_DUMP_INNER` | 0 | — | 调试：L0/L1 xa/xb 张量 |
 | `HCU_DUMP_TOPK` | 0 | — | 调试：DSA topk 样本 |
 | `HCU_DUMP_MQA` | 0 | — | 调试：MQA emu 调用日志 |
+| `HCU_KDA_PREFILL_EMU` | 1（adapter 默认） | 化 | GLM-5.x KDA（线性注意力 42 层）prefill 走 torch 步进 emu：gfx938 triton chunk_kda 的 Aqk 全错（噪声级，tests/kernels/test_kda_chunk_gfx938.py 红门常驻）；emu 与健康的 decode 内核同数学（对拍 cos 0.999999）。=0 退回 triton（词汤） |
+| `HCU_CONV1D_UPDATE_EMU` | 1（adapter 默认） | 化 | causal_conv1d_update（KDA 每层每步 decode conv）走 torch emu：gfx938 triton 内核相关噪声（对拍 cos 0.26）。=0 退回 triton。spec-decode 旗标路径自动 fallthrough 原 kernel |
+| `HCU_KDA_PREFILL_EMU` | 1（adapter 默认） | 化 | GLM-5.x KDA（线性注意力 42 层）prefill 走 torch 步进 emu：gfx938 triton chunk_kda 的 Aqk 全错（噪声级，tests/kernels/test_kda_chunk_gfx938.py 红门常驻）；emu 与健康的 decode 内核同数学（对拍 cos 0.999999）。=0 退回 triton（词汤） |
+| `HCU_CONV1D_UPDATE_EMU` | 1（adapter 默认） | 化 | causal_conv1d_update（KDA 每层每步 decode conv）走 torch emu：gfx938 triton 内核相关噪声（对拍 cos 0.26）。=0 退回 triton。spec-decode 旗标路径自动 fallthrough 原 kernel |
 | `SGLANG_DISABLE_DSA_INDEXER_FUSION` | 0 | **GLM-5.x DSA 启动配方显式 =1**（见下） | 上游原生 env。GLM-5.x indexer Q 走 V3.2 `[rope|nope]` 布局融合核（fused_q_indexer_rope_first_quant），上游仅 CUDA 实现（docstring 写明 CUDA only，HIP 无臂，`_is_hip=True` 救不了）→ graph 捕获期 JIT 炸。=1 走 unfused（分离 rope+act_quant+分存，HIP 专家原路径） |
 | `SGLANG_MOE_CONFIG_DIR` | 空（走包内 configs/） | — | fused-MoE triton 调优文件目录（上游 env 正门）。无 HCU 命名 tune 文件时 adapter 的 moe_config_guard 把超 64KB LDS 的 tile 就地 clamp（BN=BK=64/stages≤2；gfx93x 硬限 64KB，NV 兄弟默认 tile 72KB 直接 OutOfResources）；此目录供后续正式 tuning 产物落位 |
 
