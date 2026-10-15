@@ -228,6 +228,22 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: conv1d update emu not installed", exc_info=True
         )
+    # causal_conv1d_fn emu: the varlen PREFILL arm of the same kernel family —
+    # the initial-state read is dead on gfx938 triton (rand vs zero cache line
+    # produce identical output; gate test kernels/test_conv1d_fn_varlen.py
+    # stays red) and state write-back is garbage. All KDA-layer prefill convs
+    # route here. HCU_CONV1D_FN_EMU=1 default.
+    try:
+        from sgl_kernel._adapters import hcu_env as _convfn_env
+
+        if _convfn_env.enabled("HCU_CONV1D_FN_EMU"):
+            from sgl_kernel._adapters import conv1d_fn_emu
+
+            conv1d_fn_emu.install_patch()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: conv1d fn emu not installed", exc_info=True
+        )
     # fa3 attention vendor routing (DTK flash_attn wheel; emu fallback).
     # Needs sgl_kernel.flash_attn importable (below pulls it in).
     try:
