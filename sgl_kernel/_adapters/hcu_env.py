@@ -219,23 +219,23 @@ REGISTRY = {
                  " 全错；同时补 mk-alignment get/set API）；=0 退回 DTK 原核"
                  "（会崩）作对照",
     },
-    "HCU_KDA_PREFILL_EMU": {
-        "env": "HCU_KDA_PREFILL_EMU", "default": "1",
-        "about": "KDA（Glm5Next 线性注意力 42 层）prefill 走 torch 步进 emu："
-                 "gfx938 triton chunk_kda 的 Aqk 全错（噪声级，gate 测试红），"
-                 "emu 与健康的 decode kernel 同数学；=0 退回 triton（词汤）",
+    "HCU_KDA_PREFILL_IMPL": {
+        "env": "HCU_KDA_PREFILL_IMPL", "default": "emu",
+        "about": "GLM-5.x KDA prefill（chunk_kda，42 层）内核选择："
+                 "fork=vendored sglang-das hcu triton（对拍 emu cos 0.99999，"
+                 "快 473-1009×；beta 约定=v0.5.21 后端已激活直通；**serving 门 RED**：服务上下文 Berlin 锚点翻转（standalone 全绿含服务形状/步长视图，二分定位 fork-in-serving 独有，待 serving dump 对拍根因），默认不启用）；"
+                 "emu=顺序 torch 步进（词汤急救期参考实现，T=2048 要 414ms）；"
+                 "stock=官方 v0.5.21 内核（gfx938 Aqk 全错，gate 测试红常驻）。"
+                 "旧键 HCU_KDA_PREFILL_EMU=1 等价本键 =emu",
     },
-    "HCU_CONV1D_UPDATE_EMU": {
-        "env": "HCU_CONV1D_UPDATE_EMU", "default": "1",
-        "about": "causal_conv1d_update（KDA 每层每步 decode conv）走 torch emu："
-                 "gfx938 triton 内核为相关噪声（对拍 cos 0.26）；=0 退回 triton",
-    },
-    "HCU_CONV1D_FN_EMU": {
-        "env": "HCU_CONV1D_FN_EMU", "default": "1",
-        "about": "causal_conv1d_fn varlen prefill 臂走 torch emu："
-                 "gfx938 triton 的初态读是死的（随机/零 cache 行输出全同）"
-                 "且状态写回为垃圾（gate 测试红）；KDA 全部层 prefill conv 走此路；"
-                 "=0 退回 triton（首 token 即噪声 logits）",
+    "HCU_CONV1D_IMPL": {
+        "env": "HCU_CONV1D_IMPL", "default": "emu",
+        "about": "KDA causal_conv1d_fn（prefill varlen）+ causal_conv1d_update"
+                 "（decode 每步）内核选择：fork=vendored sglang-das hcu triton"
+                 "（对拍 emu cos 0.99999+/conv 状态位精确相等；fn 16.4×、"
+                 "update 4.3×；serving 门同上 RED 待根因）；emu=torch 步进（历史 stopgap，默认）；stock=官方内核"
+                 "（update cos 0.26 / fn 初态臂死，gate 红常驻）。旧键 "
+                 "HCU_CONV1D_{UPDATE,FN}_EMU=1 等价本键 =emu",
     },
     "HCU_KPOOL_WRITE_EMU": {
         "env": "HCU_KPOOL_WRITE_EMU", "default": "0",

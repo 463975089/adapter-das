@@ -197,52 +197,24 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "hcu adapter: triton pdl stripper not installed", exc_info=True
         )
-    # KDA (Glm5Next linear-attention) prefill emulator: gfx938's triton
-    # chunk_kda computes a wrong Aqk (noise-level vs step reference; gate
-    # test kernels/test_kda_chunk_gfx938.py stays red for it) which turns
-    # all 42 KDA layers into noise on prefill. Swap TritonKDAKernel.extend
-    # to the torch step emulator (same math as the healthy decode kernel).
-    # HCU_KDA_PREFILL_EMU=0 keeps the triton pipeline.
+    # KDA prefill + causal_conv1d router (2026-10-16): vendored sglang-das
+    # hcu triton kernels (sgl_kernel/_adapters/fla_hcu/) — parity-gated
+    # replacements for the gfx938-broken stock kernels (chunk_kda wrong Aqk;
+    # conv1d update noise / fn dead initial-state arm). Kernel-level wins:
+    # prefill 473-1009x, conv fn 16.4x, update 4.3x, cos >= 0.99999 vs the
+    # emus — but the SERVING gate turned red (Berlin anchor flips
+    # deterministically under =fork across clean boots while every standalone
+    # gate stays green, incl. serving shapes and strided state views), so emu
+    # keeps the defaults and fork is opt-in only until a serving-side dump
+    # compare finds the divergence. HCU_KDA_PREFILL_IMPL / HCU_CONV1D_IMPL =
+    # emu (default) | fork | stock.
     try:
-        from sgl_kernel._adapters import hcu_env as _kda_env
+        from sgl_kernel._adapters import fla_hcu_router
 
-        if _kda_env.enabled("HCU_KDA_PREFILL_EMU"):
-            from sgl_kernel._adapters import kda_prefill_emu
-
-            kda_prefill_emu.install_patch()
+        fla_hcu_router.install()
     except Exception:
         logging.getLogger("hcu.adapter").warning(
-            "HCU adapter: kda prefill emu not installed", exc_info=True
-        )
-    # causal_conv1d_update emu: gfx938 triton kernel returns correlation
-    # noise (cos 0.26 vs reference, weight-flip 0.50); runs on every KDA
-    # layer per decode step (42 x steps). HCU_CONV1D_UPDATE_EMU=1 default.
-    try:
-        from sgl_kernel._adapters import hcu_env as _conv_env
-
-        if _conv_env.enabled("HCU_CONV1D_UPDATE_EMU"):
-            from sgl_kernel._adapters import conv1d_update_emu
-
-            conv1d_update_emu.install_patch()
-    except Exception:
-        logging.getLogger("hcu.adapter").warning(
-            "HCU adapter: conv1d update emu not installed", exc_info=True
-        )
-    # causal_conv1d_fn emu: the varlen PREFILL arm of the same kernel family —
-    # the initial-state read is dead on gfx938 triton (rand vs zero cache line
-    # produce identical output; gate test kernels/test_conv1d_fn_varlen.py
-    # stays red) and state write-back is garbage. All KDA-layer prefill convs
-    # route here. HCU_CONV1D_FN_EMU=1 default.
-    try:
-        from sgl_kernel._adapters import hcu_env as _convfn_env
-
-        if _convfn_env.enabled("HCU_CONV1D_FN_EMU"):
-            from sgl_kernel._adapters import conv1d_fn_emu
-
-            conv1d_fn_emu.install_patch()
-    except Exception:
-        logging.getLogger("hcu.adapter").warning(
-            "HCU adapter: conv1d fn emu not installed", exc_info=True
+            "HCU adapter: fla-hcu router not installed", exc_info=True
         )
     # fa3 attention vendor routing (DTK flash_attn wheel; emu fallback).
     # Needs sgl_kernel.flash_attn importable (below pulls it in).
