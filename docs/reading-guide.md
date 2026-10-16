@@ -30,6 +30,7 @@
 | docs/ci.md | CI 分层：L0 秒级 → L1 GPU ~10min → L2 夜间 | GATES 列表与 l1_gpu_gate.sh 不符 |
 | docs/config.md | hcu_adapter.yaml 部署配置 + BACKEND_CATALOG 状态语义 | catalog 键集与 hcu_config.py 不符 |
 | docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
+| docs/plugins.md | 须走 plugin/上游/镜像/专门窗口的需求登记表（P1-P9，判定规则+验收锚点） | 完成项未更新现状列 / 未过 §0 判定就收录 |
 | docs/upstream-watch.md | 上游追新巡检规约（对账工具+日流程+自主修复授权边界，可交接版） | 工具清单状态与 #349/#350 实际落地不符 |
 | docs/env-vars.md | 全量环境变量手册（调试覆盖定位） | REGISTRY 键集与 hcu_env.py 不符（L0 会抓） |
 | docs/cookbook.md | 已验证启动配方（按模型/特性），§4 平台约束必读 | 配方与最新 master 行为不符 |

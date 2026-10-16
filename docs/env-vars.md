@@ -63,6 +63,27 @@
 | `SGLANG_DISABLE_DSA_INDEXER_FUSION` | 0 | **GLM-5.x DSA 启动配方显式 =1**（见下） | 上游原生 env。GLM-5.x indexer Q 走 V3.2 `[rope|nope]` 布局融合核（fused_q_indexer_rope_first_quant），上游仅 CUDA 实现（docstring 写明 CUDA only，HIP 无臂，`_is_hip=True` 救不了）→ graph 捕获期 JIT 炸。=1 走 unfused（分离 rope+act_quant+分存，HIP 专家原路径） |
 | `SGLANG_MOE_CONFIG_DIR` | 空（走包内 configs/） | — | fused-MoE triton 调优文件目录（上游 env 正门）。无 HCU 命名 tune 文件时 adapter 的 moe_config_guard 把超 64KB LDS 的 tile 就地 clamp（BN=BK=64/stages≤2；gfx93x 硬限 64KB，NV 兄弟默认 tile 72KB 直接 OutOfResources）；此目录供后续正式 tuning 产物落位 |
 
+## 平台 runtime env（非 adapter 键，不在 hcu_env 注册表）
+
+cookbook（`inference-cookbook-das`，团队同级仓库）glm-5.3 配方的 sglang
+export 块里有一组 DTK/HIP runtime env。其中 **graph 发射三件套**与我们的
+decode 瓶颈（hipGraphLaunch ~300ms/步，models.md 2026-10-16）直接对口，
+已移植进 `tests/tools/_launch_g53f_tp4.sh`（2026-10-16，**待 A/B + 锚点
+复验**，归档 tracking 见 docs/plugins.md P9）：
+
+| env | 拍板值 | 作用 |
+|---|---|---|
+| `ROC_AQL_QUEUE_SIZE` | 131072 | AQL 异步命令队列容量（packet 数）——扩容让队列装得下更多待下发算子 |
+| `HIP_GRAPH_ACCUMULATE_DISPATCH` | 1 | graph 内核累积下发（攒批提交） |
+| `HIP_GRAPH_USE_CMD_CACHE` | 1 | graph 命令缓存 buffer（glm-5.3 新配方改 1；glm-5.1/5.2/dsv3 等老配方为 0） |
+
+cookbook 同块还有 `GPU_MAX_HW_QUEUES=3`、`HSA_KERNARG_POOL_SIZE=8388608`、
+`HIP_KERNEL_BATCH_CEILING=100`、`HIP_KERNEL_EVENT_SYSTENFENCE=1`、
+`GPU_FORCE_BLIT_COPY_SIZE=16`、`HIP_BUFFER_EXTRA_SIZE=0` 等，**未引入**——
+与 fork 镜像多进程部署强相关，等三件套 A/B 结论后再逐项评估（一次只变
+一个变量）。块里的 `SGLANG_*` 旗标属 sglang-das 0.5.18 fork 专属功能
+（P1/P2 范畴），我们官方 v0.5.21 栈**不设**。
+
 ## 客户部署建议（一句话）
 
 什么都不设。需要调试/隔离时按上表显式设置，并看启动日志的
