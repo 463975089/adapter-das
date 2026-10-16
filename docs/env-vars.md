@@ -66,18 +66,25 @@
 ## 平台 runtime env（非 adapter 键，不在 hcu_env 注册表）
 
 cookbook（`inference-cookbook-das`，团队同级仓库）glm-5.3 配方的 sglang
-export 块里有一组 DTK/HIP runtime env。其中 **graph 发射三件套**与我们的
-decode 瓶颈（hipGraphLaunch ~300ms/步，models.md 2026-10-16）直接对口，
-2026-10-16 已在 nmz26 TP4 完成 A/B，**结论：否决，不要启用**——
+export 块里有一组 DTK/HIP runtime env。其中 graph 发射相关项与我们的
+decode 瓶颈直接对口，2026-10-16 在 nmz26 TP4 完成两轮 A/B，**结论：机制
+坐实、但本栈（dtk26041）env 救不动，不要启用**——
 
-| env | cookbook 拍板值 | A/B 结果（2026-10-16，nmz26 TP4 e1696ba 前后对照） |
+| env | cookbook 拍板值 | A/B 结果（2026-10-16，nmz26 TP4） |
 |---|---|---|
-| `ROC_AQL_QUEUE_SIZE` | 131072 | 三件套同开：吞吐零变化（单流 2.23 vs 2.34 tok/s；bs8 14.0 vs 14.2）；**贪心解码（temperature=0）变非确定**——Berlin 锚点两轮输出翻转且均偏离基线签名，对照组（无三件套）两轮逐字复现基线签名。判定：dtk26041 上 cmd-cache/累积下发路径数值不安全 |
-| `HIP_GRAPH_ACCUMULATE_DISPATCH` | 1 | 同上（三件套作为一个机制整体 A/B，未单独拆分） |
-| `HIP_GRAPH_USE_CMD_CACHE` | 1 | 同上；注意 cookbook glm-5.3 新配方才是 1，glm-5.1/5.2/dsv3 老配方为 0——可能与其 0.5.18 镜像 runtime 版本配对，跨栈不可移植 |
+| `ROC_AQL_QUEUE_SIZE` | 131072 | **单独开（严格单变量）**：吞吐零变化（单流 2.30 vs 2.34 tok/s）+ 贪心解码非确定（Berlin 两轮输出不一致；对照组逐字复现）——AQL 队列扩容路径本身在本 runtime 数值不安全 |
+| `HIP_GRAPH_ACCUMULATE_DISPATCH` | 1 | 与下条捆绑测过（三件套同开）：同样零收益 + 非确定 |
+| `HIP_GRAPH_USE_CMD_CACHE` | 1 | 三件套同开时非确定的主要嫌疑；未单独复测 |
 
-瓶颈证据另见 py-spy 火焰图：主线程 99.1% 样本卡 `torch/cuda/graphs.py:139
-replay`（宿主 /tmp/prof_g53f_decode_20261016.svg，容器 /root/logs/ 同名）。
+**机制证据链（用户 trace 分析 + 4×chrome trace 复核，2026-10-16）**：
+① `hipGraphLaunch` API 单次 p50 ≈ 540ms、11 次占满 5.3s 采样窗（每张图
+≈24k kernel，AQL 队列固定容量喂不过来 → API 同步自旋循环下发——dtk
+runtime 已知问题）；② rank0 是短板：TP1-3 的 nccl kernel 各烧 2.5s/窗
+（p95 17.8ms）纯等 TP0（TP0 nccl 仅 0.17s/p95 0.33ms），通信算子变长是
+等 rank0 不是自身慢。本 runtime（libamdhip64.so）实际支持
+`ROC_AQL_QUEUE_SIZE` / `GPU_MAX_HW_QUEUES` / `HIP_USE_GRAPH_QUEUE_POOL`
+（graph 专用队列池，未测，留作下个窗口单变量候选）。trace 存证：
+容器 `/root/logs/prof_torch/1792113313*.trace.json.gz`（Perfetto 可开）。
 后续走 docs/plugins.md P9 的 DTK 提报路径。cookbook 同块其余
 （`GPU_MAX_HW_QUEUES=3`、`HSA_KERNARG_POOL_SIZE=8388608`、
 `HIP_KERNEL_BATCH_CEILING=100` 等）未测；块里的 `SGLANG_*` 旗标属
