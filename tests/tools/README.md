@@ -45,3 +45,6 @@ e2e 级（不在 L1，回归时手工跑）：`_test_hcu_ar2.py`（triton AR + 3
 - 性能定性三件套：`_probe_moe_decode_bench.py`（E=288 stock triton MoE decode）、
   `_probe_mhc_prepost_bench.py`（unfuse 后 mHC 链耗时+dispatch 计数，standalone
   坑见文件头）、`_probe_graph_launch_bench.py`（裸图发射开销，换 DTK 后复测）。
+- graph 提交路径诊断：`_probe_graph_submit_bench.py`（节点阶梯/多线程并行性/
+  阻塞判别——2026-10-16 结论：纯提交 6.8µs/节点、进程内串行、跨进程独立）；
+  NUMA 绑核配方 `_launch_g53f_tp4_pinned.sh`（实测无收益，留作复测模板）。
