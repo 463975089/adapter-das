@@ -205,3 +205,11 @@ curl -s http://127.0.0.1:30000/v1/chat/completions \
 ---
 维护注：本文的版本钉与坑清单源自 2026-10-10~14 的多容器实测（models.md
 对应行沿链可查）；镜像换代时先在旧表加注再按新实测修订本文件。
+
+## 9. 参考资料
+
+- **DTK 官方文档**(runtime/通信/调试调优,中文):<https://dtk.sourcefind.cn/docs/runtime/zh/latest/index.html>
+  ——DTK 26.10 在线文档入口:HIP runtime API、RCCL/DUSHMEM 通信、
+  ROCtracer/ROCprofiler/hipprof/hipgdb 调优调试。查 HIP API 语义、profiler
+  用法、RCCL env 时以此为准；平台级问题（如大图发射、hipGraphLaunch 开销）
+  定量分析时先翻这里。对应本文 §5 镜像差异表中 dtk2604x 的上游文档源。
