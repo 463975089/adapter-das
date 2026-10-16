@@ -127,6 +127,17 @@ REGISTRY = {
                  "小消息快于 NCCL ~2x），更大走 NCCL；0 = 不设限",
     },
     # DSA / attention
+    "HCU_MQA_LOGITS_IMPL": {
+        "env": "HCU_MQA_LOGITS_IMPL", "default": "vec",
+        "about": "DSA indexer paged-MQA torch emu 形态：vec=全窗口单遍双 bmm"
+                 "（大操作数免转置物化）——decode 图节点 23.9k→3.7k（-84%），"
+                 "hipGraphLaunch API p50 540ms→21.6ms，单流 2.3→3.50 tok/s、"
+                 "bs8 14.0→18.69；注意 (N,T,D) 转置物化/整窗 fp32 物化在 DTK "
+                 "图 replay 下有 ~124ms/核崖（eager 无恙），故 bmm 两侧只允许"
+                 "小张量做转置、H 收缩走第二 bmm；N>HCU_MQA_VEC_MAXROWS(32) "
+                 "自动回落 loop（prefill 保内存）；loop=(64,2048) 双层 tile 循环"
+                 "参考实现（=loop 可回归对照）",
+    },
     "HCU_MQA_EMU": {
         "env": "HCU_MQA_EMU", "default": "0",
         "auto": _auto_mqa_emu,

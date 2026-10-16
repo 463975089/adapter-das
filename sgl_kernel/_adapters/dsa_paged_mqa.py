@@ -53,6 +53,16 @@ def fp8_paged_mqa_logits(
     clean_logits=False,
     **_ignored,
 ):
+    """Torch paged-MQA logits, tile loop (reference) or full-window vec form.
+
+    Contract & numerics: see module docstring. ``HCU_MQA_LOGITS_IMPL=vec``
+    (rows <= HCU_MQA_VEC_MAXROWS) does the whole window in one gather+bmm
+    pass: the head-weight contraction runs as a second bmm (fp32-accumulated)
+    instead of materialising the (N, H, T) fp32 tensor -- a whole-window
+    .float() there hits the DTK elementwise cliff (~0.8 GB/s) and made the
+    naive vec form 3.5x slower than loop in serving. Parity vs loop: rel
+    ~2e-3 (w rounded to bf16), top-k stable.
+    """
     if os.environ.get("HCU_DUMP_TOPK") == "1" and not getattr(fp8_paged_mqa_logits, "_hcu_p", False):
         fp8_paged_mqa_logits._hcu_probe_done = True
     if os.environ.get("HCU_DUMP_TOPK") == "1":
@@ -96,6 +106,47 @@ def fp8_paged_mqa_logits(
     PS = kv_cache_fp8.shape[1] if kv_cache_fp8.dim() == 4 else 1
 
     device = q_b.device
+
+    # impl selection (registry-gated): "vec" collapses the tile loop into a
+    # single full-window pass for decode-shaped rows. The double loop below
+    # tiles (64, 2048); the CAPTURED decode graph runs it with the full
+    # max-context window (e.g. 64K -> 32 inner iterations x ~12 aten ops x
+    # 45 layers ~= 17k of the ~24k graph nodes = the submission bottleneck).
+    # Large-N (prefill) keeps the loop: full-window gather there would need
+    # N*T*128*2B transient memory (8K tokens x 64K window = impossible).
+    impl = "loop"
+    try:
+        from .hcu_env import resolve
+
+        impl, _src = resolve("HCU_MQA_LOGITS_IMPL")
+    except Exception:
+        pass
+    vec_max = int(os.environ.get("HCU_MQA_VEC_MAXROWS", "32"))
+    if impl == "vec" and N <= vec_max:
+        T_all = min(int(max_context_len), bt.shape[1] * PS)
+        n_pages = min((T_all + PS - 1) // PS, bt.shape[1])
+        pages = bt[:, :n_pages]  # (N, P)
+        toks = (pages.unsqueeze(2) * PS + torch.arange(PS, device=device))
+        toks = toks.reshape(N, -1)[:, :T_all]  # (N, T)
+        kg = k_b[toks]  # (N, T, D)
+        sc = k_sf[toks]  # (N, T)
+        # both bmms put the SMALL operand on the possibly-copied side:
+        # sT = kg @ q^T and row = sT @ w^T never materialise a transposed
+        # (N, T, D) buffer. The H-contraction runs inside the second bmm
+        # (fp32-accumulated) -- a whole-window .float() of the (N, H, T)
+        # product hits the DTK elementwise cliff (~0.8 GB/s) and made the
+        # naive vec form 3.5x slower than loop in serving.
+        sT = torch.matmul(kg, q_b.transpose(1, 2))  # (N, T, H) bf16
+        row = torch.matmul(sT, w.unsqueeze(2).to(torch.bfloat16)).squeeze(2)  # (N, T)
+        row = row.float() * sc
+        valid = torch.arange(T_all, device=device).unsqueeze(0) < ctx.unsqueeze(1)
+        if T_all >= int(max_context_len):
+            return torch.where(valid, row, 0.0)
+        # caller window exceeds page-table coverage: keep output width
+        out = torch.zeros((N, int(max_context_len)), dtype=torch.float32, device=device)
+        out[:, :T_all] = torch.where(valid, row, 0.0)
+        return out
+
     logits = torch.zeros((N, int(max_context_len)), dtype=torch.float32, device=device)
 
     qt = int(os.environ.get("HCU_DSA_MQA_QTILE", "64"))
