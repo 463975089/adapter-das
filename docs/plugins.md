@@ -35,7 +35,7 @@
 | P6 | **mHC 融合 `not is_hip()` 修复合流** | 上游 | 上游已修（等效我们的 `HCU_MHC_UNFUSE`）；合流后我们的开关自然冗余 | upstream-watch 盯版本；合流后删桥 | 合流版直接起服 + 四锚点 |
 | P7 | **DTK triton 编译栈 4 坏内核**（chunk_kda Aqk 全错 / conv1d update 噪声 / conv1d_fn varlen 初态死 / （第 4 点即 fn 臂）） | 上游（DTK） | adapter 已有 emu 止血 + 红绿门常驻；fork triton 内核 standalone 全绿（见 P8） | 按 operator-requests 标准向 DTK 提报；红门转绿即撤 emu | 红门测试（`test_kda_chunk_gfx938.py` / `test_conv1d_fn_varlen.py`）转绿 |
 | P8 | **fork serving 门 RED 对拍**（vendored `fla_hcu` 内核 standalone 6/6 绿，serving 中 Berlin 确定性翻转） | 窗口（adapter 内部） | 默认 emu，fork 留仓 opt-in（`HCU_KDA_PREFILL_IMPL=fork`）；HCU_DUMP_LAYERS + `replay_kda_l0.py` 参考链已备（容器 /root） | 下个 GPU 窗口做 serving dump 对拍；转绿 = prefill 17-28s→~3s | serving 门 Berlin id=19808 等 + standalone 门双绿 |
-| P9 | **DTK 大图发射（hipGraphLaunch ~300ms/步）** | 平台 env → 上游 | py-spy 实锤宿主卡发射、GPU 仅 28% 忙；cookbook glm-5.3 配方有现成 env 组合（`ROC_AQL_QUEUE_SIZE=131072` + `HIP_GRAPH_ACCUMULATE_DISPATCH=1` + `HIP_GRAPH_USE_CMD_CACHE=1`，已入 `_launch_g53f_tp4.sh` 待 A/B） | 先 env A/B（下个起服窗口）；不够则按 operator-requests 向 DTK 提报 | 0.43s/步显著下降 + 四锚点不劣化（graph 数值面不变） |
+| P9 | **DTK 大图发射（hipGraphLaunch ~300ms/步）** | 平台 env → 上游 | py-spy 实锤宿主卡发射、GPU 仅 ~11% 忙（bs4 负载）；cookbook graph 三件套（`ROC_AQL_QUEUE_SIZE=131072`+`HIP_GRAPH_ACCUMULATE_DISPATCH=1`+`HIP_GRAPH_USE_CMD_CACHE=1`）**2026-10-16 A/B 否决**：吞吐零变化 + 贪心解码非确定（Berlin 两轮翻转，对照组逐字复现）——cookbook 组合与其 0.5.18 镜像 runtime 配对，跨 dtk26041 不可移植。火焰图证据：主线程 99.1% 卡 `torch/cuda/graphs.py:139 replay`（宿主 /tmp/prof_g53f_decode_20261016.svg） | 直接按 operator-requests 向 DTK 提报（宿主 hipGraphLaunch 提交 435ms/步，图 2000 节点裸发射仅 22ms，要求大图提交路径优化） | 0.43s/步显著下降 + 四锚点不劣化 + 贪心确定性保持 |
 
 ## 2. 与既有文档的边界
 

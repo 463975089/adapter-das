@@ -13,12 +13,14 @@ export SGLANG_DSA_FUSE_TOPK=0
 export SGLANG_DISABLE_DSA_INDEXER_FUSION=1
 export HIP_VISIBLE_DEVICES=4,5,6,7
 export HCU_DEEPGEMM_BRIDGE=1
-# cookbook graph-dispatch block (inference-cookbook-das glm-5.3 recipe) —
-# enlarge graph cmd cache / AQL queue so more ops fit per dispatch; targets
-# the hipGraphLaunch ~300ms/step decode bottleneck (models.md 2026-10-16).
-export ROC_AQL_QUEUE_SIZE=131072
-export HIP_GRAPH_ACCUMULATE_DISPATCH=1
-export HIP_GRAPH_USE_CMD_CACHE=1
+# cookbook graph-dispatch block — A/B REJECTED 2026-10-16 on this stack
+# (dtk26041/gfx938): no throughput change (2.23 vs 2.34 tok/s single,
+# 14.0 vs 14.2 bs8) AND greedy decode turned NON-deterministic (Berlin
+# anchor flipped between runs at temperature=0). Do not re-enable without
+# a DTK runtime fix. Details: docs/plugins.md P9, docs/env-vars.md.
+# export ROC_AQL_QUEUE_SIZE=131072
+# export HIP_GRAPH_ACCUMULATE_DISPATCH=1
+# export HIP_GRAPH_USE_CMD_CACHE=1
 unset NCCL_TOPO_FILE
 unset ROCR_VISIBLE_DEVICES
 export SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=false

@@ -68,21 +68,20 @@
 cookbook（`inference-cookbook-das`，团队同级仓库）glm-5.3 配方的 sglang
 export 块里有一组 DTK/HIP runtime env。其中 **graph 发射三件套**与我们的
 decode 瓶颈（hipGraphLaunch ~300ms/步，models.md 2026-10-16）直接对口，
-已移植进 `tests/tools/_launch_g53f_tp4.sh`（2026-10-16，**待 A/B + 锚点
-复验**，归档 tracking 见 docs/plugins.md P9）：
+2026-10-16 已在 nmz26 TP4 完成 A/B，**结论：否决，不要启用**——
 
-| env | 拍板值 | 作用 |
+| env | cookbook 拍板值 | A/B 结果（2026-10-16，nmz26 TP4 e1696ba 前后对照） |
 |---|---|---|
-| `ROC_AQL_QUEUE_SIZE` | 131072 | AQL 异步命令队列容量（packet 数）——扩容让队列装得下更多待下发算子 |
-| `HIP_GRAPH_ACCUMULATE_DISPATCH` | 1 | graph 内核累积下发（攒批提交） |
-| `HIP_GRAPH_USE_CMD_CACHE` | 1 | graph 命令缓存 buffer（glm-5.3 新配方改 1；glm-5.1/5.2/dsv3 等老配方为 0） |
+| `ROC_AQL_QUEUE_SIZE` | 131072 | 三件套同开：吞吐零变化（单流 2.23 vs 2.34 tok/s；bs8 14.0 vs 14.2）；**贪心解码（temperature=0）变非确定**——Berlin 锚点两轮输出翻转且均偏离基线签名，对照组（无三件套）两轮逐字复现基线签名。判定：dtk26041 上 cmd-cache/累积下发路径数值不安全 |
+| `HIP_GRAPH_ACCUMULATE_DISPATCH` | 1 | 同上（三件套作为一个机制整体 A/B，未单独拆分） |
+| `HIP_GRAPH_USE_CMD_CACHE` | 1 | 同上；注意 cookbook glm-5.3 新配方才是 1，glm-5.1/5.2/dsv3 老配方为 0——可能与其 0.5.18 镜像 runtime 版本配对，跨栈不可移植 |
 
-cookbook 同块还有 `GPU_MAX_HW_QUEUES=3`、`HSA_KERNARG_POOL_SIZE=8388608`、
-`HIP_KERNEL_BATCH_CEILING=100`、`HIP_KERNEL_EVENT_SYSTENFENCE=1`、
-`GPU_FORCE_BLIT_COPY_SIZE=16`、`HIP_BUFFER_EXTRA_SIZE=0` 等，**未引入**——
-与 fork 镜像多进程部署强相关，等三件套 A/B 结论后再逐项评估（一次只变
-一个变量）。块里的 `SGLANG_*` 旗标属 sglang-das 0.5.18 fork 专属功能
-（P1/P2 范畴），我们官方 v0.5.21 栈**不设**。
+瓶颈证据另见 py-spy 火焰图：主线程 99.1% 样本卡 `torch/cuda/graphs.py:139
+replay`（宿主 /tmp/prof_g53f_decode_20261016.svg，容器 /root/logs/ 同名）。
+后续走 docs/plugins.md P9 的 DTK 提报路径。cookbook 同块其余
+（`GPU_MAX_HW_QUEUES=3`、`HSA_KERNARG_POOL_SIZE=8388608`、
+`HIP_KERNEL_BATCH_CEILING=100` 等）未测；块里的 `SGLANG_*` 旗标属
+sglang-das 0.5.18 fork 专属功能（P1/P2 范畴），我们官方 v0.5.21 栈不设。
 
 ## 客户部署建议（一句话）
 
