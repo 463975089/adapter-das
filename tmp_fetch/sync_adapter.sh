@@ -36,6 +36,7 @@ unset TOKEN
 bash "$(dirname "$0")/ssh_nmz26.sh" lizhg@10.16.1.26 \
   "docker exec -i lzg-g53-tp8 bash -s" <<REMOTE
 set -e
+git config --global --add safe.directory /root/hcu_t2 2>/dev/null || true
 cd /root/hcu_t2
 if [ ! -d .git ]; then
     echo "== initializing git repo in /root/hcu_t2 =="
