@@ -268,7 +268,15 @@ def _moe_align_block_size_torch(
     # fused kernel's filter_expert branch ZEROES those output rows.
     # Dropping the lanes (prior behavior) left cache slots unwritten.
     nb = num_experts + 1  # bucket count: real experts 0..E-1 + sentinel bucket E
-    bucket = flat.clamp(0, num_experts)  # -1 (and any stray) -> bucket E
+    # mirror the triton hist kernel exactly: valid experts keep their id,
+    # the sentinel (-1) and any stray out-of-range value fall into bucket E
+    # (the +1-offset convention's sentinel slot). clamp(0, E) is WRONG here:
+    # it folds -1 into expert 0's bucket (caught by rerun3, 2026-10-18).
+    bucket = torch.where(
+        (flat >= 0) & (flat < num_experts),
+        flat,
+        torch.full_like(flat, num_experts),
+    )
     sorted_token_ids.fill_(numel)
 
     counts = torch.bincount(bucket, minlength=nb)
