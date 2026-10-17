@@ -119,7 +119,7 @@ python -m sglang_router.launch_router --pd-disaggregation --mini-lb \
 
 # EP 低延迟示例（DeepEP，Qwen3-30B-A3B TP2+EP2 于 GPU6/7 实测）
 #   关键旗标一个不能少：moe-runner-backend deep_gemm 是 deepep_ll 格式唯一注册的 runner；
-#   SGLANG_DEEPEP_BF16_DISPATCH=1 让 dispatch 输出 bf16（上游 env，等价 --deepep-dispatcher-output-dtype bf16）；
+#   SGLANG_DEEPEP_BF16_DISPATCH=1 让 dispatch 输出 bf16（工作流层参数，留配方；CLI 等价 --deepep-dispatcher-output-dtype bf16；R-04 fp8 contiguous 解锁后退役）；
 #   mem 0.60：HIPC 权重打包会在运行时双份缓存专家权重，留出余量；
 #   --disable-radix-cache：LL buffer 固定槽位与 radix cache 不兼容（上游要求）。
 CUDA_VISIBLE_DEVICES=6,7 SGLANG_DEEPEP_BF16_DISPATCH=1 \

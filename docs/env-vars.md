@@ -117,13 +117,21 @@ PM 预分类（2026-10-17 扫 cookbook + `_launch_`/`_test_` 脚本，18 变量�
 
 语义钉：`tests/adapter/test_platform_env.py`（填充/显式覆盖赢/幂等三断言）。
 
-### B 类：进配置/catalog auto 档（待做，下轮）
+### B 类：模型感知 auto（已落地 2026-10-18，`sgl_kernel/_adapters/model_env.py`）
 
-`SGLANG_DEEPEP_BF16_DISPATCH`（gfx936 EP 形态，R-04 fp8 解锁后退役）、
-`SGLANG_MAMBA_CONV_DTYPE`（fp16 底模 GDN 专用——模型类条件，auto 按 config 探测）、
-`SGLANG_DSA_FUSE_TOPK`、`SGLANG_DISABLE_DSA_INDEXER_FUSION`、`HCU_TRITON_CONTIG`、
-`HCU_FA_IMPL`、`HCU_LINEAR_ATTN_GDN`。落地形态：BACKEND_CATALOG auto 档 +
-hcu_adapter.yaml + UI 快照同 commit（a983af3 治理链）。
+| 变量 | 去向 | 理由 |
+|---|---|---|
+| SGLANG_DSA_FUSE_TOPK=0 | model_env（hf config 含 index_kpool 等 → setdefault） | fused topk 无 HIP 臂 |
+| SGLANG_DISABLE_DSA_INDEXER_FUSION=1 | model_env（同上） | rope_first/indexer 融合无 HIP 臂（上游逃生门） |
+| SGLANG_MAMBA_CONV_DTYPE=float16 | model_env（fp16 + GDN 键 → setdefault；bf16 显式排除） | 上游 conv 池硬编码 bf16，fp16 首 forward 必崩 |
+| HCU_TRITON_CONTIG | **改判不落**（默认已 =1） | hcu_env 默认即目标值 |
+| HCU_FA_IMPL / HCU_LINEAR_ATTN_GDN | **改判不落**（默认 auto 已自适应） | 手敲多系 BW200 早期配方 |
+| SGLANG_DEEPEP_BF16_DISPATCH | **改判留配方**（工作流层参数） | CLI 等价 --deepep-dispatcher-output-dtype bf16；R-04 fp8 解锁后退役 |
+
+开关 `HCU_MODEL_ENV`（hcu_env 注册，default auto；off 退回手敲）；registry 登记
+op=model_env；BACKEND_CATALOG/UI 快照/yaml 三处同 commit。规则钉：
+`tests/adapter/test_model_env.py` 六断言（DSA 双设/无关不动/fp16 GDN 设/bf16
+GDN 不设/显式赢）。
 
 ### C 类：留调试（手册在册即可）
 

@@ -99,6 +99,16 @@ REGISTRY = {
         "about": "sglang 平台判定语义：cuda=上游判定统一回 CUDA（新模型天然"
                  "走 CUDA 分支，§0.5）；hip=legacy 适配路线（调试/A-B 对照）",
     },
+    # model-aware env defaults (R-08 B-tier; model_env.py)
+    "HCU_MODEL_ENV": {
+        "env": "HCU_MODEL_ENV", "default": "auto",
+        "about": "模型感知 env 自动化：ModelRunner init 按 model_config "
+                 "setdefault——DSA 模型（hf config 含 index_kpool 等）关 "
+                 "SGLANG_DSA_FUSE_TOPK/SGLANG_DISABLE_DSA_INDEXER_FUSION"
+                 "（两融合无 HIP 臂）、fp16 GDN 底模设 "
+                 "SGLANG_MAMBA_CONV_DTYPE=float16（上游 conv 池硬编码 bf16，"
+                 "fp16 首 forward 必崩）；显式 export 永远赢；off=退回手敲",
+    },
     # custom all-reduce
     "HCU_AITER_AR": {
         "env": "HCU_AITER_AR", "default": "0",

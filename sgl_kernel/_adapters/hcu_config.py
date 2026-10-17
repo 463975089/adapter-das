@@ -150,6 +150,18 @@ BACKEND_CATALOG = {
                     "note": "legacy 适配路线；降级调试 / A-B 对照"},
         },
     },
+    "model_env": {
+        "var": "HCU_MODEL_ENV",
+        "summary": "模型感知 env 自动化（R-08 B 类）",
+        "backends": {
+            "auto": {"status": "production",
+                     "note": "ModelRunner init 按 model_config setdefault："
+                             "DSA 模型关两项融合（无 HIP 臂）、fp16 GDN 底模"
+                             " conv dtype float16；显式 export 永远赢"},
+            "off": {"status": "production",
+                    "note": "退回手敲 env（triage）"},
+        },
+    },
     "kv_pool_strides": {
         "var": None,
         "summary": "KV 池 stride 张量构造（行为还原：torch2.11 不能从 "

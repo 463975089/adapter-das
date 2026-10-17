@@ -149,6 +149,17 @@ if getattr(torch.version, "hip", None) is not None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: state snapshot probe not installed", exc_info=True
             )
+    # Model-aware env defaults (R-08 B-tier, default on via HCU_MODEL_ENV):
+    # DSA models get their two fusion escape hatches, fp16 GDN bottoms get
+    # the conv-dtype fix — derived from model_config, setdefault only.
+    try:
+        from sgl_kernel._adapters import model_env
+
+        model_env.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: model-env defaults not installed", exc_info=True
+        )
     # JIT concat_mla (MLA-absorb q concat): hand-written PTX helpers
     # (%laneid register / L1::no_allocate st+ld / prefetch) -> HIP-portable
     # C++ equivalents.
