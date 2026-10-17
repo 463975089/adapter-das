@@ -1536,8 +1536,16 @@ if getattr(torch.version, "hip", None) is not None:
     # Prefill-sized passes only (1 < T <= 64), rank 0, file
     # HCU_DUMP_LAYERS_PATH (default /tmp/hcu_layers.pt).
     if os.environ.get("HCU_DUMP_LAYERS") == "1":
+        # NOTE: importing sglang model modules HERE fails — their deep chains
+        # (glm4_moe -> deepseek_v2 -> dsa_backend -> `import deep_gemm`)
+        # depend on bridges installed further down this file. Instead the
+        # registration below wraps importlib.import_module and patches the
+        # model class when sglang's model loader imports it naturally (the
+        # one moment where the whole stack is guaranteed importable).
         try:
-            import sglang.srt.models.glm4_moe as _g4m
+            import sglang.srt.models.glm4_moe as _g4m  # may fail; see note
+        except Exception:
+            _g4m = None
 
             _dump = {
                 "cur": {},
@@ -1655,25 +1663,45 @@ if getattr(torch.version, "hip", None) is not None:
 
                 return init
 
-            _g4m.GlmMoeDsaForCausalLM.__init__ = _hcu_dump_init(
-                _g4m.GlmMoeDsaForCausalLM.__init__
-            )
-            # GLM-5.3-Flash is glm5_next (Glm5NextForConditionalGeneration,
-            # text-only -> self.model = Glm5NextModel with .layers); the
-            # hook machinery is class-agnostic (same norm attr names).
-            try:
-                import sglang.srt.models.glm5_next as _g5n
+            _HCU_DUMP_TARGETS = {
+                "sglang.srt.models.glm4_moe": ("GlmMoeDsaForCausalLM",),
+                # GLM-5.3-Flash: text-only -> self.model = Glm5NextModel
+                # with .layers; hook machinery is class-agnostic (same norm
+                # attr names).
+                "sglang.srt.models.glm5_next": (
+                    "Glm5NextForConditionalGeneration",
+                    "Glm5NextForCausalLM",
+                ),
+            }
 
-                _g5n.Glm5NextForConditionalGeneration.__init__ = (
-                    _hcu_dump_init(
-                        _g5n.Glm5NextForConditionalGeneration.__init__
+            def _hcu_patch_model_module(mod):
+                targets = _HCU_DUMP_TARGETS.get(getattr(mod, "__name__", ""))
+                if not targets or getattr(mod, "_hcu_dump_patched", False):
+                    return
+                mod._hcu_dump_patched = True
+                for cls_name in targets:
+                    cls = getattr(mod, cls_name, None)
+                    if cls is not None:
+                        cls.__init__ = _hcu_dump_init(cls.__init__)
+
+            import importlib as _imp
+
+            _orig_import_module = _imp.import_module
+
+            def _hcu_import_module(name, *a, **k):
+                mod = _orig_import_module(name, *a, **k)
+                try:
+                    _hcu_patch_model_module(mod)
+                except Exception:
+                    logging.getLogger("hcu.adapter").warning(
+                        "HCU adapter: layer dump model patch failed",
+                        exc_info=True,
                     )
-                )
-            except Exception:
-                logging.getLogger("hcu.adapter").warning(
-                    "HCU adapter: glm5_next layer dump bridge not installed",
-                    exc_info=True,
-                )
+                return mod
+
+            _imp.import_module = _hcu_import_module
+            if _g4m is not None:
+                _hcu_patch_model_module(_g4m)
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: layer dump bridge not installed", exc_info=True
