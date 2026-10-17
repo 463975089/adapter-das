@@ -1,37 +1,38 @@
 """Self-written triton paged-MQA logits (R-02 homegrown tier).
 
-Writer arbitration (2026-10-18 probe campaign, nmz26 GPU4,
-tmp_fetch/probe_r02_poollayout.py / probe_r02_scalepos.py): the production
-index-K pool is written by ``fused_store_index_k_cache`` (the ``_is_cuda``
-store arm — ``can_use_dsa_fused_store()`` returns True on HCU, measured),
-whose csrc writes each page as k ROW-MAJOR (slot s ->
-page*PS*132 + s*128) plus PS fp32 scales at the page tail
-(page*PS*132 + PS*128 + 4*s). SetKAndS (the generic triton writer) has the
-same row-major+tail layout without preshuffle, and a 16-tile interleave
-branch under the aiter-preshuffle gate — that branch LOSES the store
-arbitration in production and is supported here only as an opt-in arm
-(HCU_MQA_TRITON_PRESHUFFLE=1) for stacks where it does write.
-
-The torch emu's historical row-level unpack (flat (T,132) [k|scale] rows)
-misread that page-level layout — k misaligned by 4*s bytes per slot,
-scales read off k bytes — so production decode DSA top-k ran
-deterministically wrong; fixed in dsa_paged_mqa.py the same day
-(page-level split, PS=1 world byte-identical).
+Pool layout (2026-10-18 R-02 audit, final — writer census, nmz26 GPU4):
+GLM-5.3 runs IndexerKPool (kpool=4), whose store flow NEVER calls the
+base Indexer's `_store_index_k_cache` — so fused_store (row-major) never
+fires. The pool is written by the kpool writer family
+(``kpool_softmax_rotate_write_cache`` etc., stock triton -> gfx938
+div-4 bug -> ``kpool_write_emu``, interleave via ``_TILE=16``) and
+``SetKAndS`` under the aiter-preshuffle gate the adapter forces on
+(``HCU_DSA_PRESHUFFLE=1`` default). Both lay a page out as k in the
+16-tile INTERLEAVE order + PS fp32 scales at the tail — and the prefill
+gather (``_kpool_cache_k_offsets``) reads the same order, so prefill is
+consistent. Only the decode paged-MQA reader was wrong: the torch emu's
+row-level 132-byte split misread the page-level layout entirely (k
+shifted, scales read off k bytes) — decode DSA top-k ran
+deterministically wrong in production; fixed in dsa_paged_mqa.py
+(interleave-aware page-level unpack) the same day.
 
 This kernel reads the real layout directly, fusing fp8-e4m3fn decode +
-paged gather + weighted head contraction + scale fold into ONE launch,
-and early-exits page programs beyond each row's context — the captured
-decode graph runs the full 64K window, so most programs exit after two
-scalar loads. Numerics: q decoded host-side, k decoded in-kernel via
-integer bit math (portable; dodges any DTK fp8-conversion quirk), fp32
+de-interleave gather + weighted head contraction + scale fold into ONE
+launch, and early-exits page programs beyond each row's context — the
+captured decode graph runs the full 64K window, so most programs exit
+after two scalar loads. Numerics: q decoded host-side, k decoded in-kernel
+via integer bit math (portable; dodges any DTK fp8-conversion quirk), fp32
 accumulation throughout — tighter than the emu's bf16 matmuls. Measured:
-exact vs direct math (rel 0.0, full top-k) on a real
-fused_store-written pool; decode shape N=8 / 64K window 13.2x over the
-vec emu (0.19 vs 2.52 ms).
+exact vs direct math (rel 0.0, full top-k) on real-writer pools (both
+arms); decode shape N=8 / 64K window 13.2x over the vec emu (0.19 vs
+2.52 ms).
 
-HCU_MQA_LOGITS_IMPL=triton selects this tier; the vec/loop emu (now
-layout-fixed) stays the default. Gate: tests/kernels/test_mqa_triton_
-gfx938.py (production-writer pool, fixed-emu cross-check, SetKAndS arms).
+The arm follows the ecosystem switch ``HCU_DSA_PRESHUFFLE`` (default on
+= interleave = GLM-5.3 production; ``=0`` selects the row-major arm for
+the legacy page_size=1 world, where fused_store/kpool=1 pools are
+row-major). HCU_MQA_LOGITS_IMPL=triton selects this tier; the (fixed)
+vec/loop emu stays the default. Gate: tests/kernels/test_mqa_triton_
+gfx938.py (SetKAndS-written pools in both layouts, fixed-emu cross-check).
 """
 
 from __future__ import annotations
@@ -172,9 +173,10 @@ def triton_paged_mqa_logits(
             f"mqa_triton: page_size {PS} not a power-of-2 multiple of its "
             "slot tile"
         )
-    # production writer (fused_store) is row-major; the SetKAndS
-    # aiter-preshuffle interleave arm is opt-in for stacks that write it
-    preshuffle = os.environ.get("HCU_MQA_TRITON_PRESHUFFLE", "0") == "1"
+    # arm follows the ecosystem switch: interleave under the forced
+    # preshuffle gate (GLM-5.3 kpool writer family / SetKAndS), row-major
+    # in the legacy HCU_DSA_PRESHUFFLE=0 world (fused_store / kpool=1)
+    preshuffle = os.environ.get("HCU_DSA_PRESHUFFLE", "1") != "0"
     grid = (N, ((T_all + PS - 1) // PS) * (PS // slot_tile))
     _paged_mqa_logits_kernel[grid](
         q_b,

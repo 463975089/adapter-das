@@ -105,6 +105,9 @@ def _rel_topk(ref, got, lens):
 def main():
     dev = "cuda"
     torch.cuda.init()
+    # the emu unpacks interleave under the default gate; this pool is the
+    # vendor kernel's ROW-MAJOR+tail contract -> row-major arm
+    os.environ["HCU_DSA_PRESHUFFLE"] = "0"
     common = dict(max_context_len=512, clean_logits=True)
 
     # arm 1: all-positive — vendor must match the emu EXACTLY (bug invisible)

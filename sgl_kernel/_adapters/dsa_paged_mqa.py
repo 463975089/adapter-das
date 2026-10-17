@@ -4,10 +4,11 @@ Upstream call site (dsa_indexer.py, ``deep_gemm.fp8_paged_mqa_logits`` arm):
     q      (N, H, 128) fp8e4m3 — per-head q scales are pre-folded by the
            caller into ``weights`` (N_CTX heads x 1 fp32); the per-dim
            quant is hadamard-flattened so a straight dot is the contract.
-    kv     fused cache viewed (P, block_kv=64, 1, 132): each PAGE is k
-           stored row-major [0, PS*128) + PS fp32 scales at the tail
-           [PS*128, PS*132) (fused_store_index_k_cache / SetKAndS layout,
-           page-level split since 2026-10-18).
+    kv     fused cache viewed (P, block_kv=64, 1, 132): each PAGE is k in
+           the 16-tile interleave order [0, PS*128) + PS fp32 scales at
+           the tail [PS*128, PS*132) (kpool writer family / SetKAndS
+           under the forced preshuffle gate; row-major arm behind
+           HCU_DSA_PRESHUFFLE=0 — see the unpack comment below).
     ctx    int32 context lens, 2D (N, 1) after the (N_total,1) normalisation.
     bt     int32 page table (N, L) — page indices; token t = page*64 + slot.
     sched  get_paged_mqa_logits_metadata(ctx, 64, num_sms) opaquely — not
@@ -92,24 +93,46 @@ def fp8_paged_mqa_logits(
     if kv_cache_fp8.dim() == 2:
         kv_cache_fp8 = kv_cache_fp8.reshape(-1, 64, 1, kv_cache_fp8.shape[-1])
     PS = kv_cache_fp8.shape[1] if kv_cache_fp8.dim() == 4 else 1
-    # Page-level split (2026-10-18 R-02 fix): a pool page is k stored
-    # ROW-MAJOR [0, PS*128) followed by PS fp32 scales at the tail
-    # [PS*128, PS*132) — what fused_store_index_k_cache (the production
-    # writer, _is_cuda arm) and SetKAndS both write. The previous
-    # row-level split ([k|scale] per 132-byte token row) misaligned k by
-    # 4*s bytes per slot and read scales off k bytes: decode DSA top-k
-    # was deterministically wrong in production (emu vs direct math on a
-    # real-writer pool: rel=nan; behavior anchors are top-k-insensitive
-    # so it went unnoticed). PS=1 degenerates to the same bytes as
-    # before, so the legacy page_size=1 world is unchanged.
+    # Pool layout (2026-10-18 R-02 audit, final): every page is k in the
+    # 16-tile INTERLEAVE order + PS fp32 scales at the tail — written by
+    # the kpool writer family (kpool_softmax_rotate_write_cache et al.,
+    # stock->kpool_write_emu) and SetKAndS under the preshuffle gate the
+    # adapter forces on; the prefill gather reads the same order
+    # (_kpool_cache_k_offsets), so prefill is consistent. fused_store
+    # (row-major) never fires for kpool>1 models (IndexerKPool has its
+    # own store flow). The original row-level 132-byte split misread BOTH
+    # layouts (k shifted 4*s bytes per slot, scales read off k bytes) —
+    # decode DSA top-k was deterministically wrong in production; this
+    # page-level + interleave-aware unpack is the fix. HCU_DSA_PRESHUFFLE=0
+    # (legacy / kpool=1 fused_store world) selects the row-major arm;
+    # PS=1 degenerates to the same bytes either way.
     pool2d = kv_cache_fp8.reshape(kv_cache_fp8.shape[0], -1).contiguous()
     if pool2d.shape[1] == PS * 132:
-        k_b = (
-            _as_view(pool2d[:, : PS * 128], _fp8_view_dtype())
-            .to(torch.bfloat16)
-            .reshape(-1, 128)
-            .contiguous()
-        )
+        kreg = pool2d[:, : PS * 128]
+        preshuffle = os.environ.get("HCU_DSA_PRESHUFFLE", "1") != "0"
+        tile = 16
+        try:
+            from sglang.kernels.ops.attention.dsa.kpool_fp8_index import (
+                INDEXER_K_CACHE_PRESHUFFLE_TILE as _tile,
+            )
+
+            tile = int(_tile)
+        except Exception:
+            pass
+        if preshuffle and tile and PS >= tile and PS % tile == 0:
+            # k[slot, d] -> (slot//t)*(t*128) + (d//t)*(t*t) + (slot%t)*t
+            # + d%t within the page k region: view (st, dt, si, di) and
+            # permute to logical (slot, d).
+            P = kreg.shape[0]
+            kreg = (
+                kreg.contiguous()
+                .view(P, PS // tile, 128 // tile, tile, tile)
+                .permute(0, 1, 3, 2, 4)
+                .reshape(P * PS, 128)
+            )
+        else:
+            kreg = kreg.reshape(-1, 128)
+        k_b = _as_view(kreg, _fp8_view_dtype()).to(torch.bfloat16).contiguous()
         k_sf = (
             pool2d[:, PS * 128 :]
             .contiguous()

@@ -19,18 +19,16 @@ LAYOUT CONTRACT RECOVERED + WHEEL BUG CONVICTED (probe campaign
 
 * Layout: fused_kv_cache (P,64,1,132) uint8, page = 8448B with k stored
   ROW-MAJOR (slot s -> bytes [s*128, s*128+128)) followed by 64 fp32
-  scales at the page tail [8192,8448). This is the upstream DeepGEMM
-  SM90 layout (csrc/apis/attention.hpp splits kv values at stride 128
-  and the scale array at block_kv*head_dim) — AND the layout the
-  production HCU writer emits: fused_store_index_k_cache wins the
-  _is_cuda store arbitration (can_use_dsa_fused_store()=True on HCU,
-  measured 2026-10-18) and its csrc writes exactly value=page+s*128,
-  scale=page+8192+4*s. So this bridge is layout-correct for the live
-  pool; the ONLY blocker is the wheel bug below. (SetKAndS's
-  aiter-preshuffle branch writes a 16-tile interleave instead, but it
-  loses the arbitration on this stack; the torch emu's old row-level
-  132-byte split also misread the page-level layout — fixed in
-  dsa_paged_mqa.py 2026-10-18.)
+  scales at the page tail [8192,8448) — the upstream DeepGEMM SM90
+  layout (csrc/apis/attention.hpp). CAVEAT (2026-10-18 writer census):
+  that is the kpool=1 world's layout (fused_store_index_k_cache, the
+  _is_cuda store arm). GLM-5.3 (IndexerKPool, kpool=4) never reaches
+  that store — its pool is written by the kpool writer family + SetKAndS
+  under the adapter-forced preshuffle gate, i.e. k in the 16-tile
+  INTERLEAVE order + tail scales (see mqa_triton.py / dsa_paged_mqa.py).
+  So even with a fixed wheel, wiring the vendor tier for kpool models
+  needs a pool relayout or a writer switch; for kpool=1 models the
+  bridge is layout-correct as-is. The wheel bug below blocks either way.
 
 * FATAL WHEEL BUG: the gfx938 kernel clamps NEGATIVE fp8 values to
   zero on BOTH operands — logits == sum_h w_h * max(q_h,c, 0) *

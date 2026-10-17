@@ -1,20 +1,18 @@
 """R-02 parity gate: homegrown triton paged-MQA logits + the emu layout fix.
 
-The pool is written by the REAL production writer in arm 1 —
-fused_store_index_k_cache (the _is_cuda store arm; can_use_dsa_fused_store()
-is True on HCU) — which quantizes a bf16 key and lays each page out as
-k row-major [0, PS*128) + PS fp32 scales at the tail. Golden = direct
-math on the pool decoded per that layout. Arms:
+Pool layout census (2026-10-18, nmz26 GPU4): GLM-5.3 (IndexerKPool,
+kpool=4) writes its index-K pool through the kpool writer family and
+SetKAndS under the forced preshuffle gate — every page = k in the 16-tile
+INTERLEAVE order + PS fp32 scales at the tail. The prefill gather reads
+the same order (consistent); only the decode paged-MQA reader was wrong
+(the emu's old row-level 132-byte split). Arms:
 
-  1. production-writer pool: triton AND the layout-fixed torch emu must
-     both match golden (rel < 0.02, full top-k). The emu's pre-2026-10-18
-     row-level 132-byte split misread this pool (decode DSA top-k was
-     deterministically wrong in production) — this arm pins the fix.
-  2. SetKAndS non-preshuffle pool: same layout via the other writer.
-  3. SetKAndS aiter-preshuffle pool (16-tile interleave): triton's
-     opt-in arm (HCU_MQA_TRITON_PRESHUFFLE=1) must match direct math on
-     the source values.
-  4. dispatch smoke + decode-shape timing evidence.
+  1. PRODUCTION layout (SetKAndS interleave writer, gate on): triton AND
+     the interleave-fixed torch emu must both match direct math on the
+     source values (rel < 0.02, full top-k). Pins the decode fix.
+  2. legacy row-major world (HCU_DSA_PRESHUFFLE=0): SetKAndS tile=0 and
+     fused_store writers; triton row-major arm + emu row-major unpack.
+  3. dispatch smoke + decode-shape timing evidence.
 
 Run (container, PYTHONPATH=/root/hcu_t2:/sglang-v0521/python):
 HIP_VISIBLE_DEVICES=4 python tests/kernels/test_mqa_triton_gfx938.py
@@ -64,8 +62,8 @@ def _write_setk(dev, k_fp8, k_scale, pages, PS, tile):
     return buf
 
 
-def _decode_pool(buf, PS):
-    """Golden view: k row-major + fp32 tail scales, decoded to float."""
+def _decode_pool_rowmajor(buf, PS):
+    """Golden view for row-major pools: k rows + fp32 tail scales."""
     k = buf[:, : PS * 128].contiguous().view(torch.float8_e4m3fn).float()
     s = buf[:, PS * 128 :].contiguous().view(torch.float32).reshape(-1)
     return k.reshape(-1, 128), s
@@ -74,7 +72,6 @@ def _decode_pool(buf, PS):
 def _make_case(dev, n_rows=4, pages=8, PS=64, seed=7):
     g = torch.Generator(device="cpu").manual_seed(seed)
     H, D = 32, 128
-    T = pages * PS
     q = (torch.randn(n_rows, H, D, generator=g) * 0.3).to(dev)
     q_fp8 = q.to(torch.float8_e4m3fn)
     w = (torch.rand(n_rows, H, generator=g) + 0.5).to(dev)
@@ -125,82 +122,83 @@ def main():
 
     dev = "cuda"
     torch.cuda.init()
-    for k in ("HCU_MQA_TRITON_PRESHUFFLE", "HCU_MQA_LOGITS_IMPL"):
-        os.environ.pop(k, None)
+    os.environ.pop("HCU_DSA_PRESHUFFLE", None)  # default arm: gate ON
     common = dict(max_context_len=512, clean_logits=True)
     g = torch.Generator(device="cpu").manual_seed(11)
     pages, PS = 8, 64
     T = pages * PS
-    key = (torch.randn(T, 128, generator=g) * 0.4).to(dev).to(torch.bfloat16)
-
-    q_fp8, w, lens, bt = _make_case(dev)
-
-    # arm 1: PRODUCTION writer (fused quantize+store)
-    buf = torch.zeros(pages, PS * 132, dtype=torch.uint8, device=dev)
-    fused_store_index_k_cache(
-        key, buf, torch.arange(T, device=dev, dtype=torch.int64), PS
-    )
-    torch.cuda.synchronize()
-    kv4 = buf.view(pages, PS, 1, 132)
-    k_dec, s_dec = _decode_pool(buf, PS)
-    gold = _golden(q_fp8, k_dec, s_dec, w, lens, bt, pages, PS, 512, dev)
-
-    got = tri(q_fp8.view(torch.uint8), kv4, w, lens, bt, None, **common)
-    rel, match, n = _rel_topk(gold, got, lens)
-    ok("triton-vs-golden(rel<0.02)", rel < 0.02, f"median rel={rel:.5f}")
-    ok("triton-topk(full)", match == n, f"{match}/{n}")
-
-    got_emu = emu(q_fp8.view(torch.uint8), kv4, w, lens, bt, None, **common)
-    rel_e, match_e, _ = _rel_topk(gold, got_emu, lens)
-    ok("emu-layout-fix(rel<0.02)", rel_e < 0.02, f"median rel={rel_e:.5f}")
-    ok("emu-topk(full)", match_e == n, f"{match_e}/{n}")
-
-    # arm 2: SetKAndS non-preshuffle writer (same layout, other writer)
-    k_fp8 = key.to(torch.float8_e4m3fn)
+    k_fp8 = (torch.randn(T, 128, generator=g) * 0.4).to(dev).to(torch.float8_e4m3fn)
     k_scale = (torch.rand(T, generator=g) * 0.5 + 0.5).to(dev)
-    buf_rm = _write_setk(dev, k_fp8, k_scale, pages, PS, tile=0)
-    gold_rm = _golden(q_fp8, k_fp8.float(), k_scale, w, lens, bt,
-                      pages, PS, 512, dev)
-    got_rm = tri(q_fp8.view(torch.uint8), buf_rm.view(pages, PS, 1, 132),
-                 w, lens, bt, None, **common)
-    rel_r, match_r, _ = _rel_topk(gold_rm, got_rm, lens)
-    ok("setk-rowmajor(rel<0.02)", rel_r < 0.02, f"median rel={rel_r:.5f}")
-    ok("setk-rowmajor-topk(full)", match_r == n, f"{match_r}/{n}")
+    q_fp8, w, lens, bt = _make_case(dev)
+    gold_src = _golden(q_fp8, k_fp8.float(), k_scale, w, lens, bt,
+                       pages, PS, 512, dev)
 
-    # arm 3: SetKAndS aiter-preshuffle (16-tile interleave), opt-in arm
+    # arm 1: PRODUCTION layout — SetKAndS interleave writer, gate on
     buf_il = _write_setk(dev, k_fp8, k_scale, pages, PS, tile=16)
-    os.environ["HCU_MQA_TRITON_PRESHUFFLE"] = "1"
-    try:
-        got_il = tri(q_fp8.view(torch.uint8), buf_il.view(pages, PS, 1, 132),
-                     w, lens, bt, None, **common)
-    finally:
-        os.environ.pop("HCU_MQA_TRITON_PRESHUFFLE", None)
-    rel_i, match_i, _ = _rel_topk(gold_rm, got_il, lens)
-    ok("setk-interleave-arm(rel<0.02)", rel_i < 0.02, f"median rel={rel_i:.5f}")
-    ok("setk-interleave-topk(full)", match_i == n, f"{match_i}/{n}")
+    kv_il = buf_il.view(pages, PS, 1, 132)
+    got = tri(q_fp8.view(torch.uint8), kv_il, w, lens, bt, None, **common)
+    rel, match, n = _rel_topk(gold_src, got, lens)
+    ok("triton-interleave(rel<0.02)", rel < 0.02, f"median rel={rel:.5f}")
+    ok("triton-interleave-topk(full)", match == n, f"{match}/{n}")
 
-    # arm 4: dispatch smoke — HCU_MQA_LOGITS_IMPL=triton routes here
+    got_emu = emu(q_fp8.view(torch.uint8), kv_il, w, lens, bt, None, **common)
+    rel_e, match_e, _ = _rel_topk(gold_src, got_emu, lens)
+    ok("emu-interleave-fix(rel<0.02)", rel_e < 0.02, f"median rel={rel_e:.5f}")
+    ok("emu-interleave-topk(full)", match_e == n, f"{match_e}/{n}")
+
+    # arm 2: legacy row-major world — gate off, SetKAndS tile=0 + emu
+    os.environ["HCU_DSA_PRESHUFFLE"] = "0"
+    try:
+        buf_rm = _write_setk(dev, k_fp8, k_scale, pages, PS, tile=0)
+        kv_rm = buf_rm.view(pages, PS, 1, 132)
+        got_rm = tri(q_fp8.view(torch.uint8), kv_rm, w, lens, bt, None,
+                     **common)
+        rel_r, match_r, _ = _rel_topk(gold_src, got_rm, lens)
+        ok("triton-rowmajor(rel<0.02)", rel_r < 0.02, f"median rel={rel_r:.5f}")
+        ok("triton-rowmajor-topk(full)", match_r == n, f"{match_r}/{n}")
+        got_emu_rm = emu(q_fp8.view(torch.uint8), kv_rm, w, lens, bt, None,
+                         **common)
+        rel_re, match_re, _ = _rel_topk(gold_src, got_emu_rm, lens)
+        ok("emu-rowmajor-arm(rel<0.02)", rel_re < 0.02,
+           f"median rel={rel_re:.5f}")
+
+        # arm 2b: fused_store writer (kpool=1 world), still row-major
+        key = (torch.randn(T, 128, generator=g) * 0.4).to(dev).to(torch.bfloat16)
+        buf_fs = torch.zeros(pages, PS * 132, dtype=torch.uint8, device=dev)
+        fused_store_index_k_cache(
+            key, buf_fs, torch.arange(T, device=dev, dtype=torch.int64), PS
+        )
+        torch.cuda.synchronize()
+        k_dec, s_dec = _decode_pool_rowmajor(buf_fs, PS)
+        gold_fs = _golden(q_fp8, k_dec, s_dec, w, lens, bt, pages, PS, 512, dev)
+        got_fs = tri(q_fp8.view(torch.uint8), buf_fs.view(pages, PS, 1, 132),
+                     w, lens, bt, None, **common)
+        rel_f, match_f, _ = _rel_topk(gold_fs, got_fs, lens)
+        ok("triton-fusedstore-pool(rel<0.02)", rel_f < 0.02,
+           f"median rel={rel_f:.5f}")
+        ok("triton-fusedstore-topk(full)", match_f == n, f"{match_f}/{n}")
+    finally:
+        os.environ.pop("HCU_DSA_PRESHUFFLE", None)
+
+    # arm 3: dispatch smoke — HCU_MQA_LOGITS_IMPL=triton routes here
     os.environ["HCU_MQA_LOGITS_IMPL"] = "triton"
     try:
-        got_d = emu(q_fp8.view(torch.uint8), kv4, w, lens, bt, None, **common)
+        got_d = emu(q_fp8.view(torch.uint8), kv_il, w, lens, bt, None, **common)
     finally:
         os.environ.pop("HCU_MQA_LOGITS_IMPL", None)
     ok("dispatch-triton(routes)", torch.allclose(got, got_d),
        "entry did not route to triton tier")
 
-    # arm 5: timing evidence (decode shape, full 64K window, ctx ~2K)
+    # arm 4: timing evidence (production layout, full 64K window, ctx ~2K)
     pagesB, N = 1024, 8
-    keyB = (torch.randn(pagesB * PS, 128, generator=g) * 0.4).to(dev).to(torch.bfloat16)
-    bufB = torch.zeros(pagesB, PS * 132, dtype=torch.uint8, device=dev)
-    fused_store_index_k_cache(
-        keyB, bufB, torch.arange(pagesB * PS, device=dev, dtype=torch.int64), PS
-    )
-    torch.cuda.synchronize()
+    kB = (torch.randn(pagesB * PS, 128, generator=g) * 0.4).to(dev).to(torch.float8_e4m3fn)
+    sB = (torch.rand(pagesB * PS, generator=g) * 0.5 + 0.5).to(dev)
+    bufB = _write_setk(dev, kB, sB, pagesB, PS, tile=16)
+    kvB = bufB.view(pagesB, PS, 1, 132)
     qB = (torch.randn(N, 32, 128, generator=g) * 0.3).to(dev).to(torch.float8_e4m3fn)
     wB = (torch.rand(N, 32, generator=g) + 0.5).to(dev)
     lensB = torch.full((N, 1), 2048, dtype=torch.int32, device=dev)
     btB = torch.arange(pagesB, device=dev).unsqueeze(0).repeat(N, 1)
-    kvB = bufB.view(pagesB, PS, 1, 132)
     big = dict(max_context_len=pagesB * PS, clean_logits=True)
 
     def _time(fn, iters=5):
