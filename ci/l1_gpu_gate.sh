@@ -10,8 +10,8 @@
 #   l0        structural gate (no GPU) -- fast fail before touching the card
 #   cpu       tests/test_ops_cpu.py            pure-torch contract paths
 #   kernels   tests/kernels + tests/adapter    triton numerics vs torch refs
-#   l15_up    upstream registered/attention/unittests (dsa+kda+dense) via
-#             pinned PYTHONPATH; tilelang variants excluded (DTK bug)
+#   l15_up    upstream registered/attention/unittests (dsa+kda+dense+mla)
+#             via pinned PYTHONPATH; tilelang variants excluded (DTK bug)
 #   gates     curated tools gates: config catalog, fa3-emu CP shapes, rope
 #             paths, aiter-MoE bridge dispatch, deepgemm contiguous triton
 #   vendor    flash_attn wheel sanity probe    (WARN tier: bad wheel -> warn)
@@ -67,7 +67,9 @@ run_seg l0      60   python3 ci/l0_gate.py
 run_seg cpu     300  python3 -m pytest tests/test_ops_cpu.py -q --no-header
 run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -q --no-header
 
-# L1.5: upstream attention-unittest selection (dsa + kda + dense dirs).
+# L1.5: upstream attention-unittest selection (dsa + kda + dense + mla
+# dirs; mla extend subtests over flashinfer stubs -> legal skips, see
+# _hcu_stub_raise in sitecustomize.py).
 # Env iron rule (2026-10-17): the container hosts TWO sglang trees (pip
 # dist-packages vs the source tree serving actually uses); the tests must
 # pin PYTHONPATH to the upstream source tree FIRST and the adapter tree
@@ -85,7 +87,8 @@ if [ -n "$UP_TREE" ]; then
     UP="$UP_TREE/test/registered/attention/unittests"
     run_seg l15_upstream 1800 env HCU_DEEPGEMM_BRIDGE=1 \
         PYTHONPATH="$UP_TREE/python:$ROOT" \
-        python3 -m pytest "$UP/dsa" "$UP/kda" "$UP/dense" -q --no-header \
+        python3 -m pytest "$UP/dsa" "$UP/kda" "$UP/dense" "$UP/mla" \
+            -q --no-header \
         -k "not tilelang" -o faulthandler_timeout=580 --tb=line
 else
     echo "L1: l15_upstream SKIP (no upstream unittest tree found)"
