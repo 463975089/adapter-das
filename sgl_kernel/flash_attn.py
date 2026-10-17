@@ -349,6 +349,20 @@ def flash_attn_with_kvcache(
     if cache_seqlens is None:
         raise ValueError("flash_attn emu: cache_seqlens required")
 
+    if q.numel() == 0:
+        # degenerate warmup/spec batch: 0 tokens (or the D=0 zero-query
+        # slab, also 0 elements) — reshape(-1, H, D) is ambiguous on an
+        # empty tensor, so emit empty outputs directly.
+        dtype = torch.bfloat16 if q.dtype.itemsize == 1 else q.dtype
+        h0 = q.shape[-2]
+        dv0 = v_cache.shape[-1] if v_cache is not None else 0
+        o = q.new_empty((0, h0, dv0), dtype=dtype)
+        if out is not None:
+            o = out
+        if return_softmax_lse:
+            return o, q.new_empty((0, h0), dtype=torch.float32)
+        return o
+
     device = q.device
     # fp8-quantized q means the caller runs the fp8-q path; outputs must
     # come back in a compute dtype either way

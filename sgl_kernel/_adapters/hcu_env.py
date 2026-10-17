@@ -127,6 +127,16 @@ REGISTRY = {
                  "小消息快于 NCCL ~2x），更大走 NCCL；0 = 不设限",
     },
     # DSA / attention
+    "HCU_SPEC_LOC_SAFE": {
+        "env": "HCU_SPEC_LOC_SAFE", "default": "1",
+        "about": "spec-decode KV 位置安全路由：把 sglang mem_cache allocation "
+                 "的 get_last_loc 重绑到纯 torch 变体——stock 在 is_cuda 平台"
+                 "语义下走 get_last_loc_triton，其内核在 HIP 上有 Triton 混合"
+                 "位宽误编译（树内注释自证），EAGLE+page_size>1 时产生越界 "
+                 "last_loc → KV 读写错位（GLM-5.3 MTP 实测 accept len≈1.0 + "
+                 "target 轨迹漂移 + 逐次不确定；二分定位 MTP 独立致病）。"
+                 "sglang-das 用 hcu_get_last_loc 同向修复；=0 还原 stock 分发",
+    },
     "HCU_MQA_LOGITS_IMPL": {
         "env": "HCU_MQA_LOGITS_IMPL", "default": "vec",
         "about": "DSA indexer paged-MQA torch emu 形态：vec=全窗口单遍双 bmm"

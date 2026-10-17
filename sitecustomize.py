@@ -2655,3 +2655,30 @@ if getattr(torch.version, "hip", None) is not None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: mhc emu not installed", exc_info=True
             )
+
+    # 14. Spec-decode KV-loc safety (2026-10-17): stock v0.5.21's
+    #     get_last_loc dispatcher routes is_cuda-semantics stacks to
+    #     get_last_loc_triton -- the kernel whose own in-tree comment
+    #     documents a Triton HIP miscompile (mixed-width int32->int64
+    #     store) producing OUT-OF-RANGE last_loc values under EAGLE +
+    #     page_size>1. GLM-5.3 MTP serving on this stack showed exactly
+    #     that signature (accept len ~1.0 + target hidden drift +
+    #     run-to-run nondeterminism; bisected green without MTP).
+    #     sglang-das fixes it for hcu via their hcu_get_last_loc; here we
+    #     rebind to the pure-torch variant (same math, page-agnostic).
+    #     HCU_SPEC_LOC_SAFE=0 restores stock dispatch.
+    if os.environ.get("HCU_SPEC_LOC_SAFE", "1") == "1" and torch.version.hip:
+        try:
+            from sglang.srt.mem_cache import allocation as _alloc
+
+            _alloc.get_last_loc = _alloc.get_last_loc_torch
+            print(
+                "[HCU specloc] get_last_loc -> torch (EAGLE+page>1"
+                " out-of-range last_loc guard)",
+                flush=True,
+            )
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: spec-loc safe routing not installed",
+                exc_info=True,
+            )

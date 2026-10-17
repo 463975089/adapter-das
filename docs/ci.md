@@ -9,6 +9,7 @@
 |---|---|---|---|---|
 | **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性、治理三规则（`glue-numerics`=sitecustomize 无 triton 数学 / `text-patch`=源码补丁必在 TEXT_PATCH_ALLOWLIST / `registry-ops`=register 的 op 必须 catalog）；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（Gitee Go 云端，`.workflow/l0-gate.yml`） |
 | **L1 GPU 数值门禁** | `ci/l1_gpu_gate.sh`：L0 + pytest（test_ops_cpu / kernels / adapter）+ 精选 tools 门禁（config 目录、fa3-emu CP 形状、rope 三路一致、aiter-MoE 分发、deepgemm contiguous triton）+ vendor wheel 探针（WARN 级） | HCU 容器，1 卡，自动挑空闲（VRAM<5%） | 5-15min | MR watcher（`ci/mr_watcher.py` 轮询开放 MR，新 head sha 即测） |
+| **L1.5 上游单测精选（规划中）** | 跑 sglang 官方 `test/` 的 HCU 可跑子集（挂 adapter PYTHONPATH）：优先四个曾出事的子系统——spec-decode（EAGLE 正确性）、mem_cache（allocation/allocator）、attention wrapper（fa3 emu 退化形状）、EP MoE。动机（2026-10-17）：serving-only 调试一轮 15-40min，而当晚三类 bug（get_last_loc 越界/fa3 空张量/dp-attention 污染）全是上游单测可分钟级暴露的 | HCU 容器，1 卡 | ~15min | 与 L1 同车；先做精选清单（过滤 CUDA-only/大模型/多机），跑通一个子系统再扩下一个 |
 | **L2 e2e** | 0.6B 四判定（launch/生成/锚点/长文）+ 多卡项（AR/EP/PD）= `tests/tools/run_model_suite.sh` / cookbook 配方 | HCU 容器，1-2 卡 | ~1h | 夜间 / 发版 / 手动（勿挂 MR，太慢太占卡） |
 
 ## MR 流（怎么"快速自动测试"）
