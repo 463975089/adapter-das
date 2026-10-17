@@ -108,12 +108,15 @@ REGISTRY = {
     "HCU_TRITON_AR": {
         "env": "HCU_TRITON_AR", "default": "0",
         "about": "custom AR（sgl_kernel.allreduce，host-shm 信令 + HIP IPC "
-                 "拉读）：R-01 判决（2026-10-15，nmz26 tp4 s7nccl 臂）其跨 "
+                 "拉读）：R-01 判决（2026-10-15/18，nmz26 tp4 七臂）其跨 "
                  "block 汇合计数器是 device 域原子，不传递系统域写序——"
                  "last block 的 PUB/DONE 发布可早于其他 block 的 host-shm "
                  "payload 写落 DRAM，对端间歇读到旧轮数据（Berlin 跳 think "
-                 "60%→2.5%，NCCL 臂 1/40 vs custom 48/80），故默认停用走 "
-                 "NCCL；=1 显式夺回（修复 ar_ext.cu 汇合协议前勿在生产开）",
+                 "custom 四臂 48/80 vs HCU_TRITON_AR=0 路由 1/40），故默认"
+                 "停用；=0 落 aiter AR 自动规则（gfx93* 新 aiter GraphSafe "
+                 "压力套通过 auto 放行——s7nccl/r04b 实测即此路径；旧布局"
+                 "仍拒）或显式 HCU_AITER_AR=0 再落 NCCL；=1 显式夺回 custom"
+                 "（修复 ar_ext.cu 汇合协议前勿在生产开）",
     },
     "HCU_TRITON_AR_SLOTS": {
         "env": "HCU_TRITON_AR_SLOTS", "default": "",

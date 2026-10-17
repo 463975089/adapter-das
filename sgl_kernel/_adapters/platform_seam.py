@@ -90,6 +90,14 @@ def install():
     # 影子库路线下 kernel 面由本仓兜底，dist-info 版本无意义。走上游声明
     # 的逃生 seam，自动置位不落部署 env（环境三原则）。
     os.environ.setdefault("SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK", "1")
+    # DeepGEMM JIT 预编译会话（compile_utils._maybe_compile_one_type_all：
+    # 每个 (n,k,groups) 形状遍历全 M 列表 1..16384 执行预热）在 HCU 栈是
+    # 纯启动税——DTK 海光轮子 2.1.0+dtk2604 是 AOT 汇编、无 JIT 可省，
+    # 会话只剩执行预热（nmz26 tp4 实测单形状 ~52s；bw7 EP 线每形状
+    # 5.7-7.4GB 显存冲击曾挤穿预算，10-13 战报）。上游默认 True 是给
+    # CUDA JIT 栈摊销编译成本的；此处默认关（首 serving 形状 lazily
+    # 预热，慢一次），配方可显式 export true 夺回（R-04）。
+    os.environ.setdefault("SGLANG_JIT_DEEPGEMM_PRECOMPILE", "0")
 
     sem, _src = hcu_env.resolve("HCU_PLATFORM_SEMANTICS")
     if sem != "cuda":

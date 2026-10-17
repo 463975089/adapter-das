@@ -34,10 +34,11 @@
 // stack — see the belt&braces note below). The last block's PUB/DONE write
 // can therefore reach host DRAM before some payload writes of earlier
 // blocks, and peers intermittently reduce stale (previous-round) or torn
-// rows: Berlin skip-think flips 48/80 rounds with this AR vs 1/40 with NCCL.
-// Default disabled (HCU_TRITON_AR=0) until the rendezvous moves to host-shm
-// system-scope arrival counters, so every block flushes its own stores
-// before its arrival is observed.
+// rows: Berlin skip-think flips 48/80 rounds with this AR vs 1/40 on the
+// HCU_TRITON_AR=0 route (aiter AR GraphSafe). Default disabled
+// (HCU_TRITON_AR=0) until the rendezvous moves to host-shm system-scope
+// arrival counters, so every block flushes its own stores before its
+// arrival is observed.
 //
 // Device buffer layout (bytes, must match triton_ar.py) — local sync only:
 //   0x000 u64 seq | 0x008 u32 arrived1 | 0x00c u32 arrived2

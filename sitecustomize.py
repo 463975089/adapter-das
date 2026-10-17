@@ -1416,10 +1416,10 @@ if getattr(torch.version, "hip", None) is not None:
     # this stack — probed), so the last block's PUB/DONE publish can reach
     # host DRAM before some payload writes and the peers intermittently
     # reduce stale/older-round rows: skip-think flips 48/80 with custom AR
-    # vs 1/40 with NCCL. Re-enable only after the ar_ext.cu rendezvous is
-    # system-scope (host-shm arrival counters). HCU_TRITON_AR=0 (default)
-    # falls back to the legacy aiter auto-rule below, which refuses on
-    # gfx93* and lands on NCCL.
+    # vs 1/40 on the HCU_TRITON_AR=0 route (which lands on the aiter AR —
+    # the new GraphSafe layout is auto-allowed on gfx93*; NCCL only when
+    # HCU_AITER_AR=0 is set explicitly). Re-enable only after the ar_ext.cu
+    # rendezvous is system-scope (host-shm arrival counters).
     _tar_val, _tar_src = (
         _he.resolve("HCU_TRITON_AR") if _he else ("1", "default")
     )

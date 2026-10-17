@@ -91,13 +91,15 @@ BACKEND_CATALOG = {
             "custom": {"status": "broken",
                        "note": "cross-block device-scope rendezvous does not "
                                "order host-shm payload stores; stale reads "
-                               "flip outputs (60% skip-think vs NCCL 2.5%, "
-                               "nmz26 tp4 2026-10-15). Default OFF pending "
-                               "ar_ext.cu fix"},
-            "aiter": {"status": "validated",
-                      "note": "aiter.dist GraphSafe (15/15 graph replay)"},
+                               "flip outputs (skip-think 48/80 vs 1/40 on "
+                               "the =0 route, nmz26 tp4 2026-10-15). Default "
+                               "OFF pending ar_ext.cu fix"},
+            "aiter": {"status": "production",
+                      "note": "aiter.dist GraphSafe; 15/15 graph replay; "
+                              "1/40 skip-think in the R-01 verdict arms — "
+                              "the default landing spot for TRITON_AR=0"},
             "nccl": {"status": "production",
-                     "note": "default; graph-correct, verdict-proven clean"},
+                     "note": "fallback (HCU_AITER_AR=0); graph-correct"},
         },
     },
     "paged_mqa_logits": {

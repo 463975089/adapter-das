@@ -117,11 +117,12 @@ try:
     ok("broken-rejected", False, "no error raised")
 except hcu_config.HcuConfigError as e:
     ok("broken-rejected", "broken" in str(e) or "custom" in str(e))
-# 7c. bare default resolves to NCCL (HCU_TRITON_AR default 0, aiter auto-refuse)
+# 7c. bare default resolves off custom (HCU_TRITON_AR default 0; the =0
+# route lands on the aiter AR via its auto rule — nccl needs HCU_AITER_AR=0)
 with_cfg("version: 1\nops: {}\n")
 hcu_config.load(force=True)
 v1, _ = hcu_env.resolve("HCU_TRITON_AR")
-ok("default-nccl", v1 == "0", f"AR={v1}")
+ok("default-not-custom", v1 == "0", f"AR={v1}")
 
 # 8. bad version -> loud
 try:
