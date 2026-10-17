@@ -155,18 +155,29 @@ REGISTRY = {
     },
     "HCU_MQA_LOGITS_IMPL": {
         "env": "HCU_MQA_LOGITS_IMPL", "default": "vec",
-        "about": "DSA indexer paged-MQA torch emu 形态：vec=全窗口单遍双 bmm"
+        "about": "DSA indexer paged-MQA 实现档：vec=全窗口单遍双 bmm"
                  "（大操作数免转置物化）——decode 图节点 23.9k→3.7k（-84%），"
                  "hipGraphLaunch API p50 540ms→21.6ms，单流 2.3→3.50 tok/s、"
                  "bs8 14.0→18.69；注意 (N,T,D) 转置物化/整窗 fp32 物化在 DTK "
                  "图 replay 下有 ~124ms/核崖（eager 无恙），故 bmm 两侧只允许"
                  "小张量做转置、H 收缩走第二 bmm；N>HCU_MQA_VEC_MAXROWS(32) "
                  "自动回落 loop（prefill 保内存）；loop=(64,2048) 双层 tile 循环"
-                 "参考实现（=loop 可回归对照）；vendor=deepgemm 轮直调用取证档"
-                 "（mqa_vendor.py 桥；布局已反解=行主序 k+页尾 fp32 scale、正数据"
-                 "对拍精确，但轮子 bug 定罪——q/k 负值 fp8 字节被钳为 0，真实数据"
-                 "垃圾 rel~3，待 DTK 修复；catalog 档 broken 选配即拒；双事实哨兵"
-                 " test_mqa_vendor_gfx938.py 钉住）",
+                 "参考实现（=loop 可回归对照）。**2026-10-18 R-02：vec/loop 的"
+                 "池解包从行级 132 字节分裂改为页级分裂（k 行主序 [0,PS*128)+"
+                 "页尾 fp32 scale——生产 writer=fused_store_index_k_cache，"
+                 "can_use 实证 True）；旧行级解读使 k 每 slot 错位 4 字节、"
+                 "scale 读到 k 字节上——生产解码 DSA top-k 一直确定性错误"
+                 "（锚点对 topk 质量不敏感故未暴露）；PS=1 世界字节不变**；"
+                 "triton=自研 triton 档（mqa_triton.py，读同一生产布局，"
+                 "SetKAndS 交错臂经 HCU_MQA_TRITON_PRESHUFFLE=1 选配）；对"
+                 "金标准精确 rel=0.0、解码形状 13.2× 快于 emu-vec（0.19 vs "
+                 "2.52ms），candidate 档，serving A/B 后候选转正；哨兵 "
+                 "test_mqa_triton_gfx938.py（含修复后 emu 交叉验证）；"
+                 "vendor=deepgemm 轮直调用取证档（mqa_vendor.py 桥；布局="
+                 "行主序+页尾 scale=生产池同构、正数据对拍精确，但轮子 bug "
+                 "定罪——q/k 负值 fp8 字节被钳为 0，真实数据垃圾 rel~3，"
+                 "待 DTK 修复；catalog 档 broken 选配即拒；双事实哨兵 "
+                 "test_mqa_vendor_gfx938.py 钉住）",
     },
     "HCU_MQA_EMU": {
         "env": "HCU_MQA_EMU", "default": "0",

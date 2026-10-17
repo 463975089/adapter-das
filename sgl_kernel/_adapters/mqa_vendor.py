@@ -21,10 +21,16 @@ LAYOUT CONTRACT RECOVERED + WHEEL BUG CONVICTED (probe campaign
   ROW-MAJOR (slot s -> bytes [s*128, s*128+128)) followed by 64 fp32
   scales at the page tail [8192,8448). This is the upstream DeepGEMM
   SM90 layout (csrc/apis/attention.hpp splits kv values at stride 128
-  and the scale array at block_kv*head_dim) — i.e. the layout sglang's
-  CUDA pool uses when the aiter preshuffle gate is OFF. It is NOT the
-  aiter 16-tile preshuffle our HCU pool writes, and NOT the flat
-  per-token [k|scale] rows the torch emu consumes.
+  and the scale array at block_kv*head_dim) — AND the layout the
+  production HCU writer emits: fused_store_index_k_cache wins the
+  _is_cuda store arbitration (can_use_dsa_fused_store()=True on HCU,
+  measured 2026-10-18) and its csrc writes exactly value=page+s*128,
+  scale=page+8192+4*s. So this bridge is layout-correct for the live
+  pool; the ONLY blocker is the wheel bug below. (SetKAndS's
+  aiter-preshuffle branch writes a 16-tile interleave instead, but it
+  loses the arbitration on this stack; the torch emu's old row-level
+  132-byte split also misread the page-level layout — fixed in
+  dsa_paged_mqa.py 2026-10-18.)
 
 * FATAL WHEEL BUG: the gfx938 kernel clamps NEGATIVE fp8 values to
   zero on BOTH operands — logits == sum_h w_h * max(q_h,c, 0) *

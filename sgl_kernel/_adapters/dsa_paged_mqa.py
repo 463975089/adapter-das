@@ -4,8 +4,10 @@ Upstream call site (dsa_indexer.py, ``deep_gemm.fp8_paged_mqa_logits`` arm):
     q      (N, H, 128) fp8e4m3 — per-head q scales are pre-folded by the
            caller into ``weights`` (N_CTX heads x 1 fp32); the per-dim
            quant is hadamard-flattened so a straight dot is the contract.
-    kv     flat cache viewed (T, block_kv=64, 1, 132): 128 fp8 bytes + fp32
-           scale per token slot.
+    kv     fused cache viewed (P, block_kv=64, 1, 132): each PAGE is k
+           stored row-major [0, PS*128) + PS fp32 scales at the tail
+           [PS*128, PS*132) (fused_store_index_k_cache / SetKAndS layout,
+           page-level split since 2026-10-18).
     ctx    int32 context lens, 2D (N, 1) after the (N_total,1) normalisation.
     bt     int32 page table (N, L) — page indices; token t = page*64 + slot.
     sched  get_paged_mqa_logits_metadata(ctx, 64, num_sms) opaquely — not
@@ -87,10 +89,33 @@ def fp8_paged_mqa_logits(
         q_b = _as_view(q_fp8, _fp8_view_dtype()).to(torch.bfloat16).contiguous()
         N, H, D = q_b.shape
 
-    kv = kv_cache_fp8.reshape(-1, kv_cache_fp8.shape[-1]).contiguous()
-    if kv.shape[-1] == 132:
-        k_b = _as_view(kv[:, :128], _fp8_view_dtype()).to(torch.bfloat16).contiguous()
-        k_sf = kv[:, 128:].view(torch.float32).reshape(-1)
+    if kv_cache_fp8.dim() == 2:
+        kv_cache_fp8 = kv_cache_fp8.reshape(-1, 64, 1, kv_cache_fp8.shape[-1])
+    PS = kv_cache_fp8.shape[1] if kv_cache_fp8.dim() == 4 else 1
+    # Page-level split (2026-10-18 R-02 fix): a pool page is k stored
+    # ROW-MAJOR [0, PS*128) followed by PS fp32 scales at the tail
+    # [PS*128, PS*132) — what fused_store_index_k_cache (the production
+    # writer, _is_cuda arm) and SetKAndS both write. The previous
+    # row-level split ([k|scale] per 132-byte token row) misaligned k by
+    # 4*s bytes per slot and read scales off k bytes: decode DSA top-k
+    # was deterministically wrong in production (emu vs direct math on a
+    # real-writer pool: rel=nan; behavior anchors are top-k-insensitive
+    # so it went unnoticed). PS=1 degenerates to the same bytes as
+    # before, so the legacy page_size=1 world is unchanged.
+    pool2d = kv_cache_fp8.reshape(kv_cache_fp8.shape[0], -1).contiguous()
+    if pool2d.shape[1] == PS * 132:
+        k_b = (
+            _as_view(pool2d[:, : PS * 128], _fp8_view_dtype())
+            .to(torch.bfloat16)
+            .reshape(-1, 128)
+            .contiguous()
+        )
+        k_sf = (
+            pool2d[:, PS * 128 :]
+            .contiguous()
+            .view(torch.float32)
+            .reshape(-1)
+        )
     else:
         # bf16/fp16 packed cache (P, S, 1, D): no per-token scale,
         # reshape any trailing head-dim padding back to tokens x D.
@@ -103,7 +128,6 @@ def fp8_paged_mqa_logits(
     w = weights.reshape(q_b.shape[0], H).to(torch.float32)
     ctx = context_lens.to(torch.int64).reshape(-1)
     bt = block_table.to(torch.int64).contiguous()
-    PS = kv_cache_fp8.shape[1] if kv_cache_fp8.dim() == 4 else 1
 
     device = q_b.device
 
@@ -127,6 +151,23 @@ def fp8_paged_mqa_logits(
         from .mqa_vendor import deepgemm_paged_mqa_logits as _dg
 
         return _dg(
+            q_fp8,
+            kv_cache_fp8,
+            weights,
+            context_lens,
+            block_table,
+            schedule_metadata=schedule_metadata,
+            max_context_len=max_context_len,
+            clean_logits=clean_logits,
+        )
+    if impl == "triton":
+        # R-02 homegrown tier: reads the REAL SetKAndS pool layout (16-tile
+        # interleave + tail scales) that this emu's flat (T,132) unpack
+        # misreads — correctness fix + single-launch decode graph. Parity
+        # gate tests/kernels/test_mqa_triton_gfx938.py.
+        from .mqa_triton import triton_paged_mqa_logits as _tri
+
+        return _tri(
             q_fp8,
             kv_cache_fp8,
             weights,

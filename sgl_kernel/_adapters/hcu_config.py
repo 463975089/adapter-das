@@ -104,11 +104,32 @@ BACKEND_CATALOG = {
     },
     "paged_mqa_logits": {
         "vars": {"emu": {"HCU_MQA_EMU": "1"},
+                 "triton": {"HCU_MQA_LOGITS_IMPL": "triton"},
                  "deepgemm": {"HCU_MQA_LOGITS_IMPL": "vendor"}},
         "summary": "DSA paged MQA logits",
         "backends": {
             "emu": {"status": "production",
                     "note": "torch emulation (default on gfx93*)"},
+            "triton": {"status": "candidate",
+                       "note": "homegrown triton kernel (mqa_triton.py, "
+                               "R-02 2026-10-18). Reads the production "
+                               "pool layout (fused_store_index_k_cache: "
+                               "row-major k + fp32 tail scales; writer "
+                               "arbitration measured — can_use_dsa_fused_"
+                               "store()=True on HCU). Sibling fix: the "
+                               "torch emu's row-level 132-byte split "
+                               "misread that page-level layout — decode "
+                               "DSA top-k was deterministically wrong in "
+                               "production (anchors top-k-insensitive); "
+                               "fixed in dsa_paged_mqa.py same day. "
+                               "Parity: exact vs direct math on a real "
+                               "fused_store-written pool (rel 0.0, top-k "
+                               "full; SetKAndS row-major + opt-in 16-tile "
+                               "interleave arms too); decode-shape timing "
+                               "13.2x over emu-vec (0.19 vs 2.52 ms, N=8 "
+               "window 64K). Gate tests/kernels/test_mqa_triton_gfx938.py "
+                               "(fixed-emu cross-check included). Promotion "
+                               "to default pending serving A/B."},
             "aiter": {"status": "planned",
                       "note": "probed absent 2026-10-18: the on-box aiter "
                               "wheel ships no paged_mqa_logits API -- "
