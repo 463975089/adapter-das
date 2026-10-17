@@ -10,6 +10,8 @@
 #   l0        structural gate (no GPU) -- fast fail before touching the card
 #   cpu       tests/test_ops_cpu.py            pure-torch contract paths
 #   kernels   tests/kernels + tests/adapter    triton numerics vs torch refs
+#   l15_up    upstream registered/attention/unittests (dsa+kda+dense) via
+#             pinned PYTHONPATH; tilelang variants excluded (DTK bug)
 #   gates     curated tools gates: config catalog, fa3-emu CP shapes, rope
 #             paths, aiter-MoE bridge dispatch, deepgemm contiguous triton
 #   vendor    flash_attn wheel sanity probe    (WARN tier: bad wheel -> warn)
@@ -64,6 +66,30 @@ run_seg() {  # name timeout_s cmd...
 run_seg l0      60   python3 ci/l0_gate.py
 run_seg cpu     300  python3 -m pytest tests/test_ops_cpu.py -q --no-header
 run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -q --no-header
+
+# L1.5: upstream attention-unittest selection (dsa + kda + dense dirs).
+# Env iron rule (2026-10-17): the container hosts TWO sglang trees (pip
+# dist-packages vs the source tree serving actually uses); the tests must
+# pin PYTHONPATH to the upstream source tree FIRST and the adapter tree
+# under test ($ROOT, providing sitecustomize.py) second, or they silently
+# test the wrong tree with no adapters loaded. -k "not tilelang": DTK
+# tilelang 0.1.12+dtk2604 warp-partition bug (threads=384 -> 6 warps,
+# 1*4*1 != 6) fails at compile -- platform issue, see docs/ci.md L1.5.
+# fa4/flashinfer/trtllm skip via attn_backend_gate / kit support checks.
+# Cold JIT cache costs ~5 min/kernel (~30 min first run); warm = ~35 s.
+UP_TREE=""
+for d in /sglang-v0521 /root/sglang-v0521-src; do
+    [ -d "$d/test/registered/attention/unittests" ] && UP_TREE="$d" && break
+done
+if [ -n "$UP_TREE" ]; then
+    UP="$UP_TREE/test/registered/attention/unittests"
+    run_seg l15_upstream 1800 env HCU_DEEPGEMM_BRIDGE=1 \
+        PYTHONPATH="$UP_TREE/python:$ROOT" \
+        python3 -m pytest "$UP/dsa" "$UP/kda" "$UP/dense" -q --no-header \
+        -k "not tilelang" -o faulthandler_timeout=580 --tb=line
+else
+    echo "L1: l15_upstream SKIP (no upstream unittest tree found)"
+fi
 
 GATES_LOG=/tmp/l1_gates.log; : > "$GATES_LOG"
 gates_fail=0

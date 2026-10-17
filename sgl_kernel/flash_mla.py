@@ -31,22 +31,48 @@ from sgl_kernel.flash_mla_sparse import flash_mla_sparse_fwd  # noqa: F401
 __all__ = ["flash_mla_with_kvcache", "get_mla_metadata", "flash_mla_sparse_fwd"]
 
 
+class FlashMLASchedMeta:
+    """Stand-in for upstream's persistent scheduler-state object.
+
+    Upstream AOT ``get_mla_metadata()`` with ``cache_seqlens=None`` returns
+    ``(FlashMLASchedMeta(), None)``; callers keep the object and overwrite
+    ``tile_scheduler_metadata`` / ``num_splits`` on later shape-bearing
+    calls (deepseek_v4_backend*.py do ``get_mla_metadata()[0]``).
+    """
+
+    def __init__(self):
+        self.have_initialized = False
+        self.config = None
+        self.tile_scheduler_metadata = None
+        self.num_splits = None
+
+
 def get_mla_metadata(
-    seq_lens,
-    num_q_heads_per_kv_head: int,
-    num_kv_heads: int,
+    cache_seqlens=None,
+    num_q_tokens_per_head_k: int = None,
+    num_heads_k: int = None,
+    num_heads_q: int = None,
     is_fp8_kvcache: bool = False,
+    topk: int = None,
 ):
     """Constant-shape stand-in for the FlashMLA tile scheduler.
 
-    Returns a single scheduler row so capture/replay shapes can never
-    diverge; ``num_splits`` follows the upstream ``(bs + 1,)`` int32 shape.
-    Both are ignored by the emulation below.
+    Signature matches the upstream AOT API (v0.5.21 dsa_backend
+    ``_compute_flashmla_metadata`` calls it fully keyworded with
+    ``cache_seqlens=``/``num_q_tokens_per_head_k=``/``topk=``). Positional
+    order keeps the legacy flash-mla call form
+    ``get_mla_metadata(seqlens, q_heads_per_kv, kv_heads)`` working
+    (tests/kernels/test_flash_mla.py). Returns a single scheduler row so
+    capture/replay shapes can never diverge; ``num_splits`` follows the
+    upstream ``(bs + 1,)`` int32 shape. Both are ignored by the emulation
+    below.
     """
-    dev = seq_lens.device
+    if cache_seqlens is None:
+        return FlashMLASchedMeta(), None
+    dev = cache_seqlens.device
     mla_metadata = torch.zeros((1, 8), dtype=torch.int32, device=dev)
     num_splits = torch.zeros(
-        (seq_lens.shape[0] + 1,), dtype=torch.int32, device=dev
+        (cache_seqlens.shape[0] + 1,), dtype=torch.int32, device=dev
     )
     return mla_metadata, num_splits
 
@@ -148,8 +174,13 @@ def flash_mla_with_kvcache(
         bs, win, heads, T_kv, head_dim_v
     ).reshape(bs * win * heads, T_kv, head_dim_v).contiguous()
     o = torch.bmm(pm, v3)  # [bs*win*heads, 1, d_v]
-    # upstream contract (flashmla_backend.py): caller does
-    # o.view(-1, tp_q_head_num * v_head_dim) — 3D [M, H, d_v] always works
-    o = o.view(bs * win, heads, head_dim_v).to(dtype)
+    # rank follows q: flashmla_backend's caller does
+    # o.view(-1, tp_q_head_num * v_head_dim) on the 3D [M, H, d_v] form,
+    # while dsa_backend _forward_flashmla_kv passes 4D (bs, s_q, H, D) and
+    # head-slices o[:, :, :num_q_heads, :] — give each the rank it sent.
+    if has_batch:
+        o = o.view(bs, win, heads, head_dim_v).to(dtype)
+    else:
+        o = o.view(bs * win, heads, head_dim_v).to(dtype)
     lse = torch.logsumexp(scores, dim=-1)  # [bs, heads, win]
     return o, lse

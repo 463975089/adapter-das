@@ -111,6 +111,18 @@ TEXT_PATCH_ALLOWLIST = {
     # receiver -> reduce<T> un-compilable for every non-bf16 T (fp32 warp
     # max in the store kernel). Receiver type widened to T.
     ("per_token_quant", "__hip_bfloat162 _v;"),
+    # warp.cuh inclusive scan / broadcast helpers use the *_sync shuffle
+    # variants; DTK device headers only declare the non-sync family. First
+    # hit: deepseek_v4/topk_impl.cuh radix tie-select -> warp::inclusive_sum
+    # -> '__shfl_up_sync' use-of-undeclared-identifier, which failed every
+    # dsa_mha_one_shot_* subcase of upstream
+    # test/registered/attention/unittests/dsa/test_dsa.py
+    # (sgl_kernel_jit_dpsk_v4_topk_v2_false build). HIP shuffles are
+    # wave-collective and ignore the mask, so the plain form is the
+    # drop-in equivalent.
+    ("per_token_quant", "__shfl_up_sync(active_mask, val, offset, kWidth);"),
+    ("per_token_quant", "__shfl_down_sync(active_mask, val, offset, kWidth);"),
+    ("per_token_quant", "__shfl_sync(active_mask, value, src_lane, kWidth);"),
     # concat_mla.cuh: hand-written PTX (laneid register, L1::no_allocate
     # st/ld with "l" constraint, prefetch.global.L2) -> HIP-portable
     # equivalents (utils.cuh lane identity / plain volatile derefs).

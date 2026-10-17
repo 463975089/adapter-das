@@ -42,12 +42,24 @@ class _FlashInferFinder(LibStubFinder):
                     "allreduce_fusion": ABSENT,
                     "create_allreduce_fusion_workspace": ABSENT,
                 },
+                # raise AttributeError on getattr so `from flashinfer.decode
+                # import X` falls back to a submodule import, which the deny
+                # entry below then refuses -> from-import raises ImportError
+                # (caught by flashinfer_backend.py:2516 -> GQA heuristic).
+                # Either half alone fails: plain-missing binds a Missing
+                # handle (loud NotImplementedError leaks through the
+                # caller's except), ABSENT-without-deny stubs X as a
+                # submodule ("module object is not callable").
+                "flashinfer.decode": {
+                    "_grouped_size_compiled_for_decode_kernels": ABSENT,
+                },
             },
             deny=(
                 "flashinfer.comm.mnnvl",
                 "flashinfer.gdn_prefill",
                 "flashinfer.gdn_decode",
                 "flashinfer.gdn_kernels",
+                "flashinfer.decode._grouped_size_compiled_for_decode_kernels",
             ),
         )
 

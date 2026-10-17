@@ -111,6 +111,20 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: jit warp reduce portability patch not installed",
             exc_info=True,
         )
+    # CUDA-only attention backends (fa4 = CUTLASS cute DSL SM90a;
+    # flashinfer = is_flashinfer_available() False yet unguarded names):
+    # fail at the backend-registry seam (constructor-time ImportError) so
+    # upstream attention-kit tests skip "backend not available" instead of
+    # dying mid-construction/mid-forward.
+    try:
+        from sgl_kernel._adapters import attn_backend_gate
+
+        attn_backend_gate.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: attention-backend registry gate not installed",
+            exc_info=True,
+        )
     # JIT concat_mla (MLA-absorb q concat): hand-written PTX helpers
     # (%laneid register / L1::no_allocate st+ld / prefetch) -> HIP-portable
     # C++ equivalents.
