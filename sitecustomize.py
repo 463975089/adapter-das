@@ -1631,7 +1631,12 @@ if getattr(torch.version, "hip", None) is not None:
             def _hcu_dump_init(_orig_init):
                 def init(self, *a, **k):
                     _orig_init(self, *a, **k)
-                    for i, lyr in enumerate(self.model.layers):
+                    layers = getattr(
+                        getattr(self, "model", None), "layers", None
+                    )
+                    if layers is None:
+                        return
+                    for i, lyr in enumerate(layers):
                         lyr.input_layernorm.register_forward_pre_hook(
                             _hcu_layernorm_pre(i), with_kwargs=True
                         )
@@ -1643,7 +1648,7 @@ if getattr(torch.version, "hip", None) is not None:
                                 _hcu_norm_out(f"xb{i}")
                             )
                     print(
-                        f"[HCU dump] pre-hooks on {len(self.model.layers)}"
+                        f"[HCU dump] pre-hooks on {len(layers)}"
                         " input_layernorms",
                         flush=True,
                     )
@@ -1653,6 +1658,22 @@ if getattr(torch.version, "hip", None) is not None:
             _g4m.GlmMoeDsaForCausalLM.__init__ = _hcu_dump_init(
                 _g4m.GlmMoeDsaForCausalLM.__init__
             )
+            # GLM-5.3-Flash is glm5_next (Glm5NextForConditionalGeneration,
+            # text-only -> self.model = Glm5NextModel with .layers); the
+            # hook machinery is class-agnostic (same norm attr names).
+            try:
+                import sglang.srt.models.glm5_next as _g5n
+
+                _g5n.Glm5NextForConditionalGeneration.__init__ = (
+                    _hcu_dump_init(
+                        _g5n.Glm5NextForConditionalGeneration.__init__
+                    )
+                )
+            except Exception:
+                logging.getLogger("hcu.adapter").warning(
+                    "HCU adapter: glm5_next layer dump bridge not installed",
+                    exc_info=True,
+                )
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: layer dump bridge not installed", exc_info=True
