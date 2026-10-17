@@ -312,7 +312,7 @@ def test_moe_align_block_size_contract():
             assert exps == E
 
 
-def test_moe_align_invalid_expert_skipped():
+def test_moe_align_invalid_expert_sentinel_bucket():
     topk_ids = torch.tensor([[0, -1], [2, 1]], dtype=torch.int32)
     E, B = 4, 2
     numel = 4
@@ -322,13 +322,17 @@ def test_moe_align_invalid_expert_skipped():
     cumsum = torch.empty(E + 2, dtype=torch.int32)
     moe_mod.moe_align_block_size(topk_ids, E, B, sorted_ids, expert_ids,
                                  post_pad, cumsum, True, ignore_invalid_expert=True)
-    # valid ids [0,2,1] on experts e0/e1/e2 -> 1 block each -> 3*2 = 6
-    assert post_pad.item() == 6
+    # AOT/sentinel contract (bb1504f EP-lite fix; pinned GPU-side in
+    # tests/kernels/test_moe_align.py): the -1 lane is NOT dropped -- it
+    # lands in the dedicated last bucket so its cache row still gets
+    # written. experts [0,2,1] + the sentinel each own one block -> 4*2 = 8
+    assert post_pad.item() == 8
     valid = sorted_ids[sorted_ids < numel]
-    assert sorted(valid.tolist()) == [0, 2, 3]
+    assert sorted(valid.tolist()) == [0, 1, 2, 3]
     used_blocks = post_pad.item() // B
-    assert expert_ids[:used_blocks].tolist() == [0, 1, 2]
-    assert (expert_ids[used_blocks:] == E).all()
+    # the sentinel-owned block carries expert id -1 (filter_expert zeroes it)
+    assert expert_ids[:used_blocks].tolist() == [0, 1, 2, -1]
+    assert (expert_ids[used_blocks:] == E + 1).all()
 
 
 def test_moe_sum_and_reduce():

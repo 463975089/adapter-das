@@ -43,8 +43,12 @@ GPU="$(pick_gpu "${1:-}")" || { echo "L1: no free GPU (all >=5% VRAM) -- SKIP/QU
 export HIP_VISIBLE_DEVICES="$GPU" CUDA_VISIBLE_DEVICES="$GPU"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 # some gates exercise upstream classes (rotary etc.) -- mount the sglang
-# source the container actually serves from, when present
-for d in /root/sglang-v0521-src/python; do
+# source the container actually serves from, when present. Both known
+# locations: nmz26 serves from /sglang-v0521; box16 clones under
+# /root/sglang-v0521-src. Without this, tests/kernels imports (e.g.
+# kpool_fp8_index) resolve sglang from pip dist-packages, which lacks the
+# dsa submodule -> collection error (2026-10-18 rerun2 forensics).
+for d in /sglang-v0521/python /root/sglang-v0521-src/python; do
     [ -d "$d" ] && export PYTHONPATH="$d:$PYTHONPATH"
 done
 echo "L1: using GPU $GPU"
