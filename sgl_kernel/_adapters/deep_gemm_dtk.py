@@ -14,6 +14,21 @@ module load. The utils.layout scale transforms have no verified DTK
 equivalent — they raise loudly instead of silently computing wrong
 numbers, which keeps fp8 DeepEP off the table until validated (bf16
 grouped GEMM needs no scales).
+
+fp8 contiguous verdict (R-04 probe campaign, 2026-10-18, nmz26 GPU4,
+wheel 2.1.0+dtk2604): NOT unlockable from this wheel, for three
+independent reasons. (1) The ``m_grouped_fp8_gemm_nt_contiguous``
+dispatcher has no gfx936 arm at all (only i8/w6 variants) — the EP
+target card never gets an fp8 path. (2) The gfx938 arm
+(``..._wasp_pair32``) takes ``a_scale`` as per-token whole-K 1-D
+[M]/[M,1] only (per-128-group [M, K/128] is rejected), so even folding
+sglang's DeepEP recipe onto it is lossy re-quantisation; and its signed
+numerics are broken: unit-probe vs dequant golden gives rel 0.88, a
+negatives-zeroed golden does NOT fit (rel 1.0017 — unlike the
+paged-MQA clamp pathology), positives still hold ~0.035 residual.
+(3) The tensor-wise marlin variant is also broken on signed data with
+unit scales (rel 1.22). Keep the stubs raising; revisit only with a new
+wheel or a hand-rolled kernel (probe: tmp_fetch/probe_r04_contig.py).
 """
 
 from __future__ import annotations
