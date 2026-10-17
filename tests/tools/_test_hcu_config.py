@@ -110,6 +110,19 @@ v2, s2 = hcu_env.resolve("HCU_AITER_AR")
 ok("compound-aiter", (v1, s1) == ("0", "config") and (v2, s2) == ("1", "config"),
    f"AR={v1}({s1}) AITER={v2}({s2})")
 
+# 7b. broken backend refused loudly (R-01 verdict: custom AR stale-read race)
+try:
+    with_cfg("version: 1\nops:\n  allreduce: custom\n")
+    hcu_config.load(force=True)
+    ok("broken-rejected", False, "no error raised")
+except hcu_config.HcuConfigError as e:
+    ok("broken-rejected", "broken" in str(e) or "custom" in str(e))
+# 7c. bare default resolves to NCCL (HCU_TRITON_AR default 0, aiter auto-refuse)
+with_cfg("version: 1\nops: {}\n")
+hcu_config.load(force=True)
+v1, _ = hcu_env.resolve("HCU_TRITON_AR")
+ok("default-nccl", v1 == "0", f"AR={v1}")
+
 # 8. bad version -> loud
 try:
     with_cfg("version: 2\nops: {}\n")

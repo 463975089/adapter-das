@@ -25,9 +25,11 @@ sys.path.insert(0, os.path.dirname(_HERE))
 from sgl_kernel._adapters import hcu_config  # noqa: E402
 
 # production-status backends are what a bare Enter keeps
-_ORDER = {"production": 0, "validated": 1, "candidate": 2, "planned": 3}
+_ORDER = {"production": 0, "validated": 1, "candidate": 2, "broken": 3,
+          "planned": 4}
 _STATUS_TAG = {"production": "", "validated": " [validated]",
-               "candidate": " [candidate]", "planned": " [planned - not wired]"}
+               "candidate": " [candidate]", "broken": " [BROKEN - see note]",
+               "planned": " [planned - not wired]"}
 
 
 def _defaults():

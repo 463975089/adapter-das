@@ -137,6 +137,18 @@ if getattr(torch.version, "hip", None) is not None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: side-buffer probe not installed", exc_info=True
             )
+    # Debug tooling (default OFF): request-boundary state snapshot probe for
+    # the R-01/R-06 cross-request leakage hunt — see
+    # _adapters/state_snapshot.py. Only loads when HCU_STATE_SNAPSHOT is set.
+    if os.environ.get("HCU_STATE_SNAPSHOT"):
+        try:
+            from sgl_kernel._adapters import state_snapshot
+
+            state_snapshot.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: state snapshot probe not installed", exc_info=True
+            )
     # JIT concat_mla (MLA-absorb q concat): hand-written PTX helpers
     # (%laneid register / L1::no_allocate st+ld / prefetch) -> HIP-portable
     # C++ equivalents.
@@ -1397,7 +1409,17 @@ if getattr(torch.version, "hip", None) is not None:
     # graph-replay corruption — decode tokens turn to word soup from the
     # first graph-replayed step while prefill stays correct — reproduced on
     # nmz26 even with the new aiter layout, 2026-10-11, tp2_graph_30197).
-    # HCU_TRITON_AR=0 falls back to the legacy aiter auto-rule below.
+    # DEFAULT OFF since the R-01 verdict (2026-10-15, nmz26 tp4 Berlin
+    # marathon): the kernel's cross-block rendezvous counts arrivals with
+    # device-scope atomics, which do NOT order the other blocks' host-shm
+    # payload stores (plain stores linger past __threadfence_system on
+    # this stack — probed), so the last block's PUB/DONE publish can reach
+    # host DRAM before some payload writes and the peers intermittently
+    # reduce stale/older-round rows: skip-think flips 48/80 with custom AR
+    # vs 1/40 with NCCL. Re-enable only after the ar_ext.cu rendezvous is
+    # system-scope (host-shm arrival counters). HCU_TRITON_AR=0 (default)
+    # falls back to the legacy aiter auto-rule below, which refuses on
+    # gfx93* and lands on NCCL.
     _tar_val, _tar_src = (
         _he.resolve("HCU_TRITON_AR") if _he else ("1", "default")
     )

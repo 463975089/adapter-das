@@ -21,8 +21,9 @@ Discovery: $HCU_CONFIG > ./hcu_adapter.{yaml,yml,json} >
 <adapter root>/hcu_adapter.{yaml,yml,json}. No file -> pure legacy
 behavior (env > auto > default); the file is optional but once present
 it must be valid: unknown ops, unknown backends, or selecting a backend
-whose status is "planned" fail LOUDLY at load (typo guard -- a silent
-fallback to defaults would hide exactly the mistake the user made).
+whose status is "planned" or "broken" fail LOUDLY at load (typo guard --
+a silent fallback to defaults would hide exactly the mistake the user
+made).
 
 BACKEND_CATALOG is the single source of truth for what can be selected;
 the interactive wizard (tools/hcu_config_wizard.py) and the future web
@@ -30,6 +31,9 @@ UI both render from it. status:
     production  default, fully gated
     validated   passed all gates, opt-in (or per-wheel auto rule)
     candidate   wired, awaiting its gate matrix
+    broken      once shipped, now convicted of corruption -- selecting
+                raises at config load (env override still possible for
+                A/B triage, e.g. HCU_TRITON_AR=1)
     planned     catalogued for the future UI, NOT wired -- selecting
                 raises at config load
 """
@@ -82,14 +86,18 @@ BACKEND_CATALOG = {
             "aiter": {"HCU_TRITON_AR": "0", "HCU_AITER_AR": "1"},
             "nccl": {"HCU_TRITON_AR": "0", "HCU_AITER_AR": "0"},
         },
-        "summary": "TP all-reduce (graph-capture path uses custom AR)",
+        "summary": "TP all-reduce",
         "backends": {
-            "custom": {"status": "production",
-                       "note": "adapter host-shm custom AR; <512KB fast"},
+            "custom": {"status": "broken",
+                       "note": "cross-block device-scope rendezvous does not "
+                               "order host-shm payload stores; stale reads "
+                               "flip outputs (60% skip-think vs NCCL 2.5%, "
+                               "nmz26 tp4 2026-10-15). Default OFF pending "
+                               "ar_ext.cu fix"},
             "aiter": {"status": "validated",
                       "note": "aiter.dist GraphSafe (15/15 graph replay)"},
             "nccl": {"status": "production",
-                     "note": "fallback; multi-GPU graph OFF"},
+                     "note": "default; graph-correct, verdict-proven clean"},
         },
     },
     "paged_mqa_logits": {
@@ -316,7 +324,19 @@ def _validate(doc, path):
                 + ", ".join(
                     sorted(
                         b for b, s in spec["backends"].items()
-                        if s["status"] != "planned"
+                        if s["status"] not in ("planned", "broken")
+                    )
+                )
+            )
+        if status == "broken":
+            note = spec["backends"][backend].get("note", "")
+            raise HcuConfigError(
+                f"{path}: ops.{op}: backend {backend!r} is known-broken "
+                f"and refused: {note} Selectable backends: "
+                + ", ".join(
+                    sorted(
+                        b for b, s in spec["backends"].items()
+                        if s["status"] not in ("planned", "broken")
                     )
                 )
             )

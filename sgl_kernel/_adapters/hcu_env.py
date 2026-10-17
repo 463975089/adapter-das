@@ -106,11 +106,14 @@ REGISTRY = {
         "about": "gfx93* 旧 aiter AR 自动拒用（图重放损坏）；=1 显式夺回",
     },
     "HCU_TRITON_AR": {
-        "env": "HCU_TRITON_AR", "default": "1",
+        "env": "HCU_TRITON_AR", "default": "0",
         "about": "custom AR（sgl_kernel.allreduce，host-shm 信令 + HIP IPC "
-                 "拉读，graph 安全）：=1 路由 sglang CustomAllreduce 至自家"
-                 "实现并视 fabric 全通（真 P2P 能力在 init 由 IPC open 兜底）"
-                 "；=0 回退 aiter AR 自动规则",
+                 "拉读）：R-01 判决（2026-10-15，nmz26 tp4 s7nccl 臂）其跨 "
+                 "block 汇合计数器是 device 域原子，不传递系统域写序——"
+                 "last block 的 PUB/DONE 发布可早于其他 block 的 host-shm "
+                 "payload 写落 DRAM，对端间歇读到旧轮数据（Berlin 跳 think "
+                 "60%→2.5%，NCCL 臂 1/40 vs custom 48/80），故默认停用走 "
+                 "NCCL；=1 显式夺回（修复 ar_ext.cu 汇合协议前勿在生产开）",
     },
     "HCU_TRITON_AR_SLOTS": {
         "env": "HCU_TRITON_AR_SLOTS", "default": "",
