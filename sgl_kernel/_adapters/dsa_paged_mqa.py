@@ -121,6 +121,21 @@ def fp8_paged_mqa_logits(
         impl, _src = resolve("HCU_MQA_LOGITS_IMPL")
     except Exception:
         pass
+    if impl == "vendor":
+        # R-02: DTK deepgemm wheel native path, A/B tier (parity gate
+        # tests/kernels/test_mqa_vendor_gfx938.py; layout unvalidated).
+        from .mqa_vendor import deepgemm_paged_mqa_logits as _dg
+
+        return _dg(
+            q_fp8,
+            kv_cache_fp8,
+            weights,
+            context_lens,
+            block_table,
+            schedule_metadata=schedule_metadata,
+            max_context_len=max_context_len,
+            clean_logits=clean_logits,
+        )
     vec_max = int(os.environ.get("HCU_MQA_VEC_MAXROWS", "32"))
     if impl == "vec" and N <= vec_max:
         T_all = min(int(max_context_len), bt.shape[1] * PS)

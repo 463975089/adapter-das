@@ -162,7 +162,12 @@ REGISTRY = {
                  "图 replay 下有 ~124ms/核崖（eager 无恙），故 bmm 两侧只允许"
                  "小张量做转置、H 收缩走第二 bmm；N>HCU_MQA_VEC_MAXROWS(32) "
                  "自动回落 loop（prefill 保内存）；loop=(64,2048) 双层 tile 循环"
-                 "参考实现（=loop 可回归对照）",
+                 "参考实现（=loop 可回归对照）；vendor=deepgemm 轮直调 A/B 探针档"
+                 "（mqa_vendor.py 桥；元数据门已过——q 须 fp8e4m3fn 4D "
+                 "[B,R,H,128]、H∈{8,16,32,64}、kv uint8 4D (P,S,1,132)、"
+                 "lens/bt int32；布局契约未接——核直读 preshuffle kpool 页布局，"
+                 "喂读 emu 解包后的平铺 (T,132) 出垃圾值 rel=1.0，正式接线须在 "
+                 "dsa 层喂原始池；KNOWN-RED 哨兵 test_mqa_vendor_gfx938.py 钉住）",
     },
     "HCU_MQA_EMU": {
         "env": "HCU_MQA_EMU", "default": "0",

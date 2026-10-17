@@ -103,16 +103,37 @@ BACKEND_CATALOG = {
         },
     },
     "paged_mqa_logits": {
-        "vars": {"emu": {"HCU_MQA_EMU": "1"}},
+        "vars": {"emu": {"HCU_MQA_EMU": "1"},
+                 "deepgemm": {"HCU_MQA_LOGITS_IMPL": "vendor"}},
         "summary": "DSA paged MQA logits",
         "backends": {
             "emu": {"status": "production",
                     "note": "torch emulation (default on gfx93*)"},
             "aiter": {"status": "planned",
-                      "note": "aiter.paged_mqa_logits; gate pending"},
+                      "note": "probed absent 2026-10-18: the on-box aiter "
+                              "wheel ships no paged_mqa_logits API -- "
+                              "revisit when the wheel grows one"},
             "lightop": {"status": "planned",
                         "note": "lightop.attention.paged_mqa_logits; "
                                 "gate pending"},
+            "deepgemm": {"status": "candidate",
+                         "note": "deepgemm wheel direct call via "
+                                 "mqa_vendor.py bridge. Metadata gates "
+                                 "all passed on-box (probe 2026-10-18): "
+                                 "q must be fp8e4m3fn 4D [B,R,H,128] "
+                                 "with H in {8,16,32,64}; kv uint8 4D "
+                                 "(P,S,1,132); weights fp32 (N,H); "
+                                 "lens/block_table int32. LAYOUT GATE "
+                                 "NOT WIRED: the kernel reads the "
+                                 "ORIGINAL preshuffle kpool page layout "
+                                 "(8192B 16-tile-interleaved fp8 + 256B "
+                                 "fp32 scales per 64-slot page), so "
+                                 "feeding it the flat (T,132) tensor "
+                                 "the kpool read-emu unpacks yields "
+                                 "garbage (rel=1.0) -- proper wiring "
+                                 "must feed the RAW pool at the dsa "
+                                 "layer. KNOWN-RED watchtower: "
+                                 "tests/kernels/test_mqa_vendor_gfx938.py"},
         },
     },
     "rotary_embedding": {
