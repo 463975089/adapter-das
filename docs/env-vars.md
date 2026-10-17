@@ -99,6 +99,42 @@ trace 存证：容器 `/root/logs/prof_torch/1792113313*.trace.json.gz`
 等）未测；块里的 `SGLANG_*` 旗标属 sglang-das 0.5.18 fork 专属功能
 （P1/P2 范畴），我们官方 v0.5.21 栈不设。
 
+## R-08 回仓盘点表（2026-10-18 落地）
+
+PM 预分类（2026-10-17 扫 cookbook + `_launch_`/`_test_` 脚本，18 变量）→ 本表为逐行去向账本。
+出现次数为盘点时点值。
+
+### A 类：platform seam setdefault（已落地）
+
+| 变量 | 次数 | 去向 | 理由 |
+|---|---|---|---|
+| SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python | 31 | seam（`platform_seam.platform_env_defaults`） | rust TreeCore 无 HCU 预编译扩展，python core 是平台事实 |
+| HCU_DEEPGEMM_BRIDGE=1 | 13 | seam | DTK deepgemm 桥，gfx936 EP-LL + gfx938 GLM 线双验 |
+| SGLANG_RUST_BUILD_MODE=never | 4 | seam | 与上条同源（构建机制同一开关族） |
+| SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=false | 4 | seam | 本栈非对称 TP 布局必误报 |
+| SGLANG_JIT_DEEPGEMM_PRECOMPILE=0 | 2 | seam（R-04 阶段一，35037be） | AOT 轮子纯启动税；boot 6:02→3:57 |
+| **HCU_AITER_AR=0** | 12 | **改判不落** | hcu_env auto 规则已是正确默认（旧布局拒/新 GraphSafe 放行）；手敲多系 auto 规则就绪前的历史产物 |
+
+语义钉：`tests/adapter/test_platform_env.py`（填充/显式覆盖赢/幂等三断言）。
+
+### B 类：进配置/catalog auto 档（待做，下轮）
+
+`SGLANG_DEEPEP_BF16_DISPATCH`（gfx936 EP 形态，R-04 fp8 解锁后退役）、
+`SGLANG_MAMBA_CONV_DTYPE`（fp16 底模 GDN 专用——模型类条件，auto 按 config 探测）、
+`SGLANG_DSA_FUSE_TOPK`、`SGLANG_DISABLE_DSA_INDEXER_FUSION`、`HCU_TRITON_CONTIG`、
+`HCU_FA_IMPL`、`HCU_LINEAR_ATTN_GDN`。落地形态：BACKEND_CATALOG auto 档 +
+hcu_adapter.yaml + UI 快照同 commit（a983af3 治理链）。
+
+### C 类：留调试（手册在册即可）
+
+`HCU_PREFILL_CP_DEBUG`、`HCU_FA_EMU_DEBUG`、`HCU_FP8_TRACE`；
+`HCU_PREFILL_CP=1` 特性 opt-in 保留为配置项。
+
+### 防复发
+
+cookbook §0 已注明 seam 默认清单 + "新配方行内每个 env 必须标注去向"；PM 验收检查单
+新增"新增 env 是否回仓"一项。
+
 ## 客户部署建议（一句话）
 
 什么都不设。需要调试/隔离时按上表显式设置，并看启动日志的

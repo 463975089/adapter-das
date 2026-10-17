@@ -6,9 +6,12 @@
 
 ```bash
 export PYTHONPATH=/root/hcu_t2:/root/sglang-v0521-src/python   # adapter 优先 + 官方源码
-export SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python            # 恒带：rust TreeCore 在 HCU 无预编译扩展必炸
-export HCU_AITER_AR=0                                           # aiter 自定义 AR 在本机拒用（自动回退 NCCL）
 export CUDA_VISIBLE_DEVICES=6                                   # 按卡改；多卡写 0,1,2,3
+# 以下已由 adapter platform seam 默认化（R-08 回仓，显式 export 永远可覆盖）：
+#   SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python（rust TreeCore 无预编译扩展必炸）
+#   SGLANG_RUST_BUILD_MODE=never / SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=false
+#   HCU_DEEPGEMM_BRIDGE=1 / SGLANG_JIT_DEEPGEMM_PRECOMPILE=0（R-04 启动提速）
+#   HCU_AITER_AR 走 hcu_env auto 规则（旧布局拒用、新 GraphSafe 放行），无需手敲=0
 ```
 
 注意：fp16 底模的 GDN 模型（如 Qwen3.5-122B-AWQ）必须加 `export SGLANG_MAMBA_CONV_DTYPE=float16`（上游 conv 池硬编码 bf16 不看模型 dtype，首 forward 必崩）。
@@ -119,8 +122,8 @@ python -m sglang_router.launch_router --pd-disaggregation --mini-lb \
 #   SGLANG_DEEPEP_BF16_DISPATCH=1 让 dispatch 输出 bf16（上游 env，等价 --deepep-dispatcher-output-dtype bf16）；
 #   mem 0.60：HIPC 权重打包会在运行时双份缓存专家权重，留出余量；
 #   --disable-radix-cache：LL buffer 固定槽位与 radix cache 不兼容（上游要求）。
-CUDA_VISIBLE_DEVICES=6,7 HCU_DEEPGEMM_BRIDGE=1 SGLANG_DEEPEP_BF16_DISPATCH=1 \
-SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m sglang.launch_server \
+CUDA_VISIBLE_DEVICES=6,7 SGLANG_DEEPEP_BF16_DISPATCH=1 \
+python -m sglang.launch_server \
   --model-path /public/opdas/DL_DATA/llm-models/qwen3/Qwen3-30B-A3B \
   --trust-remote-code --attention-backend triton \
   --tp-size 2 --ep-size 2 --moe-a2a-backend deepep --deepep-mode low_latency \
@@ -153,7 +156,7 @@ SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m sglang.launch_server \
 #   传输面验证：两端日志 `Using RDMA transport (RoCE/iWARP)` + `Found N HCAs`
 #   （TCP 版对应行是 TcpTransport listen）；decode 侧 #transfer-req 为在途传输。
 # prefill 端（GPU6）：
-CUDA_VISIBLE_DEVICES=6 SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python python -m sglang.launch_server \
+CUDA_VISIBLE_DEVICES=6 python -m sglang.launch_server \
   --model-path /root/models/Qwen3-0.6B --trust-remote-code --attention-backend triton \
   --disaggregation-mode prefill --disaggregation-transfer-backend mooncake \
   --disaggregation-bootstrap-port 30591 --nccl-port 30395 --tp 1 --page-size 64 \

@@ -78,6 +78,41 @@ def _install_gfx_probe_guard(_common):
     )
 
 
+def platform_env_defaults():
+    """HCU-stack platform defaults for sglang env vars (R-08 A-tier).
+
+    Pure ``os.environ.setdefault`` calls — an explicitly exported value always
+    wins (env三原则: correct deployment needs zero envs, explicit override is
+    top priority). Extracted from install() so tests can pin the semantics
+    without a GPU/sglang import. Landing ledger (occurrences across
+    cookbook/_launch_/_test_ scripts at triage time, docs/env-vars.md §R-08):
+
+    * SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python (31x) — rust TreeCore has
+      no prebuilt extension on HCU; the python core is the platform fact.
+      SGLANG_RUST_BUILD_MODE=never (4x) rides along (same build machinery).
+    * SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK=false (4x) — inbalance check
+      fires on asymmetrical TP layouts this stack uses.
+    * HCU_DEEPGEMM_BRIDGE=1 (13x) — DTK deepgemm alias+wrapper bridge,
+      validated on gfx936 EP-LL and gfx938 GLM-5.3 lines; harmless when no
+      DeepGEMM path runs.
+    Deliberately NOT defaulted (triage verdicts): HCU_AITER_AR — the hcu_env
+    auto rule is already the right default (refuses legacy layouts, allows
+    the GraphSafe one); the 12 manual =0 exports predate that rule.
+    SGLANG_JIT_DEEPGEMM_PRECOMPILE=0 was landed with R-04 (35037be): the
+    upstream all-M precompile session is pure boot tax on the AOT DTK wheel
+    (measured ~52s/shape on nmz26 tp4, boot 6:02→3:57; bw7 EP lines saw
+    5.7-7.4GB per shape squeeze the mem budget).
+    """
+    import os
+
+    os.environ.setdefault("SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK", "1")
+    os.environ.setdefault("SGLANG_JIT_DEEPGEMM_PRECOMPILE", "0")
+    os.environ.setdefault("SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND", "python")
+    os.environ.setdefault("SGLANG_RUST_BUILD_MODE", "never")
+    os.environ.setdefault("SGLANG_ENABLE_TP_MEMORY_INBALANCE_CHECK", "false")
+    os.environ.setdefault("HCU_DEEPGEMM_BRIDGE", "1")
+
+
 def install():
     import os
     import time
@@ -86,18 +121,9 @@ def install():
 
     from sgl_kernel._adapters import hcu_env, registry
 
-    # sgl-kernel 版本门（engine.py assert_pkg_version）防的是陈旧 AOT wheel；
-    # 影子库路线下 kernel 面由本仓兜底，dist-info 版本无意义。走上游声明
-    # 的逃生 seam，自动置位不落部署 env（环境三原则）。
-    os.environ.setdefault("SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK", "1")
-    # DeepGEMM JIT 预编译会话（compile_utils._maybe_compile_one_type_all：
-    # 每个 (n,k,groups) 形状遍历全 M 列表 1..16384 执行预热）在 HCU 栈是
-    # 纯启动税——DTK 海光轮子 2.1.0+dtk2604 是 AOT 汇编、无 JIT 可省，
-    # 会话只剩执行预热（nmz26 tp4 实测单形状 ~52s；bw7 EP 线每形状
-    # 5.7-7.4GB 显存冲击曾挤穿预算，10-13 战报）。上游默认 True 是给
-    # CUDA JIT 栈摊销编译成本的；此处默认关（首 serving 形状 lazily
-    # 预热，慢一次），配方可显式 export true 夺回（R-04）。
-    os.environ.setdefault("SGLANG_JIT_DEEPGEMM_PRECOMPILE", "0")
+    # sgl-kernel 版本门 + 平台 env 默认（R-04/R-08 A 类；上方
+    # platform_env_defaults 的 docstring 是逐项落账与判由）。
+    platform_env_defaults()
 
     sem, _src = hcu_env.resolve("HCU_PLATFORM_SEMANTICS")
     if sem != "cuda":

@@ -13,7 +13,7 @@ version: 1
 ops:
   silu_and_mul: lightop     # triton | lightop | torch
   rms_norm: aiter           # triton | aiter | torch
-  allreduce: custom         # custom | aiter | nccl
+  allreduce: aiter          # aiter（默认落点）| nccl；custom 已 broken（R-01 判决，选配即拒）
   paged_mqa_logits: emu     # emu（aiter/lightop 规划中）
 ```
 
