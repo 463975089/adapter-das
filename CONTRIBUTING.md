@@ -35,23 +35,10 @@ docs: architecture collaboration chapter + html diagram
 
 ### 3a. 加 / 改算子（`sgl_kernel/*.py`）
 
-1. API 签名与官方 `sgl-kernel` **逐字对齐**（含 `out=`、占位参数、destination-passing）。
-2. 按三档实现：triton 首档（fp32 累加、零主机同步）→ vendor 封装 → torch 兜底。
-3. 单测三层归位：`tests/test_ops_cpu.py`（torch 兜底）、`tests/kernels/`（GPU +
-   CUDA-graph capture 回归）、`tests/vendor/`（高危 vendor 压测 + 快关 gate）。
-4. 走 op 级 env / yaml 开关的，同步登记：`hcu_env.py` REGISTRY +
-   `docs/env-vars.md` + `hcu_adapter.yaml` 示例键 + `hcu_config.py`
-   BACKEND_CATALOG——**L0 交叉一致检查会挡缺漏**。
-5. 高危算子（allreduce / attention 类）接入即配：压测（尺寸×dtype×graph-replay
-   变输入）+ `kill_switch` 快关。
-
 0. **平台语义前置**（governance §0.5）：接入点的平台语义走 is_cuda 分支——
    上游新符号（含 flashinfer/trtllm 等专有库调用）按四级路由找归宿：
    lightop → aiter → **triton 先行**（先跑通）→ 响亮 stub；fp8 fnuz 等
    语义护栏白名单锁定不随翻。triton 先行产物在 vendor 就位后转 ref 档。
-
-### 3a. 加 / 改算子（`sgl_kernel/*.py`）
-
 1. API 签名与官方 `sgl-kernel` **逐字对齐**（含 `out=`、占位参数、destination-passing）。
 2. 按三档实现：triton 首档（fp32 累加、零主机同步）→ vendor 封装 → torch 兜底。
 3. 单测三层归位：`tests/test_ops_cpu.py`（torch 兜底）、`tests/kernels/`（GPU +
@@ -111,7 +98,13 @@ docs: architecture collaboration chapter + html diagram
 10. 存量 sitecustomize 长桥的迁出按 architecture.md §9 P1-P3 节奏做，
     每次迁移容器 e2e 复验；不要在别的 MR 里顺手搬（迁移与改逻辑分离）。
 
-## 3d. 推广边界（团队协作红线）
+### 3c. 加环境变量 / 配置键
+
+三原则：**正确部署零环境变量**（默认值即最优解）；**显式设置永远最高优先**；
+**启动日志打印每个生效值及来源**。落地 = REGISTRY 登记 + env-vars.md 手册行 +
+yaml 示例键，缺一被 L0 挡。
+
+### 3d. 推广边界（团队协作红线）
 
 adapter 仓与独立 plugin 仓并存后，防止边界随时间模糊的五条（违反即 review 拒）：
 
@@ -126,12 +119,6 @@ adapter 仓与独立 plugin 仓并存后，防止边界随时间模糊的五条�
    ——排障只认 `HCU_ADAPTER_DUMP` 的输出（plugin 仓的接入同样要求登记）。
 4. **组合归因不重跑矩阵**：集成问题先看 dump（谁在跑），再 yaml 翻单条目
    二分；禁止"全绿矩阵跑三遍"式排查（governance §4）。
-
-### 3c. 加环境变量 / 配置键
-
-三原则：**正确部署零环境变量**（默认值即最优解）；**显式设置永远最高优先**；
-**启动日志打印每个生效值及来源**。落地 = REGISTRY 登记 + env-vars.md 手册行 +
-yaml 示例键，缺一被 L0 挡。
 
 ## 4. tests/tools 命名语法
 
@@ -165,4 +152,5 @@ yaml 示例键，缺一被 L0 挡。
 升级 = 对齐 import 面：官方 `sgl-kernel` python API diff 一遍 → 补齐新符号的
 影子实现 → 跑 L1 + cookbook 冒烟。影子库机制的价值就在这：上游模型代码不碰，
 只追算子层。上游大版本（如 v0.5.21→v0.6）建议开 `feat/upgrade-vXX` 分支，
-先跑 `_probe_vendor_inventory.py` 类盘点再动手。
+先跑 `_probe_vendor_inventory.py` 类盘点再动手。日常追新巡检（对账工具 +
+日流程 + 自主修复授权边界）见 [docs/upstream-watch.md](docs/upstream-watch.md)。
