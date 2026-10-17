@@ -87,11 +87,12 @@ def _check(name, bs, win, pages_per_req, seed=0):
     )
     ref, lse_ref = _reference(q, kv_pool, block_table, seqlens, d_v, scale, True)
     ref, lse_ref = ref.cuda(), lse_ref.cuda()
-    # emu returns [M, H, d_v]; reference is [bs, win, h, d_v]
-    ref3 = ref.reshape(bs * win, h, d_v)
-    diff = (o.float() - ref3.float()).abs().max().item()
+    # rank follows q (146a875, dsa _forward_flashmla_kv needs 4D out to
+    # head-slice): 4D q in -> o [bs, win, h, d_v] and lse [bs, h, win] --
+    # both match the reference layout directly, no reshape needed
+    assert o.shape == ref.shape, f"{name}: out shape {o.shape} vs {ref.shape}"
+    diff = (o.float() - ref.float()).abs().max().item()
     lse_diff = (lse - lse_ref).abs().max().item()
-    assert o.shape == ref3.shape, f"{name}: out shape {o.shape} vs {ref3.shape}"
     assert diff < 2e-2, f"{name}: max diff {diff}"
     assert lse_diff < 5e-2, f"{name}: lse diff {lse_diff}"
     print(f"PASS {name}: shape={tuple(o.shape)} diff={diff:.5f} lse_diff={lse_diff:.5f}")

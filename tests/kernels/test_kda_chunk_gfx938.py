@@ -34,6 +34,7 @@ import sys
 
 os.environ.setdefault("HIP_VISIBLE_DEVICES", "0")
 
+import pytest  # noqa: E402
 import torch  # noqa: E402
 
 torch.manual_seed(0)
@@ -73,6 +74,13 @@ def _causal_cos(got, ref):
     ).item()
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="DTK gfx938 chunk_kda prefill Aqk/intra values are noise "
+    "(witnessed 2026-10-15, cos ~0.08 zero-gate minimal case); the KDA emu "
+    "(HCU_KDA_PREFILL_IMPL=emu) carries e2e. strict: XPASS (red) alerts us "
+    "the day DTK fixes the kernel -- then flip the default routing.",
+)
 def test_chunk_kda_zero_gate_parity():
     """LIVE-path minimum case: chunk_kda (l2 inside) + zero gate + raw-beta.
 

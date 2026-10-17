@@ -63,19 +63,19 @@ def main():
     q_b, k_b = rope(positions, q2.clone(), k2.clone(), fused_set_kv_buffer_arg=None)
     q_b, k_b = q_b.view(T, H, D), k_b.view(T, Hk, D)
 
-    # A: fused HIP path -- needs dict with KV pools; use tiny pool, t==t_slot
-    pool_k = torch.zeros(16, Hk, D, device=dev, dtype=dtype)
-    pool_v = torch.zeros(16, Hk, D, device=dev, dtype=dtype)
+    # A: fused HIP path -- FusedSetKVBufferArg dataclass (v0.5.21 API; the
+    # pre-dataclass dict shape died at rope.py:213 fused_args.value, rerun3)
+    from sglang.kernels.ops.attention.rope import FusedSetKVBufferArg
+
+    pool_k = torch.zeros(16, Hk * D, device=dev, dtype=dtype)
+    pool_v = torch.zeros(16, Hk * D, device=dev, dtype=dtype)
     slots = torch.arange(T, device=dev, dtype=torch.int64)
-    fused_arg = {
-        "v": torch.randn(T, Hk, D, device=dev, dtype=dtype),
-        "k_scale": None,
-        "v_scale": None,
-        "key_cache": pool_k.view(-1, 1, Hk, D),
-        "value_cache": pool_v.view(-1, 1, Hk, D),
-        "slot_mapping": slots,
-        "swa_slot_mapping": None,
-    }
+    fused_arg = FusedSetKVBufferArg(
+        value=torch.randn(T, Hk * D, device=dev, dtype=dtype),
+        k_buffer=pool_k,
+        v_buffer=pool_v,
+        cache_loc=slots,
+    )
     q_a, k_a = rope(positions, q2.clone(), k2.clone(), fused_set_kv_buffer_arg=fused_arg)
     q_a, k_a = q_a.view(T, H, D), k_a.view(T, Hk, D)
 

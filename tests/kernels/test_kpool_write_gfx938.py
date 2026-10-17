@@ -43,8 +43,14 @@ def _case(seed, n, dev):
     slot_k = torch.randn(n, POOL, D, generator=g, device=dev).to(torch.bfloat16)
     slot_score = torch.randn(n, POOL, D, generator=g, device=dev) * 0.7
     ape = torch.randn(POOL, D, generator=g, device=dev) * 0.1
-    loc = torch.randint(1, (pages - 1) * PAGE, (n,), generator=g, device=dev).to(
-        torch.int64
+    # collision-free loc: duplicate (page, tok) draws make the byte outcome
+    # write-order dependent (stock kernel vs row-by-row reference can pick
+    # different winners) -- seed 2 of the old randint draw hit exactly that
+    # (rerun3 forensics 2026-10-18). randperm keeps the same value range.
+    loc = (
+        torch.randperm((pages - 1) * PAGE - 1, generator=g, device=dev)[:n]
+        .to(torch.int64)
+        + 1
     )
     return pages, slot_k, slot_score, ape, loc
 

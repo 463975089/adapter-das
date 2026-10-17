@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import sys
 
+import pytest
 import torch
 
 torch.manual_seed(7)
@@ -83,23 +84,28 @@ def _case(D, W, lens, init):
     return x, w, bias, cu, states, slots, hid
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="DTK gfx938 triton _causal_conv1d_fwd_kernel miscompiles the "
+    "initial-state branches (witnessed 2026-10-15: has_initial_state read "
+    "dead, out cos 0.49 / state wb maxdiff 2); conv1d_fn_emu carries e2e. "
+    "strict: XPASS (red) alerts us the day DTK fixes the kernel.",
+)
 def test_triton_parity():
-    """RED GATE (gfx938 triton): conv1d_fn vs step reference.
+    """Witness gate (gfx938 triton): conv1d_fn vs step reference.
 
-    Witnessed 2026-10-15: with has_initial_state=True
-    out cos=0.49 maxdiff=1.40; state write-back maxdiff=2.05. Stays red
-    until DTK triton fixes the initial-state branches; the emu carries e2e.
+    xfail-strict as a DTK watchpoint: fails while the platform bug stands;
+    the moment DTK ships the fix it XPASSes and flips the gate red so we
+    notice and revisit HCU_CONV1D_IMPL routing.
     """
     try:
         from sglang.kernels.ops.mamba.causal_conv1d_triton import (
             causal_conv1d_fn,
         )
     except ImportError:
-        print("SKIP triton parity: kernel module unavailable (CPU?)")
-        return
+        pytest.skip("kernel module unavailable (CPU?)")
     if not torch.cuda.is_available():
-        print("SKIP triton parity: no GPU")
-        return
+        pytest.skip("no GPU")
     x, w, bias, cu, states, slots, hid = _case(64, 4, [5, 3], True)
     out = causal_conv1d_fn(
         x, w, bias, activation="silu", conv_states=states,
@@ -112,7 +118,7 @@ def test_triton_parity():
     )
     cos, md = _metrics(out.cpu(), ref)
     print(f"[gate] triton varlen: cos={cos:.6f} maxdiff={md:.4f} (red until DTK fix)")
-    assert False, (
+    assert cos > 0.9999 and md < 2e-2, (
         f"gfx938 triton conv1d_fn still broken: cos={cos:.6f} maxdiff={md:.4f}; "
         "emu carries e2e (HCU_CONV1D_IMPL=emu)"
     )
@@ -173,7 +179,6 @@ def test_dead_initial_state_witness():
     diff = (out_rand.float() - out_zero.float()).abs().max().item()
     print(f"[witness] rand-state vs zero-state out maxdiff={diff:.6f} "
           f"({'DEAD initial-state read — kernel bug confirmed' if diff < 1e-3 else 'state is read'})")
-    return diff
 
 
 def main():
