@@ -10,22 +10,39 @@ HCU_DEEPGEMM_BRIDGE) ships a native ``paged_mqa_logits``:
                      out=None, clean_logits=True, is_prefill=False)
 
 which is signature-isomorphic to our emu entry (q/kv/weights/lens/bt/
-max_len; page size 64 slots, kv row = 128 fp8 bytes + fp32 scale).
+max_len; page size 64 slots — see the recovered layout contract below).
 ``aiter.ops.paged_mqa_logits`` does NOT exist in the on-box aiter wheel
 (probed 2026-10-18, nmz26 dtk26041) — that tier is retired.
 
-UNVALIDATED + LAYOUT CONTRACT FOUND (probe 2026-10-18, nmz26 GPU4): the
-op runs with q=float8_e4m3fn (fnuz rejected by the metadata gate — matches
-the is_cuda route where is_fp8_fnuz() is False), H in {8,16,32,64} (GLM-5.3
-index_n_heads=32 fits), kv uint8 shaped (P,S,1,132), weights fp32 (N,H),
-lens/bt int32 — but it READS the ORIGINAL preshuffle kpool page layout
-(64 slots: 8192B of 16-tile-interleaved fp8 + 256B of fp32 scales), not
-the flat [T,132] tensor the kpool READ-emu unpacks for the torch emu.
-Proper wiring must feed it the RAW pool at the dsa layer (bypass the
-read-emu unpack); until then HCU_MQA_LOGITS_IMPL=vendor is an A/B probe
-tier and tests/kernels/test_mqa_vendor_gfx938.py pins the known mismatch
-as a RED watchtower. ``aiter.ops.paged_mqa_logits`` does NOT exist in the
-on-box aiter wheel (probed same day) — that tier is retired.
+LAYOUT CONTRACT RECOVERED + WHEEL BUG CONVICTED (probe campaign
+2026-10-18, nmz26 GPU4, deterministic across repeats):
+
+* Layout: fused_kv_cache (P,64,1,132) uint8, page = 8448B with k stored
+  ROW-MAJOR (slot s -> bytes [s*128, s*128+128)) followed by 64 fp32
+  scales at the page tail [8192,8448). This is the upstream DeepGEMM
+  SM90 layout (csrc/apis/attention.hpp splits kv values at stride 128
+  and the scale array at block_kv*head_dim) — i.e. the layout sglang's
+  CUDA pool uses when the aiter preshuffle gate is OFF. It is NOT the
+  aiter 16-tile preshuffle our HCU pool writes, and NOT the flat
+  per-token [k|scale] rows the torch emu consumes.
+
+* FATAL WHEEL BUG: the gfx938 kernel clamps NEGATIVE fp8 values to
+  zero on BOTH operands — logits == sum_h w_h * max(q_h,c, 0) *
+  max(k_t,c, 0) * scale_t, EXACTLY (fitted to 4 decimals over 9 probe
+  geometries; all-positive test data passes perfectly, single negative
+  q or k byte contributes exactly 0.0). Real DSA q/k are ~half
+  negative, so serving output would be garbage (rel~3.2 vs emu gold).
+  A 4-call sign-split decomposition (q+/q- x k+/k-) recovers exact
+  math in principle but needs a duplicated pool per call — not worth
+  wiring; blocked on a DTK kernel fix.
+
+Wheel: deepgemm 2.1.0+dtk2604.torch2110.2610131423.g112a50
+(op.cpython .so, gfx938/paged_mqa_logits_fp8.hip). DTK gap-list item.
+Until a fixed wheel lands, HCU_MQA_LOGITS_IMPL=vendor is a triage-only
+override and the BACKEND_CATALOG marks the tier broken (selecting it
+via hcu_adapter.yaml raises). tests/kernels/test_mqa_vendor_gfx938.py
+pins BOTH facts: all-positive data matches the emu exactly (bridge +
+layout correct) and signed data mismatches (bug signature stable).
 """
 
 from __future__ import annotations
