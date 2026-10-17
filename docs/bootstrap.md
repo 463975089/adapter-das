@@ -19,7 +19,9 @@ git clone https://gitee.com/lizhigong/hcu-sglang-adapter.git adapter-tree
 export PYTHONPATH=/work/adapter-tree:/work/official-sglang/python
 
 # 日常更新（增量、带版本对账）：
-cd /work/adapter-tree && git pull && git log -1 --oneline   # 记住跑的版本
+cd /work/adapter-tree && git pull
+git status --short    # 必须为空：非空 = 容器树有本地改动/残留，先查明再跑
+git log -1 --oneline  # 必须与本地工作区 HEAD 一致——"同步好没好"以 git 可判为准
 ```
 
 **为什么 git 为主**：自带版本对账（`git log -1` 即答"容器里跑的哪个
@@ -32,6 +34,12 @@ commit"，排查第一步）；增量同步；与 CI mirror mirror（L1 也是 c
 # 本地：tar czf adapter_tree.tgz sgl_kernel sitecustomize.py pyproject.toml
 # base64 过 ssh 落宿主 → docker cp 容器内解包（scp -P 被节点 sshd 拒）
 ```
+
+tar 一律解包**落进 git 树**（/work/adapter-tree）而非裸目录——`git status` /
+`git diff` 立刻暴露 tar 覆盖了什么、漏了什么；通道恢复后
+`git checkout . && git pull`，再按上面两条验收归位。**红线补充：任何方式
+同步完，最终态必须能被 git 判读（status 干净 + log 对得上）——不可对账的
+同步不算同步完成。**
 
 **红线（两法通用）**：PYTHONPATH 指树根；绝不用逐文件补丁方式同步
 （必漏新桥——历史事故：漏 platform_seam 后 spawn 子进程用旧 adapter）。

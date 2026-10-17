@@ -16,6 +16,8 @@ export CUDA_VISIBLE_DEVICES=6                                   # 按卡改；�
 
 注意：fp16 底模的 GDN 模型（如 Qwen3.5-122B-AWQ）必须加 `export SGLANG_MAMBA_CONV_DTYPE=float16`（上游 conv 池硬编码 bf16 不看模型 dtype，首 forward 必崩）。
 
+代码同步按 [bootstrap.md](bootstrap.md) §1 执行：**git 为主**——`git pull` 后 `git status --short` 必须为空、`git log -1` 与本地 HEAD 一致（同步好没好，diff 一眼可判）；tar 仅隧道断连应急，且必须落进 git 树解包以便 diff 对账（不可对账的同步不算完成）。
+
 ## 1. 基础模型（bf16 / FP8 / INT8，TP1）
 
 ```bash
