@@ -79,8 +79,7 @@ def _verdict(tag, aq, as_, gq, gs):
 
 
 requires_bridge = pytest.mark.skipif(
-    not (torch.cuda.is_available() and getattr(
-        getattr(torch.version, "hip", None), "__bool__", lambda: False)()),
+    not (torch.cuda.is_available() and torch.version.hip is not None),
     reason="needs HIP GPU (aiter tier)")
 # bridge presence is asserted inside the first test; stock-mode runs
 # (HCU_QUANT_IMPL=stock) must fail loudly there, not silently skip.
