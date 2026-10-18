@@ -274,20 +274,22 @@ REGISTRY = {
                  "（会崩）作对照",
     },
     "HCU_KDA_PREFILL_IMPL": {
-        "env": "HCU_KDA_PREFILL_IMPL", "default": "emu",
+        "env": "HCU_KDA_PREFILL_IMPL", "default": "fork",
         "about": "GLM-5.x KDA prefill（chunk_kda，42 层）内核选择："
                  "fork=vendored sglang-das hcu triton（对拍 emu cos 0.99999，"
-                 "快 473-1009×；beta 约定=v0.5.21 后端已激活直通；**serving 门 RED**：服务上下文 Berlin 锚点翻转（standalone 全绿含服务形状/步长视图，二分定位 fork-in-serving 独有，待 serving dump 对拍根因），默认不启用）；"
-                 "emu=顺序 torch 步进（词汤急救期参考实现，T=2048 要 414ms）；"
+                 "快 473-1009×；beta 约定=v0.5.21 后端已激活直通；"
+                 "**2026-10-18 转正为 hip 默认**——10-16 serving 翻转已归因 custom AR "
+                 "store 序 bug（160 臂 A/B：custom 60/100 vs 非 custom 1/60），宿主复位后干净复验：双 fork 锚点 4/4+马拉松 0/20+长文 4972 tok 对）；"
+                 "emu=顺序 torch 步进（=emu 退路，T=2048 要 414ms）；"
                  "stock=官方 v0.5.21 内核（gfx938 Aqk 全错，gate 测试红常驻）。"
                  "旧键 HCU_KDA_PREFILL_EMU=1 等价本键 =emu",
     },
     "HCU_CONV1D_IMPL": {
-        "env": "HCU_CONV1D_IMPL", "default": "emu",
+        "env": "HCU_CONV1D_IMPL", "default": "fork",
         "about": "KDA causal_conv1d_fn（prefill varlen）+ causal_conv1d_update"
                  "（decode 每步）内核选择：fork=vendored sglang-das hcu triton"
                  "（对拍 emu cos 0.99999+/conv 状态位精确相等；fn 16.4×、"
-                 "update 4.3×；serving 门同上 RED 待根因）；emu=torch 步进（历史 stopgap，默认）；stock=官方内核"
+                 "update 4.3×；**2026-10-18 转正为 hip 默认**——污染态 9-10/20 翻转观测作废（KFD 坏态数据），干净复验 conv-only 臂 0/20+Tokyo+长文对）；emu=torch 步进（=emu 退路）；stock=官方内核"
                  "（update cos 0.26 / fn 初态臂死，gate 红常驻）。旧键 "
                  "HCU_CONV1D_{UPDATE,FN}_EMU=1 等价本键 =emu",
     },

@@ -102,6 +102,53 @@ BACKEND_CATALOG = {
                      "note": "fallback (HCU_AITER_AR=0); graph-correct"},
         },
     },
+    "kda_prefill": {
+        "vars": {"fork": {"HCU_KDA_PREFILL_IMPL": "fork"},
+                 "emu": {"HCU_KDA_PREFILL_IMPL": "emu"},
+                 "stock": {"HCU_KDA_PREFILL_IMPL": "stock"}},
+        "summary": "KDA (gated delta) prefill chunked kernel",
+        "backends": {
+            "fork": {"status": "production",
+                     "note": "vendored sglang-das hcu chunk_kda triton — "
+                             "DEFAULT on hip since 2026-10-18. Parity cos "
+                             "0.99999 vs emu at serving shapes, 473-1009x "
+                             "faster (0.88 vs 414 ms @T=2048). The 10-16 "
+                             "'fork flips Berlin' serving gate was "
+                             "re-attributed to the custom-AR store-ordering "
+                             "bug (160-arm A/B: custom 60/100 vs non-custom "
+                             "1/60); clean-route re-verification 2026-10-18 "
+                             "(post host GPU reset): bothfork anchors 4/4 + "
+                             "marathon 0/20 + long-ctx 4972 tok correct."},
+            "emu": {"status": "production",
+                    "note": "sequential torch emulation — correct opt-out "
+                            "(HCU_KDA_PREFILL_IMPL=emu), 473-1009x slower"},
+            "stock": {"status": "broken",
+                      "note": "v0.5.21 stock triton mis-compiles on gfx938 "
+                              "(int64 scalar-load div-4 family)"},
+        },
+    },
+    "conv1d": {
+        "vars": {"fork": {"HCU_CONV1D_IMPL": "fork"},
+                 "emu": {"HCU_CONV1D_IMPL": "emu"},
+                 "stock": {"HCU_CONV1D_IMPL": "stock"}},
+        "summary": "causal conv1d fn + decode update",
+        "backends": {
+            "fork": {"status": "production",
+                     "note": "vendored hcu conv1d triton — DEFAULT on hip "
+                             "since 2026-10-18. fn cos 0.999996/16.4x, "
+                             "update cos 0.999997/4.3x vs emu; conv-state "
+                             "bit-exact. Polluted-era 'conv1d flips "
+                             "9-10/20' observation voided (KFD bad-state "
+                             "data); clean re-verification 2026-10-18: "
+                             "conv-only arm marathon 0/20 + Tokyo + "
+                             "long-ctx correct."},
+            "emu": {"status": "production",
+                    "note": "torch emulation — correct opt-out "
+                            "(HCU_CONV1D_IMPL=emu)"},
+            "stock": {"status": "broken",
+                      "note": "red gates kernels/test_conv1d_* on gfx938"},
+        },
+    },
     "paged_mqa_logits": {
         "vars": {"emu": {"HCU_MQA_EMU": "1"},
                  "triton": {"HCU_MQA_LOGITS_IMPL": "triton"},
@@ -110,7 +157,7 @@ BACKEND_CATALOG = {
         "backends": {
             "emu": {"status": "production",
                     "note": "torch emulation (default on gfx93*)"},
-            "triton": {"status": "candidate",
+            "triton": {"status": "validated",
                        "note": "homegrown triton kernel (mqa_triton.py, "
                                "R-02 2026-10-18). Reads the production "
                                "pool layout (writer census: GLM-5.3 "
@@ -131,8 +178,14 @@ BACKEND_CATALOG = {
                                "0.0, top-k full); decode-shape timing "
                                "13.2x over emu-vec (0.19 vs 2.52 ms, N=8 "
                "window 64K). Gate tests/kernels/test_mqa_triton_gfx938.py "
-                               "(fixed-emu cross-check included). Promotion "
-                               "to default pending serving A/B."},
+                               "(fixed-emu cross-check included). Serving "
+                               "A/B passed 2026-10-18 (zero-env tp4 "
+                               "GLM-5.3, nmz26 GPU4-7): four gates green, "
+                               "marathon 0/20 + Tokyo (unified post-think "
+                               "metric), long-ctx 4972 tok correct; decode "
+                               "+9% short / +4% long-ctx vs emu-vec arm "
+                               "(31.35 vs 34.18 s / 256 tok; 64.6 vs 66.7 "
+                               "s). production after sustained stability."},
             "aiter": {"status": "planned",
                       "note": "probed absent 2026-10-18: the on-box aiter "
                               "wheel ships no paged_mqa_logits API -- "

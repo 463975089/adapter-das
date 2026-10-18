@@ -16,17 +16,17 @@ intra kernels apply no sigmoid), so beta passes straight through unless
 the caller explicitly sets beta_is_raw=True.
 
 Env:
-- HCU_KDA_PREFILL_IMPL = fork | emu (hip default) | stock
-- HCU_CONV1D_IMPL      = fork | emu (hip default) | stock
+- HCU_KDA_PREFILL_IMPL = fork (hip default since 2026-10-18) | emu | stock
+- HCU_CONV1D_IMPL      = fork (hip default since 2026-10-18) | emu | stock
 
-2026-10-16 serving gate note: with both knobs =fork the server flips the
-Berlin anchor (first token " a..." instead of 19808) deterministically
-across clean boots, while every standalone parity gate above stays
-green — including serving shapes (T=5 varlen) and strided conv-state
-views. Bisect: emu boots are green, fork boots red, so the divergence
-is fork-in-serving only; root cause needs a serving-side dump compare
-(reuse the HCU_DUMP_LAYERS + replay_kda_l0 machinery). Until then fork
-is opt-in only and emu keeps the correctness defaults.
+Serving-gate history: the 2026-10-16 "fork flips Berlin deterministically"
+verdict was RE-ATTRIBUTED 2026-10-18 — the flip carrier was the adapter's
+custom triton AR (ar_ext.cu cross-block store-ordering bug; 160-arm A/B:
+custom 60/100 vs non-custom 1/60), and the polluted-GPU-era fork flip data
+was voided. Clean-route re-verification 2026-10-18 (post host GPU reset,
+zero-env tp4 GLM-5.3 GPU4-7, aiter AR): bothfork arm anchors 4/4 +
+marathon 0/20 + long-ctx 4972 tok correct; conv1d-only arm 0/20 + Tokyo +
+long-ctx correct. Fork is now the hip default; =emu remains the opt-out.
 """
 
 from __future__ import annotations
@@ -107,14 +107,14 @@ def _install_conv1d(impl: str) -> None:
 
 def install() -> None:
     hip = torch.version.hip is not None
-    kda = os.environ.get("HCU_KDA_PREFILL_IMPL", "emu" if hip else "stock")
-    conv = os.environ.get("HCU_CONV1D_IMPL", "emu" if hip else "stock")
+    kda = os.environ.get("HCU_KDA_PREFILL_IMPL", "fork" if hip else "stock")
+    conv = os.environ.get("HCU_CONV1D_IMPL", "fork" if hip else "stock")
     _install_kda_prefill(kda)
     _install_conv1d(conv)
     if kda == "fork" or conv == "fork":
-        print(
-            "[HCU fla-hcu] OPT-IN fork kernels active "
-            f"(kda={kda}, conv={conv}) — serving gate RED (Berlin flip), "
-            "use only for debugging",
-            flush=True,
+        logger.info(
+            "[HCU fla-hcu] fork kernels active (kda=%s, conv=%s; default "
+            "since 2026-10-18, =emu opts out)",
+            kda,
+            conv,
         )
