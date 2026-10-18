@@ -99,14 +99,17 @@ BACKEND_CATALOG = {
                               "1/40 skip-think in the R-01 verdict arms — "
                               "the default landing spot for TRITON_AR=0. "
                               "R-09① fused AR+RMSNorm seam (2026-10-19, "
-                              "ar_norm_aiter 桥, HCU_AR_NORM_IMPL auto): "
-                              "flashinfer 入口重指上游休眠链 "
-                              "GroupCoordinator.fused_allreduce_rmsnorm→"
-                              "custom_fused_ar_rms；8rank 探针对 fp64 真值 "
-                              "norm 1ulp/residual 0ulp（优于 rccl 3-8ulp）、"
-                              "vs customAR+norm 1.38-2.11×、图回放精确；仅"
-                              "全 TP 组融合（dp-attention/MoE 子组逐调用退 "
-                              "stock）"},
+                              "ar_norm_aiter 桥 v2, HCU_AR_NORM_IMPL auto): "
+                              "arm=apply_flashinfer_allreduce_fusion 三副本"
+                              "重绑（上游候选门要 SGLANG_USE_AITER 或 "
+                              "sm90/100，HIP 恒关——不开全局门的外科开法）"
+                              "+dispatch=flashinfer 入口→GroupCoordinator."
+                              "fused_allreduce_rmsnorm→custom_fused_ar_rms；"
+                              "8rank 探针 fp64 真值 1ulp/0ulp（优于 rccl "
+                              "3-8ulp）、vs customAR+norm 1.38-2.11×、图回"
+                              "放精确；tp8 serving 实证介入（图捕获期起服、"
+                              "216 次 0 失败、输出正常）；dp-attention 恒退 "
+                              "stock（arm 层即拒）"},
             "nccl": {"status": "production",
                      "note": "fallback (HCU_AITER_AR=0); graph-correct"},
         },

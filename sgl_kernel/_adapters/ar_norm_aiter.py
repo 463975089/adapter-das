@@ -50,6 +50,8 @@ from .registry import MECH_REBIND, register
 
 LOG = logging.getLogger("hcu.adapter")
 
+_ONCE = {"served": False}
+
 
 def _eligible_target_world(use_attn_tp_group):
     """World size of the group the caller wants reduced; None unless it is
@@ -153,8 +155,11 @@ def install():
                     out = tp.fused_allreduce_rmsnorm(
                         input_tensor, residual, weight, eps)
                     if out is not None:
-                        LOG.warning("[HCU ar+norm] fused AR+RMSNorm serving"
-                                    " (aiter GraphSafe, R-09(1))")
+                        if not _ONCE["served"]:
+                            _ONCE["served"] = True
+                            LOG.warning(
+                                "[HCU ar+norm] fused AR+RMSNorm serving"
+                                " (aiter GraphSafe, R-09(1))")
                         return out
                     declined.append("kernel-declined")
         except Exception:

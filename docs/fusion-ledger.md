@@ -69,9 +69,21 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
    stock；_quant_per_group 变体上游自门 gfx95 → gfx938 恒不走（正确）。
    注意事项：aiter 类挂 gloo 组（cpu_group），IPC 握手不走 NCCL 组；
    多进程并发跑 sitecustomize 时 DTK 头文件 patch 竞争是既有噪音
-   （needle-missing 告警，try 包裹无害）。catalog allreduce/aiter note
-   补融合面；门禁 tests/kernels/test_ar_norm_aiter_gfx938.py（<2 可见
-   卡 skip——L1 kernels 段单卡，8rank 全量窗口手跑）。
+   （needle-missing 告警，try 包裹无害）。**v2 教训（serving 冒烟抓出）**
+   ：上游候选门 `apply_aiter_all_reduce_fusion`（要 SGLANG_USE_AITER
+   全局门）或 `apply_flashinfer_allreduce_fusion`（要 sm90/100）在 HIP
+   恒 False——只绑 flashinfer 入口（dispatch）架构性不可达，GLM5 的
+   stages 也不传 backend fusions provider；v2 改为**双符号**：arm=
+   apply_flashinfer_allreduce_fusion 三副本重绑（武装候选 try+exit 的
+   生产端推迟），dispatch=原 flashinfer 入口包装（全 TP 组门+逐调用退
+   stock）。**tp8 serving 实证（GLM-5.3 纯 TP 无 dp，mtp-minimal 图开）**
+   ：图捕获期起服、attn+FFN 双边界、216 次融合 0 失败、输出正常；dp-
+   attention（用户点：dp==tp 时 attn 边界本无 AR）在 arm 层即拒。日志
+   纪律：sitecustomize 期 INFO 被 sglang 前的默认 WARNING 吞——安装/介
+   入行用 warning+once 守卫（v2 首跑 216 条刷屏教训）。catalog
+   allreduce/aiter note 补融合面；门禁 tests/kernels/
+   test_ar_norm_aiter_gfx938.py（<2 可见卡 skip——L1 kernels 段单卡，
+   8rank 全量窗口手跑）。
 2. **silu_and_mul + fp8 per-token quant 融合**：MoE/FFN 边界读写省一遍。
    去向：核 lightop.fuse_silu_and_mul 的 mask_m 形态是否可挂 scale 输出
    → 可则升档写门禁测试。

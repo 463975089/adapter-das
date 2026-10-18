@@ -218,7 +218,7 @@ const CATALOG = {
               torch:{s:"production",n:"参考路径"}}},
   allreduce: {summary:"TP all-reduce（+融合 AR+RMSNorm 桥 HCU_AR_NORM_IMPL）",
     backends:{custom:{s:"broken",n:"跨 block 汇合写序竞态（R-01 判决 48-60/80 翻转）——选配即拒，待 ar_ext.cu 修复"},
-              aiter:{s:"production",n:"aiter.dist GraphSafe；=0 路由默认落点（判决臂 1/60）；R-09① 融合 AR+RMSNorm（HCU_AR_NORM_IMPL auto）：flashinfer 入口重指上游休眠链，fp64 真值 1ulp/0ulp（优于 rccl）、1.38-2.11×、图回放精确；仅全 TP 组融合"},
+              aiter:{s:"production",n:"aiter.dist GraphSafe；=0 路由默认落点（判决臂 1/60）；R-09① 融合 AR+RMSNorm（HCU_AR_NORM_IMPL auto，v2 双符号 arm+dispatch）：fp64 真值 1ulp/0ulp（优于 rccl）、1.38-2.11×、图回放精确、tp8 serving 介入实证；dp-attention 即拒，仅全 TP 组融合"},
               nccl:{s:"production",n:"兜底（HCU_AITER_AR=0）；graph-correct"}}},
   paged_mqa_logits: {summary:"DSA paged MQA logits",
     backends:{emu:{s:"production",n:"torch 仿真（gfx93* 默认开）；2026-10-18 R-02：池解包修正为页级+交错感知（GLM-5.3 kpool=4 池=kpool 写族+SetKAndS 交错+页尾 scale；旧行级 132 字节分裂使生产解码 DSA top-k 一直确定性错误，已修复；=0 时切行主序臂）"},
