@@ -29,6 +29,10 @@ paged-MQA clamp pathology), positives still hold ~0.035 residual.
 (3) The tensor-wise marlin variant is also broken on signed data with
 unit scales (rel 1.22). Keep the stubs raising; revisit only with a new
 wheel or a hand-rolled kernel (probe: tmp_fetch/probe_r04_contig.py).
+
+Ragged MQA entry (2026-10-18 zero-env gate): the wheel also lacks
+``fp8_mqa_logits`` (kpool long-prefill plan, dsa_indexer_kpool.py:933);
+the shim routes it to the exact torch emu in mqa_logits_emu.
 """
 
 from __future__ import annotations
@@ -200,6 +204,28 @@ def install():
             shim.get_paged_mqa_logits_metadata = _dpm.get_paged_mqa_logits_metadata
         if getattr(shim, "fp8_paged_mqa_logits", None) is None:
             shim.fp8_paged_mqa_logits = _dpm.fp8_paged_mqa_logits
+
+    # Same story for the RAGGED entry (kpool long-prefill plan,
+    # dsa_indexer_kpool.py:933): `deep_gemm.fp8_mqa_logits(q, (k, scale), w,
+    # starts, ends, clean_logits=...)` — the is_cuda branch reaches it and the
+    # DTK wheel only ships paged_mqa_logits, so every long-context prefill
+    # died with AttributeError until 2026-10-18 (zero-env gate caught it).
+    # Route to the exact ragged torch emu; it always returns the -inf-cleaned
+    # variant, which satisfies the stricter contract (callers reading
+    # clean_logits=False only expect stale data outside [ks,ke), never use
+    # it).
+    if getattr(deepgemm, "fp8_mqa_logits", None) is None:
+        from . import mqa_logits_emu as _mle
+
+        def _fp8_mqa_logits(q_fp8, kv, kv_scales=None, weights=None,
+                            cu_starts=None, cu_ends=None, **_kw):
+            if isinstance(kv, (tuple, list)):
+                kv, kv_scales = kv[0], kv[1]
+            return _mle._ragged_fp8_mqa_logits(
+                q_fp8, kv, kv_scales, weights, cu_starts, cu_ends, **_kw
+            )
+
+        shim.fp8_mqa_logits = _fp8_mqa_logits
 
     # sm-count scheduler hooks (configure_deep_gemm_num_sms context) and the
     # PDL toggle: no DTK equivalents — setters are stateful no-ops.
