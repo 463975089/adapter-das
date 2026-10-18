@@ -138,9 +138,13 @@ PM 预分类（2026-10-17 扫 cookbook + `_launch_`/`_test_` 脚本，18 变量�
 | SGLANG_DEEPEP_BF16_DISPATCH | **改判留配方**（工作流层参数） | CLI 等价 --deepep-dispatcher-output-dtype bf16；R-04 fp8 解锁后退役 |
 
 开关 `HCU_MODEL_ENV`（hcu_env 注册，default auto；off 退回手敲）；registry 登记
-op=model_env；BACKEND_CATALOG/UI 快照/yaml 三处同 commit。规则钉：
-`tests/adapter/test_model_env.py` 六断言（DSA 双设/无关不动/fp16 GDN 设/bf16
-GDN 不设/显式赢）。
+op=model_env；BACKEND_CATALOG/UI 快照/yaml 三处同 commit。**生效机制（53ebad0
+终态）**：sitecustomize 期对 `--model-path`→config.json 递归段扫描做 **argv
+嗅探**（首版 importlib 包装 ModelRunner 方案拦不到 launch 路径静态 import，
+真实 serving 从不触发——零 env 四门首跑即抓出）；boot 日志实证行
+`model-env default ... (model-derived, argv sniff <model-path>)`。规则钉：
+`tests/adapter/test_model_env.py` test_apply_model_env（DSA 双设/无关不动/
+fp16 GDN 设/bf16 GDN 不设/显式赢）+ test_apply_from_argv（嗅探臂）。
 
 ### C 类：留调试（手册在册即可）
 
