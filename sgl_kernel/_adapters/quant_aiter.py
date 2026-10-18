@@ -22,9 +22,17 @@ trap):
 * ``sglang_per_token_group_quant_fp8``  -> aiter group (plain arm only)
 * ``per_token_group_quant_fp8`` (hip alias of ``_..._raw``) -> aiter group
 * ``_native_dynamic_per_token_quant_fp8`` / ``_native_dynamic_per_tensor_
-  quant_fp8`` / ``_native_static_quant_fp8`` -> upstream's own aiter calls
-  (exactly what ``SGLANG_USE_AITER=1`` would route to — no new semantics;
-  only affects ``scaled_fp8_quant`` when that flag is unset)
+  quant_fp8`` -> upstream's own aiter calls (exactly what
+  ``SGLANG_USE_AITER=1`` would route to — no new semantics; only affects
+  ``scaled_fp8_quant`` when that flag is unset)
+* ``_native_static_quant_fp8`` stays native on purpose: the aiter
+  ``static_per_tensor_quant`` wheel kernel does NOT clamp, so any element
+  with |x/scale| > 448 becomes NaN (e4m3fn overflow), while the native
+  clamps to ±448 (gate evidence 2026-10-19: 64x1024 randn*3.7 scale=0.01
+  -> 21% NaN, |x|>4.48 fraction == 22.6%). Upstream's SGLANG_USE_AITER
+  branch shares the NaN behavior, but this bridge promises stock parity
+  or fallback, and static per-tensor activation quant is not on our
+  serving path — parity wins over a marginal launch saving.
 
 R-09 (2) seam: the group entry's ``fuse_silu_and_mul=True`` arm with a
 whole-row group (``group_size == K_out``) routes to aiter
@@ -59,7 +67,6 @@ def install():
             dynamic_per_token_scaled_quant,
             fuse_silu_mul_per_token_quant as aiter_fused,
             per_token_group_quant_fp8 as aiter_group,
-            static_per_tensor_quant,
         )
         from sglang.kernels.ops.quantization import fp8_kernel as _fk
     except Exception:
@@ -75,7 +82,6 @@ def install():
     raw = _fk.per_token_group_quant_fp8            # hip alias of _raw
     nat_tok = getattr(_fk, "_native_dynamic_per_token_quant_fp8", None)
     nat_ten = getattr(_fk, "_native_dynamic_per_tensor_quant_fp8", None)
-    nat_sta = getattr(_fk, "_native_static_quant_fp8", None)
 
     _fell_back = []
 
@@ -191,9 +197,8 @@ def install():
     if nat_ten is not None:
         targets["_native_dynamic_per_tensor_quant_fp8"] = \
             _nat(nat_ten, dynamic_per_tensor_quant, "scaled-tensor")
-    if nat_sta is not None:
-        targets["_native_static_quant_fp8"] = \
-            _nat(nat_sta, static_per_tensor_quant, "scaled-static")
+    # _native_static_quant_fp8 deliberately NOT rebound: aiter's static
+    # kernel overflows to NaN where the native clamps (see module header).
 
     try:
         from sglang.srt.layers.quantization import fp8_utils as _fu

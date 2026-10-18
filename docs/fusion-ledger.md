@@ -71,9 +71,12 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
    `HCU_QUANT_IMPL` auto 默认）——rowwise=**行为还原**（上游
    `sglang_per_token_quant_fp8` 在 HIP NameError：`sgl_per_token_quant_
    fp8` 不存在，group 入口整行快捷分支同踩）；group plain 臂 15.1×
-   （尺度逐位一致+q RTN 99.8%）；scaled_fp8_quant 三 natives=上游
-   SGLANG_USE_AITER 同款调用。catalog planned→candidate；lightop 维持
-   planned。
+   （尺度逐位一致+q RTN 99.8%）；scaled_fp8_quant 两 dynamic natives=
+   上游 SGLANG_USE_AITER 同款调用；**static 恒原生**（首跑实证：aiter
+   轮 kernel 无 clamp，|x/s|>448 溢出 NaN 占 21%≈|x|>4.48 理论占比，
+   原生 clamp 逐位一致；上游 SGLANG_USE_AITER 同 NaN 但本桥承诺
+   stock parity 或回退，static 不在 serving 路径即裁）。catalog
+   planned→candidate；lightop 维持 planned。
    **定裁更新（2026-10-19）**：aiter `per_token_group_quant_fp8`（注意
    out 式契约 out!/input/scales!/group_size，非返回式）数值健康（尺度
    逐位一致 + q RTN 命中 99.8% + 去量化 cos 0.999994）且 **15.1×**

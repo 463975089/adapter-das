@@ -247,7 +247,7 @@ const CATALOG = {
               aiter:{s:"validated",n:"DTK aiter_moe；blockwise→ASM 调优表，channelwise→moe_c；未列形状自动回退 triton"}}},
   per_token_quant: {var:"HCU_QUANT_IMPL", summary:"per-token fp8/int8 动态量化",
     backends:{torch:{s:"production",n:"上游 natives（scaled torch fallback+triton raw group；rowwise 包装 HIP NameError=断，桥修复）"},
-              aiter:{s:"candidate",n:"R-09③ 2026-10-19 落位（quant_aiter 桥，auto 默认）：rowwise=行为还原+group plain 臂 15.1×（尺度逐位一致/q RTN 99.8%）+scaled natives+整行 fused silu+quant 臂（R-09② 7.5×）；异形臂恒走上游、失败 log-once 回退；production 待 fp8 模型 serving A/B"},
+              aiter:{s:"candidate",n:"R-09③ 2026-10-19 落位（quant_aiter 桥，auto 默认）：rowwise=行为还原+group plain 臂 15.1×（尺度逐位一致/q RTN 99.8%）+scaled 两 dynamic natives（static 恒原生：aiter kernel 无 clamp 溢出 NaN 实证）+整行 fused silu+quant 臂（R-09② 7.5×）；异形臂恒走上游、失败 log-once 回退；production 待 fp8 模型 serving A/B"},
               lightop:{s:"planned",n:"per-token quant 族"}}},
   platform_detect: {var:"HCU_PLATFORM_SEMANTICS", summary:"sglang 平台判定语义（§0.5 is_cuda 路线落地点）",
     backends:{cuda:{s:"production",n:"默认（§0.5）；判定 seam 统一回 CUDA 语义，硬件层保 HIP 真值"},
