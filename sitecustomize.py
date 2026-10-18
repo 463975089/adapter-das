@@ -215,6 +215,18 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: jit fp8-quant patch not installed", exc_info=True
         )
+    # R-09(2/3): aiter per-token fp8 quant vendor tier -- rowwise wrapper
+    # NameError fix (HIP has no sgl_per_token_quant_fp8), group plain arm
+    # 15.1x, scaled_fp8_quant natives via upstream's own aiter calls, and
+    # the whole-row fused silu+quant arm (HCU_QUANT_IMPL, auto default).
+    try:
+        from sgl_kernel._adapters import quant_aiter
+
+        quant_aiter.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: aiter fp8-quant tier not installed", exc_info=True
+        )
     # JIT cuda-header forwarders (cuda_bf16.h et al -> hip equivalents) in
     # the DTK include root the JIT toolchain already puts on the compile line.
     try:

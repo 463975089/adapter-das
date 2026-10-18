@@ -372,12 +372,23 @@ BACKEND_CATALOG = {
         },
     },
     "per_token_quant": {
-        "var": None,
+        "var": "HCU_QUANT_IMPL",
         "summary": "per-token fp8/int8 quant (dynamic)",
         "backends": {
-            "torch": {"status": "production", "note": "current path"},
-            "aiter": {"status": "planned",
-                      "note": "per_token_quant_hip/_triton"},
+            "torch": {"status": "production",
+                      "note": "upstream natives（scaled_fp8_quant torch "
+                              "fallback+triton raw group；rowwise 包装在 "
+                              "HIP NameError=断，quant_aiter 桥修复）"},
+            "aiter": {"status": "candidate",
+                      "note": "R-09③ 2026-10-19 落位（quant_aiter 桥，"
+                              "auto 默认）：rowwise=行为还原（HIP NameError "
+                              "修复）+group plain 臂 15.1×（尺度与金标准"
+                              "逐位一致/q RTN 命中 99.8%）+scaled natives="
+                              "上游 SGLANG_USE_AITER 同款调用+整行 fused "
+                              "silu+quant 臂（R-09②，7.5×）；门禁 "
+                              "tests/kernels/test_quant_aiter_gfx938.py；"
+                              "异形臂恒走上游、aiter 失败 log-once 回退；"
+                              "production 晋级待 fp8 模型 serving A/B"},
             "lightop": {"status": "planned",
                         "note": "per-token quant family"},
         },

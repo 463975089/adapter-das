@@ -60,9 +60,20 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
    **定裁更新（2026-10-19）**：aiter `fuse_silu_mul_per_token_quant`
    数值健康（cos 0.9999，激活 bf16 舍入差级）且 **7.5×**（56 vs 419us，
    4096×2048；行级尺度 [M,1]，MoE 布局带 topk/expert_ids 参数）——候选
-   定案，桥接实施+catalog 升档待排期。
+   定案。
+   **落位（2026-10-19，R-09②）**：上游 group 入口原生带
+   `fuse_silu_and_mul` 臂——整行组（group_size==K_out）路由 aiter
+   fused（quant_aiter 桥），窄组保持上游两步；门禁
+   tests/kernels/test_quant_aiter_gfx938.py 常驻 L1。
 3. **per-token quant vendor 档**：aiter per_token_quant_hip / lightop 族
    对拍（catalog 已 planned，直接排期）。
+   **落位（2026-10-19，R-09③）**：aiter 桥全档接入（quant_aiter，
+   `HCU_QUANT_IMPL` auto 默认）——rowwise=**行为还原**（上游
+   `sglang_per_token_quant_fp8` 在 HIP NameError：`sgl_per_token_quant_
+   fp8` 不存在，group 入口整行快捷分支同踩）；group plain 臂 15.1×
+   （尺度逐位一致+q RTN 99.8%）；scaled_fp8_quant 三 natives=上游
+   SGLANG_USE_AITER 同款调用。catalog planned→candidate；lightop 维持
+   planned。
    **定裁更新（2026-10-19）**：aiter `per_token_group_quant_fp8`（注意
    out 式契约 out!/input/scales!/group_size，非返回式）数值健康（尺度
    逐位一致 + q RTN 命中 99.8% + 去量化 cos 0.999994）且 **15.1×**

@@ -74,6 +74,21 @@ def _auto_aiter_ar():
     return "allowed"
 
 
+def _auto_quant_impl():
+    # hip + importable aiter wheel -> aiter tier (rowwise NameError fix +
+    # 15.1x group quant, probe_r09_quant.py 2026-10-19); else upstream.
+    try:
+        import torch
+
+        if getattr(torch.version, "hip", None) is not None:
+            import aiter  # noqa: F401
+
+            return "aiter"
+    except Exception:
+        pass
+    return "stock"
+
+
 def _auto_mqa_emu():
     # torch emulation is needed wherever the DTK aiter MQA-logits kernels
     # are unusable: they hard-gate on gfx942/950 (gfx936 lacks fp8 AND
@@ -114,6 +129,17 @@ REGISTRY = {
         "env": "HCU_AITER_AR", "default": "0",
         "auto": _auto_aiter_ar,
         "about": "gfx93* 旧 aiter AR 自动拒用（图重放损坏）；=1 显式夺回",
+    },
+    "HCU_QUANT_IMPL": {
+        "env": "HCU_QUANT_IMPL", "default": "auto",
+        "auto": _auto_quant_impl,
+        "about": "per-token fp8 量化族 vendor 档（R-09③，quant_aiter 桥）："
+                 "auto=hip+aiter 轮可导入则 aiter（sglang_per_token_quant_"
+                 "fp8 在 HIP 本就 NameError=行为还原；group plain 臂尺度与"
+                 "金标准逐位一致+q RTN 命中 99.8%，15.1×）；aiter=显式；"
+                 "stock=退回上游原生（triton raw group + torch scaled "
+                 "natives）。异形臂（column_major/tma/ue8m0/masked/非 "
+                 "e4m3/3D）恒走上游；aiter 失败 log-once 回退",
     },
     "HCU_TRITON_AR": {
         "env": "HCU_TRITON_AR", "default": "0",
