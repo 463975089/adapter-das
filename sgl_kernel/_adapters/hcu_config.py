@@ -267,8 +267,14 @@ BACKEND_CATALOG = {
                                "+ 宽窗 L>1 bottom-right causal 全接（"
                                "tests/tools/_test_paged_attn_triton.py 10/10 "
                                "双卡型 ALL-PASS；decode 4.7×、prefill ~7× "
-                               "emu）；varlen/paged-decode 之外的面仍 emu；"
-                               "页号 int64 展开"},
+                               "emu）；页号 int64 展开；"
+                               "varlen 预填充面=自研 fa_varlen_triton.py"
+                               "（ragged dense K/V、fp32+ieee dot、swa + "
+                               "fp8-KV descale、静态 grid 图安全；哨兵 "
+                               "test_fa_varlen_triton.py 三段式 + "
+                               "capture-replay + 零长序列 pit）；"
+                               "Dv≠D/fp8-q/softcap/qv/sinks 面仍 emu"
+                               "（BW1101 对拍，性能待 BW1102 复核）"},
         },
     },
     "sampling": {

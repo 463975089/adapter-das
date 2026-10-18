@@ -150,19 +150,58 @@ _KV_FALLBACK_KEYS = (
 _VENDOR_Q_LIM = 64
 
 _DECODE_HITS = 0
+_VARLEN_HITS = 0
+
+# param list the emu (sgl_kernel.flash_attn.flash_attn_varlen_func) accepts,
+# in positional order — the reroute gate reads out of this map.
+_VARLEN_NAMES = (
+    "q,k,v,cu_seqlens_q,cu_seqlens_k,max_seqlen_q,max_seqlen_k,"
+    "seqused_q,seqused_k,page_table,softmax_scale,causal,qv,q_descale,"
+    "k_descale,v_descale,window_size,attention_chunk,softcap,num_splits,"
+    "pack_gqa,only_qv,sm_margin,return_softmax_lse,sinks,out"
+).split(",")
+
+
+def _varlen_triton_ok(p):
+    """Host-only (capture-safe, no device reads) gate for the triton
+    varlen kernel's contract; everything else keeps the emu."""
+    q = p.get("q")
+    k = p.get("k")
+    v = p.get("v")
+    if q is None or k is None or v is None:
+        return False
+    if q.dim() != 3 or k.dim() != 3 or v.dim() != 3:
+        return False
+    if p.get("page_table") is not None:
+        return False
+    if (p.get("qv") is not None or p.get("sinks") is not None
+            or p.get("q_descale") is not None or bool(p.get("only_qv"))):
+        return False
+    if (p.get("softcap") or 0.0) != 0.0:
+        return False
+    if q.dtype.itemsize < 2:
+        return False
+    D = q.shape[-1]
+    if D > 256 or (D & (D - 1)) != 0 or v.shape[-1] != D or k.shape[-1] != D:
+        return False
+    Hk = k.shape[-2]
+    return q.shape[-2] % Hk == 0
 
 
 def _install_triton_decode(_sk_fa, registry):
     """Route the decode kvcache face (L=1 uniform windows on the paged
-    pool) to the in-tree triton kernel; everything else keeps the emu.
-    Also rebinds the upstream ops layer (stable kwargs) so capture paths
-    entering via the v3 wrapper land here cleanly."""
+    pool) and the ragged varlen prefill face to the in-tree triton
+    kernels; everything else keeps the emu. Also rebinds the upstream ops
+    layer (stable kwargs) so capture paths entering via the v3 wrapper
+    land here cleanly."""
     from sgl_kernel.paged_attn_triton import (
         paged_attention_decode_triton,
         paged_attention_prefill_triton,
     )
+    from sgl_kernel.fa_varlen_triton import flash_attn_varlen_triton
 
     _emu_kvcache = _sk_fa.flash_attn_with_kvcache
+    _emu_varlen = _sk_fa.flash_attn_varlen_func
     _names = (
         "q,k_cache,v_cache,k,v,rotary_cos,rotary_sin,cache_seqlens,"
         "cache_batch_idx,cache_leftpad,page_table,cu_seqlens_q,"
@@ -177,6 +216,34 @@ def _install_triton_decode(_sk_fa, registry):
         p = dict(zip(_names, args))
         p.update(kw)
         q = p.get("q")
+        # Prefill graph capture feeds the varlen mode through this facade
+        # (3D q + cu_seqlens_q, k/v dense, page_table/cache_seqlens/k_cache
+        # all None): reroute to the varlen face where the triton kernel is
+        # dispatchable (same reroute the vendor branch has).
+        if (
+            p.get("k_cache") is None
+            and p.get("v_cache") is None
+            and q is not None
+            and q.dim() == 3
+            and p.get("cu_seqlens_q") is not None
+            and p.get("page_table") is None
+            and p.get("cache_seqlens") is None
+            and p.get("k") is not None
+            and p.get("v") is not None
+        ):
+            return flash_attn_varlen(
+                p["q"], p["k"], p["v"], p["cu_seqlens_q"],
+                p.get("cu_seqlens_k_new") or p["cu_seqlens_q"],
+                max_seqlen_q=p.get("max_seqlen_q"),
+                softmax_scale=p.get("softmax_scale"),
+                causal=p.get("causal"),
+                window_size=p.get("window_size") or (-1, -1),
+                softcap=p.get("softcap") or 0.0,
+                k_descale=p.get("k_descale"),
+                v_descale=p.get("v_descale"),
+                return_softmax_lse=p.get("return_softmax_lse"),
+                out=p.get("out"),
+            )
         cu_q = p.get("cu_seqlens_q")
         # Decode feeds 3D packed q, sometimes with cu_seqlens_q (FA3-style),
         # sometimes without (metadata form; B comes from the page table).
@@ -315,9 +382,116 @@ def _install_triton_decode(_sk_fa, registry):
         LOG.warning(
             "HCU adapter: ops-layer triton rebind skipped", exc_info=True
         )
+    def flash_attn_varlen(*args, **kw):
+        # vars the sglang fa3 backend actually passes for ragged prefill;
+        # the triton arm covers the dense-ragged core, the emu keeps the
+        # rest (paged varlen raises upstream-routed, qv/sinks/softcap,
+        # MLA D_v!=D, fp8-q)
+        p = dict(zip(_VARLEN_NAMES, args))
+        p.update(kw)
+        global _VARLEN_HITS
+        if _varlen_triton_ok(p):
+            _VARLEN_HITS += 1
+            if _VARLEN_HITS == 1 or _VARLEN_HITS % 20000 == 0:
+                LOG.warning(
+                    "HCU adapter: triton varlen prefill face hit #%d "
+                    "(M=%d B=%d)",
+                    _VARLEN_HITS, p["q"].shape[0],
+                    p["cu_seqlens_q"].numel() - 1,
+                )
+            return flash_attn_varlen_triton(
+                p["q"], p["k"], p["v"], p["cu_seqlens_q"],
+                p["cu_seqlens_k"],
+                max_seqlen_q=p.get("max_seqlen_q"),
+                softmax_scale=p.get("softmax_scale"),
+                causal=p.get("causal"),
+                window_size=p.get("window_size") or (-1, -1),
+                k_descale=p.get("k_descale"),
+                v_descale=p.get("v_descale"),
+                return_softmax_lse=bool(p.get("return_softmax_lse")),
+                out=p.get("out"),
+            )
+        return _emu_varlen(**p)
+
+    _sk_fa.flash_attn_varlen_func = flash_attn_varlen
+    registry.register(
+        "flash_attention",
+        flash_attn_varlen,
+        target="sgl_kernel.flash_attn:flash_attn_varlen_func",
+        mechanism=registry.MECH_REBIND,
+        detail="ragged varlen prefill -> triton kernel (dense ragged core, "
+               "bottom-right causal + swa + fp8-KV descale); contract-exceed "
+               "faces -> emu (HCU_FA_IMPL=triton)",
+    )
+
+    # ops-layer rebind (kwargs-stable), mirroring the vendor branch: the
+    # v3 wrapper module's python kwargs contract is stable and documented.
+    try:
+        import sglang.kernels.ops.attention.flash_attention_v3 as _fa3v
+
+        def _ops_varlen(q, k, v, cu_seqlens_q, cu_seqlens_k,
+                        max_seqlen_q=None, max_seqlen_k=None,
+                        seqused_q=None, seqused_k=None, page_table=None,
+                        softmax_scale=None, causal=False, qv=None,
+                        q_descale=None, k_descale=None, v_descale=None,
+                        window_size=(-1, -1), attention_chunk=0,
+                        softcap=0.0, num_splits=1, pack_gqa=None,
+                        only_qv=False, sm_margin=0,
+                        return_softmax_lse=False, sinks=None, out=None,
+                        **_kw):
+            return flash_attn_varlen(
+                q.view(-1, q.shape[-2], q.shape[-1]) if q.dim() == 4 else q,
+                k.view(-1, k.shape[-2], k.shape[-1]) if k.dim() == 4 else k,
+                v.view(-1, v.shape[-2], v.shape[-1]) if v.dim() == 4 else v,
+                cu_seqlens_q, cu_seqlens_k,
+                max_seqlen_q=max_seqlen_q, max_seqlen_k=max_seqlen_k,
+                seqused_q=seqused_q, seqused_k=seqused_k,
+                page_table=page_table, softmax_scale=softmax_scale,
+                causal=causal, qv=qv, q_descale=q_descale,
+                k_descale=k_descale, v_descale=v_descale,
+                window_size=window_size, softcap=softcap,
+                return_softmax_lse=return_softmax_lse, sinks=sinks,
+                out=out,
+            )
+
+        _fa3v.flash_attn_varlen_func = _ops_varlen
+        registry.register(
+            "flash_attention",
+            _ops_varlen,
+            target="sglang...flash_attention_v3:flash_attn_varlen_func",
+            mechanism=registry.MECH_REBIND,
+            detail="ops-layer varlen rebind; triton ragged core + emu "
+                   "contract-exceed route",
+        )
+        # the public dispatcher copied the v3 symbol at import time
+        # (from-import); rebind its module global too so backend calls
+        # land in this route (graph-safe attribute assignment)
+        import sglang.kernels.ops.attention.flash_attention as _fapub
+
+        for _attr in ("fa3_flash_attn_varlen_func",
+                      "flash_attn_varlen_func"):
+            if hasattr(_fapub, _attr):
+                setattr(_fapub, _attr, _ops_varlen)
+                _setattr_reg = getattr(_fapub, _attr)
+                registry.register(
+                    "flash_attention",
+                    _setattr_reg,
+                    target="sglang...ops.attention.flash_attention:"
+                           f"{_attr} global",
+                    mechanism=registry.MECH_REBIND,
+                    detail="dispatcher global rebind (from-import copy)",
+                )
+                break
+    except Exception:
+        LOG.warning(
+            "HCU adapter: ops-layer varlen rebind skipped "
+            "(upstream layout changed); facade stays at sgl_kernel level",
+            exc_info=True,
+        )
     LOG.warning(
-        "HCU adapter: fa3 paged faces (decode + wide windows) routed to the "
-        "triton kernels (HCU_FA_IMPL=triton); ragged/varlen stays emu"
+        "HCU adapter: fa3 triton faces -- paged decode/wide windows + "
+        "ragged varlen prefill routed to the triton kernels; contract-exceed "
+        "faces keep the emu (HCU_FA_IMPL=triton)"
     )
 
 
