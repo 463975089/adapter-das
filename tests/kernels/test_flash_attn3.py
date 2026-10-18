@@ -148,6 +148,40 @@ def test_extend_unequal_windows():
     _check_paged("extend unequal", 3, 8, 2, 64, 64, [1, 7, 3], 12, seed=5)
 
 
+def test_extend_face_peak_bounded():
+    """R-13 #2 pit: the (rows, kv-chunk) score slabs must NOT grow with the
+    padded window. Peak(8192-face) < 2.5x Peak(1024-face) holds only when
+    the query-row sub-tile engages (QTILE_TOKENS); pre-tile it peaked at
+    ~8x (22 GiB live on glm53f chunk-1 prefill -> serving OOM rank-kill at
+    11k ctx). Card-independent scaling assertion, no absolute numbers."""
+    torch.manual_seed(3)
+
+    def _peak(M):
+        bs, H, Hk, D, Dv = 1, 8, 4, 64, 64
+        pages = M // 64 + 8
+        pool_k = torch.randn(pages, 64, Hk, D, device="cuda").to(torch.bfloat16)
+        pool_v = torch.randn(pages, 64, Hk, Dv, device="cuda").to(torch.bfloat16)
+        bt = torch.arange(bs * pages, device="cuda", dtype=torch.int32).view(bs, pages)
+        seqlens = torch.full((bs,), M, dtype=torch.int32, device="cuda")
+        q = torch.randn(M, H, D, device="cuda").to(torch.bfloat16)
+        cu = torch.tensor([0, M], dtype=torch.int32, device="cuda")
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        flash_attn_with_kvcache(q, pool_k, pool_v, page_table=bt,
+                                cache_seqlens=seqlens, cu_seqlens_q=cu,
+                                max_seqlen_q=M, causal=True)
+        torch.cuda.synchronize()
+        return torch.cuda.max_memory_allocated()
+
+    small = _peak(1024)
+    big = _peak(8192)
+    assert big < 2.5 * small, (
+        f"extend face peak scales with window: M=8192 peak "
+        f"{big/2**30:.2f}GiB vs M=1024 {small/2**30:.2f}GiB "
+        f"(ratio {big/small:.1f} >= 2.5) — query-row sub-tile regressed?"
+    )
+
+
 def test_extend_fp8_kv():
     _check_paged(
         "extend fp8 KV", 3, 8, 2, 64, 64, [5, 5, 5], 12, seed=7, fp8=True,

@@ -27,11 +27,15 @@ Semantics pinned to the FlashAttention-3 contract as used by sglang:
 Memory model: attention runs as chunked online softmax (flash-decoding
 style) — KV is gathered in fixed-size token chunks (whole pages), each
 chunk produces a partial (o, lse), and an exact logsumexp merge folds them
-into the accumulator. Peak memory is O(bs * maxL * H * CHUNK_TOKENS)
-instead of O(bs * maxL * H * T), which is what lets CUDA-graph capture at
-bs=256 with full context width survive on a card whose KV pool already
-took ~90% of HBM. The chunk count depends only on the block-table width,
-so capture/replay shapes stay identical.
+into the accumulator. Query rows are additionally sub-tiled (QTILE_TOKENS),
+since the (bs, rows, H, C) score slabs grow with the padded window too —
+without the row tile an 8k-token extend face peaked at ~22 GiB live fp32
+(R-13 #2). Peak memory is
+O(bs * QTILE_TOKENS * H * CHUNK_TOKENS + bs * maxL * H * D) instead of
+O(bs * maxL * H * T), which is what lets CUDA-graph capture at bs=256 with
+full context width survive on a card whose KV pool already took ~90% of
+HBM. The chunk count depends only on the block-table width, so
+capture/replay shapes stay identical.
 
 gfx938 constraints honored throughout (see flash_mla.py): no einsum on
 virtual-batch shapes (VMFault), p@v folded to plain 3D bmm with equal
@@ -54,6 +58,16 @@ __all__ = [
 # see (all powers of two up to 128 -> 2048 works). Bigger = fewer python
 # iterations, smaller = lower peak memory during graph capture.
 CHUNK_TOKENS = 2048
+# Sub-tile over the query rows: the (bs, maxL, H, C) scores/probs slabs grow
+# with BOTH the kv chunk and the padded window length, and an 8k-token
+# extend face (chunked prefill) made only the kv loop's 2048-wide chunking
+# peak at ~22 GiB live fp32 -- fatal on top of a loaded serving pool (the
+# R-13 #2 "10k wall": OOM 28.88 GiB single-alloc rank-kill on glm53f tp4).
+# Query rows are independent, so tiling them needs no softmax trickery:
+# each row block streams the same kv chunks with the identical LSE merge
+# order -> bit-identical results. Tile sizes come from static shapes only
+# (maxL/total_tokens), never runtime values -> capture-safe.
+QTILE_TOKENS = 1024
 
 
 def get_scheduler_metadata(**_kwargs):
@@ -200,50 +214,68 @@ def _attend_chunked(qp, kv_src, seqlens, q_start, scale, causal, window_size,
         right = int(window_size[1])
 
     chunk = CHUNK_TOKENS
-    o_acc, lse_acc = None, None
-    for c0 in range(0, T, chunk):
-        c1 = min(c0 + chunk, T)
-        k_c, v_c = kv_src(c0, c1)
-        Hk = v_c.shape[2] if k_c is None else k_c.shape[2]
-        k_c = _descale(k_descale, k_c, Hk)
-        v_c = _descale(v_descale, v_c, Hk)
-        if k_c is None:
-            # only_qv: logits = qv·v alone (zero query slab contributes nothing)
-            scores = _grouped_scores(qvp, v_c, scale)  # (bs, maxL, H, C)
-        else:
-            scores = _grouped_scores(qp, k_c, scale)  # (bs, maxL, H, C)
-            if qvp is not None:
-                scores = scores + _grouped_scores(qvp, v_c, scale)
+    qtile = QTILE_TOKENS
+    o_blocks, lse_blocks = [], []
+    saw_kv = False
+    for q0 in range(0, maxL, qtile):
+        q1 = min(q0 + qtile, maxL)
+        qp_b = qp[:, q0:q1]
+        qvp_b = qvp[:, q0:q1] if qvp is not None else None
+        qpos = q_start[:, None] + torch.arange(q0, q1, device=device)[None, :]
+        o_acc, lse_acc = None, None
+        for c0 in range(0, T, chunk):
+            c1 = min(c0 + chunk, T)
+            saw_kv = True
+            k_c, v_c = kv_src(c0, c1)
+            Hk = v_c.shape[2] if k_c is None else k_c.shape[2]
+            k_c = _descale(k_descale, k_c, Hk)
+            v_c = _descale(v_descale, v_c, Hk)
+            if k_c is None:
+                # only_qv: logits = qv·v alone (zero query slab contributes
+                # nothing)
+                scores = _grouped_scores(qvp_b, v_c, scale)  # (bs, qL, H, C)
+            else:
+                scores = _grouped_scores(qp_b, k_c, scale)
+                if qvp_b is not None:
+                    scores = scores + _grouped_scores(qvp_b, v_c, scale)
 
-        col = torch.arange(c0, c1, device=device)
-        valid = col[None, :] < seqlens[:, None]  # (bs, C)
-        keep = valid[:, None, None, :].expand(bs, maxL, 1, c1 - c0)
-        qpos = q_start[:, None] + torch.arange(maxL, device=device)[None, :]
-        if causal:
-            keep = keep & (
-                col[None, None, None, :] <= qpos[:, :, None, None]
-            )
-        if left is not None:
-            rel = col[None, None, None, :] - qpos[:, :, None, None]
-            # FA window: query at pos p attends kv in [p - left, p + right]
-            keep = keep & (rel >= (-left if left >= 0 else -(2**62)))
-            keep = keep & (rel <= (right if right >= 0 else 2**62))
-        scores = scores.masked_fill(~keep, float("-inf"))
-        if softcap and softcap > 0.0:
-            scores = softcap * torch.tanh(scores / softcap)
-        probs = torch.softmax(scores, dim=-1)
-        probs = torch.nan_to_num(probs, nan=0.0)
-        o_c = _grouped_pv(probs, v_c)
-        lse_c = torch.logsumexp(scores, dim=-1)  # (bs, maxL, H)
+            col = torch.arange(c0, c1, device=device)
+            valid = col[None, :] < seqlens[:, None]  # (bs, C)
+            keep = valid[:, None, None, :].expand(bs, q1 - q0, 1, c1 - c0)
+            if causal:
+                keep = keep & (
+                    col[None, None, None, :] <= qpos[:, :, None, None]
+                )
+            if left is not None:
+                rel = col[None, None, None, :] - qpos[:, :, None, None]
+                # FA window: query at pos p attends kv in [p-left, p+right]
+                keep = keep & (rel >= (-left if left >= 0 else -(2**62)))
+                keep = keep & (rel <= (right if right >= 0 else 2**62))
+            scores = scores.masked_fill(~keep, float("-inf"))
+            if softcap and softcap > 0.0:
+                scores = softcap * torch.tanh(scores / softcap)
+            probs = torch.softmax(scores, dim=-1)
+            probs = torch.nan_to_num(probs, nan=0.0)
+            o_c = _grouped_pv(probs, v_c)
+            lse_c = torch.logsumexp(scores, dim=-1)  # (bs, qL, H)
 
-        if o_acc is None:
-            o_acc, lse_acc = o_c, lse_c
-        else:
-            o_acc, lse_acc = _merge_acc(o_acc, lse_acc, o_c, lse_c)
+            if o_acc is None:
+                o_acc, lse_acc = o_c, lse_c
+            else:
+                o_acc, lse_acc = _merge_acc(o_acc, lse_acc, o_c, lse_c)
+        if o_acc is None:  # T == 0: everything masked
+            o_acc = qp_b.new_zeros(
+                bs, q1 - q0, qp_b.shape[2], qvp_b.shape[3]
+                if qvp_b is not None else qp_b.shape[3])
+            lse_acc = qp_b.new_full((bs, q1 - q0, qp_b.shape[2]),
+                                    float("-inf"))
+        o_blocks.append(o_acc)
+        lse_blocks.append(lse_acc)
 
-    if o_acc is None:  # T == 0: everything masked
+    if not saw_kv:  # T == 0: everything masked
         raise ValueError("flash_attn emu: empty KV range")
-    return o_acc.to(out_dtype), lse_acc
+    return (torch.cat(o_blocks, dim=1).to(out_dtype),
+            torch.cat(lse_blocks, dim=1))
 
 
 def _pad_queries(q3, cu_q, bs, maxL, device):
