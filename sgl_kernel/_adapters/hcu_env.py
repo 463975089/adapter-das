@@ -262,10 +262,13 @@ REGISTRY = {
                  "**2026-10-19 serving A/B（glm53f tp4）**：≤8k ctx 质量+"
                  "性能平价（锚点/解码 8.27 tok/s 完全一致/prefill ±10%）；"
                  "首 boot 揪出 ops 重绑丢 q_v 面包参（only_qv+qv→emu 断言"
-                 "杀捕获，2759711 修）；**长上下文（11k 双分块）2/2 boot 毙"
-                 "服务**（emu _attend_chunked 单笔 28.88GiB OOM 杀 rank/"
-                 "watchdog 挂死）而 auto 臂 3/3 过——triton 臂留 candidate，"
-                 "晋级阻塞待 ≥10k 修复（与 R-13 #2 同根空间）",
+                 "杀捕获，2759711 修）；长上下文红牌（11k 2/2 boot 毙服务）"
+                 "已随 R-13 #2 修复全臂击穿——根因是 emu 的 (maxL×C) 板未给"
+                 "q 行分块（22.02GiB@8192 面），q 行子分块（c59135b，peak "
+                 "6.80GiB）修后 11k 三连绿+LONGCTX-6k 28.4→3.1s（~9×）+锚"
+                 "点与 auto 臂逐字一致、解码 8.27 tok/s 不变；档位守 "
+                 "candidate——glm53f 的 q_v paged 面恒落 emu，翻默认对本模型"
+                 "无感，待行使 triton 核的模型过 serving A/B 再晋级",
     },
     "HCU_LINEAR_ATTN_GDN": {
         "env": "HCU_LINEAR_ATTN_GDN", "default": "auto",
