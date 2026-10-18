@@ -54,6 +54,24 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
    fused_allreduce_rmsnorm(_quant/_per_group/_pad) 家族 op schema 全确认
    （reg_ptr/reg_bytes IPC 注册缓冲 + _fa 句柄）——需 4 rank 联调探针排期；
    接入评估须对照 R-06 custom AR 定罪史（store-ordering 教训）。
+   **落位（2026-10-19，R-09①）**：8-rank 探针（nmz26 BW1102，
+   tmp_fetch/probe_r09_arnorm.py，hidden=4096 t=1..4096）三段全绿——
+   ①数值：对 fp64 精确 AR 真值 norm **1ulp / residual 0ulp**（rccl 参照
+   3-8ulp；IPC 精确和 vs 环形累加，融合核反而更准）；②perf：vs
+   customAR+norm **1.38-2.11×**（decode 区 1.5-1.7×，t=256 峰值 2.11×）；
+   ③图回放：新鲜数据两轮 1ulp/0ulp 精确（R-06 旧类顾虑清除，GraphSafe
+   类融合面同底座）。桥 `ar_norm_aiter.py`（`HCU_AR_NORM_IMPL` auto
+   默认）：上游 layernorm 休眠链（`GroupCoordinator.
+   fused_allreduce_rmsnorm`→aiter `custom_fused_ar_rms`，aiter 类原生供
+   给）经 **flashinfer 入口一符号外科激活**（不开 SGLANG_USE_AITER 全局
+   门）；仅全 TP 组目标融合——上游 aiter 分支无视 use_attn_tp_group 错组
+   （dp-attention 下数值错），本桥按 get_parallel() 组尺寸门控逐调用退
+   stock；_quant_per_group 变体上游自门 gfx95 → gfx938 恒不走（正确）。
+   注意事项：aiter 类挂 gloo 组（cpu_group），IPC 握手不走 NCCL 组；
+   多进程并发跑 sitecustomize 时 DTK 头文件 patch 竞争是既有噪音
+   （needle-missing 告警，try 包裹无害）。catalog allreduce/aiter note
+   补融合面；门禁 tests/kernels/test_ar_norm_aiter_gfx938.py（<2 可见
+   卡 skip——L1 kernels 段单卡，8rank 全量窗口手跑）。
 2. **silu_and_mul + fp8 per-token quant 融合**：MoE/FFN 边界读写省一遍。
    去向：核 lightop.fuse_silu_and_mul 的 mask_m 形态是否可挂 scale 输出
    → 可则升档写门禁测试。

@@ -89,6 +89,25 @@ def _auto_quant_impl():
     return "stock"
 
 
+def _auto_ar_norm_impl():
+    # fused AR+RMSNorm rides the SAME aiter GraphSafe communicator the
+    # plain AR auto-rule already vets: refuse wherever HCU_AITER_AR
+    # refuses (old-aiter graph-corrupting layouts), else aiter on hip.
+    try:
+        import torch
+
+        if getattr(torch.version, "hip", None) is None:
+            return "stock"
+        from aiter.dist.device_communicators.custom_all_reduce import (  # noqa: F401
+            CustomAllreduce,
+        )
+    except Exception:
+        return "stock"
+    if _auto_aiter_ar().startswith("refused"):
+        return "stock"
+    return "aiter"
+
+
 def _auto_mqa_emu():
     # torch emulation is needed wherever the DTK aiter MQA-logits kernels
     # are unusable: they hard-gate on gfx942/950 (gfx936 lacks fp8 AND
@@ -140,6 +159,18 @@ REGISTRY = {
                  "stock=退回上游原生（triton raw group + torch scaled "
                  "natives）。异形臂（column_major/tma/ue8m0/masked/非 "
                  "e4m3/3D）恒走上游；aiter 失败 log-once 回退",
+    },
+    "HCU_AR_NORM_IMPL": {
+        "env": "HCU_AR_NORM_IMPL", "default": "auto",
+        "auto": _auto_ar_norm_impl,
+        "about": "融合 AR+RMSNorm vendor 档（R-09①，ar_norm_aiter 桥）："
+                 "auto=hip+aiter GraphSafe 类可导入且 HCU_AITER_AR auto 规"
+                 "则未拒（旧布局图重放损坏史连带拒融合）则 aiter——对 "
+                 "fp64 精确 AR 真值 norm 1ulp/residual 0ulp（优于 rccl "
+                 "3-8ulp），vs customAR+norm 1.38-2.11×（hidden=4096 "
+                 "t=1..4096），图回放新鲜数据精确；仅全 TP 组目标融合"
+                 "（dp-attention/attn-tp 切分或 MoE 子组时逐调用退回 "
+                 "stock flashinfer 入口）；=stock 全退上游",
     },
     "HCU_TRITON_AR": {
         "env": "HCU_TRITON_AR", "default": "0",

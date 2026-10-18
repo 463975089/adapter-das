@@ -227,6 +227,20 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: aiter fp8-quant tier not installed", exc_info=True
         )
+    # R-09(1): aiter fused AR+RMSNorm -- upstream layernorm carries the
+    # whole consumer chain dormant behind _use_aiter; re-point the
+    # flashinfer entry its else-branch already calls at the aiter
+    # GraphSafe fused kernels (HCU_AR_NORM_IMPL, auto default; full-TP-
+    # group-only, per-call decline to stock).
+    try:
+        from sgl_kernel._adapters import ar_norm_aiter
+
+        ar_norm_aiter.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: aiter fused AR+RMSNorm tier not installed",
+            exc_info=True
+        )
     # JIT cuda-header forwarders (cuda_bf16.h et al -> hip equivalents) in
     # the DTK include root the JIT toolchain already puts on the compile line.
     try:

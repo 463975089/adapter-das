@@ -86,7 +86,7 @@ BACKEND_CATALOG = {
             "aiter": {"HCU_TRITON_AR": "0", "HCU_AITER_AR": "1"},
             "nccl": {"HCU_TRITON_AR": "0", "HCU_AITER_AR": "0"},
         },
-        "summary": "TP all-reduce",
+        "summary": "TP all-reduce (+fused AR+RMSNorm seam, HCU_AR_NORM_IMPL)",
         "backends": {
             "custom": {"status": "broken",
                        "note": "cross-block device-scope rendezvous does not "
@@ -97,7 +97,16 @@ BACKEND_CATALOG = {
             "aiter": {"status": "production",
                       "note": "aiter.dist GraphSafe; 15/15 graph replay; "
                               "1/40 skip-think in the R-01 verdict arms — "
-                              "the default landing spot for TRITON_AR=0"},
+                              "the default landing spot for TRITON_AR=0. "
+                              "R-09① fused AR+RMSNorm seam (2026-10-19, "
+                              "ar_norm_aiter 桥, HCU_AR_NORM_IMPL auto): "
+                              "flashinfer 入口重指上游休眠链 "
+                              "GroupCoordinator.fused_allreduce_rmsnorm→"
+                              "custom_fused_ar_rms；8rank 探针对 fp64 真值 "
+                              "norm 1ulp/residual 0ulp（优于 rccl 3-8ulp）、"
+                              "vs customAR+norm 1.38-2.11×、图回放精确；仅"
+                              "全 TP 组融合（dp-attention/MoE 子组逐调用退 "
+                              "stock）"},
             "nccl": {"status": "production",
                      "note": "fallback (HCU_AITER_AR=0); graph-correct"},
         },
