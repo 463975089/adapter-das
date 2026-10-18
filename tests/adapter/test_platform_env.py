@@ -5,7 +5,10 @@ it must (a) fill every A-tier var when absent, (b) NEVER clobber an explicit
 export (env三原则: explicit override is top priority), (c) be idempotent.
 No GPU / no sglang import needed — the function is import-safe standalone.
 
-Run: python tests/adapter/test_platform_env.py
+Pytest-collectable (L1 kernels segment collects tests/adapter); direct run
+also works: python tests/adapter/test_platform_env.py
+(2026-10-19: module-level sys.exit crashed pytest collection -> INTERNALERROR,
+refactored to function + __main__ guard, same 3 checks).
 """
 
 import os
@@ -14,8 +17,6 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from sgl_kernel._adapters.platform_seam import platform_env_defaults  # noqa: E402
-
-FAILS = []
 
 A_TIER = {
     "SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK": "1",
@@ -27,44 +28,58 @@ A_TIER = {
 }
 
 
-def ok(tag, cond, detail=""):
-    print(f"{tag}: {'OK' if cond else 'FAIL ' + detail}", flush=True)
-    if not cond:
-        FAILS.append(tag)
+class _Env:
+    """save A_TIER on enter, restore on exit -- order-independent tests."""
+
+    def __enter__(self):
+        self.saved = {k: os.environ.get(k) for k in A_TIER}
+        for k in A_TIER:
+            os.environ.pop(k, None)
+        return self
+
+    def __exit__(self, *exc):
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
-saved = {k: os.environ.get(k) for k in A_TIER}
-try:
+def test_platform_env_defaults():
     # 1. fills when absent
-    for k in A_TIER:
-        os.environ.pop(k, None)
-    platform_env_defaults()
-    ok("fills-absent", all(os.environ.get(k) == v for k, v in A_TIER.items()),
-       str({k: os.environ.get(k) for k in A_TIER}))
+    with _Env():
+        platform_env_defaults()
+        got = {k: os.environ.get(k) for k in A_TIER}
+        assert got == A_TIER, f"fills-absent: {got}"
 
     # 2. explicit export wins (unset-one-by-one across both value kinds)
-    for k, explicit in (
-        ("SGLANG_JIT_DEEPGEMM_PRECOMPILE", "true"),
-        ("HCU_DEEPGEMM_BRIDGE", "0"),
-        ("SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND", "rust"),
-    ):
-        os.environ[k] = explicit
-    platform_env_defaults()
-    ok("explicit-wins",
-       os.environ["SGLANG_JIT_DEEPGEMM_PRECOMPILE"] == "true"
-       and os.environ["HCU_DEEPGEMM_BRIDGE"] == "0"
-       and os.environ["SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND"] == "rust")
+    with _Env():
+        for k, explicit in (
+            ("SGLANG_JIT_DEEPGEMM_PRECOMPILE", "true"),
+            ("HCU_DEEPGEMM_BRIDGE", "0"),
+            ("SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND", "rust"),
+        ):
+            os.environ[k] = explicit
+        platform_env_defaults()
+        assert os.environ["SGLANG_JIT_DEEPGEMM_PRECOMPILE"] == "true", (
+            "explicit-wins")
+        assert os.environ["HCU_DEEPGEMM_BRIDGE"] == "0", "explicit-wins"
+        assert os.environ["SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND"] == "rust", (
+            "explicit-wins")
 
     # 3. idempotent
-    platform_env_defaults()
-    platform_env_defaults()
-    ok("idempotent", all(os.environ.get(k) for k in A_TIER))
-finally:
-    for k, v in saved.items():
-        if v is None:
-            os.environ.pop(k, None)
-        else:
-            os.environ[k] = v
+    with _Env():
+        platform_env_defaults()
+        platform_env_defaults()
+        assert all(os.environ.get(k) for k in A_TIER), "idempotent"
 
-print("RESULT:", "PASS" if not FAILS else f"FAIL {FAILS}")
-sys.exit(1 if FAILS else 0)
+
+if __name__ == "__main__":
+    try:
+        test_platform_env_defaults()
+        print("PASS test_platform_env_defaults")
+        print("RESULT: PASS")
+    except AssertionError as e:
+        print(f"FAIL test_platform_env_defaults: {e}")
+        print("RESULT: FAIL")
+        sys.exit(1)
