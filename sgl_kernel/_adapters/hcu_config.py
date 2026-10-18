@@ -15,7 +15,7 @@ Schema (hcu_adapter.yaml, first hit wins in discovery order):
       silu_and_mul: triton      # triton | lightop | torch
       rms_norm: aiter           # triton | aiter | torch
       allreduce: custom         # custom | aiter | nccl
-      paged_mqa_logits: emu     # emu (aiter/lightop planned)
+      paged_mqa_logits: triton   # triton (DEFAULT, R-13 #4) | emu | vendor
 
 Discovery: $HCU_CONFIG > ./hcu_adapter.{yaml,yml,json} >
 <adapter root>/hcu_adapter.{yaml,yml,json}. No file -> pure legacy
@@ -168,10 +168,13 @@ BACKEND_CATALOG = {
         "summary": "DSA paged MQA logits",
         "backends": {
             "emu": {"status": "production",
-                    "note": "torch emulation (default on gfx93*)"},
-            "triton": {"status": "validated",
+                    "note": "torch emulation — correct opt-out "
+                            "(HCU_MQA_LOGITS_IMPL=vec; pre-R-13#4 default)"},
+            "triton": {"status": "production",
                        "note": "homegrown triton kernel (mqa_triton.py, "
-                               "R-02 2026-10-18). Reads the production "
+                               "R-02 2026-10-18) — DEFAULT since R-13 #4 "
+                               "promotion 2026-10-18 (HCU_MQA_LOGITS_IMPL, "
+                               "was emu-vec). Reads the production "
                                "pool layout (writer census: GLM-5.3 "
                                "IndexerKPool/kpool=4 writes via the kpool "
                                "family + SetKAndS under the forced "
@@ -197,7 +200,9 @@ BACKEND_CATALOG = {
                                "metric), long-ctx 4972 tok correct; decode "
                                "+9% short / +4% long-ctx vs emu-vec arm "
                                "(31.35 vs 34.18 s / 256 tok; 64.6 vs 66.7 "
-                               "s). production after sustained stability."},
+                               "s). Promoted to production + default flip "
+                               "2026-10-18 (R-13 #4); emu-vec stays as the "
+                               "opt-out (HCU_MQA_LOGITS_IMPL=vec)."},
             "aiter": {"status": "planned",
                       "note": "probed absent 2026-10-18: the on-box aiter "
                               "wheel ships no paged_mqa_logits API -- "

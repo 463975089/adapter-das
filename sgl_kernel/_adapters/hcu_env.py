@@ -211,7 +211,7 @@ REGISTRY = {
                  "sglang-das 用 hcu_get_last_loc 同向修复；=0 还原 stock 分发",
     },
     "HCU_MQA_LOGITS_IMPL": {
-        "env": "HCU_MQA_LOGITS_IMPL", "default": "vec",
+        "env": "HCU_MQA_LOGITS_IMPL", "default": "triton",
         "about": "DSA indexer paged-MQA 实现档：vec=全窗口单遍双 bmm"
                  "（大操作数免转置物化）——decode 图节点 23.9k→3.7k（-84%），"
                  "hipGraphLaunch API p50 540ms→21.6ms，单流 2.3→3.50 tok/s、"
@@ -230,7 +230,9 @@ REGISTRY = {
                  "triton=自研 triton 档（mqa_triton.py，臂随 HCU_DSA_PRESHUFFLE"
                  " 同一开关：默认交错=生产布局、=0 行主序）；对金标准精确 "
                  "rel=0.0、解码形状 13.2× 快于 emu-vec（0.19 vs 2.52ms），"
-                 "candidate 档，serving A/B 后候选转正；哨兵 "
+                 "**production 默认档**（2026-10-18 R-02 validated → R-13 #4 "
+                 "晋级翻默认：serving A/B 四门绿+马拉松 0/20+长文对，解码 "
+                 "+9% 短/+4% 长对 emu-vec；=loop 可回归对照）；哨兵 "
                  "test_mqa_triton_gfx938.py（含修复后 emu 交叉验证）；"
                  "vendor=deepgemm 轮直调用取证档（mqa_vendor.py 桥；其布局="
                  "行主序+页尾=kpool=1 世界同构，kpool 模型还需池重排+轮子 bug"
