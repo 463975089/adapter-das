@@ -72,6 +72,30 @@ pip install --no-cache-dir --force-reinstall fastapi==0.115.12
 | pydantic-core | 2.46.1 | `cls_name` kwarg 是 2.30+ API，旧核 AttributeError |
 | msgspec | 0.20.0 | 位置参数契约随版本漂 |
 
+## 0. 容器重建 runbook（2026-10-18 实操定稿）
+
+```bash
+# 现役镜像（轮子最新；选镜像先 curl tags/list 找日期最新 tag）：
+#   10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048
+# 重建三步：备份 /root 自有状态到挂载区 → stop+rm → run（挂载=原 5 项+公共盘只读）
+docker exec <旧容器> bash -lc 'pip freeze > /root/g53/pip_freeze_$(date +%m%d).txt && cd /root && tar czf /root/g53/container_root_backup.tgz --exclude=./hcu_t2 --exclude=./g53 --exclude=./.cache --exclude=./.triton --exclude=./.local .'
+docker stop lzg-g53-tp8 && docker rm lzg-g53-tp8
+docker run -d --name lzg-g53-tp8 --network host --ipc host --privileged \
+  --shm-size 64g --security-opt label=disable \
+  -v /public/home/lizhg/models/GLM-5.3-Flash:/models/glm53f:ro \
+  -v /public/home/lizhg/hcu_t2:/root/hcu_t2:rw \
+  -v /public/home/lizhg/g53_tp4:/root/g53 \
+  -v /opt/hyhal:/opt/hyhal:ro \
+  -v /public/home/lizhg/sglang-v0521:/sglang-v0521:rw \
+  -v /public/opandas/DL_DATA/llm-models:/public/opandas/DL_DATA/llm-models:ro \
+  10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048 \
+  sleep infinity
+```
+
+要点：①模型一律公共盘只读挂载（用户 2026-10-18 定规：不在 /public/home/lizhg 下拷模型，
+运维盘压力；opandas 挂载源恢复后需 docker restart 或重建使 bind 生效）；②重建后必做
+§3 tvm-ffi 预热 + §5 tilelang pin；③备份 tgz/pip freeze 在 g53_tp4（挂载区）可回灌。
+
 ## 3. tvm-ffi 手工预热（首次必做，防 JIT 竞争死锁）
 
 **现象**：首次 import tvm_ffi 会 JIT 编译 torch dlpack 桥（~20-40s，
@@ -99,6 +123,16 @@ env -u PYTHONPATH python3 $(python3 -c \
 `PYTHONPATH=/work:/work/official-sglang/python python3 -c "pass"` 无
 Traceback 输出（sitecustomize 静默完成）。
 
+**捷径（2026-10-18 实操）**：从任一健康容器直拷现成 .so（torch 版本一致即兼容，
+nmz26 lzg-g53-tp8 ← nmz18 lzg-nsa-tp8，md5 b1fb7b35 校验一致）：
+
+```bash
+# nmz18 侧 b64 出、nmz26 侧解入（或宿主 docker cp 中转），落位后 chmod +x
+/root/.cache/tvm-ffi/libtorch_c_dlpack_addon_torch211-rocm.so
+```
+
+30 秒级完成，等效于直构；上方法为无源可拷时的备选。
+
 ## 4. 运行时库路径补丁
 
 ```bash
@@ -113,6 +147,7 @@ export LD_LIBRARY_PATH=/opt/dtk/dcc/lib:$LD_LIBRARY_PATH
 | bw7 0.5.18-dtk26041-20261010 | **镜像自带 DeepGEMM JIT Pre-Compile 预热会话**（每形状 5.7-7.4GB 挤 KV 预算） | EP 场景 `SGLANG_JIT_DEEPGEMM_PRECOMPILE=false` |
 | bw7 0.5.18-dtk26041-20261010 | 显存配置器带 KV 下限校验（不挤爆，直接 ValueError 报 minimum viable） | 按报错值上调 `--mem-fraction-static` 即可，是友好的 |
 | nmz26 0.5.18-dtk26041-20261012 | 无 DeepGEMM 预热会话（首个形状仍 JIT，慢一次） | 无需处理 |
+| **sf_b075-20261018-0048**（现役） | **tilelang 0.1.15 回归**：mhc tilelang 融合内核（mhc_pre_big_fuse_with_norm）`ThreadSync("shared.dyn")` pass 硬错 not-warp-uniform（0.1.12 同条件仅 Warning hoisting）；aiter/sgl-kernel/torch 轮子更新均健康 | **钉 tilelang 0.1.12**（保融合路径，勿用 SGLANG_OPT_USE_TILELANG_MHC_*=0 回退 torch 链——性能倒退）：`tar xzf /root/g53/vendor_tilelang_0112.tgz -C /usr/local/lib/python3.10/dist-packages/`（先删 0.1.15 的 tilelang/ 与 dist-info）；恢复后 `import tilelang` 应报 0.1.12+dtk2604.torch2110.2610100923 |
 | 全系 | rust TreeCore 无预编译扩展、cargo 半残编不了 | 恒带 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`（cookbook §0） |
 
 ## 6. Bootstrap 完成自检（四条全绿再起服务）

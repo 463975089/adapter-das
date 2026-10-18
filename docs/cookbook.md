@@ -37,6 +37,32 @@ python -m sglang.launch_server --model-path <Qwen3.8-27B-FP8> \
 # Qwen3.6-27B-Channel-INT8-w8a8（compressed-tensors int8，自动识别）
 python -m sglang.launch_server --model-path <Qwen3.6-27B-Channel-INT8> \
   --attention-backend triton --mem-fraction-static 0.85 --host 0.0.0.0 --port 30000
+# ⚠ 仅限 dense 线性层路径：MoE 版 CT-INT8（如 Qwen3-30B-A3B-Channel-INT8、
+#   GLM-5.3-Channel-INT8）在 v0.5.21 上游 get_moe_scheme 对动态 int8 MoE 直接
+#   NotImplementedError（仅 NPU，compressed_tensors.py:896，CUDA 同拒）——
+#   归因见 models.md 2026-10-18 R-10 行，勿排期实跑。
+```
+
+## 1.5 nmz26 现役栈速查（2026-10-18 起：镜像 sf_b075-20261018-0048）
+
+```bash
+# 重建后必做两步（详见 bootstrap.md §0/§3/§5）：
+#   ① tvm-ffi 预热（或从健康容器直拷 .so）
+#   ② tilelang 钉 0.1.12（0.1.15 编译回归，保 mHC 融合路径）：
+tar xzf /root/g53/vendor_tilelang_0112.tgz -C /usr/local/lib/python3.10/dist-packages/
+# （先删 0.1.15 的 tilelang/ 目录与 dist-info；验证 import tilelang == 0.1.12+dtk2604.torch2110.2610100923）
+
+# glm53f TP4 零 env 生产配方（四门绿+单流 7 tok/s，2026-10-18 新镜像复验）：
+export PYTHONPATH=/root/hcu_t2:/sglang-v0521/python
+export LD_LIBRARY_PATH=/opt/dtk/dcc/lib:/opt/dtk/.hyhal/rocm_smi/lib:/opt/dtk/hip/lib:/opt/dtk/lib
+export HIP_VISIBLE_DEVICES=4,5,6,7   # 平台卫生 env 见 tests/tools/_launch_g53f_tp4.sh
+python3 -m sglang.launch_server --model-path /models/glm53f --served-model-name glm53-flash \
+  --trust-remote-code --host 0.0.0.0 --port 30197 --tp-size 4 \
+  --page-size 64 --mem-fraction-static 0.62 --chunked-prefill-size 8192 \
+  --max-running-requests 16 --cuda-graph-max-bs-decode 16 \
+  --disable-radix-cache --disable-prefill-cuda-graph \
+  --dsa-topk-backend torch --dsa-prefill-backend fa3 --dsa-decode-backend flashmla_sparse \
+  --nccl-port 30397
 ```
 
 ## 2. Qwen3.5 家族（VLM + GDN 线性注意力 + MoE）
