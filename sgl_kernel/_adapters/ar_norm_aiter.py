@@ -107,8 +107,21 @@ def install():
             if _an.is_dp_attention_enabled():
                 return False
             from sglang.srt.distributed import get_tp_group
+            from sglang.srt.runtime_context import get_parallel
 
-            return get_tp_group().world_size > 1
+            tp = get_tp_group()
+            if tp.world_size <= 1:
+                return False
+            # Pure-TP topologies only. Under EP (moe_ep>1) or a MoE-TP
+            # split, the fused consumers decline (reduction group is not
+            # attn-tp) and the armed producer deferral falls back to the
+            # reduce-scatter completion, whose aiter ca_comm.reduce_scatter
+            # rejects overlapping in/out tensors (EP-LL TP2+EP2 crash,
+            # 2026-10-18) -- keep those deployments on the stock eager path.
+            p = get_parallel()
+            if p.moe_ep_size > 1 or p.moe_tp_size != tp.world_size:
+                return False
+            return True
         except Exception:
             return False
 

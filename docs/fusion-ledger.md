@@ -78,7 +78,14 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
    生产端推迟），dispatch=原 flashinfer 入口包装（全 TP 组门+逐调用退
    stock）。**tp8 serving 实证（GLM-5.3 纯 TP 无 dp，mtp-minimal 图开）**
    ：图捕获期起服、attn+FFN 双边界、216 次融合 0 失败、输出正常；dp-
-   attention（用户点：dp==tp 时 attn 边界本无 AR）在 arm 层即拒。日志
+   attention（用户点：dp==tp 时 attn 边界本无 AR）在 arm 层即拒。**EP
+   排除（R-04 EP-LL 复验役实证 2026-10-18）**：TP2+EP2 下 arm 武装使生产
+   端推迟归约、fused 消费者因组非 attn-tp decline、回退走 reduce-scatter
+   完成路径——aiter `ca_comm.reduce_scatter` 拒重叠输入输出张量
+   （ValueError）崩调度器；arm 收紧为**仅纯 TP 拓扑**（moe_ep>1 或
+   moe_tp≠tp 即拒），EP 形态恢复上游 eager 完成路径（=10-11 绿配置）。
+   该 reduce_scatter 重叠契约缺口本身是上游 HIP 面 finding（潜在 R-13
+   收编项）。日志
    纪律：sitecustomize 期 INFO 被 sglang 前的默认 WARNING 吞——安装/介
    入行用 warning+once 守卫（v2 首跑 216 条刷屏教训）。catalog
    allreduce/aiter note 补融合面；门禁 tests/kernels/
