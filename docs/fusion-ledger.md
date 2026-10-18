@@ -50,13 +50,29 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
    边界两步→一步的时延收益，decode 小 batch 敏感。去向：评估 aiter 是否
    有 fused AR（GraphSafe 之外的 API 面）→ 无则 lightop → 都无则列自研
    候补（依赖 R-01 ar_ext.cu 修复后的 custom AR 底座）。
+   **定裁更新（2026-10-19 探针役，战报 08bce33）**：aiter
+   fused_allreduce_rmsnorm(_quant/_per_group/_pad) 家族 op schema 全确认
+   （reg_ptr/reg_bytes IPC 注册缓冲 + _fa 句柄）——需 4 rank 联调探针排期；
+   接入评估须对照 R-06 custom AR 定罪史（store-ordering 教训）。
 2. **silu_and_mul + fp8 per-token quant 融合**：MoE/FFN 边界读写省一遍。
    去向：核 lightop.fuse_silu_and_mul 的 mask_m 形态是否可挂 scale 输出
    → 可则升档写门禁测试。
+   **定裁更新（2026-10-19）**：aiter `fuse_silu_mul_per_token_quant`
+   数值健康（cos 0.9999，激活 bf16 舍入差级）且 **7.5×**（56 vs 419us，
+   4096×2048；行级尺度 [M,1]，MoE 布局带 topk/expert_ids 参数）——候选
+   定案，桥接实施+catalog 升档待排期。
 3. **per-token quant vendor 档**：aiter per_token_quant_hip / lightop 族
    对拍（catalog 已 planned，直接排期）。
+   **定裁更新（2026-10-19）**：aiter `per_token_group_quant_fp8`（注意
+   out 式契约 out!/input/scales!/group_size，非返回式）数值健康（尺度
+   逐位一致 + q RTN 命中 99.8% + 去量化 cos 0.999994）且 **15.1×**
+   （68 vs 1021us，4096×8192）；per_token_quant_hip 行级档同健康——候选
+   定案，桥接实施+catalog planned→candidate 待排期。
 4. **weight_packed_linear**：与 R-04 fp8 contiguous 同批评估（同一
    weight-pack 机制面）。
+   **定裁更新（2026-10-19）**：R-04 同族探针已判该轮 wheel 三重不可用
+   （gfx936 无 fp8 contiguous 臂 / wasp_pair32 契约+符号双坏 / marlin
+   tensor-wise 坏）——本项随下轮 DTK wheel 复评。
 
 注意力与 GEMM-量化两大类无缺失（替代路径全部在册在役）。
 
