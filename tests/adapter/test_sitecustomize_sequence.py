@@ -30,6 +30,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from unittest import mock
 
 import pytest
 
@@ -166,11 +167,25 @@ def _clean_env(extra=None):
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("HCU_", "VLLM_", "SGLANG_"))}
     parts = [ROOT] + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep)
-                      if p and os.path != ROOT]
+                      if p and p != ROOT]
     env["PYTHONPATH"] = os.pathsep.join(parts)
     if extra:
         env.update(extra)
     return env
+
+
+def _sglang_on_child_path():
+    """子进程臂的 sglang 可达性：沿 _clean_env 组装的 PYTHONPATH 查 sglang
+    包目录。不做真实 import——pytest 进程自身已被 sitecustomize 自动
+    import 污染（见文件头），探针子进程又贵（全链 import 秒级）；路径
+    存在性与门禁场景等价（L0/L1 门自 export PYTHONPATH）。"""
+    for seg in _clean_env()["PYTHONPATH"].split(os.pathsep):
+        if seg and os.path.isfile(os.path.join(seg, "sglang", "__init__.py")):
+            return True
+    return False
+
+
+SGLANG_REACHABLE = _sglang_on_child_path()
 
 
 def _child(script, extra_env=None, timeout=240):
@@ -194,9 +209,30 @@ def test_noop_on_non_hip():
         f"non-HIP arm must be silent, got: {p.stderr[:300]}")
 
 
+def test_sglang_reachability_probe_contract():
+    """R-13 #6 守卫钉：可达性探测沿 _clean_env 组装的 PYTHONPATH 找 sglang
+    包；PYTHONPATH 抽掉 sglang 段后必须报不可达（HIP 子进程臂据此 SKIP
+    而非 bare-shell FAIL）。纯路径逻辑，任何机器可跑。"""
+    with mock.patch.dict(os.environ, {}, clear=True):
+        os.environ["PYTHONPATH"] = os.pathsep.join(
+            [ROOT, "/nonexistent/sglang-root"])
+        assert _sglang_on_child_path() is False
+
+    # 带真 sglang 的 PYTHONPATH：正可达（仅当模块头已判可达，否则跳过断言）
+    if SGLANG_REACHABLE:
+        assert _sglang_on_child_path() is True
+    # 收集期一次性计算与现算一致
+    assert SGLANG_REACHABLE == _sglang_on_child_path()
+
+
 # ------------------------------------------- L3/L4/L5（HIP 容器臂）
 
-@pytest.mark.skipif(not IS_HIP, reason="install smoke needs the HIP wheel")
+@pytest.mark.skipif(
+    not IS_HIP, reason="install smoke needs the HIP wheel")
+@pytest.mark.skipif(
+    not SGLANG_REACHABLE,
+    reason="sglang not on the child PYTHONPATH (bare shell): subproc arm "
+           "cannot import sglang.srt, skip instead of fail (R-13 #6 guard)")
 def test_install_smoke_and_dump_wiring():
     """干净子进程 import 全链后：platform 语义翻转（is_cuda()=True on HIP）、
     vllm._custom_ops.rms_norm 重绑到 sitecustomize 桥、VLLM_PLUGINS 被
@@ -231,7 +267,12 @@ def test_install_smoke_and_dump_wiring():
         assert r["triton_ar_src"] == "explicit", r  # L4: 显式 env 赢 setdefault
 
 
-@pytest.mark.skipif(not IS_HIP, reason="VLLM_PLUGINS arm needs the HIP wheel")
+@pytest.mark.skipif(
+    not IS_HIP, reason="VLLM_PLUGINS arm needs the HIP wheel")
+@pytest.mark.skipif(
+    not SGLANG_REACHABLE,
+    reason="sglang not on the child PYTHONPATH (bare shell): subproc arm "
+           "cannot import sglang.srt, skip instead of fail (R-13 #6 guard)")
 def test_vllm_plugins_explicit_wins():
     """L4 双臂之二：VLLM_PLUGINS 预设时 setdefault 不覆盖（操作员 opt-in
     语义——"" 与 unset 有竞态陷阱，见 sitecustomize 门内注释）。"""
