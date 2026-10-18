@@ -1,20 +1,31 @@
-"""causal_conv1d_fn varlen prefill arm — triton red gate + emu green gate.
+"""causal_conv1d_fn varlen prefill arm — fork parity gates + emu green gate.
 
-DTK triton ``_causal_conv1d_fwd_kernel`` on gfx938 miscompiles the
-initial-state branches (parallel to the confirmed ``causal_conv1d_update``
-update-arm noise): with ``has_initial_state`` set, the kernel's output is
-uncorrelated with the per-token step reference AND identical whether the
-cache line is random or zero — the initial-state read is dead. State
-write-back is also wrong (maxdiff > 2). All 42 KDA layers of GLM-5.3-Flash
-run their prefill through this kernel, so logits are noise from token one
-until the DTK triton bug is fixed; ``conv1d_fn_emu`` (selected via
-``HCU_CONV1D_IMPL=emu`` in fla_hcu_router) transcribes the contract in
-torch and must stay exact.
+History: the stock DTK triton ``_causal_conv1d_fwd_kernel`` on gfx938
+miscompiled the initial-state branches (has_initial_state read dead:
+rand-vs-zero cache line gave identical output, state write-back maxdiff>2).
+``test_triton_parity`` was an xfail-strict watchpoint on that defect; the
+dead-initial-state witness documented it without asserting.
+
+2026-10-19 (R-01 转正, 8849dc6): ``HCU_CONV1D_IMPL`` default emu→fork, so
+``sglang.kernels.ops.mamba.causal_conv1d_triton`` now routes to the 收编
+fork kernel (``sgl_kernel/_adapters/fla_hcu/conv1d_triton.py``). The
+watchpoint fired as designed (fork rejects the witness' CPU tensors at
+launch → collection-visible failure). Follow-ups landed the same day:
+  * channel-major inputs normalized at the fn seam (kernel channel-major
+    arm miscomputes; serving always arrives channel-last);
+  * initial-state read witness converted to an asserted green gate;
+  * NEW xfail-strict watchpoint: the fork kernel miscomputes in an
+    address-layout-dependent way under this suite's allocation layout
+    (cos 0.67, deterministic per context, identical binary+data passes
+    under other layouts) — DTK triton codegen suspicion, registered in
+    REQUIREMENTS.md R-01.
+The emu parity gate stays (emu = production 退路 tier). To re-witness the
+stock defect, route ``HCU_CONV1D_IMPL=stock`` explicitly.
 
 Structure per test-suite.md:
   1. offline repro (this file, CPU-free math table) — the step reference;
-  2. one pit per test — triton parity (red until fixed), emu parity (green),
-     dead-initial-state witness (rand == zero output), state write-back;
+  2. one pit per test — routed-kernel parity + initial-state read (both
+     green gates now), emu parity (green, fallback tier);
   3. assert with dual metrics cos + maxdiff.
 
 Run: python tests/kernels/test_conv1d_fn_varlen.py   (GPU; skip-triton on CPU)
@@ -84,19 +95,35 @@ def _case(D, W, lens, init):
     return x, w, bias, cu, states, slots, hid
 
 
+def _case_dev(D, W, lens, init):
+    """_case with all tensors on the GPU (routed triton kernel needs device
+    pointers — CPU tensors are correctly rejected at launch, 2026-10-19)."""
+    x, w, bias, cu, states, slots, hid = _case(D, W, lens, init)
+    return (x.cuda(), w.cuda(), bias.cuda(), cu.cuda(), states.cuda(),
+            slots.cuda(), hid.cuda())
+
+
 @pytest.mark.xfail(
     strict=True,
-    reason="DTK gfx938 triton _causal_conv1d_fwd_kernel miscompiles the "
-    "initial-state branches (witnessed 2026-10-15: has_initial_state read "
-    "dead, out cos 0.49 / state wb maxdiff 2); conv1d_fn_emu carries e2e. "
-    "strict: XPASS (red) alerts us the day DTK fixes the kernel.",
+    reason="DTK gfx938 triton miscompiles the 收编 fork "
+    "_causal_conv1d_fwd_kernel in an address-layout-dependent way "
+    "(R-11 merge-gate L1 finding, 2026-10-19: identical data+binary gives "
+    "cos 0.67 under the L1 suite's deterministic allocation layout, "
+    "cos 0.9999 under other layouts — per-context deterministic, 6/6; "
+    "serving-shaped gates never red. Repro: tests above burn-in; see "
+    "REQUIREMENTS.md R-01 conv1d-flake entry). strict: XPASS alerts us the "
+    "day the layout sensitivity disappears (DTK fix or kernel rework).",
 )
 def test_triton_parity():
-    """Witness gate (gfx938 triton): conv1d_fn vs step reference.
+    """Watchpoint gate: routed conv1d_fn vs global-time step reference.
 
-    xfail-strict as a DTK watchpoint: fails while the platform bug stands;
-    the moment DTK ships the fix it XPASSes and flips the gate red so we
-    notice and revisit HCU_CONV1D_IMPL routing.
+    The routed kernel is the 收编 fork (HCU_CONV1D_IMPL=fork default,
+    8849dc6). Channel-major inputs are normalized at the fn seam (same fix
+    window); the residual red is the address-layout-sensitive miscompute
+    above — fails deterministically inside this suite's allocation layout,
+    passes under others. The witness test below (initial-state read) stays
+    an asserted green gate; the emu parity gate carries the exactness
+    contract (emu = production 退路 tier).
     """
     try:
         from sglang.kernels.ops.mamba.causal_conv1d_triton import (
@@ -106,22 +133,28 @@ def test_triton_parity():
         pytest.skip("kernel module unavailable (CPU?)")
     if not torch.cuda.is_available():
         pytest.skip("no GPU")
-    x, w, bias, cu, states, slots, hid = _case(64, 4, [5, 3], True)
-    out = causal_conv1d_fn(
-        x, w, bias, activation="silu", conv_states=states,
-        cache_indices=slots, query_start_loc=cu, has_initial_state=hid,
-        seq_lens_cpu=[5, 3],
-    )
-    torch.cuda.synchronize()
-    ref, _ = step_reference(
-        x, w, bias, cu.tolist(), states.cpu(), slots.tolist(), hid.tolist()
-    )
-    cos, md = _metrics(out.cpu(), ref)
-    print(f"[gate] triton varlen: cos={cos:.6f} maxdiff={md:.4f} (red until DTK fix)")
-    assert cos > 0.9999 and md < 2e-2, (
-        f"gfx938 triton conv1d_fn still broken: cos={cos:.6f} maxdiff={md:.4f}; "
-        "emu carries e2e (HCU_CONV1D_IMPL=emu)"
-    )
+    for tag, (D, W, lens) in {
+        "init-batch": (64, 4, [5, 3]),
+        "single": (32, 4, [5]),
+        "len1-burst": (96, 4, [1, 1, 7]),
+    }.items():
+        x, w, bias, cu, states, slots, hid = _case_dev(D, W, lens, True)
+        out = causal_conv1d_fn(
+            x, w, bias, activation="silu", conv_states=states,
+            cache_indices=slots, query_start_loc=cu, has_initial_state=hid,
+            seq_lens_cpu=lens,
+        )
+        torch.cuda.synchronize()
+        ref, _ = step_reference(
+            x.cpu(), w.cpu(), bias.cpu(), cu.cpu().tolist(), states.cpu(),
+            slots.cpu().tolist(), hid.cpu().tolist(),
+        )
+        cos, md = _metrics(out.cpu(), ref)
+        print(f"[gate] triton varlen {tag}: cos={cos:.6f} maxdiff={md:.4f}")
+        assert cos > 0.9999 and md < 2e-2, (
+            f"routed conv1d_fn varlen {tag} broken: cos={cos:.6f} "
+            f"maxdiff={md:.4f}; check HCU_CONV1D_IMPL routing"
+        )
 
 
 def test_emu_parity():
@@ -153,18 +186,24 @@ def test_emu_parity():
 
 
 def test_dead_initial_state_witness():
-    """Documents the exact triton defect: random vs zero cache line, same out."""
+    """GREEN GATE (since R-01 转正): initial state MUST be read.
+
+    Stock DTK triton had a dead initial-state read (rand vs zero cache line
+    → identical output); that defect is what this witness documented. The
+    routed fork kernel must show the OPPOSITE: outputs differ. No-assert
+    witness converted to a regression assert 2026-10-19 (CPU-tensor launch
+    crash after 转正 exposed the staleness).
+    """
     try:
         from sglang.kernels.ops.mamba.causal_conv1d_triton import (
             causal_conv1d_fn,
         )
     except ImportError:
-        print("SKIP dead-state witness: no kernel module")
+        pytest.skip("kernel module unavailable (CPU?)")
         return
     if not torch.cuda.is_available():
-        print("SKIP dead-state witness: no GPU")
-        return
-    x, w, bias, cu, states, slots, hid = _case(32, 4, [5], True)
+        pytest.skip("no GPU")
+    x, w, bias, cu, states, slots, hid = _case_dev(32, 4, [5], True)
     out_rand = causal_conv1d_fn(
         x, w, bias, activation="silu", conv_states=states.clone(),
         cache_indices=slots, query_start_loc=cu, has_initial_state=hid,
@@ -178,25 +217,25 @@ def test_dead_initial_state_witness():
     torch.cuda.synchronize()
     diff = (out_rand.float() - out_zero.float()).abs().max().item()
     print(f"[witness] rand-state vs zero-state out maxdiff={diff:.6f} "
-          f"({'DEAD initial-state read — kernel bug confirmed' if diff < 1e-3 else 'state is read'})")
+          f"({'DEAD initial-state read — regression!' if diff < 1e-3 else 'state is read'})")
+    assert diff > 1e-3, (
+        f"initial-state read is dead again (rand==zero out, maxdiff={diff}): "
+        "routed kernel regressed to the stock DTK defect"
+    )
 
 
 def main():
     fails = []
     for name, fn in [
-        ("triton-parity (red gate)", test_triton_parity),
+        ("triton-parity (routed green gate)", test_triton_parity),
         ("emu-parity (green gate)", test_emu_parity),
-        ("dead-initial-state witness", test_dead_initial_state_witness),
+        ("dead-initial-state witness (green gate)", test_dead_initial_state_witness),
     ]:
         try:
             fn()
         except AssertionError as e:
-            # the triton parity gate is EXPECTED to fail until DTK fixes it
-            if "red gate" in name:
-                print(f"[RED-as-designed] {name}: {e}")
-            else:
-                fails.append((name, e))
-                print(f"[FAIL] {name}: {e}")
+            fails.append((name, e))
+            print(f"[FAIL] {name}: {e}")
         except Exception as e:  # noqa: BLE001
             fails.append((name, e))
             print(f"[FAIL] {name}: {type(e).__name__}: {e}")

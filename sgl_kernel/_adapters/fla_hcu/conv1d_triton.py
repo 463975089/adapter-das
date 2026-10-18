@@ -454,6 +454,16 @@ def causal_conv1d_fn(
     out = torch.empty_like(x)
 
     is_channel_last = (x.stride(0) == 1) & (x.stride(1) > 1)
+    if not is_channel_last:
+        # Upstream contract allows channel-major storage (stride(1)==1), but
+        # this kernel's channel-major arm miscomputes (cos 0.67 vs the
+        # global-time step reference, witnessed 2026-10-19; channel-last arm
+        # is exact at cos 0.999997). Serving always arrives channel-last
+        # (hidden_states.transpose(-1,-2)), so this normalize is slow-path
+        # only: one transpose copy, zero serving-path cost.
+        x = x.t().contiguous().t()
+        out = torch.empty_like(x)
+        is_channel_last = True
     dim, cu_seqlen = x.shape
     _, width = weight.shape
     state_len = width - 1
