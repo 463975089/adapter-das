@@ -58,7 +58,8 @@ def _eligible_target_world(use_attn_tp_group):
 def install():
     impl = hcu_env.resolve("HCU_AR_NORM_IMPL")[0]
     if impl == "stock":
-        LOG.info("[HCU ar+norm] HCU_AR_NORM_IMPL=stock -- upstream path stays")
+        LOG.warning("[HCU ar+norm] HCU_AR_NORM_IMPL=stock"
+                    " -- upstream path stays")
         return
 
     try:
@@ -99,7 +100,7 @@ def install():
                     if out is not None:
                         if not _FUSED["done"]:
                             _FUSED["done"] = True
-                            LOG.info("[HCU ar+norm] fused AR+RMSNorm serving"
+                            LOG.warning("[HCU ar+norm] fused AR+RMSNorm serving"
                                      " (aiter GraphSafe, R-09(1))")
                         return out
                     declined.append("kernel-declined")
@@ -128,5 +129,5 @@ def install():
                "group-only gate, per-call decline to stock (R-09(1))"
                % impl,
     )
-    LOG.info("[HCU ar+norm] aiter fused AR+RMSNorm tier installed "
-             "(HCU_AR_NORM_IMPL=%s)", impl)
+    LOG.warning("[HCU ar+norm] aiter fused AR+RMSNorm tier installed "
+                 "(HCU_AR_NORM_IMPL=%s)", impl)
