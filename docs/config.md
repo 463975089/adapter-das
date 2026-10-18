@@ -15,6 +15,8 @@ ops:
   rms_norm: aiter           # triton | aiter | torch
   allreduce: aiter          # aiter（默认落点）| nccl；custom 已 broken（R-01 判决，选配即拒）
   paged_mqa_logits: triton  # triton（R-13 #4 晋级默认）| emu | vendor（broken 选配即拒）
+  fused_moe: auto           # auto（aiter 先试/无调优形状回 triton）| aiter | triton
+  w4a16_moe: auto           # auto（现答 triton）| deepgemm（R-05 桥，候选 opt-in）
 ```
 
 - **查找顺序**（先中先得）：`$HCU_CONFIG` 指定路径 → `./hcu_adapter.yaml|.yml|.json`
@@ -65,6 +67,7 @@ ops:
 | `rotary_embedding` | triton（在用，无开关）；aiter / lightop（planned） | rope_fwd / rotary_embedding_fuse 家族待接 |
 | `moe_gate` | triton（在用，contract=torch）；aiter / lightop（planned） | topk_softmax/sigmoid/moe_fused_gate |
 | `fused_moe` | triton（默认回退）/ aiter（validated，auto 先试） | w8a8 专家层：aiter 块量化走 ASM 调优表、通道量化走 moe_c；未调优形状自动回 triton |
+| `w4a16_moe` | triton（auto 现答）/ deepgemm（candidate，显式 opt-in） | W4A16 专家层（moe_wna16 AWQ/GPTQ-int4 线）：deepgemm=R-05 桥（DTK 轮 masked w4a16 C++ 分组 GEMM+自管 dispatch/silu/combine，eager-only v1；对称无零点+g32/64/128+对齐守卫） |
 | `per_token_quant` | torch（在用）；aiter / lightop（planned） | per_token_quant_hip / lightop 量化族 |
 
 ## 与环境变量的关系（迁移口径）

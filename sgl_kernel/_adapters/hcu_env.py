@@ -306,6 +306,19 @@ REGISTRY = {
                  "aiter(aiter_moe，块量化走 ASM 调优表/通道量化走 moe_c)，"
                  "无调优形状自动回 triton；aiter=同上但回退时告警；triton=关闭",
     },
+    "HCU_W4A16_MOE_IMPL": {
+        "env": "HCU_W4A16_MOE_IMPL", "default": "auto",
+        "about": "W4A16 MoE（moe_wna16，AWQ/GPTQ-int4 线）专家 GEMM 档："
+                 "auto=现答 triton（stock MoeWNA16 臂不变）；**deepgemm**="
+                 "R-05 桥（DTK 轮 masked w4a16 grouped C++ gemm 作专家 GEMM"
+                 "，自管 dispatch/silu/combine 小管线，eager-only v1：捕获"
+                 "路径与 inplace 恒回 triton）——接手条件=无零点对称臂"
+                 "（(q−8)·s 与轮同规）、g∈{32,64,128}（64/128 载入期一次性"
+                 "扩到 32 格）、K%128/I%128/2I%16 对齐、qweight 定格即"
+                 "轮 b 格式零转换（marlin repack+scale 展开缓存于权重张量"
+                 "）；守 candidate：单测三段式齐，serving A/B（对 moe_wna16"
+                 " triton bench）+e2e 待排；triton=关闭此桥",
+    },
     "HCU_PREFILL_CP": {
         "env": "HCU_PREFILL_CP", "default": "0",
         "about": "prefill 上下文并行（--enable-prefill-cp --cp-strategy "

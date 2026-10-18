@@ -2448,6 +2448,23 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: aiter fused-MoE bridge not installed", exc_info=True
         )
 
+    # 10.5. W4A16 MoE bridge (2026-10-19, R-05): same fused_experts hook
+    #       surface as the aiter arm above, for the int4-w4a16 face of the
+    #       stock moe_wna16 runner -- the DTK deepgemm masked w4a16 C++
+    #       grouped GEMMs behind a dispatch/silu/combine pipeline.
+    #       Explicit opt-in only: HCU_W4A16_MOE_IMPL=deepgemm (auto keeps
+    #       the stock triton arm; capture/inplace calls stay on it too).
+    try:
+        from sgl_kernel._adapters import w4a16_moe as _w16m
+
+        _w16m.install()
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: w4a16 MoE bridge not installed", exc_info=True
+        )
+
     # 11. Prefill context-parallel bridge (2026-10-12): stock v0.5.21
     #     validate_prefill_cp_platform rejects HIP outright; HCU_PREFILL_CP=1
     #     (opt-in) opens the gate so the upstream CP machinery (zigzag/

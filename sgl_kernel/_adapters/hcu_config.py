@@ -417,6 +417,31 @@ BACKEND_CATALOG = {
                               "auto-fallback to triton"},
         },
     },
+    "w4a16_moe": {
+        "var": "HCU_W4A16_MOE_IMPL",
+        "summary": "W4A16 fused MoE experts (moe_wna16 AWQ/GPTQ-int4 line)",
+        "backends": {
+            "triton": {"status": "production",
+                       "note": "stock MoeWNA16 triton arm; auto answers it "
+                               "until the deepgemm tier passes serving A/B"},
+            "deepgemm": {"status": "candidate",
+                         "note": "R-05 bridge 2026-10-19: DTK deepgemm "
+                                 "masked w4a16 grouped C++ GEMMs as the "
+                                 "experts compute behind a hand dispatch/"
+                                 "silu/combine pipeline (eager-only v1 -- "
+                                 "capture/inplace stay on triton). Engage "
+                                 "guards: no-zeros symmetric (q-8)*s (same "
+                                 "fixed convention as the wheel), group "
+                                 "32/64/128 (one-time scale expansion to "
+                                 "the g32 grid), K%128/I%128/2I%16 "
+                                 "aligned, qweight already in the wheel's "
+                                 "b layout so engagement is a marlin "
+                                 "repack + cached scale expansion only. "
+                                 "Recon rel 0.0022; three-tier gate "
+                                 "tests/kernels/test_w4a16_moe_deepgemm.py; "
+                                 "bench vs triton + e2e pending."},
+        },
+    },
     "per_token_quant": {
         "var": "HCU_QUANT_IMPL",
         "summary": "per-token fp8/int8 quant (dynamic)",
