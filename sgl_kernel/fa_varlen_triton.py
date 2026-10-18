@@ -23,6 +23,15 @@ HCU constraints honored (decode-kernel finds #1-#5, see models.md):
   avoided deliberately)
 - masks + tl reductions only; no warp-size assumptions
 
+Launch-config census (BW1101, tools/_probe_fa_varlen_sweep{,2}.py): the
+shipped defaults BM=64 / BN=64 / W=4 are the optimum (or the only fast
+arm) on every shape probed — serving bs8×Lq512×4K ctx 15.3ms vs emu 57ms,
+wide-ctx 2.8ms. W=2 anywhere and BM<64 run 3-10× cliffs (HCU triton
+waveform pathology — do not "fix" the defaults without a BW1102 rerun);
+BN≥256 exhausts shared memory at D=128. Known slow arm: fp8 KV on narrow
+extend windows (~10ms vs emu 1.8ms — suspected e4m3 software-cvt path;
+numerics pass, direction awaits BW1102).
+
 Graph-safety contract of the wrapper: the grid derives from
 ``max_seqlen_q`` (shape-static) and ``B = cu_seqlens_q.numel()-1`` only —
 never from tensor *content*. When ``max_seqlen_q`` is omitted the wrapper
