@@ -343,8 +343,27 @@ BACKEND_CATALOG = {
                                "fp8-KV descale、静态 grid 图安全；哨兵 "
                                "test_fa_varlen_triton.py 三段式 + "
                                "capture-replay + 零长序列 pit）；"
-                               "Dv≠D/fp8-q/softcap/qv/sinks 面仍 emu"
-                               "（BW1101 对拍，性能待 BW1102 复核）"},
+                               "Dv!=D/fp8-q/softcap/qv/sinks 面仍 emu"
+                               "（BW1101 对拍，性能待 BW1102 复核）。"
+                               "Serving A/B executed 2026-10-19 (glm53f "
+                               "tp4 zero-env vs HCU_FA_IMPL=triton, "
+                               "nmz26): quality+perf parity <=8k ctx "
+                               "(anchors/decode 8.27 tok/s identical/"
+                               "prefill within +-10%/LONGCTX facts pass); "
+                               "first boot killed by a wrapper bug="
+                               "q_v face (only_qv+qv) dropped by the ops "
+                               "rebind -> emu assert (fixed 2759711). "
+                               "RED AT THE EDGE: long-ctx (11k tok, "
+                               "8192+2797 chunks) kills the triton-arm "
+                               "server 2/2 boots (run1: emu _attend_chunked "
+                               "28.88 GiB single-alloc OOM rank-kill; "
+                               "run2: watchdog hang) while the auto arm "
+                               "passes 3/3 (11.3s each) -- v3-def path vs "
+                               "ops-rebind path divergence, mechanism "
+                               "unpinned. Stays validated/candidate; "
+                               "production promotion blocked until the "
+                               ">=10k instability is fixed (same root "
+                               "space as R-13 #2)."},
         },
     },
     "sampling": {

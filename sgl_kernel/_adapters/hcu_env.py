@@ -258,7 +258,14 @@ REGISTRY = {
                  "triton 核（paged_attn_triton.py / fa_varlen_triton.py，"
                  "契约超界面回 emu）|vendor=decode/verify 短窗走 DTK "
                  "flash_attn wheel（gfx936 wheel paged 短窗存在词汤级数值"
-                 "问题，2026-10-12 bw7 实测，待 DTK 修）|emu=恒 torch 模拟",
+                 "问题，2026-10-12 bw7 实测，待 DTK 修）|emu=恒 torch 模拟。"
+                 "**2026-10-19 serving A/B（glm53f tp4）**：≤8k ctx 质量+"
+                 "性能平价（锚点/解码 8.27 tok/s 完全一致/prefill ±10%）；"
+                 "首 boot 揪出 ops 重绑丢 q_v 面包参（only_qv+qv→emu 断言"
+                 "杀捕获，2759711 修）；**长上下文（11k 双分块）2/2 boot 毙"
+                 "服务**（emu _attend_chunked 单笔 28.88GiB OOM 杀 rank/"
+                 "watchdog 挂死）而 auto 臂 3/3 过——triton 臂留 candidate，"
+                 "晋级阻塞待 ≥10k 修复（与 R-13 #2 同根空间）",
     },
     "HCU_LINEAR_ATTN_GDN": {
         "env": "HCU_LINEAR_ATTN_GDN", "default": "auto",
