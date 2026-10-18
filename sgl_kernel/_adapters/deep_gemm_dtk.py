@@ -217,10 +217,14 @@ def install():
     if getattr(deepgemm, "fp8_mqa_logits", None) is None:
         from . import mqa_logits_emu as _mle
 
-        def _fp8_mqa_logits(q_fp8, kv, kv_scales=None, weights=None,
-                            cu_starts=None, cu_ends=None, **_kw):
-            if isinstance(kv, (tuple, list)):
-                kv, kv_scales = kv[0], kv[1]
+        def _fp8_mqa_logits(q_fp8, kv, weights, cu_starts, cu_ends,
+                            clean_logits=True, **_kw):
+            # deep_gemm contract: kv arrives as the (k_fp8, k_scale) tuple
+            if not isinstance(kv, (tuple, list)) or len(kv) != 2:
+                raise TypeError(
+                    "fp8_mqa_logits shim expects kv as the (k, scale) tuple"
+                )
+            kv, kv_scales = kv[0], kv[1]
             return _mle._ragged_fp8_mqa_logits(
                 q_fp8, kv, kv_scales, weights, cu_starts, cu_ends, **_kw
             )
