@@ -14,7 +14,7 @@ ops:
   silu_and_mul: lightop     # triton | lightop | torch
   rms_norm: aiter           # triton | aiter | torch
   allreduce: aiter          # aiter（默认落点）| nccl；custom 已 broken（R-01 判决，选配即拒）
-  paged_mqa_logits: emu     # emu（aiter/lightop 规划中）
+  paged_mqa_logits: triton  # triton（R-13 #4 晋级默认）| emu | vendor（broken 选配即拒）
 ```
 
 - **查找顺序**（先中先得）：`$HCU_CONFIG` 指定路径 → `./hcu_adapter.yaml|.yml|.json`
@@ -61,7 +61,7 @@ ops:
 | `silu_and_mul` | triton（默认）/ lightop / torch | aiter 是融合变体（silu+quant），非本算子后端，另行入目录 |
 | `rms_norm` | triton（默认）/ aiter / torch | 仅 plain rmsnorm；fused_add/gemma 恒 triton/torch |
 | `allreduce` | custom（默认）/ aiter / nccl | 复合键：custom=自制 host-shm AR；aiter=aiter.dist GraphSafe；nccl=回退（多卡须关 graph） |
-| `paged_mqa_logits` | emu（默认）/ aiter、lightop（planned） | DSA 线 |
+| `paged_mqa_logits` | triton（默认，R-13 #4）/ emu（opt-out）/ vendor（broken） | DSA 线 |
 | `rotary_embedding` | triton（在用，无开关）；aiter / lightop（planned） | rope_fwd / rotary_embedding_fuse 家族待接 |
 | `moe_gate` | triton（在用，contract=torch）；aiter / lightop（planned） | topk_softmax/sigmoid/moe_fused_gate |
 | `fused_moe` | triton（默认回退）/ aiter（validated，auto 先试） | w8a8 专家层：aiter 块量化走 ASM 调优表、通道量化走 moe_c；未调优形状自动回 triton |
