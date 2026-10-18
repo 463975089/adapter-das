@@ -257,7 +257,7 @@ const CATALOG = {
               off:{s:"production",n:"退回手敲 env（triage）"}}},
   flash_attention: {var:"HCU_FA_IMPL", summary:"fa3 backend 注意力面（分页 decode/宽窗 prefill/varlen）",
     backends:{emu:{s:"production",n:"chunked online-softmax torch 模拟（HCU_FA_IMPL=auto 默认臂）；全契约 graph-safe"},
-              triton:{s:"candidate",n:"自研分页 triton 核：decode 4.7×/prefill ~7× emu（=triton 显式）；varlen 仍 emu；页号 int64"},
+              triton:{s:"candidate",n:"自研 triton 核（=triton 显式）：分页 decode 4.7×/宽窗 prefill ~7× emu + varlen 预填充（fa_varlen_triton.py：ragged dense K/V、swa + fp8-KV descale、静态 grid 图安全）；Dv≠D/fp8-q/softcap/qv/sinks 仍 emu；页号/token 号 int64"},
               vendor:{s:"candidate",n:"DTK flash_attn 2.8.4 wheel：离线对拍逐位等但真实 decode 词汤；=vendor 显式 A-B"}}},
   sampling: {summary:"top-k/top-p/min-p renorm+sample（is_cuda sampler 面）",
     backends:{torch:{s:"production",n:"masked filter→renorm→multinomial，fp32；每 decode 一步一次"},

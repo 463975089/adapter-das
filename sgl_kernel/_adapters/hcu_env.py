@@ -195,9 +195,11 @@ REGISTRY = {
     "HCU_FA_IMPL": {
         "env": "HCU_FA_IMPL", "default": "auto",
         "about": "fa3 注意力面档位：auto=emu（宽窗；缺 vendor 轮自动全 emu）"
-                 "|vendor=decode/verify 短窗走 DTK flash_attn wheel（gfx936 "
-                 "wheel paged 短窗存在词汤级数值问题，2026-10-12 bw7 实测，"
-                 "待 DTK 修）|emu=恒 torch 模拟",
+                 "|triton=分页 decode/宽窗 + ragged varlen 预填充走自研 "
+                 "triton 核（paged_attn_triton.py / fa_varlen_triton.py，"
+                 "契约超界面回 emu）|vendor=decode/verify 短窗走 DTK "
+                 "flash_attn wheel（gfx936 wheel paged 短窗存在词汤级数值"
+                 "问题，2026-10-12 bw7 实测，待 DTK 修）|emu=恒 torch 模拟",
     },
     "HCU_LINEAR_ATTN_GDN": {
         "env": "HCU_LINEAR_ATTN_GDN", "default": "auto",
