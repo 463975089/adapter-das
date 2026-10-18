@@ -52,10 +52,16 @@
 | `HCU_PREFILL_CP_DEBUG` | 空 | 1 | CP 排查插桩：zigzag 策略各阶段（shard/gather/materialize）校验和日志，定位首个数值坏环节 |
 | `HCU_FA_EMU_DEBUG` | 空 | 1 | fa3 emu 每次调用打 q 形状/cu_seqlens/cache_seqlens/校验和（graph capture 期间自动静默） |
 | `HCU_AITER_MOE_DEBUG` | 空 | 1 | aiter fused-MoE 桥诊断：=1 时每个早退守卫/命中/回退决策打 warning 日志（定位某模型为何没走 aiter） |
-| `HCU_DUMP_LAYERS` | 0 | — | 调试：层 residual 流 dump（`_PATH`/`_T`/`_TOTAL` 配套） |
+| `HCU_DUMP_LAYERS` | 0 | — | 调试：层 residual 流 dump（`HCU_DUMP_LAYERS_PATH`/`HCU_DUMP_LAYERS_T`/`HCU_DUMP_LAYERS_TOTAL` 落盘与窗口，`HCU_DUMP_LAYERS_ONCE`/`HCU_DUMP_LAYERS_FIRES`/`HCU_DUMP_LAYERS_SAVE` 触发与轮次配置） |
 | `HCU_DUMP_INNER` | 0 | — | 调试：L0/L1 xa/xb 张量 |
 | `HCU_DUMP_TOPK` | 0 | — | 调试：DSA topk 样本 |
 | `HCU_DUMP_MQA` | 0 | — | 调试：MQA emu 调用日志 |
+| `HCU_DUMP_INT8` | 0 | — | 调试：serve 态 W8A8-Int8 apply 审计——=1 包 `CompressedTensorsW8A8Int8.apply_weights`，前 N 次调用用纯 torch（per-token 反量化 × channel 反量化权重）重算并记 cos/maxerr 到 /tmp/int8_apply_dump.log（独立 GEMM 探针全过而 serve 端乱码时抓真实进程内调用链） |
+| `HCU_DUMP_MHC` | 0 | — | 调试：GLM-5.3-Flash mHC 边界 dump（2026-10-16 定罪役仪器）——=1 包装 mhc_post 融合调用落盘 /tmp/hcu_mhcpost_NNN.pt（`HCU_DUMP_MHC_MAX` 限次）；与 `_mhc_post_torch` 参考对拍定位 z 偏移 |
+| `HCU_LAYER_AUDIT` | 0 | — | 调试：逐层前向审计——=1 按类挂 forward 计时/形状日志到 `HCU_LAYER_AUDIT_PATH`（默认 /root/logs/layer_audit.log.<pid>）；`HCU_LAYER_AUDIT_CLASSES` 逗号类名过滤（默认 DecoderLayer,LinearAttention,GatedDeltaNet,SparseAttention,MoeBlock,MLP,Glm5NextModel） |
+| `HCU_SWIGLU_CLAMP` | 1 | — | 行为：DSV4 swiglu-clamp MoE 激活路由到 adapter triton（silu_and_mul_clamp，上游无 HIP 臂）——默认开；=0 退回上游路径 |
+| `SGLANG_USE_SGL_FA3_KERNEL` | 1（`HCU_FA3_EMU` 生效时 setdefault） | — | 上游原生 env（fa3 可用性旗标）：fa3-emu 桥生效时 setdefault=1 并把 `_is_fa3_supported` 短路为 True，让上游按 fa3 语义调度、实际执行走 emu |
+| `VLLM_PLUGINS` | none（sitecustomize setdefault） | — | 上游原生 env：vllm 平台插件 allowlist。unset=None=load-all 且空串值有 import 期竞态（见 sitecustomize 门内注释），hip 门内 setdefault 非空哨兵 none（过滤一切插件）；vllm_hcu 平台插件在本栈会挂死进程（nmz26 dtk26041 实测），sglang 平台经 platform_seam 解析；操作员显式导出永远赢 |
 | `HCU_STATE_SNAPSHOT` | 空 | 1 | R-06 取证仪器（11c7f99）：挂 Glm5NextModel.forward（importlib 惰性包装），fresh prefill 入口 JSONL 记录 kpool 尾缓冲/mamba temporal+conv 的 abs 和与 nz 层数——状态载体排除法取证 |
 | `HCU_STATE_ZERO` | 空 | 1 | 上者清零臂：=tail\|mamba\|all\|pages（pages 按 out_cache_loc 推页号，k/v buffer list-aware）——A/B 验证"清掉候选载体后还翻不翻" |
 | `HCU_SIDE_PROBE` | 空 | 1 | 图内侧缓冲探针（dd0ec61）：=replay\|eager——捕获期把 fa3-emu 每调用张量 copy_ 进预分配侧 slab（拷贝入图，replay 重执行），读图 replay 真值（forward hook 不可 hook replay） |
@@ -63,7 +69,7 @@
 | `HCU_CONV1D_IMPL` | **fork（hip 默认，2026-10-18 转正）** | 化 | KDA causal_conv1d_fn（prefill varlen）+ causal_conv1d_update（decode 每步）内核选择：**fork**=vendored sglang-das hcu triton（对拍 emu cos 0.999996+/conv 状态位精确相等；fn 16.4×、update 4.3×，spec-decode 旗标臂原生支持；污染态 9-10/20 翻转观测作废（KFD 坏态数据），10-18 干净复验 conv-only 臂 0/20+Tokyo+长文对）；emu=torch 步进（=emu 退路）；stock=官方内核（update cos 0.26 / fn 初态臂死，红门常驻）。旧键 `HCU_CONV1D_{UPDATE,FN}_EMU=1` ≡ 本键 =emu |
 | `HCU_KPOOL_WRITE_EMU` | 0 | — | DSA kpool 指数 K 缓存三写内核（softmax_rotate/decode_update/scatter）的 torch emu。内核复核在 (pages,8448) 2D buf 上健康（此前 ÷4 误判是 probe 侧自造 (pages,64,1,384) buf 使 shape[1]=64 被当页字节数的陷阱），默认直通 triton；留作回归 watch |
 | `HCU_KPOOL_READ_EMU` | **1（GLM-5.x DSA 默认）** | 化 | index-K 缓存 gather 读（GetKAndS.aiter）走 torch emu：aiter `cp_gather_indexer_k_quant_cache`（preshuffle 臂）在 gfx938 非法地址访问/输出零——第 5 坏内核，不修则 prefill topk 的 K 读全零。emu 与写侧同 16-tile 映射（roundtrip 全等，tests/kernels/test_kpool_write_gfx938.py）。=0 退回 aiter 内核 |
-| `HCU_MHC_UNFUSE` | **1（GLM-5.x mHC 默认）** | 化 | GLM-5.x mHC 层边界融合（attn→FFN 段 fused `mhc_post_pre`）禁用：`is_cross_layer_mhc_fusion_enabled()` 只查 SGLANG_OPT_FUSE_MHC_POST_PRE / USE_TILELANG_MHC_{PRE,POST}（默认全 True）**不查 is_hip** → gfx938 上每层跑 aiter triton fused mhc_post_pre，其 FFN 段 h_post 与 `_mhc_post_torch` 参考同输入对拍 z 偏移 +0.5~+5（hc_pre/hc_post runtime dump 实锤）→ 逐层污染 mHC 残差流 = GLM-5.3-Flash 词汤主因（第 6 坏内核）。hip 下默认强制 SGLANG_OPT_FUSE_MHC_POST_PRE=false 走 hc_post+hc_ffn_pre 纯 torch 链；=0 恢复融合 |
+| `HCU_MHC_UNFUSE` | **1（GLM-5.x mHC 默认）** | 化 | GLM-5.x mHC 层边界融合（attn→FFN 段 fused `mhc_post_pre`）禁用：`is_cross_layer_mhc_fusion_enabled()` 只查 `SGLANG_OPT_FUSE_MHC_POST_PRE` / USE_TILELANG_MHC_{PRE,POST}（默认全 True）**不查 is_hip** → gfx938 上每层跑 aiter triton fused mhc_post_pre，其 FFN 段 h_post 与 `_mhc_post_torch` 参考同输入对拍 z 偏移 +0.5~+5（hc_pre/hc_post runtime dump 实锤）→ 逐层污染 mHC 残差流 = GLM-5.3-Flash 词汤主因（第 6 坏内核）。hip 下默认强制 `SGLANG_OPT_FUSE_MHC_POST_PRE`=false 走 hc_post+hc_ffn_pre 纯 torch 链；=0 恢复融合 |
 | `HCU_MHC_EMU` | 0 | — | **无效操作（保留防呆）**：原想 emu hyperconnection.py 的 fused_hc_mix/hc_combine，但 glm5_next 实际消费 `kernels/ops/layernorm/mhc.py`，这两个包夹无调用方；mHC 真正的坏点是融合门控不查 is_hip（见 `HCU_MHC_UNFUSE`）。设 1 无任何效果 |
 | `SGLANG_DISABLE_DSA_INDEXER_FUSION` | 0 | **GLM-5.x DSA 启动配方显式 =1**（见下） | 上游原生 env。GLM-5.x indexer Q 走 V3.2 `[rope|nope]` 布局融合核（fused_q_indexer_rope_first_quant），上游仅 CUDA 实现（docstring 写明 CUDA only，HIP 无臂，`_is_hip=True` 救不了）→ graph 捕获期 JIT 炸。=1 走 unfused（分离 rope+act_quant+分存，HIP 专家原路径） |
 | `SGLANG_MOE_CONFIG_DIR` | 空（走包内 configs/） | — | fused-MoE triton 调优文件目录（上游 env 正门）。无 HCU 命名 tune 文件时 adapter 的 moe_config_guard 把超 64KB LDS 的 tile 就地 clamp（BN=BK=64/stages≤2；gfx93x 硬限 64KB，NV 兄弟默认 tile 72KB 直接 OutOfResources）；此目录供后续正式 tuning 产物落位 |
