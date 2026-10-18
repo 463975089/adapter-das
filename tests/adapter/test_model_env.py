@@ -8,16 +8,27 @@ apply_model_env(model_config) must:
 * never clobber an explicit export;
 * return exactly the applied lines.
 
+apply_from_argv (primary serving arm, 2026-10-18 zero-env gate lesson) must:
+* parse both --model-path VALUE and --model-path=VALUE forms;
+* find DSA hint keys nested in composite configs (glm5_next text_config);
+* leave explicit exports alone; no-op without --model-path or a bad path.
+
 Run: python tests/adapter/test_model_env.py
 """
 
+import json
 import os
 import sys
+import tempfile
 import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sgl_kernel._adapters.model_env import apply_model_env  # noqa: E402
+from sgl_kernel._adapters.model_env import (  # noqa: E402
+    _model_path_from_argv,
+    apply_from_argv,
+    apply_model_env,
+)
 
 FAILS = []
 VARS = (
@@ -85,6 +96,97 @@ try:
         and os.environ["SGLANG_DISABLE_DSA_INDEXER_FUSION"] == "0"
         and os.environ["SGLANG_MAMBA_CONV_DTYPE"] == "bfloat16",
         str(applied),
+    )
+finally:
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+# --- argv arm (apply_from_argv) ---
+saved = {k: os.environ.get(k) for k in VARS}
+try:
+    for k in VARS:
+        os.environ.pop(k, None)
+
+    ok(
+        "argv-parse-space-form",
+        _model_path_from_argv(["x", "--model-path", "/m", "--tp-size", "4"])
+        == "/m",
+    )
+    ok(
+        "argv-parse-eq-form",
+        _model_path_from_argv(["x", "--model-path=/m2"]) == "/m2",
+    )
+    ok("argv-parse-absent", _model_path_from_argv(["x", "--tp", "4"]) is None)
+
+    # composite checkpoint: DSA keys live under text_config (glm5_next)
+    with tempfile.TemporaryDirectory() as td:
+        json.dump(
+            {
+                "model_type": "glm5_next",
+                "text_config": {
+                    "dtype": "bfloat16",
+                    "index_kpool": 4,
+                    "index_head_dim": 128,
+                },
+            },
+            open(os.path.join(td, "config.json"), "w"),
+        )
+        applied = apply_from_argv(["x", "--model-path", td])
+        ok(
+            "argv-nested-dsa",
+            os.environ.get("SGLANG_DSA_FUSE_TOPK") == "0"
+            and os.environ.get("SGLANG_DISABLE_DSA_INDEXER_FUSION") == "1"
+            and "SGLANG_MAMBA_CONV_DTYPE" not in os.environ,
+            str(applied),
+        )
+
+    # explicit export wins over argv sniff
+    for k in VARS:
+        os.environ.pop(k, None)
+    os.environ["SGLANG_DSA_FUSE_TOPK"] = "1"
+    with tempfile.TemporaryDirectory() as td:
+        json.dump({"index_kpool": 4}, open(os.path.join(td, "config.json"), "w"))
+        applied = apply_from_argv(["x", "--model-path", td])
+        ok(
+            "argv-explicit-wins",
+            applied == ["SGLANG_DISABLE_DSA_INDEXER_FUSION=1"]
+            and os.environ["SGLANG_DSA_FUSE_TOPK"] == "1",
+            str(applied),
+        )
+
+    # fp16 GDN section gets conv dtype; bf16 section does not
+    for k in VARS:
+        os.environ.pop(k, None)
+    with tempfile.TemporaryDirectory() as td:
+        json.dump(
+            {"dtype": "float16", "mamba_num_heads": 8},
+            open(os.path.join(td, "config.json"), "w"),
+        )
+        apply_from_argv(["x", "--model-path", td])
+        ok(
+            "argv-fp16-gdn-conv",
+            os.environ.get("SGLANG_MAMBA_CONV_DTYPE") == "float16",
+        )
+    for k in VARS:
+        os.environ.pop(k, None)
+    with tempfile.TemporaryDirectory() as td:
+        json.dump(
+            {"dtype": "bfloat16", "mamba_num_heads": 8},
+            open(os.path.join(td, "config.json"), "w"),
+        )
+        apply_from_argv(["x", "--model-path", td])
+        ok("argv-bf16-gdn-no-conv", "SGLANG_MAMBA_CONV_DTYPE" not in os.environ)
+
+    # no argv / bad path -> no-op, no crash
+    for k in VARS:
+        os.environ.pop(k, None)
+    ok("argv-absent-noop", apply_from_argv(["x"]) == [])
+    ok(
+        "argv-badpath-noop",
+        apply_from_argv(["x", "--model-path", "/nonexistent-model"]) == [],
     )
 finally:
     for k, v in saved.items():
