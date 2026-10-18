@@ -124,10 +124,20 @@ def test_bridge_installed():
     if hcu_env.resolve("HCU_AR_NORM_IMPL")[0] != "aiter":
         pytest.skip("HCU_AR_NORM_IMPL did not resolve to aiter")
     from sglang.srt.layers import flashinfer_comm_fusion as fcf
+    from sglang.srt.layers.layer_boundary.fusions import allreduce as fus
+    from sglang.srt.layers.layer_boundary.residual import add_norm as an
 
     assert getattr(
         fcf.flashinfer_allreduce_residual_rmsnorm,
-        "_hcu_ar_norm_aiter", False), "flashinfer seam not bridged"
+        "_hcu_ar_norm_aiter", False), "flashinfer dispatch not bridged"
+    # the ARM rebind must cover the definition site and both from-import
+    # copies, else the boundary candidate stays untried (v1 lesson: the
+    # dispatch alone is architecturally unreachable on HIP)
+    for mod in (an, fus):
+        assert getattr(
+            mod.apply_flashinfer_allreduce_fusion,
+            "_hcu_ar_norm_arm", False), (
+            f"arm not rebound on {mod.__name__}")
 
 
 @pytest.mark.skipif(

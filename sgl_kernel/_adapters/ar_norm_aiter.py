@@ -1,18 +1,28 @@
 """R-09 (1): aiter fused all-reduce + RMSNorm seam for sglang layernorm.
 
-Upstream v0.5.21 already carries the whole consumer chain dormant:
+Upstream v0.5.21 carries the whole fused AR+RMSNorm machinery, but its
+candidate gate is architecturally closed on HCU:
 
-  layernorm._forward_with_allreduce_fusion
-    -- ``if _use_aiter:`` branch (SGLANG_USE_AITER; closed on this stack)
-    else-branch -> flashinfer_allreduce_residual_rmsnorm (no flashinfer
-       here -> (None, None) -> plain AR + norm)
-  GroupCoordinator.fused_allreduce_rmsnorm (parallel_state.py:814)
-    -> ca_comm.custom_fused_ar_rms / fused_ar_rms   [aiter GraphSafe class]
+  layer_boundary/fusions/allreduce.complete_attention_input /
+  complete_ffn_input try the fused kernel only when
+  ``apply_aiter_all_reduce_fusion`` (needs SGLANG_USE_AITER -- the global
+  gate that would flip every aiter path upstream-wide) or
+  ``apply_flashinfer_allreduce_fusion`` (needs sm90/sm100) is true.
+  Neither ever holds on HIP, so ``plan.norm.forward_with_allreduce_fusion``
+  -- and the aiter GraphSafe fused kernels the tp coordinator already
+  owns -- are unreachable without opening the global gate.
 
-The aiter communicator class supplies ``custom_fused_ar_rms`` /
-``fused_ar_rms``, so re-pointing the *flashinfer* entry the else-branch
-already calls is the one-symbol surgical seam -- no SGLANG_USE_AITER
-(which would flip every aiter gate upstream-wide).
+Two symbols, both surgical:
+
+* ARM: rebind ``apply_flashinfer_allreduce_fusion`` (definition site
+  ``layer_boundary/residual/add_norm.py`` plus the from-import copies in
+  ``layer_boundary/exit.py`` and ``layer_boundary/fusions/allreduce.py``)
+  with the HCU eligibility -- arms the candidate try AND the producer-side
+  reduction deferral in ``exit._can_defer_ffn_reduction``.
+* DISPATCH: rebind ``flashinfer_allreduce_residual_rmsnorm`` -- the entry
+  the layernorm else-branch calls once the candidate is armed -- at
+  ``GroupCoordinator.fused_allreduce_rmsnorm`` (parallel_state.py), which
+  dispatches to the aiter class's ``custom_fused_ar_rms`` / ``fused_ar_rms``.
 
 8-rank probe evidence (nmz26 BW1102, tmp_fetch/probe_r09_arnorm.py,
 2026-10-19): parity vs fp64-exact all-reduce is 1 ulp (norm) / 0 ulp
@@ -24,11 +34,12 @@ history cleared for the GraphSafe fused ops).
 
 Group correctness gate: upstream's aiter branch reduces over the FULL TP
 group regardless of ``use_attn_tp_group`` -- wrong under dp-attention /
-attn-tp splits. This bridge only fuses when the caller's target group IS
-the full TP group; every other shape declines to the stock flashinfer
-entry (which returns (None, None) here, landing on plain AR + norm).
+attn-tp splits. The arm declines whenever dp-attention is on; the
+dispatch declines per-call unless the caller's target group IS the full
+TP group; every other shape falls to the stock entry (-> (None, None) ->
+plain AR + norm).
 
-Degradation: any failure declines per-call to the saved stock function.
+Degradation: any failure declines per-call to the saved stock functions.
 ``HCU_AR_NORM_IMPL=stock`` keeps upstream behavior entirely.
 """
 
@@ -38,8 +49,6 @@ from . import hcu_env
 from .registry import MECH_REBIND, register
 
 LOG = logging.getLogger("hcu.adapter")
-
-_FUSED = {"done": False}
 
 
 def _eligible_target_world(use_attn_tp_group):
@@ -71,14 +80,60 @@ def install():
             CustomAllreduce,
         )
         from sglang.srt.layers import flashinfer_comm_fusion as _fcf
+        from sglang.srt.layers.layer_boundary import exit as _lb_exit
+        from sglang.srt.layers.layer_boundary.fusions import (
+            allreduce as _lb_fus,
+        )
+        from sglang.srt.layers.layer_boundary.residual import (
+            add_norm as _an,
+        )
     except Exception:
         LOG.warning("[HCU ar+norm] aiter fused AR+RMSNorm tier not "
                     "installed (impl=%s)", impl, exc_info=True)
         return
 
+    # ---- ARM: apply_flashinfer_allreduce_fusion copies ------------------
+    stock_apply = _an.apply_flashinfer_allreduce_fusion
+    if getattr(stock_apply, "_hcu_ar_norm_arm", False):
+        return  # already installed (sitecustomize + explicit install)
+    max_bs = getattr(_an, "FUSE_ALLREDUCE_MAX_BATCH_SIZE", 128)
+
+    def _apply_ar_fusion(batch_size):
+        try:
+            if not (0 < batch_size <= max_bs):
+                return False
+            if _an.is_dp_attention_enabled():
+                return False
+            from sglang.srt.distributed import get_tp_group
+
+            return get_tp_group().world_size > 1
+        except Exception:
+            return False
+
+    _apply_ar_fusion._hcu_ar_norm_arm = True
+    _apply_ar_fusion._hcu_stock_apply = stock_apply
+    for mod in (_an, _lb_exit, _lb_fus):
+        if hasattr(mod, "apply_flashinfer_allreduce_fusion"):
+            mod.apply_flashinfer_allreduce_fusion = _apply_ar_fusion
+
+    # ---- DISPATCH: the flashinfer entry the armed candidate calls -------
     stock = _fcf.flashinfer_allreduce_residual_rmsnorm
     if getattr(stock, "_hcu_ar_norm_aiter", False):
-        return  # already installed (sitecustomize + explicit install)
+        register(
+            "allreduce", _apply_ar_fusion,
+            target="sglang.srt.layers.layer_boundary.residual.add_norm."
+                   "apply_flashinfer_allreduce_fusion",
+            mechanism=MECH_REBIND,
+            detail="aiter fused AR+RMSNorm arm (HCU_AR_NORM_IMPL=%s): "
+                   "candidate gate rebound (def site + exit.py + "
+                   "fusions/allreduce.py copies); dispatch via the "
+                   "flashinfer entry at GroupCoordinator.fused_allreduce_"
+                   "rmsnorm -> aiter GraphSafe fused kernels (R-09(1))"
+                   % impl,
+        )
+        LOG.warning("[HCU ar+norm] aiter fused AR+RMSNorm tier installed "
+                    "(HCU_AR_NORM_IMPL=%s)", impl)
+        return
 
     declined = []
 
@@ -98,10 +153,8 @@ def install():
                     out = tp.fused_allreduce_rmsnorm(
                         input_tensor, residual, weight, eps)
                     if out is not None:
-                        if not _FUSED["done"]:
-                            _FUSED["done"] = True
-                            LOG.warning("[HCU ar+norm] fused AR+RMSNorm serving"
-                                     " (aiter GraphSafe, R-09(1))")
+                        LOG.warning("[HCU ar+norm] fused AR+RMSNorm serving"
+                                    " (aiter GraphSafe, R-09(1))")
                         return out
                     declined.append("kernel-declined")
         except Exception:
@@ -123,11 +176,12 @@ def install():
         target="sglang.srt.layers.flashinfer_comm_fusion."
                "flashinfer_allreduce_residual_rmsnorm",
         mechanism=MECH_REBIND,
-        detail="aiter fused AR+RMSNorm tier (HCU_AR_NORM_IMPL=%s): "
-               "flashinfer seam re-pointed at the dormant upstream "
-               "GroupCoordinator.fused_allreduce_rmsnorm chain; full-TP-"
-               "group-only gate, per-call decline to stock (R-09(1))"
-               % impl,
+        detail="aiter fused AR+RMSNorm tier (HCU_AR_NORM_IMPL=%s): arm "
+               "apply_flashinfer_allreduce_fusion (def site + exit.py + "
+               "fusions/allreduce.py copies) + dispatch entry at "
+               "GroupCoordinator.fused_allreduce_rmsnorm -> aiter "
+               "GraphSafe fused kernels; full-TP-group-only gate, "
+               "per-call decline to stock (R-09(1))" % impl,
     )
     LOG.warning("[HCU ar+norm] aiter fused AR+RMSNorm tier installed "
-                 "(HCU_AR_NORM_IMPL=%s)", impl)
+                "(HCU_AR_NORM_IMPL=%s)", impl)
