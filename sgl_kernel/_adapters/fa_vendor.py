@@ -347,8 +347,10 @@ def _install_triton_decode(_sk_fa, registry):
                 q=q, k_cache=k_cache, v_cache=v_cache,
                 page_table=page_table, cache_seqlens=cache_seqlens,
                 cache_batch_idx=cache_batch_idx, cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k_new=cu_seqlens_k_new,
                 max_seqlen_q=max_seqlen_q, softmax_scale=softmax_scale,
                 causal=causal, window_size=window_size, softcap=softcap,
+                qv=qv, only_qv=only_qv,
                 return_softmax_lse=return_softmax_lse, out=out,
             )
 
