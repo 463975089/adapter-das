@@ -38,7 +38,8 @@ triton / vendor / torch 三档策略，见"影子库与适配桥"）。
 任务路由 + 文档地图 + 不变量速查）。分层架构与组件协调关系总览见
 [docs/architecture.md](docs/architecture.md)（配图
 [architecture.html](architecture.html)，浏览器直开）；协作流程与红线见
-[CONTRIBUTING.md](CONTRIBUTING.md)；算子治理（实现选位裁决链、active/ref
+协作流程与红线见 [docs/board.md](docs/board.md)「协作与分支规约」节
+（2026-10-19 起 CONTRIBUTING.md 并入看板维护）；算子治理（实现选位裁决链、active/ref
 角色、运行时注册表与 dump）见 [docs/governance.md](docs/governance.md)。
 
 ## 安装
@@ -125,7 +126,7 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
   `skills/hcu-adapter-dev/references/test-suite.md`）是质量金标准；
   单测绿 ≠ serving 通，模型级验证以 models.md 战报为准。
 - 高危算子均配**快关**：`HCU_DISABLE_OPS=<op>` 一翻开关即绕开疑似算子
-  复跑；快关注册流程见 CONTRIBUTING。
+  复跑；快关注册流程见 docs/board.md「协作与分支规约」节。
 - 端到端精度锚点（Berlin/Tokyo 事实检索 + 马拉松 + 长文门）作为 serving
   级守卡，有效性实证：零 env 四门首跑曾连抓两个栈级 bug（详见
   models.md 2026-10-19 行）。
@@ -136,8 +137,8 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
 影子库矩阵与三档实现策略（triton/vendor/torch）、测试四质量维度、
 快关注册流程、精度定位流程、cookbook（NVIDIA 参数）降级矩阵。
 多人协作流程（分支/MR 门禁/三类改动 checklist/共享节点纪律）见
-[CONTRIBUTING.md](CONTRIBUTING.md)；`tests/tools/` 物料命名语法见
-[tests/tools/README.md](tests/tools/README.md)。
+多人协作流程（双线分支/MR 门禁/三类改动 checklist/共享节点纪律）见
+[docs/board.md](docs/board.md)「协作与分支规约」节；`tests/tools/` 物料命名语法见
 
 ## 已知未覆盖 / 路线图
 

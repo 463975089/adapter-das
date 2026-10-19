@@ -20,7 +20,7 @@
 | R-14 | 上游单测收集面扩容——模型族 + 功能面全查证收编（DSv4/GLM-Next/Qwen3Next/KimiK3/Hunyuan4/MiniMax-M3 + PD 分离/dspark/mtp/dflash/EP/hicache/mock canary） | P2 | （serving 轨批 A/B/C/D 已落地；E/F 待领） | 进行中（2026-10-19 评审两轮点名缺口，协调人 全树查证定批；**批 A 已完成（同日，nmz26）**：l15_mech 段落地（gdn/hybrid_linear/mamba/swa/lightning/dsv4 六目录+**known-fail 预算绊线** passed≥90 且 failed≤42 才绿、越线/超时即红）；首跑 38F/99P/15S/173 子绿 826.58s，六族归因零静默——K1 gdn cuteDSL 编译器 `ptr<1>`≠`ptr` lowering 失配×2（平台）、K2 dsv4 JIT 元数据编不过×3（平台）、K3 l1c_evict_priority triton-ROCm 无此拷贝 op×1（平台）、K4 flash_mla `block_table=None` 桥缺×10（候补 R-11 flash_mla 面）、K5 dsv4 数值 ~20（待深查）、K6 mamba2 triton 页界×3（与 conv1d-flake 同族嫌疑）——账本落 docs/ci.md L1.5b；15 skip 全合理（14×flashinfer 平台+1 SM90 门）；第 2 轮**全门 GREEN**（gpu=0）计数复读 38/99，绊线判 PASS。**批 D 已完成（同日，nmz18/BW1101 转场）**：unit 功能面直跑分诊——PD 分离 unit/disaggregation 33 文件 515 测+157 子测 rc=0 直跑全绿零 skip、dspark 13 文件 156+43 全绿（GPU 形状门 BW1101 实测过）、mock canary self_* 七件 23 测全绿；hicache 1 合法 skip+3 HF-gated-401 快错+6 挂（mooncake/boot）、dflash 2 件全 E+挂归批 E——**694 测+200 子测零适配直跑，零静默**；账本 docs/ci.md L1.5c）。**批 B/C 已完成（同日，nmz18 接力）**：批 B 24 文件 23 绿 1 挂（GLM-5.3-Next 生产主线五件全绿 27 测+37 子——零契约面缺口正式补上；DSv4/qwen3_5/Kimi+25/Hunyuan 全绿，AMD 双件合理 skip；挂=kimi_k3_bfa_overlap 归批 E）；批 C 真发现收全——K7 dsv4 数值族（q_rope_store 6+fp8 dequant+批 A K5 同面）、K8 dtype 契约（positions int32）、K2 扩（meta+compress_plan JIT 双双编不过@gfx938）、teardown 挂两处；glm53 fusion 2S=gfx950 上游门 BW1102 同绿不了；L1 纳入定案=l15_units 段（批 B 绿 22+批 D 绿三段 ~10min），账本 docs/ci.md L1.5d | 2026-10-19 | 2026-10-19 |
 | R-15 | 性能回归门（相对阈值 + 历史锚定 + 三级防线；微基准进 L1、e2e 进夜间） | P2 | — | 待启动（2026-10-19 评审拍板"需要"；协调人 已完成上游 perf 面查证与设计定案，见明细） | 2026-10-19 | 2026-10-19 |
 | R-16 | skill/CONTRIBUTING 与门禁体系同步维护（CLI 上手守则多人化适配） | P2 | — | 待启动（2026-10-19 协调人 完成 skill 补丁首轮=kill-switches AR 除役定位/shadow-matrix 四档状态机/cookbook-matrix 零 env 原则/SKILL 法则 10-11+治理闭环节+仓库结构刷新——本轮即交付大半；本行跟踪剩余：CONTRIBUTING MR 门禁段与 ci.md 同步、flash_attn wheel 段落复核刷新、新同事上手路径实效检验） | 2026-10-19 | 2026-10-19 |
-| R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | — | 待启动（2026-10-19 评审拍板双线模型；PM 已完成方案定标的与五规则化，见明细；现行单 master 混线事实=生产优化与追新实验同线，分线即解） | 2026-10-19 | 2026-10-19 |
+| R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | 分支策略/拓扑/文档面已落地（2026-10-19，见明细与验收记录）；升级适配段待续（rel 树并置+needle 普查+全门） | 进行中→**第一段落地（2026-10-19）**：①主干定名+调试分支清点双关账（本地/远端清单均只剩 main）；②CONTRIBUTING.md 弃用收编 board「协作与分支规约」节（双线模型三绑定+主仓拓扑+fork-MR+cherry-pick 节拍成文；全仓 6 文档外链改指；弃用与收编同由用户 2026-10-19 拍板执行）；③l1_gpu_gate.sh 树参数化（--up-tree/HCU_UP_TREE，显式树不存在即 GPU 探测前 loud fail 防错树假绿；全局 PYTHONPATH 跟随所选树；防错树三证据干跑在案：坏树拒/坏参拒/树校验先于 GPU 探测）；④rel/v0.5.22 分支从 main(691d080) 建立并推 Gitee（远端清单=main+rel 双分支入拓扑）；⑤主仓拓扑治理事实达成（ls-remote 仅 main↔rel）。余=v0.5.22 树并置/适配普查/全门+双向同步演武+fork-MR 演练（见明细） | 2026-10-19 | 2026-10-19 |
 
 ## 需求明细
 
@@ -423,14 +423,16 @@ fusion-ledger / catalog）。
 2. 适配：needle/签名普查（upstream_diff 最小版优先，人工兜底）→ 适配
    commit 落 rel/v0.5.22 → L0/L1/L1.5 全门 + 四门 → production 宣布；
    v0.5.21 线转上一线（仅 bugfix）或 EOL 判定，记录在案。
-3. 策略文档落地：CONTRIBUTING §1 双线模型三绑定 + **主仓分支拓扑**
-   （仅 main+rel；fork-MR 流程改写现"分支命名 feat/fix"节——个人分支
-   概念从"主仓内命名"改为"自己 fork 内任意命名"）+ upstream-watch §3
-   release 流程挂分支动作 + ci.md 环境铁律补一句（同批 commit）；
-   **主干定名——已完成（2026-10-19）**：master(187b870) 快进合入 main
+3. 策略文档落地：**已完成（2026-10-19，含变更）**——用户同日定
+   CONTRIBUTING.md 弃用、内容收编本看板「协作与分支规约」节（原 §1
+   改写为双线模型三绑定+**主仓分支拓扑**（仅 main+rel；fork 内任意命名、
+   MR 标 base 线）+cherry-pick 节拍；§2-§6 全文平移；README/architecture/
+   governance/reading-guide/upstream-watch/skill 全部外链改指 board）；
+   upstream-watch §3 release 流程挂分支动作 + ci.md 环境铁律补三绑定句
+   同批；**主干定名——已完成（2026-10-19）**：master(187b870) 快进合入 main
    并推 Gitee（零冲突纯 ff），Gitee 默认分支已切 main、远端 master 已删
-   （ls-remote 仅剩 main）；本地/各工作区切换=checkout main + branch -u
-   origin/main。剩余：历史调试分支清点（fork 化或删）。
+   （ls-remote 仅剩 main）；**历史调试分支清点——已完成（同日核验）**：
+   本地与远端分支清单均只剩 main，零残留可关账。
 4. master 未落地的生产调优清点：与 rel/v0.5.22 状态对账，确定各自
    回流/重验清单（首次双向同步演武）。
 
@@ -441,7 +443,8 @@ fusion-ledger / catalog）。
    master 新桥回流进 rel（门禁绿）。
 4. v0.5.21 线处置（上一线/EOL）有明确记录；catalog 带线标注成形。
 5. 主仓分支清单=main+rel/v0.5.x（无个人调试分支）；fork→MR 流程在
-   CONTRIBUTING 成文且一个真实新同事 fork-MR 演练走通（含门禁回帖）。
+   board.md「协作与分支规约」节成文且一个真实新同事 fork-MR 演练走通
+   （含门禁回帖）。
 
 ## 项目北极星与长期方向（背景板，不单独开需求号）
 
@@ -489,6 +492,195 @@ HCU 卡的通用 core 与 tensor core **不能 overlap**——NVIDIA 上靠"矩�
 - 自研 deepgemm/marlin 与 CUDA 版不仅接口可能不同，**性能模型是另一套**
   （R-04/R-05 摸底与验收 bench 都以此为前提）。
 - channel-wise int8 Linear 上游原生支持且已双卡型验证 e2e。
+
+## 协作与分支规约（原 CONTRIBUTING.md 收编）
+
+> 2026-10-19 用户定：CONTRIBUTING.md 弃用单文件，内容收编进本看板统一维护；
+> 外链（README/architecture/skill）统一改指本节。上位治理见
+> [docs/governance.md](governance.md)，MR 门禁细节见 [docs/ci.md](ci.md)。
+
+# 贡献指南（多人协作约定）
+
+> 先读 [docs/architecture.md](docs/architecture.md)（分层与机制总览）与
+> [skills/hcu-adapter-dev/SKILL.md](skills/hcu-adapter-dev/SKILL.md)（开发规约），
+> 再读 [docs/ci.md](docs/ci.md)（MR 自动测试怎么跑）。本文只讲协作流程与红线。
+
+### 1. 分支与 MR 模型
+
+**双线模型（R-17 评审定）**——主干分支与上游 sglang 分支一一绑定：
+
+- `main`（**追新线**）↔ 上游 `main`：每日追新/竞速，日常巡检与适配落这
+  （[docs/upstream-watch.md](docs/upstream-watch.md) 承载）；
+- `rel/v0.5.x`（**生产线**）↔ 上游 release 分支：版本锁定，serving A/B
+  验证过的调优沉淀于此；上游出新 release 分支即从 main 及时建对应 rel
+  线（upstream-watch §3 流程）。支持窗口 N=2：最新线 + 上一线（仅
+  bugfix），更老线 EOL 只读归档。
+
+**三绑定铁律**：分支 ↔ 上游源码树 ↔ 容器。`rel/v0.5.22` 的改动必须在
+`/sglang-v0522` 树 + 对应容器上跑门禁（`ci/l1_gpu_gate.sh --up-tree` 或
+`HCU_UP_TREE` env 指定；缺省自动探测 `/sglang-v0521|/root/...`，指定了
+不存在的树则 loud fail 不静默）——错树假绿是环境铁律教训的双线放大版。
+
+**主仓分支拓扑**：主仓只保留 `main` 与 `rel/v0.5.x` 发版分支（托管平台
+无关的规则——现 Gitee，后期或迁 GitHub）。个人调试/特性分支一律 **fork
+到自己账户仓**调试，成熟后向主仓提 MR；主仓不承载个人 WIP 分支。
+
+- MR 分支命名 `feat/<域>-<短名>` / `fix/<域>-<短名>`（fork 内命名随意，
+  MR 标题与 commit 前缀对齐即可）；**MR 必须标 base 线**——追新修法进
+  `main`，生产修复进 `rel/v0.5.x`。
+- 线间节拍（R-17 规则 1）：rel 通用修复/优化定期 cherry-pick 回 main
+  （`sync:` 前缀记录，**不 merge**，版本特化垫片留 rel）；main 新桥
+  成熟/serving 需要时同节拍回流进 rel，双向留痕。
+- MR 提交后自动过两层门禁（见 docs/ci.md）：
+  - **L0 结构门禁**（Gitee Go 云端，秒级）：语法 / LF / 密钥扫描 / 注册表交叉一致；
+  - **L1 GPU 数值门禁**（自托管 watcher，容器空闲卡，~10 分钟）：算子单测 +
+    五个门禁脚本 + vendor 探针，结果以评论回帖到 MR。
+  - L1 全绿（或仅 WARN）即可合入；改动 `sitecustomize.py` / `_base.py` /
+    import 接管逻辑的 MR，另需一次 e2e 冒烟（cookbook 配方）再合。
+- 本地提交前先自跑 L0：`python3 ci/l0_gate.py`（零依赖，秒级）。
+
+### 2. Commit 风格
+
+一行式 `域: 描述`，中文英文均可，描述讲"做了什么+为什么"，长背景进 body：
+
+```
+cp: prefill context-parallel bridge (HCU_PREFILL_CP=1) - platform gate + rope guard ...
+moe: aiter bridge engagement/debug logging (HCU_AITER_MOE_DEBUG)
+ci: tiered MR auto-test -- L0 + L1 + watcher
+docs: architecture collaboration chapter + html diagram
+```
+
+常用域：`cp` `moe` `attn` `rope` `gemm` `quant` `ar`（allreduce）`pd`（分离部署）
+`ep` `ci` `docs` `tests` `env` `config`。
+
+### 3. 三类改动的 Checklist
+
+### 3a. 加 / 改算子（`sgl_kernel/*.py`）
+
+0. **平台语义前置**（governance §0.5）：接入点的平台语义走 is_cuda 分支——
+   上游新符号（含 flashinfer/trtllm 等专有库调用）按四级路由找归宿：
+   lightop → aiter → **triton 先行**（先跑通）→ 响亮 stub；fp8 fnuz 等
+   语义护栏白名单锁定不随翻。triton 先行产物在 vendor 就位后转 ref 档。
+1. API 签名与官方 `sgl-kernel` **逐字对齐**（含 `out=`、占位参数、destination-passing）。
+2. 按三档实现：triton 首档（fp32 累加、零主机同步）→ vendor 封装 → torch 兜底。
+3. 单测三层归位：`tests/test_ops_cpu.py`（torch 兜底）、`tests/kernels/`（GPU +
+   CUDA-graph capture 回归）、`tests/vendor/`（高危 vendor 压测 + 快关 gate）。
+4. 走 op 级 env / yaml 开关的，同步登记：`hcu_env.py` REGISTRY +
+   `docs/env-vars.md` + `hcu_adapter.yaml` 示例键 + `hcu_config.py`
+   BACKEND_CATALOG——**L0 交叉一致检查会挡缺漏**。
+5. 高危算子（allreduce / attention 类）接入即配：压测（尺寸×dtype×graph-replay
+   变输入）+ `kill_switch` 快关。
+
+### 3b. 加桥 / 加 plugin（先分仓，再落位）
+
+1. **先读 [docs/governance.md](docs/governance.md)**：双仓边界、sitecustomize
+   收敛终态、裁决链（seam → rebind → text-patch 白名单）、active/ref 角色
+   都在那里，本文是执行项。
+2. **先分仓**：上游在 AMD/CUDA 上**有**而 HCU 上缺的行为 → adapter 仓的域桥；
+   上游**也没有**的能力 → **独立 plugin 仓**（经上游 seam 或注册机制接入，
+   可直调 lightop/aiter 等底层库），MR 不进本仓。注意 plugin 的目的同样是
+   **性能优化**（算子融合、专项内核、新调度路径）——动机是性能不改变选仓，
+   判据始终是"上游有没有这个行为"。plugin 有意上游化时（自研格式/新算子
+   push 上游拿正式 seam），按 governance **§5.1 演进轨迹**走：接入 → 证据
+   积累（格式契约提前固化为文档+契约单测）→ 上游 PR → 过渡桥退役。
+3. **本仓落位**：行为还原实现体一律放 `_adapters/<域>.py`（install() 入口 +
+   开关 + 安装成功 `registry.register(...)` 登记），sitecustomize 只加一行
+   调用（或 `_base.py` 机制通道里的注册）——**不新增**实现体到
+   sitecustomize，review 拒收。
+4. **先写根因注释**：上游哪个文件哪个判定漏了什么、为什么桥是解法（现存每座
+   域桥都是范本）。没有根因注释的桥不予合入。
+4b. **测试先行顺序**（新模块默认"先单测后 e2e"，比"先跑模型再解问题"省一
+   整轮起服务-爆-倒查循环；实证：contig-triton/fa3-emu 单测先行均 e2e 首过，
+   moe_align/slimquant 反序付出 e2e 倒查代价）：
+   - **算子/数学类**（triton 核、emu、量化路径）：单测先行是**硬门槛**——
+     有了 ref 对拍 + 形状矩阵 + 容差判据，再上 e2e；脚手架照
+     `tests/kernels/test_gemm_int8.py` 三段式（参照/形状矩阵/容差），pattern
+     见 skill `references/test-suite.md`。
+   - **seam/接缝类**（import 时序、capture 交互、平台判定、跨卡织物）：
+     单测表达不了的（如 graph capture 里的主机同步）先以 e2e/探针探路，
+     但**"one pit, one test"**——探明的每个坑，修复 MR 必带能离线复现该坑
+     的单测，无离线复现不予合入（沉淀进 tests/ 即质量资产，L1 自动收集）。
+   - e2e 前先跑既有相关门禁（`tests/tools/_test_*`），L1 全绿是 MR 准入。
+5. 优先用 `_base.py` 的机制通道，不动上游源码：
+   - `extras`（allowlist 填空）——真包缺的符号我们补；
+   - `overrides`——需要整体夺回某函数时；
+   - `post_hooks`——包加载后 wrap 类方法 / 判定词；
+   - 模型文件级判定词才用 post-hook wrap（按名 import 的模块
+     必须走这条，直接改属性不生效）。
+6. 桥必须有开关（env / yaml），默认行为与上游一致或已验证更优。
+7. **登记运行时注册表**：`registry.register(op, impl, target, mechanism)`——
+   op 是 catalog 键，mechanism ∈ seam/rebind/text-patch（text-patch 针串需在
+   `TEXT_PATCH_ALLOWLIST` 在册）。这一步换来启动日志"每算子一行谁在跑"
+   和 `HCU_ADAPTER_DUMP` 机读 JSON；L0 `registry-ops`/`text-patch` 会挡漏登。
+8. **域桥/编排器里都只准写 glue**（路由/签名适配/断言放宽），不准出现
+   triton import、`@triton.jit`、`tl.*`——算子数学一律放 `sgl_kernel/`
+   （governance §1 红线，L0 `glue-numerics`）。
+9. ref（诊断）实现同样登记 `role="ref"`，但**永久留在离线测试路径**
+   （`tests/kernels/`），任何桥不得把它 bind 进运行时。
+10. 存量 sitecustomize 长桥的迁出按 architecture.md §9 P1-P3 节奏做，
+    每次迁移容器 e2e 复验；不要在别的 MR 里顺手搬（迁移与改逻辑分离）。
+
+### 3c. 加环境变量 / 配置键
+
+三原则：**正确部署零环境变量**（默认值即最优解）；**显式设置永远最高优先**；
+**启动日志打印每个生效值及来源**。落地 = REGISTRY 登记 + env-vars.md 手册行 +
+yaml 示例键，缺一被 L0 挡。
+
+### 3d. 推广边界（团队协作红线）
+
+adapter 仓与独立 plugin 仓并存后，防止边界随时间模糊的五条（违反即 review 拒）：
+
+0. **融合沿用原则（R-09）**：is_cuda 路由选中的上游算子融合尽量保留——
+   拆解为例外、禁止静默拆解、正确性优先；上游融合面四态对照见
+   `docs/fusion-ledger.md`（vendor 融合 / triton 融合 / 已拆解须登记 /
+   缺失排期），新增拆解不同步 BACKEND_CATALOG 即违规。
+0. **先分仓再写码**：上游没有的新能力（算子融合/专项内核/新后端/新机制，
+   即便动机是性能优化）不进本仓，落 plugin 仓经 seam/注册接入或直调底层库；
+   本仓只收行为还原（governance §0 判别问句）。
+1. **选位不跳级**：行为还原需求按 governance §3 裁决链选实现手段，
+   MR 描述里写明选位理由（"seam 不可行因为…"）。
+2. **单 active 指针**：一个 catalog 算子同一时刻只有一个生产实现；想换实现
+   = 改注册表指针 + 走门禁，不是再抄一份。
+3. **登记即存在**：没有 catalog 条目、没有 register 记录的实现不存在
+   ——排障只认 `HCU_ADAPTER_DUMP` 的输出（plugin 仓的接入同样要求登记）。
+4. **组合归因不重跑矩阵**：集成问题先看 dump（谁在跑），再 yaml 翻单条目
+   二分；禁止"全绿矩阵跑三遍"式排查（governance §4）。
+
+### 4. tests/tools 命名语法
+
+`tests/tools/` 是物料库不是垃圾抽屉，新文件必须带 docstring（用途 + 运行方式）：
+
+| 前缀 | 语义 | 生命周期 |
+|---|---|---|
+| `_test_` | 门禁脚本（可被 CI / 回归引用） | 长期维护，改坏 CI 会红 |
+| `_probe_` | 环境/能力/e2e 行为探针 | 随特性存活 |
+| `_launch_` | 生产启动配方（模型+旗标固化） | 随配方存活 |
+| `_dbg_` | 一次性调试取证 | 用完可删，禁止被引用 |
+| 无前缀（`run_triage.py` 等） | 跨任务长期工具 | 文档化于 SKILL.md |
+
+详见 [tests/tools/README.md](tests/tools/README.md)。
+
+### 5. 共享节点与双树纪律（红线）
+
+- **本地仓（编辑树）是唯一改码处**；HCU 容器内的仓只做运行验证，**禁止在容器里
+  改代码再手拷回来**——两树漂移曾造成 API 对不上的实 bug（elementwise 事故）。
+  容器树与所属分支漂移时，以 Gitee 对应分支为准：`git fetch && git reset`。
+- 共享 GPU 节点上**只操作自己标识前缀的容器与进程**（每人用自己的名字
+  缩写做前缀命名容器，如 `zhang3_*`、`li4_*`；只动带自己前缀的，别人的不碰）；
+  杀进程按端口精杀，
+  不做宽匹配 `pkill -f`。长任务必须 `timeout N` 前缀。容器内改码/部署走脚本
+  文件，不拼超长内联命令。
+- 任何令牌（Gitee push token、CI token）**不落仓库、不进 commit**；临时写入
+  `.git/config` 用完即还原。L0 密钥扫描是兜底不是借口。
+
+### 6. 版本升级（跟随上游 sglang）
+
+升级 = 对齐 import 面：官方 `sgl-kernel` python API diff 一遍 → 补齐新符号的
+影子实现 → 跑 L1 + cookbook 冒烟。影子库机制的价值就在这：上游模型代码不碰，
+只追算子层。上游出新 **release 分支即从 main 建 `rel/v0.5.x` 线**（双线
+模型 + cherry-pick 节拍见本文件 §1；大版本普查先跑
+`_probe_vendor_inventory.py` 类盘点再动手）。日常追新巡检（对账工具 +
+日流程 + 自主修复授权边界）见 [docs/upstream-watch.md](docs/upstream-watch.md)。
 
 ## 验收记录（在办任务的过程性证据）
 

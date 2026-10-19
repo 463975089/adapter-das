@@ -174,7 +174,7 @@ sglang 符号面，shim 妥协不进契约。
 - **退役**：上游官方支持某算子时，对应桥的删除与默认路径切换必须在同一个
   MR；catalog 状态 `production → deprecated → removed`，不许留"注释掉的桥"。
 - **变更面**：改 KERNEL 实现 → 跑该算子 ref 测试 + L1.5；改 sitecustomize/
-  `_base.py`/注册表 → 加 e2e 冒烟（CONTRIBUTING §1 既有规则）。
+  `_base.py`/注册表 → 加 e2e 冒烟（board.md「协作与分支规约」既有规则）。
 
 ### 5.1 plugin 的演进轨迹（接入 → 上游化 → 退役）
 

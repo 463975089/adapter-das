@@ -171,7 +171,7 @@ hcu-sglang-adapter/
 ├─ docs/                       # architecture / env-vars / models / cookbook / config / ci
 ├─ skills/hcu-adapter-dev/     # 开发规约 skill（AI 协作与人的排查手册）
 ├─ hcu_adapter.yaml            # 部署层配置示例（BACKEND_CATALOG 的使用面）
-├─ CONTRIBUTING.md             # 分支/MR/checklist/纪律（协作入口）
++ docs/board.md               # 看板+协作规约（原 CONTRIBUTING 并入）
 └─ architecture.html           # 本文档配图（自包含，浏览器直开）
 ```
 
@@ -210,7 +210,7 @@ hcu-sglang-adapter/
 | 1 | `sitecustomize.py` 单体（1200+ 行顺序化桥） | 最大维护负债：所有桥共享一个命名空间，改动互相影响、review 困难 | **分阶段拆分**（见下），每阶段容器 e2e 复验后合入 |
 | 2 | `tests/tools/` 90+ 文件 | 已用 `_test_/_probe_/_launch_/_dbg_` 前缀语法事实上分层；`_dbg_` 用完即删（2026-10 已清 12 个结案取证脚本） | 语法固化为 README 规约（不搬迁：路径被 CI/文档/记忆引用，搬迁成本>收益） |
 | 3 | `_adapters/` 混三类文件 | 语义分类未显式 | §7 三分类表归位约定：新桥一律独立文件，不再长入 sitecustomize |
-| 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（CONTRIBUTING §5）+ CI worktree 作为唯一第二执行面 |
+| 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（board.md「协作与分支规约」共享节点节）+ CI worktree 作为唯一第二执行面 |
 
 **sitecustomize 拆分计划**（容器停机期只规划，不执行；目标终态见
 governance.md §0——adapter 职能 = 影子库/算子路由/质量检测的**行为还原**，
@@ -224,13 +224,13 @@ sitecustomize 只剩编排器）：
 - **P2（需 e2e）**：判定词类桥（model_overrides wrap、CP gate 等）迁到
   `_adapters` post_hooks，sitecustomize 缩成 <200 行编排器 + vllm 专用桥。
 - **P3**：P2 全量 e2e（cookbook 冒烟套件）通过后，sitecustomize 正式声明为
-  "编排器"，新桥禁入——这已从计划升格为规约（governance §0 / CONTRIBUTING
+  "编排器"，新桥禁入——这已从计划升格为规约（governance §0 / board.md 协作规约
   §3b），**现在起新需求先过双仓判别：行为还原才进本仓，功能扩展落
   plugin 仓**；本仓的新域桥也直接落 `_adapters/<域>.py`，不等 P1-P3 完成。
 
 ## 10. 协作流程与门禁
 
-分支模型、checklist、节点纪律见 [CONTRIBUTING.md](../CONTRIBUTING.md)；
+分支模型、checklist、节点纪律见 [board.md](board.md)「协作与分支规约」节；
 CI 细节见 [ci.md](ci.md)。一张图看 MR 全程：
 
 ```mermaid

@@ -22,6 +22,42 @@ cd "$ROOT"
 
 FAILS=()
 
+# ---------------------------------------------------------------- arg parse
+# R-17 three-way binding: branch <-> upstream tree <-> container. Explicit
+# tree (arg --up-tree <path> / env HCU_UP_TREE) must EXIST -- a typo'd path
+# loud-fails instead of silently falling back to auto-probe (wrong-tree
+# fake-green is the #1 killer of the dual-line model). Legacy usage
+# `l1_gpu_gate.sh [GPU_ID]` unchanged.
+UP_TREE=""
+GPU_ARG=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --up-tree) [ -n "${2:-}" ] || { echo "L1: --up-tree needs a path"; exit 2; }
+                   UP_TREE="$2"; shift 2;;
+        ''|*[!0-9]*) echo "L1: unknown arg '$1' (supported: [GPU_ID] --up-tree <path>)"; exit 2;;
+        *) GPU_ARG="$1"; shift;;
+    esac
+done
+
+# R-17 three-way binding: branch <-> upstream tree <-> container. Explicit
+# tree (arg --up-tree <path> / env HCU_UP_TREE) must EXIST -- a typo'd path
+# loud-fails here, BEFORE GPU pick and before any test, instead of silently
+# falling back to auto-probe (wrong-tree fake-green is the #1 killer of the
+# dual-line model). No override -> auto-probe the legacy layout. The chosen
+# tree also feeds the global PYTHONPATH below, so cpu/kernels segments stay
+# on the same tree as the l15 segments.
+UP_TREE="${UP_TREE:-${HCU_UP_TREE:-}}"
+UP_TREE="${UP_TREE%/}"
+if [ -n "$UP_TREE" ] && [ ! -d "$UP_TREE/test/registered/attention/unittests" ]; then
+    echo "L1: FAIL -- --up-tree/HCU_UP_TREE='$UP_TREE' has no test/registered/attention/unittests (typo? wrong container? refusing auto-probe fallback)"
+    exit 2
+fi
+if [ -z "$UP_TREE" ]; then
+  for d in /sglang-v0521 /root/sglang-v0521-src; do
+    [ -d "$d/test/registered/attention/unittests" ] && UP_TREE="$d" && break
+  done
+fi
+
 # ---------------------------------------------------------------- GPU pick
 pick_gpu() {
     local want="${1:-}"
@@ -39,7 +75,7 @@ pick_gpu() {
     return 1
 }
 
-GPU="$(pick_gpu "${1:-}")" || { echo "L1: no free GPU (all >=5% VRAM) -- SKIP/QUEUE"; exit 2; }
+GPU="$(pick_gpu "${GPU_ARG:-}")" || { echo "L1: no free GPU (all >=5% VRAM) -- SKIP/QUEUE"; exit 2; }
 export HIP_VISIBLE_DEVICES="$GPU" CUDA_VISIBLE_DEVICES="$GPU"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 # some gates exercise upstream classes (rotary etc.) -- mount the sglang
@@ -48,7 +84,7 @@ export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 # /root/sglang-v0521-src. Without this, tests/kernels imports (e.g.
 # kpool_fp8_index) resolve sglang from pip dist-packages, which lacks the
 # dsa submodule -> collection error (2026-10-18 rerun2 forensics).
-for d in /sglang-v0521/python /root/sglang-v0521-src/python; do
+for d in "$UP_TREE/python" /sglang-v0521/python /root/sglang-v0521-src/python; do
     [ -d "$d" ] && export PYTHONPATH="$d:$PYTHONPATH"
 done
 echo "L1: using GPU $GPU"
@@ -83,11 +119,8 @@ run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -q --no-heade
 # 1*4*1 != 6) fails at compile -- platform issue, see docs/ci.md L1.5.
 # fa4/flashinfer/trtllm skip via attn_backend_gate / kit support checks.
 # Cold JIT cache costs ~5 min/kernel (~30 min first run); warm = ~35 s.
-UP_TREE=""
-for d in /sglang-v0521 /root/sglang-v0521-src; do
-    [ -d "$d/test/registered/attention/unittests" ] && UP_TREE="$d" && break
-done
 if [ -n "$UP_TREE" ]; then
+    echo "L1: upstream tree = $UP_TREE"
     UP="$UP_TREE/test/registered/attention/unittests"
     run_seg l15_upstream 1800 env HCU_DEEPGEMM_BRIDGE=1 \
         PYTHONPATH="$UP_TREE/python:$ROOT" \

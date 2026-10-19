@@ -8,9 +8,9 @@
 | 你要做的事 | 必读（按序） |
 |---|---|
 | **第一次接触本仓** | 本文 → README → docs/architecture.md（§1-§3 机制图）→ docs/governance.md |
-| 提 MR / 改代码 | CONTRIBUTING.md（§1 流程、§3 checklist、§5 红线）→ docs/ci.md |
+| 提 MR / 改代码 | docs/board.md「协作与分支规约」（双线分支/MR/checklist/红线）→ docs/ci.md |
 | 加/改一个算子 | skills/…/SKILL.md → references/shadow-matrix.md → references/test-suite.md |
-| 加一座桥 / 新功能选位 | docs/governance.md（§0 双仓判别 → §3 裁决链 → §4 登记/dump）→ CONTRIBUTING §3b |
+| 加一座桥 / 新功能选位 | docs/governance.md（§0 双仓判别 → §3 裁决链 → §4 登记/dump）→ board.md 协作规约 §3b |
 | 向算子组/供应商提需求 | docs/operator-requests.md（锚定 sglang 契约面，机器数据先行） |
 | 追上游新版本 / 日常 compatibility 巡检 | docs/upstream-watch.md（规则版：报告优先+自主修复边界+工具清单） |
 | 配置后端 / 部署 | docs/config.md → hcu_adapter.example.yaml → docs/env-vars.md（调试覆盖） |
@@ -26,7 +26,7 @@
 | README.md | 项目是什么、装怎么装、 empirically 跑通了什么 | 覆盖范围表与 sgl_kernel 实际导出不符 |
 | docs/architecture.md | 分层机制：影子库/is_cuda 语义路由/三档路由/横向机制（配 architecture.html 一页图） | §3 图与 `_adapters/` 目录结构不符 |
 | **docs/governance.md** | **治理宪法**：双仓边界（adapter=行为还原 / plugin 独立仓=性能新能力）、seam→rebind→text-patch 裁决链、active-ref 角色、运行时注册表与 dump | 与 ci/l0_gate.py 三规则或 `_adapters/registry.py` 行为不符 |
-| CONTRIBUTING.md | 协作流程：分支/MR/checklist/节点纪律（红线） | 与 Gitee 实际门禁行为不符 |
+| board.md「协作与分支规约」节 | 协作流程：双线分支/MR/checklist/节点纪律（红线；原 CONTRIBUTING.md 并入） | 内容失效随看板走 |
 | docs/ci.md | CI 分层：L0 秒级 → L1 GPU ~10min → L2 夜间 | GATES 列表与 l1_gpu_gate.sh 不符 |
 | docs/config.md | hcu_adapter.yaml 部署配置 + BACKEND_CATALOG 状态语义 | catalog 键集与 hcu_config.py 不符 |
 | docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
@@ -59,7 +59,7 @@ rope cache 半分布局（fbc540c）、aiter AR 图重放损坏（1eb038d）、H
 预打包、AWQ 必须 `--quantization moe_wna16`、恒显式 `--attention-backend`、
 moe_align capture 崩（527ad97）。金索引法：docs/models.md 备注列 + commit log。
 
-## 文档维护规则（与 CONTRIBUTING §3 呼应）
+## 文档维护规则（与 board.md 协作规约 §3 呼应）
 
 - **改行为必改文档，同 PR**：三门禁（env↔env-vars、catalog↔config、
   规则↔governance）由 L0 兜底，其余靠 review。
