@@ -241,6 +241,18 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: aiter fused AR+RMSNorm tier not installed",
             exc_info=True
         )
+    # aiter JIT cache observability: the vendor wheel ships every op
+    # prebuilt (fresh import ~seconds, zero compiles); surface the wheel
+    # version and any runtime-built artifacts so they get harvested or the
+    # wheel version pinned (see the module docstring for the harvest rule).
+    try:
+        from sgl_kernel._adapters import aiter_jit_cache
+
+        aiter_jit_cache.report()
+    except Exception:
+        logging.getLogger("hcu.adapter").debug(
+            "HCU adapter: aiter jit cache report skipped", exc_info=True
+        )
     # JIT cuda-header forwarders (cuda_bf16.h et al -> hip equivalents) in
     # the DTK include root the JIT toolchain already puts on the compile line.
     try:

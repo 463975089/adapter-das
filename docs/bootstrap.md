@@ -184,6 +184,36 @@ dtk26041-202610xx 老系镜像，nmz26 只用 sf_b075 系；换机先跑
 `python -c "import torch; print(torch.cuda.device_count())"`（60s 内出 8
 即为配对兼容，挂死即镜像错配）。
 
+## 4c. aiter JIT cache：机制与收割（2026-10-20 实测定稿）
+
+**结论先行：新环境无需为 aiter 做任何预 warm**——DTK vendor wheel 把全部
+算子预编译进包（`aiter/jit/module_<op>.so`，nmz26 实测 51 颗/1.1G；
+出厂镜像裸 `import aiter` 仅 3.5s、运行时编译量为零、`jit/build/` 清洁）。
+编译只会发生在 wheel 未预编译的新算子/模板上，产物落
+`aiter/jit/build/`（`get_user_jit_dir()` 三级：`AITER_JIT_DIR` env →
+包目录可写直用 → `~/.aiter` 拷树只读兜底）。
+
+**收割（harvest）配方**——某机 `jit/build/` 长出了产物且值得保留时：
+
+```bash
+# 1. 打包运行时编译产物（在源机、源容器内）：
+J=/usr/local/lib/python3.10/dist-packages/aiter/jit
+tar czf aiter_jit_harvest.tgz -C $J build
+# 2. 目标机播种（严格同 wheel 版本；目标容器内解到包目录 jit/ 下）：
+tar xzf aiter_jit_harvest.tgz -C $J
+```
+
+**版本成对铁律**：模块 .so 按操作名命名（无内容 hash）——跨 wheel 版本
+播种旧 .so 会**遮蔽**新 wheel 的重编译（(kernel|bug 门伪装修复)）。播种前
+对版本：`pip show aiter` 两端一致才可走（现役两镜像已分叉：sf_b075=
+`...2610171925.ga76f3d`、20261016 老=`...2610161749.g722998`）。
+
+**开机观测**：adapter 开机自动打一行
+`HCU aiter jit cache: wheel=<ver> prebuilt_so=<N> runtime_built=<M> ...`；
+`runtime_built>0` 即发生了新编译（WARNING 级、列产物）——处置二选一：
+收割入 wheel 源头（报 vendor），或钉住该 wheel 版本直到收割完成。
+`AITER_JIT_DIR` 可把落点重定向到久存卷（同一版本成对前提下）。
+
 ## 5. 镜像已知差异速查（选 mem-fraction 前看）
 
 | 镜像 | 差异 | 应对 |
