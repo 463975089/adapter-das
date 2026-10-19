@@ -151,6 +151,7 @@ CUDA 语义虚拟层、底层 HIP）。原理与证据见 [ci.md](ci.md) L1.5g�
 mkdir -p /opt/hcu-rocm-shim/bin
 ln -sfn /opt/dtk/cuda/cuda-12/targets/x86_64-linux/include /opt/hcu-rocm-shim/include
 ln -sfn /opt/dtk/lib /opt/hcu-rocm-shim/lib
+cp -r /opt/dtk/.info /opt/hcu-rocm-shim/
 cat > /opt/hcu-rocm-shim/bin/hipcc <<'EOF'
 #!/bin/sh
 # DTK cuda-mocker route: strip HIP-mode defines, inject arch (mocker maps
@@ -171,8 +172,17 @@ export ROCM_HOME=/opt/hcu-rocm-shim
 export LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so
 ```
 
-已知副作用：`ROCM_HOME` 指合成根时 deepgemm 版本探测失败（bridge 拒装、
-非致命），待 `deep_gemm_dtk.py` 改读 DTKROOT 后消除。
+已知副作用：`ROCM_HOME` 指合成根时 deepgemm 找 `<ROCM_HOME>/.info/rocm_version`
+（上面的 `cp -r .info` 即为此；缺它则 bridge 拒装并连坐 kernels 段 14 测），
+长期修复为 `deep_gemm_dtk.py` 改读 DTKROOT。
+
+**镜像↔宿主机配对铁律（2026-10-19 nmz18 实测教训）**：镜像不是跨机通用
+的——sf_b075-20261018（nmz26 现役）放到 nmz18 上 HIP 运行时初始化直接
+死锁（内核栈：vllm import 期 poll 无限等 /dev/dri/renderN，用户态 HSA 与
+nmz18 宿主内核驱动版本错配；hip-smi 可见卡但 torch 起不来）。nmz18 只用
+dtk26041-202610xx 老系镜像，nmz26 只用 sf_b075 系；换机先跑
+`python -c "import torch; print(torch.cuda.device_count())"`（60s 内出 8
+即为配对兼容，挂死即镜像错配）。
 
 ## 5. 镜像已知差异速查（选 mem-fraction 前看）
 

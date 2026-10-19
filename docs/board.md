@@ -20,7 +20,8 @@
 | R-14 | 上游单测收集面扩容——模型族 + 功能面全查证收编（DSv4/GLM-Next/Qwen3Next/KimiK3/Hunyuan4/MiniMax-M3 + PD 分离/dspark/mtp/dflash/EP/hicache/mock canary） | P2 | （serving 轨批 A/B/C/D 已落地；E/F 待领） | 进行中（2026-10-19 评审两轮点名缺口，协调人 全树查证定批；**批 A 已完成（同日，nmz26）**：l15_mech 段落地（gdn/hybrid_linear/mamba/swa/lightning/dsv4 六目录+**known-fail 预算绊线** passed≥90 且 failed≤42 才绿、越线/超时即红）；首跑 38F/99P/15S/173 子绿 826.58s，六族归因零静默——K1 gdn cuteDSL 编译器 `ptr<1>`≠`ptr` lowering 失配×2（平台）、K2 dsv4 JIT 元数据编不过×3（平台）、K3 l1c_evict_priority triton-ROCm 无此拷贝 op×1（平台）、K4 flash_mla `block_table=None` 桥缺×10（候补 R-11 flash_mla 面）、K5 dsv4 数值 ~20（待深查）、K6 mamba2 triton 页界×3（与 conv1d-flake 同族嫌疑）——账本落 docs/ci.md L1.5b；15 skip 全合理（14×flashinfer 平台+1 SM90 门）；第 2 轮**全门 GREEN**（gpu=0）计数复读 38/99，绊线判 PASS。**批 D 已完成（同日，nmz18/BW1101 转场）**：unit 功能面直跑分诊——PD 分离 unit/disaggregation 33 文件 515 测+157 子测 rc=0 直跑全绿零 skip、dspark 13 文件 156+43 全绿（GPU 形状门 BW1101 实测过）、mock canary self_* 七件 23 测全绿；hicache 1 合法 skip+3 HF-gated-401 快错+6 挂（mooncake/boot）、dflash 2 件全 E+挂归批 E——**694 测+200 子测零适配直跑，零静默**；账本 docs/ci.md L1.5c）。**批 B/C 已完成（同日，nmz18 接力）**：批 B 24 文件 23 绿 1 挂（GLM-5.3-Next 生产主线五件全绿 27 测+37 子——零契约面缺口正式补上；DSv4/qwen3_5/Kimi+25/Hunyuan 全绿，AMD 双件合理 skip；挂=kimi_k3_bfa_overlap 归批 E）；批 C 真发现收全——K7 dsv4 数值族（q_rope_store 6+fp8 dequant+批 A K5 同面）、K8 dtype 契约（positions int32）、K2 扩（meta+compress_plan JIT 双双编不过@gfx938）、teardown 挂两处；glm53 fusion 2S=gfx950 上游门 BW1102 同绿不了；L1 纳入定案=l15_units 段（批 B 绿 22+批 D 绿三段 ~10min），账本 docs/ci.md L1.5d | 2026-10-19 | 2026-10-19 |
 | R-15 | 性能回归门（相对阈值 + 历史锚定 + 三级防线；微基准进 L1、e2e 进夜间） | P2 | — | 待启动（2026-10-19 评审拍板"需要"；协调人 已完成上游 perf 面查证与设计定案，见明细） | 2026-10-19 | 2026-10-19 |
 | R-16 | skill/CONTRIBUTING 与门禁体系同步维护（CLI 上手守则多人化适配） | P2 | — | 待启动（2026-10-19 协调人 完成 skill 补丁首轮=kill-switches AR 除役定位/shadow-matrix 四档状态机/cookbook-matrix 零 env 原则/SKILL 法则 10-11+治理闭环节+仓库结构刷新——本轮即交付大半；本行跟踪剩余：CONTRIBUTING MR 门禁段与 ci.md 同步、flash_attn wheel 段落复核刷新、新同事上手路径实效检验） | 2026-10-19 | 2026-10-19 |
-| R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | 分支策略/拓扑/文档面已落地；**v0.5.22 首跑普查已完成（同日，nmz26/baa9bef）**：单测矩阵全量对账落 ci.md L1.5e——**零例绿变红**，机制老族同构、模型族面全绿；**破损桥名单四条定案**（P0=memory_pool kv_fix needle 失配[boot 级炸点]+add_norm ar_norm seam 符号漂移；P1=dsv4 JIT 家族编不过 3→18 扩面；P2=dspark server -9 归因）；适配 commit 落 rel 待开工；**P0 两根适配完成（同日，rel/v0.5.22@2ad90aa）**：kv_fix 检测 .22 伤口愈合（上游重写 strides 为纯 int）转 no-op、ar_norm ARM 候选门消失（.22 aiter 融合原生化）转优雅降级 dispatch-only——**双树兼容**（.21 回归 patch/ARM 照装、.22 import 干净+canary 六件 22P 全绿）；**双向同步首演达成**：rel 修复 cherry-pick 回 main（1340a42，L0 绿）=R-17 验收 3 之半；余项全收口（同日，L1.5f）：**rel 线 L1 全门 GREEN**（gpu=4，--up-tree /sglang-v0522，mech 预算判 38F/99P 比普查还少 3 败=适配后装配走得更远）；**JIT 三根定性→两根同配方实测治愈（同日 L1.5g）**：CUB 头缺失与 hipcc uint2 分解缺口均被 cuda-mocker 配方收口（用户定性 /opt/dtk/cuda/cuda-12=DTK cuda-mocker，CUDA 语义虚拟层底层 HIP 与 adapter 哲学同构；配方三件套=合成 ROCM_HOME 根[hipcc 壳剥 USE_ROCM/HIP_PLATFORM+注入 SGL_CUDA_ARCH=750]+LD_PRELOAD mock libcudart；零装库零 sglang 改；metadata+conv1d 双 LOAD_OK、conv1d 数值对拍 PASS 9.4e-3；cutedsl=K1 仍账）；dspark -9=boot 资源类登记批 E；**R-09① 终态定案**：.22 上游原生接手（消费链直通 ca_comm 同一 aiter GraphSafe 面），桥降级即终态、ar_norm 晋级动作变「上游默认开+验证 HCU 通」。余=serving 级四门（production 宣布前置）+mech 预算重锚（CUB/conv1d 族复跑翻绿后收紧 38F/99P 基线）+镜像固化合成根与 hcu_env 收编 ROCM_HOME/LD_PRELOAD 两 env+deep_gemm_dtk 改读 DTKROOT（消除合成根下 deepgemm 探测拒装） | 进行中→**第一段落地（2026-10-19）**：①主干定名+调试分支清点双关账（本地/远端清单均只剩 main）；②CONTRIBUTING.md 弃用收编 board「协作与分支规约」节（双线模型三绑定+主仓拓扑+fork-MR+cherry-pick 节拍成文；全仓 6 文档外链改指；弃用与收编同由用户 2026-10-19 拍板执行）；③l1_gpu_gate.sh 树参数化（--up-tree/HCU_UP_TREE，显式树不存在即 GPU 探测前 loud fail 防错树假绿；全局 PYTHONPATH 跟随所选树；防错树三证据干跑在案：坏树拒/坏参拒/树校验先于 GPU 探测）；④rel/v0.5.22 分支从 main(691d080) 建立并推 Gitee（远端清单=main+rel 双分支入拓扑）；⑤主仓拓扑治理事实达成（ls-remote 仅 main↔rel）。余=v0.5.22 树并置/适配普查/全门+双向同步演武+fork-MR 演练（见明细） | 2026-10-19 | 2026-10-19 |
+| R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | 分支策略/拓扑/文档面已落地；**v0.5.22 首跑普查已完成（同日，nmz26/baa9bef）**：单测矩阵全量对账落 ci.md L1.5e——**零例绿变红**，机制老族同构、模型族面全绿；**破损桥名单四条定案**（P0=memory_pool kv_fix needle 失配[boot 级炸点]+add_norm ar_norm seam 符号漂移；P1=dsv4 JIT 家族编不过 3→18 扩面；P2=dspark server -9 归因）；适配 commit 落 rel 待开工；**P0 两根适配完成（同日，rel/v0.5.22@2ad90aa）**：kv_fix 检测 .22 伤口愈合（上游重写 strides 为纯 int）转 no-op、ar_norm ARM 候选门消失（.22 aiter 融合原生化）转优雅降级 dispatch-only——**双树兼容**（.21 回归 patch/ARM 照装、.22 import 干净+canary 六件 22P 全绿）；**双向同步首演达成**：rel 修复 cherry-pick 回 main（1340a42，L0 绿）=R-17 验收 3 之半；余项全收口（同日，L1.5f）：**rel 线 L1 全门 GREEN**（gpu=4，--up-tree /sglang-v0522，mech 预算判 38F/99P 比普查还少 3 败=适配后装配走得更远）；**JIT 三根定性→两根同配方实测治愈（同日 L1.5g）**：CUB 头缺失与 hipcc uint2 分解缺口均被 cuda-mocker 配方收口（用户定性 /opt/dtk/cuda/cuda-12=DTK cuda-mocker，CUDA 语义虚拟层底层 HIP 与 adapter 哲学同构；配方三件套=合成 ROCM_HOME 根[hipcc 壳剥 USE_ROCM/HIP_PLATFORM+注入 SGL_CUDA_ARCH=750]+LD_PRELOAD mock libcudart；零装库零 sglang 改；metadata+conv1d 双 LOAD_OK、conv1d 数值对拍 PASS 9.4e-3；cutedsl=K1 仍账）；dspark -9=boot 资源类登记批 E；**R-09① 终态定案**：.22 上游原生接手（消费链直通 ca_comm 同一 aiter GraphSafe 面），桥降级即终态、ar_norm 晋级动作变「上游默认开+验证 HCU 通」。余=serving 级四门（production 宣布前置）+mech 预算重锚（**锚定轮等 nmz26 空卡（当前 8 卡满），资产最后一件已备（L1.5h）：配方三模块[cub 兼 metadata+compress_plan+conv1d]跨两机两镜像族实证、两坑回写[.info 补丁消 deepgemm 14 测连坐/壳双旗标]、镜像↔宿主配对铁律入 bootstrap[sf_b075×nmz18=HIP init 死锁内核栈实证]、nmz26 共享树 ci/tests/docs 已刷平[旧版非 git 树 gate 无 --up-tree 会逮 v0521，待全树 git 化]、/tmp/lizhg_rocm22 作坊根 v3+.info 就绪一条命令可发**；预期 CUB≈30 败行+conv1d 6 翻绿、38F/99P 届时重锚）+镜像固化合成根与 hcu_env 收编 ROCM_HOME/LD_PRELOAD 两 env+deep_gemm_dtk 改读 DTKROOT（配方已用 .info 兜住，消除后更净） | 进行中→**第一段落地（2026-10-19）**：①主干定名+调试分支清点双关账（本地/远端清单均只剩 main）；②CONTRIBUTING.md 弃用收编 board「协作与分支规约」节（双线模型三绑定+主仓拓扑+fork-MR+cherry-pick 节拍成文；全仓 6 文档外链改指；弃用与收编同由用户 2026-10-19 拍板执行）；③l1_gpu_gate.sh 树参数化（--up-tree/HCU_UP_TREE，显式树不存在即 GPU 探测前 loud fail 防错树假绿；全局 PYTHONPATH 跟随所选树；防错树三证据干跑在案：坏树拒/坏参拒/树校验先于 GPU 探测）；④rel/v0.5.22 分支从 main(691d080) 建立并推 Gitee（远端清单=main+rel 双分支入拓扑）；⑤主仓拓扑治理事实达成（ls-remote 仅 main↔rel）。余=v0.5.22 树并置/适配普查/全门+双向同步演武+fork-MR 演练（见明细） | 2026-10-19 | 2026-10-19 |
+| R-18 | tvm-ffi dlpack 冷缓存导入期自递归——adapter 预热桥（方案3：sitecustomize 代码化预热） | P2 | — | 待启动（2026-10-19 评审拍板方案3；PM 已解剖递归链两端与定案+jit 编译成本口径入账，见明细） | 2026-10-19 | 2026-10-19 |
 
 ## 需求明细
 
@@ -445,6 +446,44 @@ fusion-ledger / catalog）。
 5. 主仓分支清单=main+rel/v0.5.x（无个人调试分支）；fork→MR 流程在
    board.md「协作与分支规约」节成文且一个真实新同事 fork-MR 演练走通
    （含门禁回帖）。
+
+### R-18 tvm-ffi dlpack 冷缓存自递归——adapter 预热桥
+
+**背景（2026-10-19 评审拍板方案3；事故档案 models.md 2026-10-18 运维役行）**
+- 递归链解剖（tvm-ffi 轮子 bug，非 adapter 代码）：
+  `_optional_torch_c_dlpack.py` 导入执行发现缓存 .so 不存在 →
+  `subprocess.run(python, utils/_build_optional_torch_c_dlpack.py)`（导入期
+  spawn）；构建脚本 `import torch.utils.cpp_extension` 触发 CUDA 初始化 →
+  torch 加载又 import tvm_ffi → 同模块再次导入执行、缓存仍无（父进程还在
+  编）→ 再 spawn。每层 ~24s，5 分钟观测 119 进程。
+- 关键事实：构建脚本 L732 **自己会设 `TVM_FFI_DISABLE_TORCH_C_DLPACK=1`**
+  （轮作者认知里的递归闸），但 **spawn 之前没有预设**——只护了子进程端，
+  没护进程级重入；脚本注释自证防的是函数级循环 import 而非进程级。
+- 现役缓解=bootstrap §3 手工配方（`TVM_FFI_DISABLE_TORCH_C_DLPACK=1`
+  直构预热或健康容器拷 .so）——人肉运维面，清缓存即复发。
+
+**工作内容（方案3：预热桥代码化）**
+1. 新桥 `sgl_kernel/_adapters/dlpack_warmup.py`：且仅当
+   `~/.cache/tvm-ffi/libtorch_c_dlpack_addon_torch{maj}{min}-<device>.so`
+   不存在时，一次性 `subprocess.run` 构建脚本并注入
+   `TVM_FFI_DISABLE_TORCH_C_DLPACK=1`（= bootstrap 配方的代码化）；
+   失败不致命——log-once 降级走纯 python dlpack 路径。device 判定与
+   libname 规则与轮子 L120-151 逐字对齐（torch 版本+cuda/hip/cpu）。
+2. sitecustomize 挂载：位置在 hip 门内、任何 tvm_ffi 可能被 import 之前
+   （hcu_env 之后不受影响；顺序契约测试
+   test_sitecustomize_sequence.py 结构层同步更新）。
+3. 登记：env-vars.md（新仪器行为=自动预热，可控开关）+ BACKEND_CATALOG
+   （模型/运行时桥条目）+ bootstrap §3 改写（配方降级为"手动兜底"，
+   推荐自动桥）同 commit。
+4. 结构测试钉：test_sitecustomize_sequence.py 增断言——缓存缺失场景（
+   仿 env 切 TVM_FFI_CACHE_DIR 到空目录）下预热桥触发且导入不挂。
+
+**验收标准**
+1. 冷清缓存容器（含 Windows/WSL 侧不可用场景可只清 /root/.cache/tvm-ffi）
+   import `sitecustomize` 一次成功、无 fork 风暴（进程数恒 1）、
+   预热后加速层 .so 在位。
+2. 递归免疫回归钉常驻（结构测试），L1 全门 GREEN。
+3. bootstrap §3 与 env-vars.md 同 commit 更新，运维手册不再依赖手工配方。
 
 ## 项目北极星与长期方向（背景板，不单独开需求号）
 

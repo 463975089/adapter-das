@@ -200,6 +200,46 @@ cuh` 能找到，但 mocker 的 CUDA 头（`vector_types.h` 等）与 hipcc 隐�
 - 生产落地=镜像固化合成根 + adapter 侧收编两个 env；手工配方已可先行
   自救。
 
+### L1.5h cuda-mocker 配方跨环境战役与锚定待跑（2026-10-19 晚，nmz18/nmz26）
+
+L1.5g 作坊验证后跨环境推广实测，**配方三关再证成立+两个坑修复+一个硬边界
+发现**；带配方的 mech 锚定复跑因机时未落，等 nmz26 空卡（资产已备）。
+
+**配方在第二环境三模块全过**：nmz18 新容器（sf_b075 镜像）同配方下
+metadata（cache 复刻+补链）与 **compress_plan（c_plan.cuh，uint2 分解缺口
+族第三颗）**补 ninja 编译链接全过、conv1d 装载过——三模块横跨两机两镜像
+族，CUB/uint2 两根的配方修复面坐实。
+
+**坑一（已修，回写 L1.5g/bootstrap 配方）**：deepgemm 读
+`<ROCM_HOME>/.info/rocm_version`，合成根缺该文件时 bridge 拒装并连坐
+kernels 段 14 测（w4a16_deepgemm 全家）——`cp -r /opt/dtk/.info <合成根>/`
+即消。**坑二（即 L1.5g 壳本体）**：壳必须剥 `-DUSE_ROCM`/
+`-D__HIP_PLATFORM_AMD__*` 并注入 `-DSGL_CUDA_ARCH=750`（mocker 将 gfx938
+映射为 750），漏一条则回到 HIP 头双定义/hipcc uint2 语法缺口（nmz18 首轮
+壳版本错配复现过全套指纹，反向验证了根因分析）。
+
+**硬边界：镜像↔宿主机配对**。sf_b075（nmz26 现役镜像）在 nmz18 上 HIP
+运行时初始化死锁（vllm import 期 poll 无限等 /dev/dri/renderN，
+torch.cuda.device_count() 永不返回；hip-smi 可见卡）——用户态 HSA 与宿主
+内核驱动错配，**同款镜像跨机方案物理不可行**。nmz18 只能配 dtk26041-
+202610xx 老系（其能跑的老容器即此族）；判别一行：60 秒内 device_count
+出 8=配对兼容，挂死=错配。已写入 bootstrap 铁律。
+
+**顺带治理两笔**：①共享盘 `/root/hcu_t2`（nmz26 在役树本体）是**非 git
+旧版同步树**，其 ci/l1_gpu_gate.sh 无 --up-tree（自动探测逮烘焙 v0521 触
+发 .22 适配层×.21 树 import 死锁）——已从 HEAD b64 刷新 ci/tests/docs 三
+目录修平（sgl_kernel/sitecustomize 在役件未触碰；**nmz26 侧建议尽快
+git 化或重同步全树**）。②gate 位参在 `sh -c` 双跳里会被 `2 >` 吃成 fd
+重定向（GPU 位参丢失 silently 跑 auto-pick）——调用统一
+`[GPU] --up-tree <path> >log 2>&1` 形态。
+
+**锚定待跑（数据落袋后改写本节）**：nmz26 卡空后，作坊根已补 `.info`
+（`/tmp/lizhg_rocm22`，v3 壳+软链齐）——`cd /root/hcu_t2 && ROCM_HOME=/
+tmp/lizhg_rocm22 LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so
+bash ci/l1_gpu_gate.sh <空卡号> --up-tree /sglang-v0522`。预期：mech
+41F/101P 中 CUB 族（dsv4 metadata/store/c1/c2≈30 败行）+conv1d 族（6）
+翻绿、cutedsl K1 不动；kernels 预算线与 38F/99P 基线届时重锚。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```
