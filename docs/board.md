@@ -20,6 +20,7 @@
 | R-14 | 上游单测收集面扩容——模型族 + 功能面全查证收编（DSv4/GLM-Next/Qwen3Next/KimiK3/Hunyuan4/MiniMax-M3 + PD 分离/dspark/mtp/dflash/EP/hicache/mock canary） | P2 | （serving 轨批 A+批 D 已落地；B/C/E/F 待领） | 进行中（2026-10-19 评审两轮点名缺口，协调人 全树查证定批；**批 A 已完成（同日，nmz26）**：l15_mech 段落地（gdn/hybrid_linear/mamba/swa/lightning/dsv4 六目录+**known-fail 预算绊线** passed≥90 且 failed≤42 才绿、越线/超时即红）；首跑 38F/99P/15S/173 子绿 826.58s，六族归因零静默——K1 gdn cuteDSL 编译器 `ptr<1>`≠`ptr` lowering 失配×2（平台）、K2 dsv4 JIT 元数据编不过×3（平台）、K3 l1c_evict_priority triton-ROCm 无此拷贝 op×1（平台）、K4 flash_mla `block_table=None` 桥缺×10（候补 R-11 flash_mla 面）、K5 dsv4 数值 ~20（待深查）、K6 mamba2 triton 页界×3（与 conv1d-flake 同族嫌疑）——账本落 docs/ci.md L1.5b；15 skip 全合理（14×flashinfer 平台+1 SM90 门）；第 2 轮**全门 GREEN**（gpu=0）计数复读 38/99，绊线判 PASS。**批 D 已完成（同日，nmz18/BW1101 转场）**：unit 功能面直跑分诊——PD 分离 unit/disaggregation 33 文件 515 测+157 子测 rc=0 直跑全绿零 skip、dspark 13 文件 156+43 全绿（GPU 形状门 BW1101 实测过）、mock canary self_* 七件 23 测全绿；hicache 1 合法 skip+3 HF-gated-401 快错+6 挂（mooncake/boot）、dflash 2 件全 E+挂归批 E——**694 测+200 子测零适配直跑，零静默**；账本 docs/ci.md L1.5c） | 2026-10-19 | 2026-10-19 |
 | R-15 | 性能回归门（相对阈值 + 历史锚定 + 三级防线；微基准进 L1、e2e 进夜间） | P2 | — | 待启动（2026-10-19 评审拍板"需要"；协调人 已完成上游 perf 面查证与设计定案，见明细） | 2026-10-19 | 2026-10-19 |
 | R-16 | skill/CONTRIBUTING 与门禁体系同步维护（CLI 上手守则多人化适配） | P2 | — | 待启动（2026-10-19 协调人 完成 skill 补丁首轮=kill-switches AR 除役定位/shadow-matrix 四档状态机/cookbook-matrix 零 env 原则/SKILL 法则 10-11+治理闭环节+仓库结构刷新——本轮即交付大半；本行跟踪剩余：CONTRIBUTING MR 门禁段与 ci.md 同步、flash_attn wheel 段落复核刷新、新同事上手路径实效检验） | 2026-10-19 | 2026-10-19 |
+| R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | — | 待启动（2026-10-19 评审拍板双线模型；PM 已完成方案定标的与五规则化，见明细；现行单 master 混线事实=生产优化与追新实验同线，分线即解） | 2026-10-19 | 2026-10-19 |
 
 ## 需求明细
 
@@ -363,6 +364,57 @@ fusion-ledger / catalog）。
 1. CONTRIBUTING/ci.md/skill 三处门禁描述一致（一处改三处对）。
 2. 无过期日期标注的"实测"结论（凡带日期的段落随复核刷新）。
 3. 新同事首PR不因守则缺失返工（守则失效项即为 skill 待补项）。
+
+### R-17 上游 release 分支策略（rel/v0.5.x 双向同步）+ v0.5.22 升级适配役
+
+**背景（2026-10-19 评审拍板；触发=上游 v0.5.22 已 release）**
+- 双线模型（评审定）：**adapter master ↔ 上游 main**（每日追新/竞速线，
+  upstream-watch.md 巡检规约承载）；**adapter rel/v0.5.x ↔ 上游 release**
+  （生产线：版本锁定，serving A/B 验证过的调优沉淀于本线）。上游出新
+  release 分支即及时建对应 rel 分支。
+- 真实现状=单 master 混线：生产调优（fork 转正/paged_mqa 晋级/ar_norm…）
+  全部验在 v0.5.21 容器却落在直跟 main 的 master——上游 main 激进变更
+  翻车时生产验证过的资产连坐。分线即解。
+- upstream-watch.md 已有"日常追 main + release 日对账"巡检与自主修复
+  授权边界；分支拓扑为新增面，落 CONTRIBUTING §1 与 upstream-watch §3
+  互链。
+
+**五条策略规则（随本役写入文档）**
+1. **回流 cherry-pick 不 merge**：rel→master 定期（每役/周节拍）分析
+   rel 调优 commit——通用修复/性能优化回流，版本特化垫片（needle 依赖
+   /版本 gate）留 rel；判据可执行化=catalog 状态与 commit 载体复查。
+   反向 master→rel 同节拍（新桥成熟/serving 需要即回流生产），双向记录
+   （rel 线回流 commit 建议加 `sync:` 前缀）。
+2. **三绑定铁律：分支↔上游树↔容器**：rel/v0.5.22 改动必须在
+   /sglang-v0522 树+对应容器跑门禁；l1_gpu_gate.sh 现自动探测
+   /sglang-v0521——不参数化即静默错树假绿（ci.md 环境铁律教训的双线
+   放大版），本役先加 `--up-tree`/env 参数。
+3. **支持窗口 N=2**：最新 release 线 + 上一线（仅 bugfix），更老 EOL
+   只读归档；每线一间容器。
+4. **catalog 档位与线绑定**：production/validated 证据注明验证所在
+   rel 线；跨线结论优先复测（线上 validated ≠ 线下 validated）。
+5. **`ci/upstream_diff.py`（在案计划）= 多线前置工具**：脆弱桥带
+   版本/schema gate 一份代码跨版适配是对，靠对账工具才可控；本役顺带
+   催生最小版（registry+TEXT_PATCH_ALLOWLIST 驱动的静态对账），把升级
+   成本从人肉 needle 普查降为跑对账。
+
+**工作内容（v0.5.22 升级役=策略首演）**
+1. 建 rel/v0.5.22 分支；容器并置 v0.5.22 树（/sglang-v0522，双树共存
+   有先例）；l1_gpu_gate.sh 树参数化。
+2. 适配：needle/签名普查（upstream_diff 最小版优先，人工兜底）→ 适配
+   commit 落 rel/v0.5.22 → L0/L1/L1.5 全门 + 四门 → production 宣布；
+   v0.5.21 线转上一线（仅 bugfix）或 EOL 判定，记录在案。
+3. 策略文档落地：CONTRIBUTING §1 双线模型三绑定 + upstream-watch §3
+   release 流程挂分支动作 + ci.md 环境铁律补一句（同批 commit）。
+4. master 未落地的生产调优清点：与 rel/v0.5.22 状态对账，确定各自
+   回流/重验清单（首次双向同步演武）。
+
+**验收标准**
+1. rel/v0.5.22 生产可用：零 env 四门 + L1 全门全绿（v0.5.22 树）。
+2. 策略三文档落地互链；错树防护（树参数）落地并有防错树测试证据。
+3. 双向同步各演示 ≥1：rel 调优 cherry-pick 进 master（L0 绿）、
+   master 新桥回流进 rel（门禁绿）。
+4. v0.5.21 线处置（上一线/EOL）有明确记录；catalog 带线标注成形。
 
 ## 项目北极星与长期方向（背景板，不单独开需求号）
 
