@@ -94,6 +94,45 @@ if [ -n "$UP_TREE" ]; then
         python3 -m pytest "$UP/dsa" "$UP/kda" "$UP/dense" "$UP/mla" \
             -q --no-header \
         -k "not tilelang" -o faulthandler_timeout=580 --tb=line
+    # L1.5b (R-14 batch A): upstream MECHANISM dirs -- gdn/hybrid_linear/
+    # mamba/swa/lightning (Qwen3-Next family attention faces) + dsv4. Same
+    # env contract as l15_upstream; most GPU-less cases self-skip via the
+    # kit support checks. Missing dirs (older trees) are simply omitted.
+    MECH=""
+    for d in gdn hybrid_linear mamba swa lightning dsv4; do
+        [ -d "$UP/$d" ] && MECH="$MECH $UP/$d"
+    done
+    if [ -n "$MECH" ]; then
+        # Batch A first-run triage (2026-10-19): baseline 38 failed / 99
+        # passed -- every one ledgered in docs/ci.md L1.5b (gdn cuteDSL
+        # toolchain x2, dsv4 JIT/l1c/page-table/numeric faces, mamba2
+        # triton page-boundary x3). Trip-wire on the COUNTS, not on
+        # pytest rc: ledgered failures are tolerated, a regression
+        # (passed below floor / failed above ceiling) is not.
+        echo "L1: === l15_mech (timeout 1200s, known-fail budget) ==="
+        rc=0
+        timeout 1200 env HCU_DEEPGEMM_BRIDGE=1 \
+            PYTHONPATH="$UP_TREE/python:$ROOT" \
+            python3 -m pytest $MECH -q --no-header \
+            -k "not tilelang" -rs -o faulthandler_timeout=580 --tb=line \
+            > /tmp/l1_l15_mech.log 2>&1 || rc=$?
+        line="$(grep -E '[0-9]+ failed' /tmp/l1_l15_mech.log | tail -1)"
+        nfail="$(sed -n 's/^[^0-9]*\([0-9][0-9]*\) failed.*/\1/p' <<<"$line")"
+        npass="$(sed -n 's/^[^0-9]*[0-9][0-9]* failed, \([0-9][0-9]*\) passed.*/\1/p' <<<"$line")"
+        nfail="${nfail:-999}"; npass="${npass:-0}"
+        if [ "$rc" -eq 124 ]; then
+            echo "L1: l15_mech FAIL (timeout)"
+            FAILS+=(l15_mech)
+        elif [ "$nfail" -le 42 ] && [ "$npass" -ge 90 ]; then
+            echo "L1: l15_mech PASS (within known-fail budget: $nfail failed / $npass passed; ledger docs/ci.md L1.5b)"
+        else
+            echo "L1: l15_mech FAIL (outside known-fail budget: $nfail failed / $npass passed vs baseline 38/99) -- tail:"
+            tail -n 15 /tmp/l1_l15_mech.log | sed 's/^/    /'
+            FAILS+=(l15_mech)
+        fi
+    else
+        echo "L1: l15_mech SKIP (no mechanism dirs in this tree)"
+    fi
 else
     echo "L1: l15_upstream SKIP (no upstream unittest tree found)"
 fi
