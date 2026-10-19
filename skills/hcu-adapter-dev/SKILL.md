@@ -66,7 +66,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
-| 需求/任务领取 | 看板 `REQUIREMENTS.md` 按 R-xx 编号领（工作区本地文件，不进仓） |
+| 需求/任务领取 | 看板 `docs/board.md` 按 R-xx 编号领（在仓；认领署名、照验收标准交付，完结即清行沉淀 docs） |
 
 ## 治理闭环（改代码必走的登记链，L0 机器查）
 
@@ -110,7 +110,7 @@ tests/
 ci/l1_gpu_gate.sh      一键 L1 全门（l0/cpu/kernels/adapter/l15 上游单测/
                        gates/vendor 分段；上游单测零拷贝——收集列表在此维护）
 docs/governance.md     算子治理：双仓边界/裁决链/角色/注册表/catalog 状态机
-REQUIREMENTS.md        看板（工作区本地，git-exclude）：在办任务与遗留跟踪
+docs/board.md          任务看板（在仓，已脱敏）：在办任务与遗留跟踪，按 R-xx 领任务
 skills/hcu-adapter-dev/  本 skill
 ```
 
