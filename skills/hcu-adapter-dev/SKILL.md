@@ -41,6 +41,17 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
    合入。实证对照：contig-triton/fa3-emu 单测先行 e2e 首过 vs
    moe_align/slimquant 反序付 e2e 倒查代价（CONTRIBUTING §3.4b）。
 
+10. **tests/ 下禁止脚本级副作用**：门禁会 pytest 收集 `tests/kernels`
+   与 `tests/adapter`——模块级 `sys.exit`/裸执行会让收集期直接
+   INTERNALERROR（两周内两撞，ae0698b 后仍有回潮）。脚本式测试必须
+   函数化 + `__main__` 守卫；新写测试一律 pytest 兼容形态。
+
+11. **性能 bench 三分离**：跑 bench 前 GPU 空闲检查、**预热段强制**
+    （冷编译曾把 triton bench 测成 0.0×，热跑实为 1.9×）、结果带环境戳
+    （卡型/驱动）。断言用**相对阈值**（臂间比/历史比），不吃绝对
+    tok/s——绝对值锚在别人的机器上。性能判别与晋级依据 catalog 档位
+    证据门，不做无档案的"感觉变快了"。
+
 ## 任务路由（做某类事之前先读对应参考文档）
 
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
@@ -54,37 +65,71 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 排查精度问题（输出垃圾/分叉/漂移） | `references/precision-triage.md` |
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
+| 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
+| 需求/任务领取 | 看板 `REQUIREMENTS.md` 按 R-xx 编号领（工作区本地文件，不进仓） |
+
+## 治理闭环（改代码必走的登记链，L0 机器查）
+
+一处行为落地，多处登记同步——**同 commit 内完成**，否则 L0 红：
+
+1. **catalog**：BACKEND_CATALOG 加/改条目（状态机 planned/candidate/
+   validated/production/broken，晋级必须有对拍+bench+A/B 证据）；
+2. **env 手册**：新 env → `hcu_env.py::REGISTRY` + `docs/env-vars.md`
+   行（手册在册不是可选动作）；
+3. **UI 快照**：`tools/hcu_config_ui.html` 与 catalog 同 commit（快照是
+   治理链最后一公里，曾吃过 a983af3 亏）；
+4. **运行时注册**：行为接线用 `registry.register`（验收/排障以
+   `HCU_ADAPTER_DUMP` 可见为准）。
+
+平台语义走 is_cuda 路线的推理：judgement 层翻译、硬件层保持真（见
+governance §0.5）；上游行为补丁（源码 text-patch）必须进
+TEXT_PATCH_ALLOWLIST 白名单，白名单外不合法。
 
 ## 仓库结构
 
 ```
 sgl_kernel/            同名影子包（sglang 的 AOT 默认内核路径）
   _adapters/           元路径影子库：aiter / flashinfer / flash_attn 填空+守卫
+                       + vendor 桥（quant/ar-norm/mqa/w4a16）+ fla_hcu 路由
   _adapters/kill_switch.py   HCU_DISABLE_OPS 快关注册表
   _adapters/registry.py      运行时实现注册表（register/dump，治理 §4）
   elementwise/layernorm/rotary/moe/kvcacheio.py   triton/torch 实现
-sitecustomize.py       编排器：探测 + 调各域桥 install()（不新增实现体）
+sgl_kernel/fa_varlen_triton.py 等顶层内核文件    自研 triton 内核（R-11 产线）
+sitecustomize.py       总装编排器（~2800 行）：hcu_env → platform_seam →
+                       三十余座桥 install()；整链 hip 门控（非 HIP 零副作用）；
+                       安装序列有专属回归钉 tests/adapter/test_sitecustomize_sequence.py
 tests/
-  test_ops_cpu.py + tests/kernels/        sgl_kernel 自有算子契约测试
-  tests/vendor/{test_allreduce,test_flash_attn}.py  高危 vendor 压测
-  tests/tools/_*.py     排查探针（手动，路径可用 HCU_ADAPTER_ROOT/HCU_CKPT 覆盖）
+  test_ops_cpu.py        CPU 契约面（任何机器）
+  tests/kernels/         自有算子+vendor 桥契约（GPU；pytest 收集面）
+  tests/adapter/         seam/编排层测试（platform_env/model_env/sitecustomize
+                         序列；脚本式测试须函数化+__main__ 守卫，pytest 收集）
+  tests/vendor/          高危 vendor 压测
+  tests/tools/_*.py      排查探针（手动，路径可用 HCU_ADAPTER_ROOT/HCU_CKPT 覆盖）
   tests/tools/run_triage.py  精度问题四级快速定位入口
-  tests/bench/          性能/并发评测（gsm8k_eval，非门禁）
-docs/governance.md     算子治理：双仓边界/裁决链/角色/注册表
+  tests/bench/           性能/并发评测（gsm8k_eval，非门禁）
+ci/l1_gpu_gate.sh      一键 L1 全门（l0/cpu/kernels/adapter/l15 上游单测/
+                       gates/vendor 分段；上游单测零拷贝——收集列表在此维护）
+docs/governance.md     算子治理：双仓边界/裁决链/角色/注册表/catalog 状态机
+REQUIREMENTS.md        看板（工作区本地，git-exclude）：在办任务与遗留跟踪
 skills/hcu-adapter-dev/  本 skill
 ```
 
 ## 协作规约
 
-- 自动化门禁 = `tests/test_ops_cpu.py` + `tests/kernels/` + `tests/vendor/`
-  （pytest 可跑、断言带数值谓词）；`tests/tools/_*.py` 是排查工具
-  （手动、可硬编码路径但须支持 env 覆盖）；`tests/tools/` 不进门禁。
+- 自动化门禁 = `tests/test_ops_cpu.py` + `tests/kernels tests/adapter` +
+  `tests/vendor/` + ci/l1_gpu_gate.sh 分段（pytest 可跑、断言带数值谓词）；
+  `tests/tools/_*.py` 是排查工具（手动、可硬编码路径但须支持 env 覆盖）；
+  `tests/tools/` 不进门禁。
 - 改 kernel 必须附带或更新对应契约测试；涉及 vendor 高危面的同时更新压测
   与快关注册表，三件一起提交。
-- 桥/plugin 选位与登记（先分仓、裁决链、registry.register、L0 三规则）见
-  `docs/governance.md` 与 CONTRIBUTING §3b——sitecustomize 不新增实现体。
+- 桥/plugin 选位与登记（先分仓、裁决链、registry.register、L0 三规则、
+  四处登记同 commit）见上文治理闭环与 `docs/governance.md`、CONTRIBUTING
+  §3b——sitecustomize 不新增实现体。
 - push 前最低标准：`pytest tests/test_ops_cpu.py`（任何机器）+
-  节点上 `pytest tests/kernels tests/vendor -k "not stress"` +
-  `python tests/tools/run_triage.py --stage ops`。
+  节点上 `pytest tests/kernels tests/adapter tests/vendor -k "not stress"` +
+  `python tests/tools/run_triage.py --stage ops`（或直接 `bash
+  ci/l1_gpu_gate.sh` 一键全门）。
 - commit 信息带根因短句（参考 fbc540c / 1eb038d 风格），便于回溯 bug 类。
-- 文档与代码同库同 PR：改行为必须同步改本 skill 对应参考文档。
+- 文档与代码同库同 PR：改行为必须同步改本 skill 对应参考文档；README
+  是指针型入口，静态资产表只活在 catalog/models.md（已立规约：README
+  不维护清单、不留本地任务编号）。

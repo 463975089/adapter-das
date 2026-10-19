@@ -29,12 +29,22 @@ vendor 出新轮。轮子就位后 `tests/vendor/test_flash_attn.py` 的探针�
 每个算子出口按优先级路由，出口签名逐字对齐社区版（含 `out=`、
 destination-passing、占位参数）：
 
-1. **triton（生产默认）**：自研移植，fp32 累加、graph-safe、无主机同步。
+1. **triton（生产主力）**：自研移植，fp32 累加、graph-safe、无主机同步。
 2. **vendor（转发档）**：DTK wheel 里真包已有且经过我们的压测+守卫的
    （如 aiter 部分 kernel、lightop）。接入条件 = 过场景压测 + 注册快关。
    arch 探测失败自动降级到 triton/torch 并打日志。
 3. **torch（参考档）**：语义金标 + 功能兜底（慢但永远正确），也是
    契约测试的参考实现来源。
+
+**档位状态机与演进（catalog 管制）**：每算子
+出口的可用实现在 BACKEND_CATALOG 挂状态——
+`planned → candidate（离线三段式绿+对拍+bench）→ validated（serving A/B
+过）→ production（默认档，连续稳定后）`，定罪不可用标 `broken`（选配即
+拒，bug 签名与复现探针在册；哨兵意外转绿=轮子修好，重跑门禁即晋级）。
+演进**单向**：**emu（torch 调试图稳/金标准）→ triton → vendor**；
+emu/triton 换下不删、转 ref 角色只留离线测试对照。校准方向不变：emu 校准
+triton，emu/triton 暴露 vendor bug。晋级证据门与登记要求见
+`docs/governance.md`。
 
 路由已落地（env + yaml 双层）：`HCU_SILU_MUL_IMPL` / `HCU_RMS_NORM_IMPL` /
 `HCU_FUSED_MOE_IMPL` 等已在册（hcu_env REGISTRY），正式机制是

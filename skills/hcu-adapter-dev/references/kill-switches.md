@@ -3,6 +3,13 @@
 高危算子（vendor AR / FA / 未来 vendor 档）必须配"一翻开关就绕开"的快关：
 精度出问题时，禁用疑似算子 → 复跑 → 症状消失即锁定。这是最快的二分手段。
 
+**现状定位（2026-10-19）**：AR 层默认 aiter GraphSafeAllreduce（压测
+15/15 + serving 连续无恙转 production），**不再需要日常快关兜底**；快关
+语义降级为**应急隔离工具**。历史前科：adapter 自研 custom AR 因跨 block
+写序竞态定罪（R-01/A 定罪，160 臂 A/B），已除役（修复评估被
+"aiter 顶上后无生产位"否决，"修→废"）——教训沉淀：高危 vendor 面转正
+靠压测+serving 双证据，出问题先快关二分再定罪。
+
 ## HCU_DISABLE_OPS（快关总闸）
 
 ```bash
