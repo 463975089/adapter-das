@@ -17,7 +17,7 @@
 | R-13 | 验收后遗留收编（conv1d-flake / kpool=1 风险 / aiter reduce_scatter 契约缺口 / R-09④ wheel 复评 / R-09①②③ 晋级） | P2 | （serving 轨在办，待填账户名） | 进行中（2026-10-19 协调人 登记；**#6 R-12 守卫已完成：ee836e2 已推**；**#4 paged_mqa 晋级已完成：27c5847+3848d96 已推**；**#2 10k 容量墙已完成：c59135b+战报已推**——q 行子分块击穿（峰值 22→6.8GiB、fp64 金标 0.0046、47 门绿+新钉、serving 终验 11k×3 绿+LONGCTX ~9× 彩蛋，详见明细）；conv1d-flake 有 xfail-strict 桩自动跟踪；格 2 资产残缺补片挂运维遗留；**#1 ar_ext.cu 已改判收口（2026-10-19）：不修复，废弃——aiter GraphSafe 新镜像终验 4/8-rank 15/15 全绿（图重放净）后无修复意义，坏输出亦不配当对比参照，custom AR 七删四改除役（ce7e402），serving 验金绿） | 2026-10-19 | 2026-10-19 |
 | R-05 | W4A16 Marlin 内核族接入（生产模型主力量化路线的高性能档） | P3（2026-10-17 评审定维持 P3） | （serving 轨在办，待填账户名） | **实施段已落地（2026-10-19 dev（serving 轨） 自验收：桥+w4a16_moe.py+三段式 9/9+bench 2.1-3.3×，51acb72 已推；摸底段此前 协调人 核证通过）**；**e2e 试验田变更（2026-10-19 同日 10-19 探役）**：池内 392G INT4-w4a16 实为 W4AFP8 面（int4-channel×fp8-dynamic）不适用本桥与 moe_wna16——e2e 挂「等真 group-wise w4a16 checkpoint 入池」，R-05 维持候选 opt-in 不晋级——本段后状态：**候选档 opt-in 落位**（HCU_W4A16_MOE_IMPL=deepgemm 显式；auto 现答 triton），剩 serving A/B+e2e 后评审默认翻转。细节：生产节点 A GPU4 单测级三轮探针——①deepgemm w4a16 masked 族=**数值健康**：C++ low_latency_w4a16_gemm 经 w4a16_marlin_weight repack 后对独立 torch 金标准 rel=0.0022（bf16 噪声级），轮子自带 triton golden（moe_w4a16_groupwise_triton）+repack 自洽，布局全文档化（b [E,N,K//2] u8 lo_even、scale [E,N,K//32] 与激活同 dtype、约定 (q−8)·s、actual_tokens 掩码）→ **桥接首选**；②aiter 纯 triton AWQ 反量化=精确 rel=0（小端 nibble+整零点 (q−z)·s，GEMM 同解码逻辑，配 config json 待接）→ 兜底/参考；③lightop marlin w4a16 C++ 族=**不可用**——scales_zeros 格式无文档且不可复现（20+组合+受控 s=1/z=0 微探针均失配，输出幅度与注入 scale 无关）、小形状 dequant 硬 VM-fault（设备非法访存杀进程）、config 表仅 M1-16 单一 MoE 形状族、moe_gemm_marlin_w4a16 包装源码 NameError；④deepgemm moe_marlin_prefill=w8a8-fp8 族=R-04 已判死。探针资产 tmp_fetch/probe_r05_{marlin,micro,aiter,deepgemm}.py + 容器 /root 同名 | 2026-10-17 | 2026-10-19 |
 | R-07 | MTP 红配置（快配置）heisenbug 攻坚——下阶段 | P3（依赖 R-06 方法学前置） | — | 待启动 | 2026-10-17 | 2026-10-17 |
-| R-14 | 上游单测收集面扩容——模型族 + 功能面全查证收编（DSv4/GLM-Next/Qwen3Next/KimiK3/Hunyuan4/MiniMax-M3 + PD 分离/dspark/mtp/dflash/EP/hicache/mock canary） | P2 | （serving 轨批 A+批 D 已落地；B/C/E/F 待领） | 进行中（2026-10-19 评审两轮点名缺口，协调人 全树查证定批；**批 A 已完成（同日，nmz26）**：l15_mech 段落地（gdn/hybrid_linear/mamba/swa/lightning/dsv4 六目录+**known-fail 预算绊线** passed≥90 且 failed≤42 才绿、越线/超时即红）；首跑 38F/99P/15S/173 子绿 826.58s，六族归因零静默——K1 gdn cuteDSL 编译器 `ptr<1>`≠`ptr` lowering 失配×2（平台）、K2 dsv4 JIT 元数据编不过×3（平台）、K3 l1c_evict_priority triton-ROCm 无此拷贝 op×1（平台）、K4 flash_mla `block_table=None` 桥缺×10（候补 R-11 flash_mla 面）、K5 dsv4 数值 ~20（待深查）、K6 mamba2 triton 页界×3（与 conv1d-flake 同族嫌疑）——账本落 docs/ci.md L1.5b；15 skip 全合理（14×flashinfer 平台+1 SM90 门）；第 2 轮**全门 GREEN**（gpu=0）计数复读 38/99，绊线判 PASS。**批 D 已完成（同日，nmz18/BW1101 转场）**：unit 功能面直跑分诊——PD 分离 unit/disaggregation 33 文件 515 测+157 子测 rc=0 直跑全绿零 skip、dspark 13 文件 156+43 全绿（GPU 形状门 BW1101 实测过）、mock canary self_* 七件 23 测全绿；hicache 1 合法 skip+3 HF-gated-401 快错+6 挂（mooncake/boot）、dflash 2 件全 E+挂归批 E——**694 测+200 子测零适配直跑，零静默**；账本 docs/ci.md L1.5c） | 2026-10-19 | 2026-10-19 |
+| R-14 | 上游单测收集面扩容——模型族 + 功能面全查证收编（DSv4/GLM-Next/Qwen3Next/KimiK3/Hunyuan4/MiniMax-M3 + PD 分离/dspark/mtp/dflash/EP/hicache/mock canary） | P2 | （serving 轨批 A/B/C/D 已落地；E/F 待领） | 进行中（2026-10-19 评审两轮点名缺口，协调人 全树查证定批；**批 A 已完成（同日，nmz26）**：l15_mech 段落地（gdn/hybrid_linear/mamba/swa/lightning/dsv4 六目录+**known-fail 预算绊线** passed≥90 且 failed≤42 才绿、越线/超时即红）；首跑 38F/99P/15S/173 子绿 826.58s，六族归因零静默——K1 gdn cuteDSL 编译器 `ptr<1>`≠`ptr` lowering 失配×2（平台）、K2 dsv4 JIT 元数据编不过×3（平台）、K3 l1c_evict_priority triton-ROCm 无此拷贝 op×1（平台）、K4 flash_mla `block_table=None` 桥缺×10（候补 R-11 flash_mla 面）、K5 dsv4 数值 ~20（待深查）、K6 mamba2 triton 页界×3（与 conv1d-flake 同族嫌疑）——账本落 docs/ci.md L1.5b；15 skip 全合理（14×flashinfer 平台+1 SM90 门）；第 2 轮**全门 GREEN**（gpu=0）计数复读 38/99，绊线判 PASS。**批 D 已完成（同日，nmz18/BW1101 转场）**：unit 功能面直跑分诊——PD 分离 unit/disaggregation 33 文件 515 测+157 子测 rc=0 直跑全绿零 skip、dspark 13 文件 156+43 全绿（GPU 形状门 BW1101 实测过）、mock canary self_* 七件 23 测全绿；hicache 1 合法 skip+3 HF-gated-401 快错+6 挂（mooncake/boot）、dflash 2 件全 E+挂归批 E——**694 测+200 子测零适配直跑，零静默**；账本 docs/ci.md L1.5c）。**批 B/C 已完成（同日，nmz18 接力）**：批 B 24 文件 23 绿 1 挂（GLM-5.3-Next 生产主线五件全绿 27 测+37 子——零契约面缺口正式补上；DSv4/qwen3_5/Kimi+25/Hunyuan 全绿，AMD 双件合理 skip；挂=kimi_k3_bfa_overlap 归批 E）；批 C 真发现收全——K7 dsv4 数值族（q_rope_store 6+fp8 dequant+批 A K5 同面）、K8 dtype 契约（positions int32）、K2 扩（meta+compress_plan JIT 双双编不过@gfx938）、teardown 挂两处；glm53 fusion 2S=gfx950 上游门 BW1102 同绿不了；L1 纳入定案=l15_units 段（批 B 绿 22+批 D 绿三段 ~10min），账本 docs/ci.md L1.5d | 2026-10-19 | 2026-10-19 |
 | R-15 | 性能回归门（相对阈值 + 历史锚定 + 三级防线；微基准进 L1、e2e 进夜间） | P2 | — | 待启动（2026-10-19 评审拍板"需要"；协调人 已完成上游 perf 面查证与设计定案，见明细） | 2026-10-19 | 2026-10-19 |
 | R-16 | skill/CONTRIBUTING 与门禁体系同步维护（CLI 上手守则多人化适配） | P2 | — | 待启动（2026-10-19 协调人 完成 skill 补丁首轮=kill-switches AR 除役定位/shadow-matrix 四档状态机/cookbook-matrix 零 env 原则/SKILL 法则 10-11+治理闭环节+仓库结构刷新——本轮即交付大半；本行跟踪剩余：CONTRIBUTING MR 门禁段与 ci.md 同步、flash_attn wheel 段落复核刷新、新同事上手路径实效检验） | 2026-10-19 | 2026-10-19 |
 | R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | — | 待启动（2026-10-19 评审拍板双线模型；PM 已完成方案定标的与五规则化，见明细；现行单 master 混线事实=生产优化与追新实验同线，分线即解） | 2026-10-19 | 2026-10-19 |
@@ -275,8 +275,21 @@ fusion-ledger / catalog）。
      known-fail 预算绊线 passed≥90/failed≤42）；38 失败六族归因账本
      落 ci.md L1.5b，两跑稳定+全门 GREEN（证据与族表见 docs/ci.md
      L1.5b）；
-   - 批 B（unit/models 族件）：按上表选件，新进 l15（或独立 units 段，实测定）；
-   - 批 C（kernels/ops 族件）：glm53_shared_expert_fusion + dsv4 件全家；
+   - 批 B（unit/models 族件）：**已完成（2026-10-19，nmz18）**——24 文件
+     分诊 **23 绿 1 挂**；GLM-5.3-Next 五件（生产主线最高价值）全绿（bfg
+     3+27 子/modelopt 4+8/glmmoedsa 9/gate 1+2/ptpc 10）；DSv4 五件全绿
+     （AMD 双件合理 skip）、qwen3_5 六件全绿、Kimi 三件+kimi_k25 超底数
+     加收 55P、Hunyuan 三件（v3 加收）全绿；唯一挂=test_kimi_k3_bfa_overlap
+     （首测点后静止→归批 E 逐件）；
+   - 批 C（kernels/ops 族件）：**已完成（2026-10-19，同场）**——真发现
+     收全：glm53_shared_expert_fusion 2S（上游 gfx950 门，BW1102 同样绿
+     不了；构造面由批 B 守）、dsv41_sparse 4S+dsv4 子目录 18S 全合法；
+     **负面两族+一扩**：K7 dsv4 数值（q_rope_store 6/indexer_quant fp8
+     dequant 1/批 A K5 ~20 同面）、K8 dtype 契约（`positions must be
+     int32` 桥候选失配点）、K2 扩（meta+compress_plan 两个 JIT 都编不过
+     @gfx938）；compress 两件 teardown 挂随 K7 深查役——账本 docs/ci.md
+     L1.5d；**L1 纳入定案：l15_units 段=批 B 绿 22+批 D 绿三段（PD/
+     dspark/canary），批 C 负面件修复后再转正**；
    - 批 D（unit 功能面直跑优先）：**已完成（2026-10-19，nmz18/BW1101 实测，
      占卡转场）**：unit/disaggregation 33 件 + hicache storage 类 +
      spec/dspark 纯单测件 + spec/dflash 主件 + mock canary self_unit 族——

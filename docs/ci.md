@@ -54,6 +54,41 @@ tar 直灌），上游=/sglang-v0521，env 契约同 L1.5b。批 D=「import 即
 L1 纳入建议：三绿段合并为独立 `l15_units` 段（合计 ~10min，随批 B/C
 定位后一批进 gate 脚本）。
 
+### L1.5d 批 B/C 模型族件分诊（2026-10-19，nmz18/BW1101 实测）
+
+环境同 L1.5c（GPU4，快照 40c2808，env 契约同 L1.5b）。逐文件刀（单件
+120-180s 超时），24 unit/models 文件 + 6 kernels/ops 文件 + dsv4 子目录。
+
+**批 B（unit/models 族件）——23/24 绿，1 挂**：
+
+| 族 | 结果 |
+|---|---|
+| **GLM-5.3-Next 五件（生产主线）** | **全绿**：bfg_fusion 3P+27 子 / modelopt 4P+8 子 / glmmoedsa_correction_bias_fp32 9P / glm_moe_gate_fp32 1P+2 子 / nextn_moe_ptpc 10P——R-14 最高价值项（生产模型零契约面）达成正面覆盖 |
+| DSv4 五件 | rope_policy 2P+2 子 / unified_fp8_q_pair 12P / mxfp4_requant 4P 全绿；amd_fused_mhc 11P+2S+5 子（skip=gfx95+aiter mHC 门）、amd_wo_a_bf16 4S（skip=「requires ROCm」——上游 AMD 门在 cuda 语义壳下不认 HCU，合法登记） |
+| qwen3_5 四件+2 | modelopt_fp4 8P / mtp_quant_config 8P / packed_weight_loader 7P / pipeline_parallel 5P / embedding_registration 4P / qwen4_exp_ple_table 20P+1S（skip=host page table 器件门）全绿 |
+| KimiK3 三件+k25 | packed_modules_mapping 1P / vision 26P / **kimi_k25 55P（超底数加收）**全绿；**bfa_overlap 挂**（首测点后无输出，120s 超时，疑 bfa 重叠调度等待面——batch E 逐件归因） |
+| Hunyuan | v4 4P / v4_nextn_weight_loading 1P / **v3_nextn 4P（超底数加收）**全绿 |
+
+**批 C（kernels/ops 族件）——真发现两族，绿面少**：
+
+| 件 | 结果 | 归因 |
+|---|---|---|
+| test_glm53_shared_expert_fusion | 2S | 合法：上游自检「validated only on gfx950」——**GLM-5.3 融合内核面在 BW1102(gfx938) 同样只有 skip**，构造/路由面由批 B bfg_fusion 三测守 |
+| test_dsv41_prefill_sparse_indexer | 4S | 合法：DeepGEMM paged sparse MQA 需 SM100 |
+| dsv4/ 子目录 | 18S rc=0 | 全合法（gfx95x SMB 门类） |
+| test_dsv4_q_rope_store | **8F/2P** | 6× 数值不等（test:71）+2× JIT retry 耗尽（common.py:3696）——**dsv4 数值族真发现**（与批 A K5 同面） |
+| test_dsv4_indexer_quant | **16F+teardown 挂** | `V4 fp8 dequant error out of tolerance`（数值）+`RuntimeError: positions must be int32`（dtype 契约失配）——**dtype 契约=桥候选失配点**；挂点=失败后 teardown 不退 |
+| test_deepseek_v4_compress_state_runtime_shapes | 2P/4F+teardown 挂 | `Failed to build JIT module sgl_kernel_jit_dpsk_v4_compress_plan`@gfx938 ——**批 A K2 同族**（dsv4 JIT 两个模块都编不过） |
+| test_deepseek_v4_compress_plan_bounds | 挂（无输出） | 同源 compress_plan JIT 编不过连坐（首测即重试旋死） |
+
+**批 B/C 小结**：批 B 几乎全绿=模型族构造/路由/加载契约面健康（生产主线
+GLM-5.3-Next 首次有正面单测证据）；批 C 把 dsv4 内核面真缺口收全——
+KNOWN_FAILURES 延伸 K7（dsv4 数值族：q_rope_store 6+indexer_quant 1+
+批 A K5 ~20）、K8（dtype 契约：positions int32）、K2 扩（compress_plan
+JIT）；teardown 挂两处随 K7 深查役一并处理。L1 纳入建议：批 B 绿面
+22 文件进 `l15_units` 段（bfa_overlap/批 C 文件暂不进，负面面留
+KNOWN_FAILURES 跟踪——批 C 数值族修复后再转正）。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```
