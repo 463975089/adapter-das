@@ -119,6 +119,39 @@ env 契约同 L1.5b，GPU4。上游 .22 自带 KNOWN_FAILURES.md（四类账+「
 真增量=两根 needle/seam 漂移（其一 boot 级）+JIT 家族扩面；适配役从
 P0 两根漂移点开工。
 
+### L1.5f v0.5.22 适配役余项收口（2026-10-19，nmz26）
+
+**rel 线 L1 全门 GREEN（gpu=4，`--up-tree /sglang-v0522`）**：l0/cpu/
+kernels/l15_upstream/l15_mech（预算绊线 38F/99P PASS）/五门禁/vendor 全过
+（/tmp/l1_rel22.log）——R-17 验收 1 的门禁面达成。mech 段 38F/99P 比普查
+（41F/101P）少 3 失败：适配后 sitecustomize 装配走得更远（kv_fix 不再中断
+install 链），后续桥生效所致，非回归。
+
+**P1 dsv4 JIT 家族定性（三根错，五个模块）**：
+| 根因 | 模块（ninja 行数） | 定性/去向 |
+|---|---|---|
+| **CUB 头缺失**（`cub/block/block_scan.cuh` not found ×7+block_load ×3） | dpsk_v4_metadata ×14 / compress_plan ×12 / c1_decode ×2 / c2_512_64_128 ×2 | **容器缺件非代码病**：CUB 是 header-only，补 include 路径即可能整族转绿（30 失败行的根）——报镜像/DTK 轮需求，修复后 mech 预算应大幅收紧 |
+| **hipcc 分解语法缺口**（`cannot decompose class type 'const uint2'` ×12 + anonymous union ×8） | causal_conv1d_precise_math_bf16_t ×6 | DTK hipcc 语言特性缺口——报 DTK（与 conv1d-flake 同域），短期无解 |
+| cuteDSL llvm.call lowering ×4 | （gdn cutedsl） | 已知 K1 |
+
+**P2 dspark -9 归因**：`TestDSparkDPSpecPrefillCoordination.
+test_mixed_prefill_and_speculative_peer_match_isolated_outputs` setup 起
+server 被信号 9 杀（boot 资源类，OOM/杀组）——非适配桥问题，登记批 E
+（多进程 boot 面）随批 E 逐件三态处置。
+
+**上游新 plan seam 评估（R-09① 终态定案）**：.22 消费链=
+`RMSNorm.forward_with_allreduce_fusion` → helper `_use_aiter` 分支 →
+`tensor_model_parallel_fused_allreduce_rmsnorm` → `GroupCoordinator.
+fused_allreduce_rmsnorm`（ROCm/HIP Only）→ `ca_comm.fused_allreduce_rmsnorm/
+custom_fused_ar_rms/fused_ar_rms`——**与我们 R-09① serving A/B 验证过的
+同一 aiter GraphSafe 面**。R-09① ar_norm 桥在 .22 被上游原生完整接手：
+适配役的 ARM 降级即终态（非过渡态），HCU 侧唯一条件=ca_comm 环境就位
+（现役）；我们包的 `_fcf` DISPATCH 在 .22 成死代码（保留无害，.21 仍活跃）。
+ar_norm 桶晋级动作在 .22 线从「我们翻默认」变为「上游默认开+验证 HCU 通」。
+
+**R-09①②③ 在 .22 线的处置更新**：①终态如上；②③（quant_aiter 桶/
+R-04 面）不受本重构影响，仍按各自节拍。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```
