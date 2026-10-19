@@ -214,6 +214,30 @@ tar xzf aiter_jit_harvest.tgz -C $J
 收割入 wheel 源头（报 vendor），或钉住该 wheel 版本直到收割完成。
 `AITER_JIT_DIR` 可把落点重定向到久存卷（同一版本成对前提下）。
 
+## 4d. 新容器 CI 初始化控制（cache 播种 + 段窗缩放，2026-10-20）
+
+冷容器跑 L1 的大头=triton+sglang-JIT 首编风暴（gfx936 实测 kernels 段
+45min 窗不够）与 import 冷税（bw47 实测收集 241s、开机 34s/进程）。三板
+斧（keys：cache 按 ISA+树 hash 键控，同族卡+同树修订一份种子全网通用）：
+
+```bash
+# 1. 热机收割（nmz26 热容器内，~20MB）：
+bash ci/cache_export.sh /tmp/hcu_cache_seed.tgz
+# 2a. 冷容器导入（tar 通道）：
+bash ci/cache_import.sh /tmp/hcu_cache_seed.tgz
+# 2b. 或共享盘通道（NMZ 系已挂 /public/home）：热机直落共享区，
+#     冷容器软链进来——零搬运：
+#   ln -s /public/home/lizhg/hcu_cache/sglang/jit ~/.cache/sglang/jit
+#   ln -s /public/home/lizhg/hcu_cache/triton     ~/.cache/triton
+#     （多容器并发写共享区有踩踏风险；稳妥式=只读软链+本地 overlay 写，
+#      或只软链 sglang/jit[build-<hash> 只读命中]、triton 留本地）
+# 3. 慢盒段窗缩放（不改脚本）：
+HCU_L1_TIMEOUT_SCALE=3 bash ci/l1_gpu_gate.sh <gpu> --up-tree /sglang-v0522
+```
+
+适配侧两件已联动：cuda-mocker 配方产物随种子旅行（loader 不匹配会自动
+回退重编，坏种无害）；aiter 侧无需播种（wheel 满预编译，见 §4c）。
+
 ## 5. 镜像已知差异速查（选 mem-fraction 前看）
 
 | 镜像 | 差异 | 应对 |

@@ -277,6 +277,19 @@ gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非
 （F 具名清单陪葬于缓冲）。bw1000 系列后续验证等 DTK 栈修复或换镜像代，
 配方侧已就绪（壳/软链/.info/环境四件在 bw47 容器内留存）。
 
+### 冷容器初始化控制（三板斧，2026-10-20）
+
+1. **cache 播种**：`ci/cache_export.sh`（热机收割 jit+triton 双 cache，
+   ISA+树 hash 键控一份种子全网通用）→ `ci/cache_import.sh`（冷容器
+   灌入）；共享盘通道见 bootstrap §4d。配方产物随种子旅行，坏种无害
+   （loader 自动回退重编）。
+2. **段窗缩放**：`HCU_L1_TIMEOUT_SCALE=<n>` 整体放大全部段窗（gate
+   新增，nmz 默认 1 不动；慢盒 bw47 实测 5-10x import 面，配 3）。
+3. **终局=JIT vendor 化**（R-19）：sgl_kernel JIT 35 模块提需求给
+   aiter/DTK 维护方预编译随 wheel 发货；aiter wheel 已实证该态可达
+   （零编译 import 秒级），到位后 CI 不再承担任何预编译时间，
+   known-fail 预算线 JIT 族归零重锚。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```

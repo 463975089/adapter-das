@@ -89,8 +89,18 @@ for d in "$UP_TREE/python" /sglang-v0521/python /root/sglang-v0521-src/python; d
 done
 echo "L1: using GPU $GPU"
 
-run_seg() {  # name timeout_s cmd...
-    local name="$1"; local tmo="$2"; shift 2
+# Cold-container relief (bw47 forensics 2026-10-20): import surface varies
+# 5-10x across boxes (34s/proc adapter boot, 241s adapter collection on
+# bw47) while every window below is nmz-calibrated. Scale all windows via
+# HCU_L1_TIMEOUT_SCALE (integer, default 1 = nmz stock) instead of hand-
+# editing the script per box. Cache seeding cuts the other axis entirely
+# (ci/cache_export.sh / ci/cache_import.sh, bootstrap.md 4d).
+TSCALE="${HCU_L1_TIMEOUT_SCALE:-1}"
+case "$TSCALE" in ''|*[!0-9]*) TSCALE=1;; esac
+[ "$TSCALE" -gt 1 ] && echo "L1: window scale x$TSCALE (cold container)"
+
+run_seg() {  # name timeout_base cmd...
+    local name="$1"; local tmo=$(( $2 * TSCALE )); shift 2
     echo "L1: === $name (timeout ${tmo}s) ==="
     if timeout "$tmo" "$@" > "/tmp/l1_${name}.log" 2>&1; then
         echo "L1: $name PASS"
@@ -142,9 +152,9 @@ if [ -n "$UP_TREE" ]; then
         # triton page-boundary x3). Trip-wire on the COUNTS, not on
         # pytest rc: ledgered failures are tolerated, a regression
         # (passed below floor / failed above ceiling) is not.
-        echo "L1: === l15_mech (timeout 1200s, known-fail budget) ==="
+        echo "L1: === l15_mech (timeout $(( 1200 * TSCALE ))s, known-fail budget) ==="
         rc=0
-        timeout 1200 env HCU_DEEPGEMM_BRIDGE=1 \
+        timeout $(( 1200 * TSCALE )) env HCU_DEEPGEMM_BRIDGE=1 \
             PYTHONPATH="$UP_TREE/python:$ROOT" \
             python3 -m pytest $MECH -q --no-header \
             -k "not tilelang" -rs -o faulthandler_timeout=580 --tb=line \

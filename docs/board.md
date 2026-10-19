@@ -22,6 +22,7 @@
 | R-16 | skill/CONTRIBUTING 与门禁体系同步维护（CLI 上手守则多人化适配） | P2 | — | 待启动（2026-10-19 协调人 完成 skill 补丁首轮=kill-switches AR 除役定位/shadow-matrix 四档状态机/cookbook-matrix 零 env 原则/SKILL 法则 10-11+治理闭环节+仓库结构刷新——本轮即交付大半；本行跟踪剩余：CONTRIBUTING MR 门禁段与 ci.md 同步、flash_attn wheel 段落复核刷新、新同事上手路径实效检验） | 2026-10-19 | 2026-10-19 |
 | R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | 分支策略/拓扑/文档面已落地；**v0.5.22 首跑普查已完成（同日，nmz26/baa9bef）**：单测矩阵全量对账落 ci.md L1.5e——**零例绿变红**，机制老族同构、模型族面全绿；**破损桥名单四条定案**（P0=memory_pool kv_fix needle 失配[boot 级炸点]+add_norm ar_norm seam 符号漂移；P1=dsv4 JIT 家族编不过 3→18 扩面；P2=dspark server -9 归因）；适配 commit 落 rel 待开工；**P0 两根适配完成（同日，rel/v0.5.22@2ad90aa）**：kv_fix 检测 .22 伤口愈合（上游重写 strides 为纯 int）转 no-op、ar_norm ARM 候选门消失（.22 aiter 融合原生化）转优雅降级 dispatch-only——**双树兼容**（.21 回归 patch/ARM 照装、.22 import 干净+canary 六件 22P 全绿）；**双向同步首演达成**：rel 修复 cherry-pick 回 main（1340a42，L0 绿）=R-17 验收 3 之半；余项全收口（同日，L1.5f）：**rel 线 L1 全门 GREEN**（gpu=4，--up-tree /sglang-v0522，mech 预算判 38F/99P 比普查还少 3 败=适配后装配走得更远）；**JIT 三根定性→两根同配方实测治愈（同日 L1.5g）**：CUB 头缺失与 hipcc uint2 分解缺口均被 cuda-mocker 配方收口（用户定性 /opt/dtk/cuda/cuda-12=DTK cuda-mocker，CUDA 语义虚拟层底层 HIP 与 adapter 哲学同构；配方三件套=合成 ROCM_HOME 根[hipcc 壳剥 USE_ROCM/HIP_PLATFORM+注入 SGL_CUDA_ARCH=750]+LD_PRELOAD mock libcudart；零装库零 sglang 改；metadata+conv1d 双 LOAD_OK、conv1d 数值对拍 PASS 9.4e-3；cutedsl=K1 仍账）；dspark -9=boot 资源类登记批 E；**R-09① 终态定案**：.22 上游原生接手（消费链直通 ca_comm 同一 aiter GraphSafe 面），桥降级即终态、ar_norm 晋级动作变「上游默认开+验证 HCU 通」。余=serving 级四门（production 宣布前置）+mech 预算重锚（**锚定轮等 nmz26 空卡（当前 8 卡满；转场 bw47/gfx936 攻略见 ci.md L1.5i——配方跨 ISA 直通+盒级三发现回写 bootstrap，gfx936 锚定数=box 账[套件中段楔死]未产出），资产最后一件已备（L1.5h）：配方三模块[cub 兼 metadata+compress_plan+conv1d]跨两机两镜像族实证、两坑回写[.info 补丁消 deepgemm 14 测连坐/壳双旗标]、镜像↔宿主配对铁律入 bootstrap[sf_b075×nmz18=HIP init 死锁内核栈实证]、nmz26 共享树 ci/tests/docs 已刷平[旧版非 git 树 gate 无 --up-tree 会逮 v0521，待全树 git 化]、/tmp/lizhg_rocm22 作坊根 v3+.info 就绪一条命令可发**；预期 CUB≈30 败行+conv1d 6 翻绿、38F/99P 届时重锚）+镜像固化合成根与 hcu_env 收编 ROCM_HOME/LD_PRELOAD 两 env+deep_gemm_dtk 改读 DTKROOT（配方已用 .info 兜住，消除后更净） | 进行中→**第一段落地（2026-10-19）**：①主干定名+调试分支清点双关账（本地/远端清单均只剩 main）；②CONTRIBUTING.md 弃用收编 board「协作与分支规约」节（双线模型三绑定+主仓拓扑+fork-MR+cherry-pick 节拍成文；全仓 6 文档外链改指；弃用与收编同由用户 2026-10-19 拍板执行）；③l1_gpu_gate.sh 树参数化（--up-tree/HCU_UP_TREE，显式树不存在即 GPU 探测前 loud fail 防错树假绿；全局 PYTHONPATH 跟随所选树；防错树三证据干跑在案：坏树拒/坏参拒/树校验先于 GPU 探测）；④rel/v0.5.22 分支从 main(691d080) 建立并推 Gitee（远端清单=main+rel 双分支入拓扑）；⑤主仓拓扑治理事实达成（ls-remote 仅 main↔rel）。余=v0.5.22 树并置/适配普查/全门+双向同步演武+fork-MR 演练（见明细） | 2026-10-19 | 2026-10-19 |
 | R-18 | tvm-ffi dlpack 冷缓存导入期自递归——adapter 预热桥（方案3：sitecustomize 代码化预热） | P2 | — | 待启动（2026-10-19 评审拍板方案3；PM 已解剖递归链两端与定案+jit 编译成本口径入账，见明细） | 2026-10-19 | 2026-10-19 |
+| R-19 | JIT kernel vendor 化——sgl_kernel JIT 需求清单化提给 aiter/DTK 维护方（预编译随 wheel 发货，我们只管调用） | P1 | — | 待启动（2026-10-20 用户拍板战略方向；现状账：sglang JIT 35 模块自编，38F 中 32F=编译失败（CUB/uint2 两根=DTK 工具链，需 cuda-mocker 配方自救）；而 aiter wheel 已证明满预编译回零编译是可达态），见明细 | 2026-10-20 | — |
 
 ## 需求明细
 
@@ -484,6 +485,27 @@ fusion-ledger / catalog）。
    预热后加速层 .so 在位。
 2. 递归免疫回归钉常驻（结构测试），L1 全门 GREEN。
 3. bootstrap §3 与 env-vars.md 同 commit 更新，运维手册不再依赖手工配方。
+
+### R-19 JIT kernel vendor 化——需求清单提给 aiter/DTK 维护方（预编译随 wheel，我们只管调用）
+
+**背景与拍板**（2026-10-20）：aiter wheel 实证"满预编译、import 秒级、
+零运行编译"是可达态（bootstrap §4c，51 颗 .so 随包发）；而 sglang 侧
+JIT 35 模块全靠 CI/首跑自编，v0.5.22 上 38F 里 32F 是编译失败（根=CUB
+头缺失+hipcc uint2 语法缺口，均 DTK 工具链侧）。用户拍板：JIT kernel
+一律提需求给 aiter/DTK 维护方维护，adapter 只做调用面；全接入后 CI 不
+再承担预编译时间。
+
+**需求单内容（提给 vendor）**：
+1. 清单=sglang JIT 全 35 模块（键控 `~/.cache/sglang/jit/gfx93x/sgl_kernel_jit_*`，nmz26 现名可点；大头=deepseek_v4 家族/dsa/mamba causal_conv1d/elementwise/fast-hadamard/kimi_k3 等，见 L1.5e/L1.5g 账）；
+2. 交付形态=预编译模块随 aiter wheel（或独立 sgl-kernel vendor 包）发货；模块名键控须带 wheel/dtk 版本对齐约定（aiter 现行操作名裸键存在遮蔽坑，见 bootstrap §4c 铁律）；
+3. 工具链修复同车：hipcc 默认打通 CUB 头路径+支持 `uint2` 结构化绑定（cuda-mocker 配方三件套=过渡期自救，见 L1.5g）。
+
+**过渡期（vendor 接单前）**：cuda-mocker 配方继续有效（可编/可测/数值对拍 PASS）；cache 播种管道（bootstrap §4d）管住新容器首编成本。
+
+**验收标准**
+1. vendor wheel 到位后 35 模块零 JIT 编译直接 import（靶态=aiter 同款开机行 prebuilt=N runtime_built=0）；
+2. CI 端到端去除 JIT 编译时间——新容器 kernels/l15 段窗回到纯测试耗时，l1_gpu_gate 的 JIT 相关 known-fail 预算线归零重锚；
+3. 需求单 (1)(2)(3) 逐项有 vendor 回执/版本号落档。
 
 ## 项目北极星与长期方向（背景板，不单独开需求号）
 
