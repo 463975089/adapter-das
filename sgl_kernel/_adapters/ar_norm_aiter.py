@@ -95,41 +95,53 @@ def install():
         return
 
     # ---- ARM: apply_flashinfer_allreduce_fusion copies ------------------
-    stock_apply = _an.apply_flashinfer_allreduce_fusion
-    if getattr(stock_apply, "_hcu_ar_norm_arm", False):
-        return  # already installed (sitecustomize + explicit install)
-    max_bs = getattr(_an, "FUSE_ALLREDUCE_MAX_BATCH_SIZE", 128)
+    # v0.5.22 rework: the candidate-gate function is GONE from add_norm --
+    # aiter AR+norm fusion is a first-class seam there now
+    # (aiter_ar_fusion_enabled_for + norm.forward_with_allreduce_fusion
+    # capability probing in layer_boundary/fusions/allreduce.py). On such
+    # trees arm nothing and fall through to the dispatch-only install
+    # below; on <=v0.5.21 trees keep the original ARM behavior.
+    stock_apply = getattr(_an, "apply_flashinfer_allreduce_fusion", None)
+    if stock_apply is not None:
+        if getattr(stock_apply, "_hcu_ar_norm_arm", False):
+            return  # already installed (sitecustomize + explicit install)
+        max_bs = getattr(_an, "FUSE_ALLREDUCE_MAX_BATCH_SIZE", 128)
 
-    def _apply_ar_fusion(batch_size):
-        try:
-            if not (0 < batch_size <= max_bs):
-                return False
-            if _an.is_dp_attention_enabled():
-                return False
-            from sglang.srt.distributed import get_tp_group
-            from sglang.srt.runtime_context import get_parallel
+        def _apply_ar_fusion(batch_size):
+            try:
+                if not (0 < batch_size <= max_bs):
+                    return False
+                if _an.is_dp_attention_enabled():
+                    return False
+                from sglang.srt.distributed import get_tp_group
+                from sglang.srt.runtime_context import get_parallel
 
-            tp = get_tp_group()
-            if tp.world_size <= 1:
+                tp = get_tp_group()
+                if tp.world_size <= 1:
+                    return False
+                # Pure-TP topologies only. Under EP (moe_ep>1) or a MoE-TP
+                # split, the fused consumers decline (reduction group is not
+                # attn-tp) and the armed producer deferral falls back to the
+                # reduce-scatter completion, whose aiter ca_comm.reduce_scatter
+                # rejects overlapping in/out tensors (EP-LL TP2+EP2 crash,
+                # 2026-10-18) -- keep those deployments on the stock eager path.
+                p = get_parallel()
+                if p.moe_ep_size > 1 or p.moe_tp_size != tp.world_size:
+                    return False
+                return True
+            except Exception:
                 return False
-            # Pure-TP topologies only. Under EP (moe_ep>1) or a MoE-TP
-            # split, the fused consumers decline (reduction group is not
-            # attn-tp) and the armed producer deferral falls back to the
-            # reduce-scatter completion, whose aiter ca_comm.reduce_scatter
-            # rejects overlapping in/out tensors (EP-LL TP2+EP2 crash,
-            # 2026-10-18) -- keep those deployments on the stock eager path.
-            p = get_parallel()
-            if p.moe_ep_size > 1 or p.moe_tp_size != tp.world_size:
-                return False
-            return True
-        except Exception:
-            return False
 
-    _apply_ar_fusion._hcu_ar_norm_arm = True
-    _apply_ar_fusion._hcu_stock_apply = stock_apply
-    for mod in (_an, _lb_exit, _lb_fus):
-        if hasattr(mod, "apply_flashinfer_allreduce_fusion"):
-            mod.apply_flashinfer_allreduce_fusion = _apply_ar_fusion
+        _apply_ar_fusion._hcu_ar_norm_arm = True
+        _apply_ar_fusion._hcu_stock_apply = stock_apply
+        for mod in (_an, _lb_exit, _lb_fus):
+            if hasattr(mod, "apply_flashinfer_allreduce_fusion"):
+                mod.apply_flashinfer_allreduce_fusion = _apply_ar_fusion
+    else:
+        LOG.warning(
+            "[HCU ar+norm] upstream candidate gate absent (v0.5.22 "
+            "plan/norm rework): ARM retired, dispatch-only install"
+        )
 
     # ---- DISPATCH: the flashinfer entry the armed candidate calls -------
     stock = _fcf.flashinfer_allreduce_residual_rmsnorm

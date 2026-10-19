@@ -18,6 +18,12 @@ LOG = logging.getLogger("hcu.adapter")
 
 _NEEDLE = "np.prod(x.shape[1:]) * x.dtype.itemsize"
 _REPLACE = "int(np.prod(x.shape[1:])) * x.dtype.itemsize"
+# v0.5.22 rewrote _init_data_ptrs_and_strides: strides now come from
+# x.stride(0) * x.dtype.itemsize (plain python ints, no numpy scalars in
+# the torch.tensor constructors) -- the wound this patch treated is gone
+# upstream. Detect the healed shape and retire the patch instead of
+# raising, so one adapter tree serves both upstream lines.
+_HEALED_MARK = "slot_move_pointer_buffers"
 
 
 def install():
@@ -34,6 +40,16 @@ def install():
     if _REPLACE in src:
         return  # already patched (double install in spawn'd children)
     if _NEEDLE not in src:
+        if _HEALED_MARK in src:
+            # No patch happens, so no registry binding: the op is served by
+            # upstream itself on this tree ("登记即存在" applies to what WE
+            # install). The text-patch allowlist entry stays valid for
+            # <=v0.5.21 trees.
+            LOG.info(
+                "HCU adapter: kv_fix no-op -- upstream rewrote "
+                "_init_data_ptrs_and_strides (np.prod wound gone, v0.5.22)"
+            )
+            return
         raise RuntimeError(
             "kv_fix: needle not found in memory_pool.py -- upstream changed; "
             "re-derive the patch point (governance §3)"
