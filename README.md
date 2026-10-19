@@ -29,7 +29,7 @@ triton / vendor / torch 三档策略，见"影子库与适配桥"）。
 不决定选仓，这个问句才决定。
 
 影子替换能严丝合缝的原因：sglang 的统一算子层 `sglang.kernels`
-（RFC #29630 的 `BaseFusedOp` 多后端模型）在 HIP 平台上把 **AOT 后端**
+（`BaseFusedOp` 多后端模型）在 HIP 平台上把 **AOT 后端**
 （`forward_aot` → `import sgl_kernel`）作为默认内核路径（JIT triton 后端
 只注册给 CUDA）。因此只要提供一个同名的 `sgl_kernel` 包，上游 sglang
 零修改即可在 HCU 上解析到我们的内核。
@@ -50,22 +50,25 @@ pip install -e .
 
 ## 覆盖范围
 
-| 模块 | API | 实现 |
-|---|---|---|
-| elementwise | `silu_and_mul` / `gelu_and_mul` / `gelu_tanh_and_mul` / `gelu_quick` | triton（CPU/不支持 dtype 走 torch） |
-| layernorm | `rmsnorm` / `fused_add_rmsnorm` / `gemma_rmsnorm` / `gemma_fused_add_rmsnorm` | triton（fp32 累加；CPU 走 torch） |
-| rope | `rotary_embedding`（NeoX 布局） | triton；GPT-J 交错布局暂走 torch 参考 |
-| moe gate | `topk_softmax` / `topk_sigmoid` / `moe_fused_gate`（新旧两种签名） | 批量 fp32 torch（严格对齐 CUDA 核的排序/tie-break/共享专家契约） |
-| moe align/sum | `moe_align_block_size` / `moe_sum` / `moe_sum_reduce` | `moe_align_block_size` 为纯 device triton 四 kernel（CUDA-graph capture 安全）；`moe_sum`/`moe_sum_reduce` 走 torch |
-| kv cache io | `transfer_kv_*` 共 16 个 | torch 移植（索引 gather/scatter 契约对齐 CUDA 版） |
+算子/桥资产清单**以治理目录与战报为准，不在此维护静态表**：
+- 后端与档位（emu/triton/vendor 演进、production/validated/candidate/
+  broken 状态机）：仓库 `BACKEND_CATALOG`（机器可读）+
+  [docs/config.md](docs/config.md) 状态语义；
+- 功能面与量化路径：`sgl_kernel/_adapters/`（JIT 补丁 / vendor 路由 /
+  ops 重绑 / 模型级补丁三十余座桥）；
+- 模型×并行实跑战报：[docs/models.md](docs/models.md)。
+
+初版核心算子面（elementwise / layernorm / rope / moe gate / moe align /
+kv cache io 的 triton·torch 实现，API 逐字对齐官方 sgl-kernel）见
+`sgl_kernel/` 包本体，不赘列。
 
 设计原则：
 - API 签名与官方 `sgl-kernel/python/sgl_kernel` 逐字对齐（含 `out=`、
   `enable_pdl` 占位参数、destination-passing 语义）。
-- 所有 triton kernel 数学均在 fp32 累加；bf16/fp16/fp32 输入。
+- triton kernel 数学均在 fp32 累加；bf16/fp16/fp32 输入。
 - import 永不失败：未覆盖的算子在使用时抛带提示的 `NotImplementedError`。
 - GPU 路径禁用一切主机同步（`.item()` / `nonzero` / 布尔掩码索引），
-  保证 decode CUDA-graph capture 链路可用（首个 MoE 模型实测暴露的坑）。
+  保证 decode CUDA-graph capture 链路可用。
 
 ## 影子库与适配桥（sglang/vllm python 零改动）
 
@@ -73,19 +76,28 @@ pip install -e .
 |---|---|
 | `sitecustomize.py` | PYTHONPATH 自动加载的 import 接管层：桥接 vllm `_custom_ops` 的 `rms_norm` / `fused_add_rms_norm`（HIP 6 参形态）到本包；`apply_token_bitmask_inplace_cuda` → sglang 仓内 triton 实现；flashmla backend 的 flashinfer wrapper 构造桩；int8/fp8 量化路径重绑定 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径：elementwise / layernorm / rope / moe / kv cache io / fp8·int8 GEMM / flash_mla emu，API 逐字对齐官方 sgl-kernel |
-| `sgl_kernel/_adapters/` | 元路径影子库：`aiter` 真包（DTK vendor wheel）优先 + 缺口填空（`fused_clamp_act_mul` 等）、`flashinfer` / `flash_attn` 桩——import 成功、未实现调用响亮报错；另含 `hcu_env` 环境注册表、`kill_switch` 快关、slimquant / mqa_logits_emu / dsa_topk 模型级补丁 |
+| `sgl_kernel/_adapters/` | 元路径影子库：`aiter` 真包（DTK vendor wheel）优先 + 缺口填空（`fused_clamp_act_mul` 等）、`flashinfer` / `flash_attn` 桩——import 成功、未实现调用响亮报错；另含 `hcu_env` 环境注册表、`kill_switch` 快关、slimquant / paged-MQA logits（emu/triton 双档）/ dsa_topk / quant·ar-norm 等 vendor 桥模型级补丁 |
 | `sgl_kernel/kvcacheio.py` | PD 分离/分层 KV transfer（transfer_kv_* 契约，上游 mooncake 等 KV 传输路径的调用面）的完整 torch 移植 |
 
 ## 运行要点（HCU 实测）
 
+**推荐形态 = 零环境变量起服**（"正确部署零环境变量"是本项目的回归治理
+原则）：平台语义、JIT 预热关闭、模型感知默认（DSA 融合逃生门等）均由
+adapter 自动落位，启动日志前 20 行可见每个生效值及来源
+（`HCU adapter env:` 摘要行）。手敲 env 只用于调试/隔离。
+
 ```bash
 export PYTHONPATH=/path/to/hcu-sglang-adapter:/path/to/sglang/python
 python -m sglang.launch_server --model-path <model> --port 30000 \
-    --attention-backend triton ...   # aiter attention 后端在 HCU 不可用，须显式指定 triton
+    # 默认路由已按平台自动选型；后端/量化显式旗标只在需要固定形态时加
 ```
 
-- MoE 模型（已验证）：Qwen3.6-35B-A3B（GDN 线性注意力 + MoE topk8）单卡 144G
-  TP1 拉起，decode CUDA-graph capture 通过；dense 小模型 Qwen3-0.6B 亦通。
+- 典型生产已验证：GLM-5.3-Flash（KDA+DSA 混合，306G TP8，长文解码
+  fork 内核转正后 +80%）；MoE 线 Qwen3.6/3.5 系、Qwen3-30B-A3B；dense
+  小模型；CT int8 / W4A8 桥；EP（DeepEP LL）与 PD 分离；完整模型×并行
+  战报见 [docs/models.md](docs/models.md)。
+- **正确性/性能卡位分工**：BW1102（gfx938，nmz26 级）= 生产卡型；BW1101
+  类仅用于离线正确性对拍，性能结论与 gfx938 特有判别必须生产卡复核。
 - thinking 模型建议给足 `max_tokens` 或用
   `chat_template_kwargs: {"enable_thinking": false}`，否则思考文本会占满
   输出预算（评测误判的常见来源）。
@@ -95,24 +107,28 @@ python -m sglang.launch_server --model-path <model> --port 30000 \
 
 ## 测试
 
+分层门禁体系（**以 [docs/ci.md](docs/ci.md) 为准**，本处为速览）：
+
 ```bash
-pytest tests/test_ops_cpu.py -v          # 纯 CPU，验证 torch 兜底路径（任何机器）
-pytest tests/kernels -v                  # 自有算子（HCU 节点，含 CUDA-graph capture 回归）
+pytest tests/test_ops_cpu.py -v          # 纯 CPU，torch 兜底路径（任何机器）
+pytest tests/kernels tests/adapter -v    # 自有算子/桥（HCU 节点，含图 capture 回归）
 pytest tests/vendor -v                   # vendor 高危：FA 场景矩阵 + aiter AR 压测/快关 gate
+bash ci/l1_gpu_gate.sh                   # 一键全门：L0 + cpu + kernels + 上游单测 + 门禁 + vendor
 python tests/tools/run_triage.py         # 精度问题四级快速定位（容器内）
 ```
 
-- 单测以官方 CUDA 核的语义为基准对照（gate 排序/tie-break、
-  moe_align_block_size 的 padding/cumsum 契约）；CPU 36 例 + GPU 29 例全绿
-  （GPU 含 moe_align capture/replay 回归）。
-- 官方 sgl-kernel parity：fused-op GPU 对照 12/12（`tests/kernels/`）。
-- 高危 vendor 算子（custom all-reduce / flash attention）有专门压测：
-  尺寸×dtype×CUDA-graph-replay 变输入，黄金参考为 fp32 精确和 / fp32 SDPA。
-- 高危算子均配**快关**：`HCU_DISABLE_OPS=aiter_ar[,aiter_fa]` 一翻开关即
-  绕开疑似算子复跑（gfx93* 上 aiter AR 默认自动拒绝，`HCU_AITER_AR=1` 夺回）。
-- 端到端精度：Qwen3.6-35B-A3B 对话验证 + 64 并发 soak 0 错误 + GSM8K 前 100
-  题（thinking 原生模式）69%，错例为思考截断与模型自身水平，算子链路无损；
-  GLM-5-W4A8_V2_6 TP8 + CUDA graph ON 零旗标验证连贯（短/长 prompt）。
+- **上游官方单测常驻收集**（L1.5）：容器内上游树的
+  `test/registered/attention/unittests`（dsa/kda/dense/mla 等目录）以
+  上游代码为入口直接 pytest（零拷贝——收集列表/过滤器/环境注入在
+  `ci/l1_gpu_gate.sh`，测试代码本体不进本仓，随上游版本自动跟进）。
+- 自有算子三段式单测（参照/形状矩阵/容差，容差表见
+  `skills/hcu-adapter-dev/references/test-suite.md`）是质量金标准；
+  单测绿 ≠ serving 通，模型级验证以 models.md 战报为准。
+- 高危算子均配**快关**：`HCU_DISABLE_OPS=<op>` 一翻开关即绕开疑似算子
+  复跑；快关注册流程见 CONTRIBUTING。
+- 端到端精度锚点（Berlin/Tokyo 事实检索 + 马拉松 + 长文门）作为 serving
+  级守卡，有效性实证：零 env 四门首跑曾连抓两个栈级 bug（详见
+  models.md 2026-10-19 行）。
 
 ## 开发规约（skill）与协作
 
@@ -125,21 +141,24 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
 
 ## 已知未覆盖 / 路线图
 
-（已验证特性与模型清单以 [docs/models.md](docs/models.md) 为准——custom
-allreduce、EP 三模式、PD 分离（TCP/RDMA）、fa3/fp8 KV、AWQ、MTP、
-dp-attention 等已通；此处只列未覆盖项。）
+（已验证特性与模型清单以 [docs/models.md](docs/models.md) 为准——零 env
+部署、EP/LP 拓扑、PD 分离、投机解码 MTP、hicache、量化桥等已通；此处只列
+未覆盖项。）
 
-- 量化路径：compressed-tensors float-quantized 格式（Qwen3-4B-Channel-FP8
-  实测未覆盖，见 models.md）、FP8 DeepEP normal（a_scale 语义 ≠ 128-block）。
+- 量化路径：compressed-tensors float-quantized（FP8）格式的 serving 层
+  （已知病灶，未覆盖）；W4AFP8 混合面（int4-channel 权重 × fp8-dynamic
+  激活，上游 scheme 有缺口）；FP8 DeepEP normal（a_scale 语义 ≠
+  128-block）。
 - aiter attention 的 AMD 原生符号（`paged_attention_ragged` / `mla_*`）：
-  按需 triton 化（混合适配方案，见任务 #240 结论）。
-- MoE gate（topk 系列）triton 化提性能：当前 torch 版正确性已验证，性能优化
-  排期中。
-- hicache 的 GDN 混合模型 MAMBA 状态宿主迁移输出漂移待修（dense 全通）。
-- GLM-5.3-Flash（KDA+DSA 混合架构）排查暂停中，词汤根因剩三嫌疑
-  （TP8 RCCL allreduce 数值 / DSA 路径 / KDA 融合投影 TP 分片加载）。
-- plugin 仓（独立仓库，规划中）：上游没有的新能力，目的即性能优化——算子
-  融合/专项内核/新调度路径，经 seam 接入或直调底层库（见文首分工）。
+  按需 triton 化（混合适配方案）。
+- hicache 的 GDN 混合模型 MAMBA 状态宿主迁移输出漂移待复核（dense 全通，
+  等 GDN rig 配 hicache 窗口）。
+- DTK 工具链已知缺口（内核级，待上游/轮子跟进）：triton codegen 布局
+  敏感误编译疑点（conv1d parity 有 xfail-strict 桩常驻门禁自动跟踪）、
+  tilelang 0.1.13+ ThreadSync 回归（已钉 0.1.12）、fp8 内核族符号病理
+  （详见 models.md 判例）。
+- plugin 仓：上游没有的新能力（算子融合/专项内核/新调度路径）归独立
+  plugin 仓——分工与判别问句见文首，索引见 docs/governance.md §0。
 
 ## CI
 
