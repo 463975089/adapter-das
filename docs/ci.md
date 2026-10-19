@@ -240,6 +240,36 @@ bash ci/l1_gpu_gate.sh <空卡号> --up-tree /sglang-v0522`。预期：mech
 41F/101P 中 CUB 族（dsv4 metadata/store/c1/c2≈30 败行）+conv1d 族（6）
 翻绿、cutedsl K1 不动；kernels 预算线与 38F/99P 基线届时重锚。
 
+### L1.5i bw1000 系列（gfx936/bw47）攻略战——配方跨 ISA 实证+盒级三发现（2026-10-20 凌晨，nmz26/18 满载转场）
+
+nmz 双机满载，按用户指示转 bw7（bw47，gfx936/BW1000 系，8 卡空）继续。
+**配方跨 ISA 直通**：gfx936 的 mocker 同样映射 `__CUDA_ARCH__=750`（E
+探针实证），v3 壳零改动可用；W1 预热跑里 **clang-18/ninja 真实现场**出
+现——cuda-mocker 编译链在第二 ISA 点燃。**首次公开仓 bootstrap 演练**：
+bw47 从 Gitee 匿名克隆 adapter rel@06a4e21（免令牌）+github 独立克隆树钉
+baa9bef，双树并置全程零搬运。
+
+**盒级三发现（全数回写 bootstrap §5）**：
+1. **宿主 /opt/hyhal 必须挂载**：漏挂=NVML 枚举 8 卡、torch 真初始化
+   0 卡的"半配对"假象（枚举走 NVML 提交走 HSA）；挂上即 REAL_INIT_OK。
+2. **HSA 栈楔死敏感**：`hsakmt_shared_mem (deleted)` + 主线程 poll 等
+   renderD=楔死指纹；触发面=timeout SIGTERM 半途杀 HSA 进程（gate 每
+   次段超时都毒化下游，r2-l15/r3-l15/r5-l15 三连复现）与长程 GPU
+   churn（kernels 全套跑到 42% 楔死，干净串行无超时也复现）；处置=
+   `rm -f /dev/shm/hsa* /dev/shm/hsakmt*` 即愈（免 GPU 复位）。
+3. **节律差**：import 面比 nmz 慢 5-10×（tests/adapter 收集实測 241s、
+   适配层开机恒定 34s/进程三连不变）——gate 原窗（60/300/900）必超，
+   bw47 本地放宽 ×3 后 l0/cpu 首绿。另锁死一条诊断纪律：楔死敏感盒上
+   **诊断探针（任何 python）绝不与在跑套件并行**——每次并行探针都在
+   抢 hsakmt 段、毒化在跑进程（r4 报废主因，pkill 模式含 "m pytest"
+   字样还会自匹配自杀，须按 PID 显式清场）。
+
+**gfx936 的 v0.5.22 锚定数未产出（box 账登记）**：kernels 套件在
+gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非配方
+病，纯 box 账报 DTK/hyhal 跟进）；W1 部分产出=~100 测 6F/1x 面正流
+（F 具名清单陪葬于缓冲）。bw1000 系列后续验证等 DTK 栈修复或换镜像代，
+配方侧已就绪（壳/软链/.info/环境四件在 bw47 容器内留存）。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```
