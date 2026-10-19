@@ -236,9 +236,16 @@ git 化或重同步全树**）。②gate 位参在 `sh -c` 双跳里会被 `2 >`
 **锚定待跑（数据落袋后改写本节）**：nmz26 卡空后，作坊根已补 `.info`
 （`/tmp/lizhg_rocm22`，v3 壳+软链齐）——`cd /root/hcu_t2 && ROCM_HOME=/
 tmp/lizhg_rocm22 LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so
-bash ci/l1_gpu_gate.sh <空卡号> --up-tree /sglang-v0522`。预期：mech
-41F/101P 中 CUB 族（dsv4 metadata/store/c1/c2≈30 败行）+conv1d 族（6）
-翻绿、cutedsl K1 不动；kernels 预算线与 38F/99P 基线届时重锚。
+bash ci/l1_gpu_gate.sh <空卡号> --up-tree /sglang-v0522`。**38F 精算拆账
+（2026-10-20 对 L1.5f mech 详日账 /tmp/l1_l15_mech.log）**：
+`dpsk_v4_metadata` 编译失败 ×14 + `compress_plan` ×12 + `causal_conv1d`
+×6 = **32F 配方已逐颗实证可治**（三模块 LOAD_OK/补 ninja 出 .so/数值
+PASS），c1/c2 同族根（CUB/uint2）随配方同治；**残红预期 ≈6F** = gdn
+cutedsl ring verify（K1 真红）+ swa/gdn flashinfer CUDA 错（平台缺件
+K4 族账）——即配方锚定轮后 mech 预算线应从 38F/99P 收紧到约
+**6-10F/125±P**，全门终态 GREEN 即可写死。机时侧（同日实测）：nmz26 8
+卡满未松、nmz18 宿主 /opt/dtk 被管理侧卸载（布防线死）、bw47 楔死 box
+账——三机皆客满，锚定继续等 nmz26 空卡。
 
 ### L1.5i bw1000 系列（gfx936/bw47）攻略战——配方跨 ISA 实证+盒级三发现（2026-10-20 凌晨，nmz26/18 满载转场）
 
