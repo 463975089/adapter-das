@@ -39,7 +39,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
    +容差，脚手架见 references/test-suite.md 三段式）；seam/接缝类——e2e 探路
    可以，但 "one pit, one test"：探明的坑修复时必带离线复现单测，否则不予
    合入。实证对照：contig-triton/fa3-emu 单测先行 e2e 首过 vs
-   moe_align/slimquant 反序付 e2e 倒查代价（CONTRIBUTING §3.4b）。
+   moe_align/slimquant 反序付 e2e 倒查代价（board.md「协作与分支规约」§测试先行顺序）。
 
 10. **tests/ 下禁止脚本级副作用**：门禁会 pytest 收集 `tests/kernels`
    与 `tests/adapter`——模块级 `sys.exit`/裸执行会让收集期直接
@@ -123,7 +123,7 @@ skills/hcu-adapter-dev/  本 skill
 - 改 kernel 必须附带或更新对应契约测试；涉及 vendor 高危面的同时更新压测
   与快关注册表，三件一起提交。
 - 桥/plugin 选位与登记（先分仓、裁决链、registry.register、L0 三规则、
-  四处登记同 commit）见上文治理闭环与 `docs/governance.md`、CONTRIBUTING
+  四处登记同 commit）见上文治理闭环与 `docs/governance.md`、docs/board.md 协作规约节
   §3b——sitecustomize 不新增实现体。
 - push 前最低标准：`pytest tests/test_ops_cpu.py`（任何机器）+
   节点上 `pytest tests/kernels tests/adapter tests/vendor -k "not stress"` +
