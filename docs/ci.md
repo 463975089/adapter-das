@@ -33,6 +33,27 @@
 = `CUDA + flashinfer are required` 平台性 skip + 1 件 flashinfer linear GDN
 SM90/SM100 门——与 L1.5 的合法 skip 同类，零非预期。
 
+### L1.5c 批 D 功能面直跑分诊（2026-10-19，nmz18/BW1101 实测）
+
+环境：nmz18 容器 `lzg-nsa-tp8`（BW1101 8 卡可见，实测用 GPU4；正确性
+有效、性能不迁移），adapter 树=快照 `/root/hcu_t2_r14`（=master 40c2808，
+tar 直灌），上游=/sglang-v0521，env 契约同 L1.5b。批 D=「import 即 SKIP
+清查 + 可跑面分级」，原定 nmz26 场地，因占卡转 nmz18。
+
+| 批 D 目标 | 件数/测数 | 三态处置 |
+|---|---|---|
+| unit/disaggregation（PD 分离 unit 级） | 33 文件 → **515 passed+157 subtests**，rc=0，124s | **直跑全绿**（零 skip，连 mooncake/nixl bootstrap 件也过——mock 层完整，库依赖只 import 不连网）；进 L1 候选段 |
+| spec/dspark（MTD 投机解码纯单测） | 13 文件 → **156 passed+43 subtests**，rc=0，121s | **直跑全绿**（kernel_parity/ragged_verify GPU 形状门在 BW1101 实测过；R-14 预期「可能有真实发现」未兑现=好消息）；进 L1 候选段 |
+| mock_model self_* canary 七件 | 7 文件 → **23 passed**，rc=0，375s | **直跑全绿**（mock 拓扑自洽：wiring/canary/install/oracle/torch_vs_ref/sampler hookpoint/perturb next_token_swap）；零适配即跑，进 L1 候选段 |
+| hicache 其余 10 件 | 1 skip + 3 快错 + 6 挂 | **umbp**=合法 skip（上游自检 `UMBP HiCache requires ROCm` 逻辑不认本环境）；**spec_file/file_backend/3fs**=HF gated 401（要拉 meta-llama config，上游测试设计依赖外部 HF 令牌——登记不做，除非配 HF_TOKEN）；**mooncake×2/storage/attach_detach/variants**=挂 mooncake 类服务连接（登记不做/改造需 mock 服务）；**pp_with_hicache/qwen35_hicache**=boot 级→批 E |
+| spec/dflash 主件 | 2 文件 | **全部 E+挂**（test_dflash 19 测全 setup-E 后超时；muse_glimmer gsm8k 件无输出超时——疑 boot/HF 数据依赖，根因待逐件）→ 归批 E 三态处置，批 D 无可直跑件 |
+
+批 D 小结：可直跑面 = **PD 分离 33 + dspark 13 + mock canary 7 文件，
+694 测+200 子测全绿**（零适配零 skip）；hicache/dflash 的外部依赖面
+（HF 令牌/mooncake 服务/boot）全部登记不做或移交批 E，零静默。
+L1 纳入建议：三绿段合并为独立 `l15_units` 段（合计 ~10min，随批 B/C
+定位后一批进 gate 脚本）。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```
