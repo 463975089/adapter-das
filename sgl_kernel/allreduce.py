@@ -1,59 +1,23 @@
-"""sgl_kernel.allreduce — custom all-reduce ops for sglang's HIP branch.
+"""Tombstone (2026-10-19): the HCU homegrown custom all-reduce is RETIRED.
 
-sglang's ``custom_all_reduce_ops`` imports this module and dispatches
-through it when building ``CustomAllreduce`` (the graph-safe all-reduce
-that aiter's custom AR also occupies on ROCm). The triton implementation
-lives in ``sgl_kernel._adapters.triton_ar``; this module only re-exports
-the interface sglang expects:
+This module used to re-export the triton custom AR implementation
+(``_adapters/triton_ar.py`` + ``ar_ext.cu``: host-shm signaling + HIP IPC
+staging). R-01 convicted its cross-block rendezvous (device-scope arrival
+atomics do not order the other blocks' host-shm payload stores; skip-think
+48/80 vs 1/40 on the aiter route, nmz26 tp4 2026-10-15) and R-13 #1 was
+closed as a disposition, NOT a fix: the aiter.dist GraphSafe AR passed the
+full stress matrix on the current image (4-rank and 8-rank, 15/15 eager +
+graph-replay per topology) and had been the production landing all along,
+so the fix was moot and a convicted kernel is useless as a numerics
+reference. Files deleted; git history has the protocol archaeology.
 
-* ``init_custom_ar(meta, rank_data, handles, offsets, rank, full_nvlink)``
-  and the reg/unreg all-reduce entry points (both take the same staging
-  path, so graph-pool addresses need no IPC registration),
-* ``allocate_meta_buffer`` / ``get_meta_buffer_ipc_handle`` / ``meta_size``
-  (the sync+payload buffer is one HIP-IPC allocation),
-* ``register_buffer`` / ``register_graph_buffers`` /
-  ``get_graph_buffer_ipc_meta`` (no-ops by design),
-* the quick-AR family (stubs — aiter quickreduce is not provided here).
+Raising ImportError here lands in sglang's designed fallback channel
+(``custom_all_reduce_ops`` catches it, flips ``IS_CUSTOM_AR_AVAILABLE``
+off and logs this module's message once per boot).
 """
 
-from sgl_kernel._adapters.triton_ar import (  # noqa: F401
-    all_reduce_reg,
-    all_reduce_unreg,
-    allocate_meta_buffer,
-    deterministic_all_reduce_reg,
-    deterministic_all_reduce_unreg,
-    dispose,
-    get_graph_buffer_ipc_meta,
-    get_meta_buffer_ipc_handle,
-    init_custom_ar,
-    init_custom_qr,
-    meta_size,
-    qr_all_reduce,
-    qr_destroy,
-    qr_get_handle,
-    qr_max_size,
-    qr_open_handles,
-    register_buffer,
-    register_graph_buffers,
+raise ImportError(
+    "sgl_kernel.allreduce: HCU custom AR retired 2026-10-19 "
+    "(R-01 conviction + R-13#1 disposition; AR tier = aiter.dist "
+    "GraphSafe, fallback NCCL. See git history for triton_ar.py."
 )
-
-__all__ = [
-    "init_custom_ar",
-    "all_reduce_reg",
-    "all_reduce_unreg",
-    "deterministic_all_reduce_reg",
-    "deterministic_all_reduce_unreg",
-    "dispose",
-    "meta_size",
-    "register_buffer",
-    "get_graph_buffer_ipc_meta",
-    "register_graph_buffers",
-    "allocate_meta_buffer",
-    "get_meta_buffer_ipc_handle",
-    "init_custom_qr",
-    "qr_get_handle",
-    "qr_open_handles",
-    "qr_all_reduce",
-    "qr_destroy",
-    "qr_max_size",
-]

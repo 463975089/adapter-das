@@ -59,7 +59,7 @@ def main():
     assert doc["ops"][op]["role"] == "active"
     assert op not in doc["unbound"]
     assert "silu_and_mul" in doc["unbound"] or True  # unbound lists others
-    assert "HCU_TRITON_AR" in doc["env"], sorted(doc["env"])[:5]
+    assert "HCU_AITER_AR" in doc["env"], sorted(doc["env"])[:5]
     print("PASS  dump shape:", {k: len(v) if hasattr(v, "__len__") else v
                                 for k, v in doc.items()})
 

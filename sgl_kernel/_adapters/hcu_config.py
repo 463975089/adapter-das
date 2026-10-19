@@ -14,7 +14,7 @@ Schema (hcu_adapter.yaml, first hit wins in discovery order):
     ops:
       silu_and_mul: triton      # triton | lightop | torch
       rms_norm: aiter           # triton | aiter | torch
-      allreduce: custom         # custom | aiter | nccl
+      allreduce: aiter          # aiter | nccl (custom AR retired 2026-10-19)
       paged_mqa_logits: triton   # triton (DEFAULT, R-13 #4) | emu | vendor
 
 Discovery: $HCU_CONFIG > ./hcu_adapter.{yaml,yml,json} >
@@ -33,7 +33,7 @@ UI both render from it. status:
     candidate   wired, awaiting its gate matrix
     broken      once shipped, now convicted of corruption -- selecting
                 raises at config load (env override still possible for
-                A/B triage, e.g. HCU_TRITON_AR=1)
+                A/B triage)
     planned     catalogued for the future UI, NOT wired -- selecting
                 raises at config load
 """
@@ -82,22 +82,25 @@ BACKEND_CATALOG = {
     },
     "allreduce": {
         "vars": {
-            "custom": {"HCU_TRITON_AR": "1"},
-            "aiter": {"HCU_TRITON_AR": "0", "HCU_AITER_AR": "1"},
-            "nccl": {"HCU_TRITON_AR": "0", "HCU_AITER_AR": "0"},
+            "aiter": {"HCU_AITER_AR": "1"},
+            "nccl": {"HCU_AITER_AR": "0"},
         },
         "summary": "TP all-reduce (+fused AR+RMSNorm seam, HCU_AR_NORM_IMPL)",
         "backends": {
-            "custom": {"status": "broken",
-                       "note": "cross-block device-scope rendezvous does not "
-                               "order host-shm payload stores; stale reads "
-                               "flip outputs (skip-think 48/80 vs 1/40 on "
-                               "the =0 route, nmz26 tp4 2026-10-15). Default "
-                               "OFF pending ar_ext.cu fix"},
             "aiter": {"status": "production",
                       "note": "aiter.dist GraphSafe; 15/15 graph replay; "
                               "1/40 skip-think in the R-01 verdict arms — "
-                              "the default landing spot for TRITON_AR=0. "
+                              "the default landing spot. 2026-10-19 final "
+                              "stress on image sf_b075-20261018-0048 "
+                              "(aiter 2610171925): 4-rank AND 8-rank "
+                              "15/15 PASS (eager gold + NCCL sanity + "
+                              "graph capture with 4 fresh-input replays "
+                              "per size/dtype), latency on par with "
+                              "NCCL (88 vs 69us small msgs, 0.93-0.95x "
+                              "at 1-16MB). The homegrown custom AR was "
+                              "RETIRED the same day (user decision): the "
+                              "R-13#1 fix is moot and the broken kernel "
+                              "is useless as a numerics reference. "
                               "R-09① fused AR+RMSNorm seam (2026-10-19, "
                               "ar_norm_aiter 桥 v2, HCU_AR_NORM_IMPL auto): "
                               "arm=apply_flashinfer_allreduce_fusion 三副本"

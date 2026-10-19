@@ -172,33 +172,10 @@ REGISTRY = {
                  "（dp-attention/attn-tp 切分或 MoE 子组时逐调用退回 "
                  "stock flashinfer 入口）；=stock 全退上游",
     },
-    "HCU_TRITON_AR": {
-        "env": "HCU_TRITON_AR", "default": "0",
-        "about": "custom AR（sgl_kernel.allreduce，host-shm 信令 + HIP IPC "
-                 "拉读）：R-01 判决（2026-10-15/18，nmz26 tp4 七臂）其跨 "
-                 "block 汇合计数器是 device 域原子，不传递系统域写序——"
-                 "last block 的 PUB/DONE 发布可早于其他 block 的 host-shm "
-                 "payload 写落 DRAM，对端间歇读到旧轮数据（Berlin 跳 think "
-                 "custom 四臂 48/80 vs HCU_TRITON_AR=0 路由 1/40），故默认"
-                 "停用；=0 落 aiter AR 自动规则（gfx93* 新 aiter GraphSafe "
-                 "压力套通过 auto 放行——s7nccl/r04b 实测即此路径；旧布局"
-                 "仍拒）或显式 HCU_AITER_AR=0 再落 NCCL；=1 显式夺回 custom"
-                 "（修复 ar_ext.cu 汇合协议前勿在生产开）",
-    },
-    "HCU_TRITON_AR_SLOTS": {
-        "env": "HCU_TRITON_AR_SLOTS", "default": "",
-        "about": "custom AR 轮转槽数（默认按 WS 取 8/4/2）",
-    },
-    "HCU_TRITON_AR_BUDGET": {
-        "env": "HCU_TRITON_AR_BUDGET", "default": "100000000",
-        "about": "custom AR 每次自旋预算（PCIe 轮询次数，超出降级继续并计 "
-                 "diag；默认 1e8 ≈ 2.5 分钟）",
-    },
-    "HCU_TRITON_AR_MAX_KB": {
-        "env": "HCU_TRITON_AR_MAX_KB", "default": "512",
-        "about": "custom AR 尺寸上限（KB）：≤此值走 custom AR（host-shm，"
-                 "小消息快于 NCCL ~2x），更大走 NCCL；0 = 不设限",
-    },
+    # （HCU_TRITON_AR/HCU_TRITON_AR_SLOTS/BUDGET/MAX_KB 已随 custom AR 除役
+    #   撤销——2026-10-19 R-13#1 改判：aiter GraphSafe 在新镜像压测全绿，
+    #   homegrown custom AR 的 host-shm 汇合协议修复冻结不实施，代码删除，
+    #   git 史 triton_ar.py/ar_ext.cu 可考古。）
     # DSA / attention
     "HCU_SPEC_LOC_SAFE": {
         "env": "HCU_SPEC_LOC_SAFE", "default": "1",

@@ -98,31 +98,23 @@ try:
 except hcu_config.HcuConfigError as e:
     ok("planned-rejected", "planned" in str(e))
 
-# 7. compound allreduce mapping
+# 7. compound allreduce mapping (custom AR retired 2026-10-19: aiter/nccl only)
 with_cfg("version: 1\nops:\n  allreduce: nccl\n")
-v1, s1 = hcu_env.resolve("HCU_TRITON_AR")
 v2, s2 = hcu_env.resolve("HCU_AITER_AR")
-ok("compound-nccl", (v1, s1) == ("0", "config") and (v2, s2) == ("0", "config"),
-   f"AR={v1}({s1}) AITER={v2}({s2})")
+ok("compound-nccl", (v2, s2) == ("0", "config"),
+   f"AITER={v2}({s2})")
 with_cfg("version: 1\nops:\n  allreduce: aiter\n")
-v1, s1 = hcu_env.resolve("HCU_TRITON_AR")
 v2, s2 = hcu_env.resolve("HCU_AITER_AR")
-ok("compound-aiter", (v1, s1) == ("0", "config") and (v2, s2) == ("1", "config"),
-   f"AR={v1}({s1}) AITER={v2}({s2})")
+ok("compound-aiter", (v2, s2) == ("1", "config"),
+   f"AITER={v2}({s2})")
 
-# 7b. broken backend refused loudly (R-01 verdict: custom AR stale-read race)
+# 7b. retired backend refused loudly (R-01 conviction, retired 2026-10-19)
 try:
     with_cfg("version: 1\nops:\n  allreduce: custom\n")
     hcu_config.load(force=True)
-    ok("broken-rejected", False, "no error raised")
+    ok("retired-rejected", False, "no error raised")
 except hcu_config.HcuConfigError as e:
-    ok("broken-rejected", "broken" in str(e) or "custom" in str(e))
-# 7c. bare default resolves off custom (HCU_TRITON_AR default 0; the =0
-# route lands on the aiter AR via its auto rule — nccl needs HCU_AITER_AR=0)
-with_cfg("version: 1\nops: {}\n")
-hcu_config.load(force=True)
-v1, _ = hcu_env.resolve("HCU_TRITON_AR")
-ok("default-not-custom", v1 == "0", f"AR={v1}")
+    ok("retired-rejected", "custom" in str(e) or "unknown" in str(e).lower())
 
 # 8. bad version -> loud
 try:

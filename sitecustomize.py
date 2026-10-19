@@ -1434,84 +1434,16 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: DSA validator seam not installed", exc_info=True
         )
 
-    # Custom all-reduce: sglang's CustomAllreduce resolves its ops through
-    # sgl_kernel.allreduce — on HCU that module is provided by our triton
-    # custom AR (HIP IPC + P2P staging, CUDA-graph safe; see
-    # sgl_kernel/_adapters/triton_ar.py). Route the dispatch to it and mark
-    # the fabric full: is_full_nvlink's amdsmi XGMI query is meaningless on
-    # HCU, and the real capability gate already lives in init — a failed
-    # hipIpcOpenMemHandle raises inside CustomAllreduce.__init__, which
-    # parallel_state catches and falls back to NCCL. This occupies the slot
-    # of both the missing C++ sgl_kernel AR and aiter's AR (whose
-    # graph-replay corruption — decode tokens turn to word soup from the
-    # first graph-replayed step while prefill stays correct — reproduced on
-    # nmz26 even with the new aiter layout, 2026-10-11, tp2_graph_30197).
-    # DEFAULT OFF since the R-01 verdict (2026-10-15, nmz26 tp4 Berlin
-    # marathon): the kernel's cross-block rendezvous counts arrivals with
-    # device-scope atomics, which do NOT order the other blocks' host-shm
-    # payload stores (plain stores linger past __threadfence_system on
-    # this stack — probed), so the last block's PUB/DONE publish can reach
-    # host DRAM before some payload writes and the peers intermittently
-    # reduce stale/older-round rows: skip-think flips 48/80 with custom AR
-    # vs 1/40 on the HCU_TRITON_AR=0 route (which lands on the aiter AR —
-    # the new GraphSafe layout is auto-allowed on gfx93*; NCCL only when
-    # HCU_AITER_AR=0 is set explicitly). Re-enable only after the ar_ext.cu
-    # rendezvous is system-scope (host-shm arrival counters).
-    _tar_val, _tar_src = (
-        _he.resolve("HCU_TRITON_AR") if _he else ("1", "default")
-    )
-    _tar_on = str(_tar_val) not in ("", "0", "None")
-    _tar_installed = False
-    if _tar_on:
-        try:
-            import sgl_kernel.allreduce as _sar  # noqa: F401
-
-            import sglang.srt.distributed.device_communicators.\
-                custom_all_reduce as _car
-            import sglang.srt.distributed.device_communicators.\
-                custom_all_reduce_utils as _caru
-
-            def _hcu_full_fabric(physical_device_ids, world_size):
-                # P2P/IPC availability is enforced at init (see above)
-                return True
-
-            def _hcu_triton_ar_dispatch(group, device):
-                return _car.CustomAllreduce
-
-            # the custom AR traverses host memory (the only mid-kernel
-            # cross-GPU-coherent fabric on HCU), so it beats NCCL only up to
-            # ~512KB (measured 2026-10-11, nmz26 GPU6/7: 29/33/44us vs
-            # 75/70/68us at 4/64/256KB, crossover ~512KB). Cap the size
-            # router so larger all-reduces take the NCCL path.
-            _cap_kb, _cap_src = (
-                _he.resolve("HCU_TRITON_AR_MAX_KB") if _he else ("512", "default")
-            )
-            _cap = int(_cap_kb) * 1024
-            _orig_car_init = _car.CustomAllreduce.__init__
-
-            def _hcu_car_init(self, group, device):
-                _orig_car_init(self, group, device)
-                if _cap > 0 and getattr(self, "max_size", 0) > _cap:
-                    self.max_size = _cap
-                    logging.getLogger("hcu.adapter").info(
-                        "HCU adapter: custom AR max_size capped to %dKB"
-                        " (HCU_TRITON_AR_MAX_KB [%s]); larger goes NCCL",
-                        _cap // 1024, _cap_src,
-                    )
-
-            _car.CustomAllreduce.__init__ = _hcu_car_init
-            _caru.is_full_nvlink = _hcu_full_fabric
-            _car.dispatch_custom_allreduce = _hcu_triton_ar_dispatch
-            _tar_installed = True
-            logging.getLogger("hcu.adapter").info(
-                "HCU adapter: custom AR active (%s [%s]) —"
-                " sglang CustomAllreduce -> sgl_kernel.allreduce",
-                _tar_val, _tar_src,
-            )
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: triton AR bridge not installed", exc_info=True
-            )
+    # Custom all-reduce RETIRED (2026-10-19, R-13#1 disposition): the
+    # homegrown triton custom AR (sgl_kernel/allreduce shim ->
+    # _adapters/triton_ar.py + ar_ext.cu) was convicted in R-01
+    # (device-scope rendezvous does not order host-shm payload stores;
+    # skip-think 48/80) and the planned rendezvous fix is moot — the new
+    # aiter.dist GraphSafe AR passed the full stress matrix on the
+    # current image (4-rank and 8-rank, eager + graph-replay, 15/15 per
+    # topology) and has been the production landing all along. Files
+    # deleted; git history has the protocol archaeology. The aiter auto
+    # rule below is the sole AR gate now.
 
     # AiterCustomAllreduce silently corrupts data when the CUDA graph it was
     # captured into replays on gfx936-class DCUs (eager all-reduce is fine).

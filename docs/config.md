@@ -13,7 +13,7 @@ version: 1
 ops:
   silu_and_mul: lightop     # triton | lightop | torch
   rms_norm: aiter           # triton | aiter | torch
-  allreduce: aiter          # aiter（默认落点）| nccl；custom 已 broken（R-01 判决，选配即拒）
+  allreduce: aiter          # aiter（默认落点）| nccl；custom AR 已除役删除（R-01 定罪+2026-10-19 R-13 #1 改判废弃）
   paged_mqa_logits: triton  # triton（R-13 #4 晋级默认）| emu | vendor（broken 选配即拒）
   fused_moe: auto           # auto（aiter 先试/无调优形状回 triton）| aiter | triton
   w4a16_moe: auto           # auto（现答 triton）| deepgemm（R-05 桥，候选 opt-in）
@@ -62,7 +62,7 @@ ops:
 |---|---|---|
 | `silu_and_mul` | triton（默认）/ lightop / torch | aiter 是融合变体（silu+quant），非本算子后端，另行入目录 |
 | `rms_norm` | triton（默认）/ aiter / torch | 仅 plain rmsnorm；fused_add/gemma 恒 triton/torch |
-| `allreduce` | custom（默认）/ aiter / nccl | 复合键：custom=自制 host-shm AR；aiter=aiter.dist GraphSafe；nccl=回退（多卡须关 graph） |
+| `allreduce` | aiter（默认）/ nccl | 复合键：aiter=aiter.dist GraphSafe（新镜像压测 4/8-rank 全绿）；nccl=回退；custom 自制 AR 已于 2026-10-19 除役删除（R-01 定罪后 aiter 顶上，修复无意义） |
 | `paged_mqa_logits` | triton（默认，R-13 #4）/ emu（opt-out）/ vendor（broken） | DSA 线 |
 | `rotary_embedding` | triton（在用，无开关）；aiter / lightop（planned） | rope_fwd / rotary_embedding_fuse 家族待接 |
 | `moe_gate` | triton（在用，contract=torch）；aiter / lightop（planned） | topk_softmax/sigmoid/moe_fused_gate |

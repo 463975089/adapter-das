@@ -11,7 +11,7 @@ sitecustomize.py (~2800 行) 是 adapter 总装入口：PYTHONPATH 含 adapter �
                  开发机/无卡 CI 可跑）
   L3 smoke       HIP 容器：干净子进程 import 后逐项断言落位（platform 语义
                  翻转 / rms_norm 重绑 / VLLM_PLUGINS setdefault）
-  L4 gated arms  显式 env 永远赢 setdefault（HCU_TRITON_AR / VLLM_PLUGINS
+  L4 gated arms  显式 env 永远赢 setdefault（HCU_MQA_LOGITS_IMPL / VLLM_PLUGINS
                  双臂）
   L5 instrument  HCU_ADAPTER_DUMP 布线：import 期 log_summary 落盘
                  registry.dump（ops/unbound/env 三键 = R-01 起验收标准通道）
@@ -252,9 +252,10 @@ def test_install_smoke_and_dump_wiring():
             "  'is_cuda': bool(is_cuda()),\n"
             "  'rms_mod': getattr(vco.rms_norm, '__module__', None),\n"
             "  'dump_keys': sorted(d.keys()),\n"
-            "  'triton_ar_src': d['env'].get('HCU_TRITON_AR', {}).get('source'),\n"
+            "  'mqa_src': d['env'].get('HCU_MQA_LOGITS_IMPL', {}).get('source'),\n"
             "}))\n",
-            extra_env={"HCU_ADAPTER_DUMP": dump, "HCU_TRITON_AR": "1"})
+            extra_env={"HCU_ADAPTER_DUMP": dump,
+                       "HCU_MQA_LOGITS_IMPL": "triton"})
         assert p.returncode == 0, p.stderr[-800:]
         line = next((l for l in p.stdout.splitlines() if l.startswith("RESULT ")),
                     None)
@@ -264,7 +265,7 @@ def test_install_smoke_and_dump_wiring():
         assert r["is_cuda"] is True, r
         assert r["rms_mod"] == "sitecustomize", r
         assert r["dump_keys"] == ["env", "ops", "unbound"], r
-        assert r["triton_ar_src"] == "explicit", r  # L4: 显式 env 赢 setdefault
+        assert r["mqa_src"] == "explicit", r  # L4: 显式 env 赢 setdefault
 
 
 @pytest.mark.skipif(
