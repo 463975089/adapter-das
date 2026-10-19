@@ -20,7 +20,7 @@
 | R-14 | 上游单测收集面扩容——模型族 + 功能面全查证收编（DSv4/GLM-Next/Qwen3Next/KimiK3/Hunyuan4/MiniMax-M3 + PD 分离/dspark/mtp/dflash/EP/hicache/mock canary） | P2 | （serving 轨批 A+批 D 已落地；B/C/E/F 待领） | 进行中（2026-10-19 评审两轮点名缺口，协调人 全树查证定批；**批 A 已完成（同日，nmz26）**：l15_mech 段落地（gdn/hybrid_linear/mamba/swa/lightning/dsv4 六目录+**known-fail 预算绊线** passed≥90 且 failed≤42 才绿、越线/超时即红）；首跑 38F/99P/15S/173 子绿 826.58s，六族归因零静默——K1 gdn cuteDSL 编译器 `ptr<1>`≠`ptr` lowering 失配×2（平台）、K2 dsv4 JIT 元数据编不过×3（平台）、K3 l1c_evict_priority triton-ROCm 无此拷贝 op×1（平台）、K4 flash_mla `block_table=None` 桥缺×10（候补 R-11 flash_mla 面）、K5 dsv4 数值 ~20（待深查）、K6 mamba2 triton 页界×3（与 conv1d-flake 同族嫌疑）——账本落 docs/ci.md L1.5b；15 skip 全合理（14×flashinfer 平台+1 SM90 门）；第 2 轮**全门 GREEN**（gpu=0）计数复读 38/99，绊线判 PASS。**批 D 已完成（同日，nmz18/BW1101 转场）**：unit 功能面直跑分诊——PD 分离 unit/disaggregation 33 文件 515 测+157 子测 rc=0 直跑全绿零 skip、dspark 13 文件 156+43 全绿（GPU 形状门 BW1101 实测过）、mock canary self_* 七件 23 测全绿；hicache 1 合法 skip+3 HF-gated-401 快错+6 挂（mooncake/boot）、dflash 2 件全 E+挂归批 E——**694 测+200 子测零适配直跑，零静默**；账本 docs/ci.md L1.5c） | 2026-10-19 | 2026-10-19 |
 | R-15 | 性能回归门（相对阈值 + 历史锚定 + 三级防线；微基准进 L1、e2e 进夜间） | P2 | — | 待启动（2026-10-19 评审拍板"需要"；协调人 已完成上游 perf 面查证与设计定案，见明细） | 2026-10-19 | 2026-10-19 |
 | R-16 | skill/CONTRIBUTING 与门禁体系同步维护（CLI 上手守则多人化适配） | P2 | — | 待启动（2026-10-19 协调人 完成 skill 补丁首轮=kill-switches AR 除役定位/shadow-matrix 四档状态机/cookbook-matrix 零 env 原则/SKILL 法则 10-11+治理闭环节+仓库结构刷新——本轮即交付大半；本行跟踪剩余：CONTRIBUTING MR 门禁段与 ci.md 同步、flash_attn wheel 段落复核刷新、新同事上手路径实效检验） | 2026-10-19 | 2026-10-19 |
-| R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | — | 待启动（2026-10-19 评审拍板双线模型；PM 已完成方案定标的与五规则化，见明细；现行单 master 混线事实=生产优化与追新实验同线，分线即解） | 2026-10-19 | 2026-10-19 |
+| R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | — | 待启动（2026-10-19 评审拍板双线模型；PM 已完成方案定标的与五规则化，见明细；现行单 master 混线事实=生产优化与追新实验同线，分线即解） | 2026-10-19 | 2026-10-19 |
 
 ## 需求明细
 
@@ -393,7 +393,13 @@ fusion-ledger / catalog）。
    只读归档；每线一间容器。
 4. **catalog 档位与线绑定**：production/validated 证据注明验证所在
    rel 线；跨线结论优先复测（线上 validated ≠ 线下 validated）。
-5. **`ci/upstream_diff.py`（在案计划）= 多线前置工具**：脆弱桥带
+5. **主仓分支拓扑（2026-10-19 评审补约束）**：主仓（现 Gitee，后期可能
+   迁 GitHub——托管平台无关的规则措辞）**只保留 main 与 rel/v0.5.x 发版
+   分支**；日常追新线与发版线的对应关系在主仓分支名上直接可读。个人
+   调试/特性分支一律 **fork 到自己的账户仓**调试，成熟后向主仓提 MR
+   （主仓不承载个人 WIP 分支）；主仓移除 travel 类调试分支（现有历史
+   调试分支在迁分支拓扑时清点处置）。
+6. **`ci/upstream_diff.py`（在案计划）= 多线前置工具**：脆弱桥带
    版本/schema gate 一份代码跨版适配是对，靠对账工具才可控；本役顺带
    催生最小版（registry+TEXT_PATCH_ALLOWLIST 驱动的静态对账），把升级
    成本从人肉 needle 普查降为跑对账。
@@ -404,8 +410,13 @@ fusion-ledger / catalog）。
 2. 适配：needle/签名普查（upstream_diff 最小版优先，人工兜底）→ 适配
    commit 落 rel/v0.5.22 → L0/L1/L1.5 全门 + 四门 → production 宣布；
    v0.5.21 线转上一线（仅 bugfix）或 EOL 判定，记录在案。
-3. 策略文档落地：CONTRIBUTING §1 双线模型三绑定 + upstream-watch §3
-   release 流程挂分支动作 + ci.md 环境铁律补一句（同批 commit）。
+3. 策略文档落地：CONTRIBUTING §1 双线模型三绑定 + **主仓分支拓扑**
+   （仅 main+rel；fork-MR 流程改写现"分支命名 feat/fix"节——个人分支
+   概念从"主仓内命名"改为"自己 fork 内任意命名"）+ upstream-watch §3
+   release 流程挂分支动作 + ci.md 环境铁律补一句（同批 commit）；
+   **主干定名**：主仓长期主干用 main（Gitee 默认可设），现 master 并入
+   main 或改名（一次迁清，配合托管平台迁移时点）；历史调试分支清点
+   （fork 化或删）。
 4. master 未落地的生产调优清点：与 rel/v0.5.22 状态对账，确定各自
    回流/重验清单（首次双向同步演武）。
 
@@ -415,6 +426,8 @@ fusion-ledger / catalog）。
 3. 双向同步各演示 ≥1：rel 调优 cherry-pick 进 master（L0 绿）、
    master 新桥回流进 rel（门禁绿）。
 4. v0.5.21 线处置（上一线/EOL）有明确记录；catalog 带线标注成形。
+5. 主仓分支清单=main+rel/v0.5.x（无个人调试分支）；fork→MR 流程在
+   CONTRIBUTING 成文且一个真实新同事 fork-MR 演练走通（含门禁回帖）。
 
 ## 项目北极星与长期方向（背景板，不单独开需求号）
 
