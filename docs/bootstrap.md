@@ -140,6 +140,40 @@ nmz26 lzg-g53-tp8 ← nmz18 lzg-nsa-tp8，md5 b1fb7b35 校验一致）：
 export LD_LIBRARY_PATH=/opt/dtk/dcc/lib:$LD_LIBRARY_PATH
 ```
 
+## 4b. JIT CUDA 语义工具链（cuda-mocker 配方，2026-10-19 实测定稿）
+
+救活 dsv4 JIT 家族（CUB 头）与 causal_conv1d JIT（hipcc uint2 分解缺口）
+——零装库，全部用镜像内现成的 DTK cuda-mocker（`/opt/dtk/cuda/cuda-12`，
+CUDA 语义虚拟层、底层 HIP）。原理与证据见 [ci.md](ci.md) L1.5g。
+
+```bash
+# 一次性：合成 ROCM_HOME 根（镜像固化时建议直接做进镜像）
+mkdir -p /opt/hcu-rocm-shim/bin
+ln -sfn /opt/dtk/cuda/cuda-12/targets/x86_64-linux/include /opt/hcu-rocm-shim/include
+ln -sfn /opt/dtk/lib /opt/hcu-rocm-shim/lib
+cat > /opt/hcu-rocm-shim/bin/hipcc <<'EOF'
+#!/bin/sh
+# DTK cuda-mocker route: strip HIP-mode defines, inject arch (mocker maps
+# gfx938 -> __CUDA_ARCH__=750), delegate to dcc -dcccuda12.
+out=""
+for a in "$@"; do
+  case "$a" in
+    -DUSE_ROCM|-D__HIP_PLATFORM_AMD__*) ;;
+    *) out="$out '$a'" ;;
+  esac
+done
+eval exec env ROCM_PATH=/opt/dtk /opt/dtk/cuda/cuda-12/bin/nvcc -DSGL_CUDA_ARCH=750 $out
+EOF
+chmod +x /opt/hcu-rocm-shim/bin/hipcc
+
+# 每进程环境（起 JIT 编译的进程都需要；后续可由 hcu_env 收编自动装配）
+export ROCM_HOME=/opt/hcu-rocm-shim
+export LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so
+```
+
+已知副作用：`ROCM_HOME` 指合成根时 deepgemm 版本探测失败（bridge 拒装、
+非致命），待 `deep_gemm_dtk.py` 改读 DTKROOT 后消除。
+
 ## 5. 镜像已知差异速查（选 mem-fraction 前看）
 
 | 镜像 | 差异 | 应对 |

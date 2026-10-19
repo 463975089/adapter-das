@@ -152,6 +152,54 @@ ar_norm 桶晋级动作在 .22 线从「我们翻默认」变为「上游默认�
 **R-09①②③ 在 .22 线的处置更新**：①终态如上；②③（quant_aiter 桶/
 R-04 面）不受本重构影响，仍按各自节拍。
 
+### L1.5g CUB/uint2 两根实测治愈——cuda-mocker 配方（2026-10-19，nmz26）
+
+L1.5f 三根定性表中的 **CUB 头缺失根**与 **hipcc uint2 分解缺口根**实测
+同配方治愈（无需装任何库，全部用盒上现有件）：`/opt/dtk/cuda/cuda-12` 是
+DTK 的 **cuda-mocker**（虚拟一层 CUDA 语义、底层 HIP，与 adapter 哲学同
+构）。cuteDSL 根（K1）不受影响仍账。
+
+**为什么不能只加 include 路径**：CPATH 直指 mocker include 后 `block_scan.
+cuh` 能找到，但 mocker 的 CUDA 头（`vector_types.h` 等）与 hipcc 隐式进场
+的 HIP 头（`amd_hip_vector_types.h`）对 `int2`/`dim3` 双重定义冲突——两套
+向量类型互斥，必须整译层切换而非拼凑。
+
+**正解=dcc 的 CUDA-12 兼容模式**：mocker 的 `bin/nvcc`（perl 壳）调
+`$ROCM_PATH/llvm/bin/dcc` 并自动附加 `-dcccuda12 -cuda-path=<mocker 根>`；
+此模式下 CUDA 语义原生（`cuda_fp16/bf16/fp8.h`、`cuda/std/*`、CUB 全套
+齐备）、HIP 头不自动进场，冲突源头消失。`sgl_kernel/utils.cuh` 是规范双模
+文件，纯 CUDA 分支直接可用。
+
+配方三件套（全部环境级，零 sglang 修改；镜像固化步骤见
+[bootstrap.md](bootstrap.md) §4b）：
+1. 合成 ROCM_HOME 根：`bin/hipcc` 转接壳（剥 `-DUSE_ROCM`/
+   `-D__HIP_PLATFORM_AMD__*`，追加 `-DSGL_CUDA_ARCH=750`，转投 mocker
+   nvcc）+ `include`→mocker include、`lib`→/opt/dtk/lib 两软链；
+2. `ROCM_HOME=<合成根>`（sglang JIT toolchain 的 `rocm_home()` 第一优先
+   级，编译器与 include/lib 发现一并接管）；
+3. `LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so`——mocker 版
+   cudart（`__cudaRegisterFatBinary` 等 fatbin 注册符的提供方，dlopen 时
+   进程内必须有它；底层转发 HIP）。
+
+**证据**（nmz26 容器 /tmp/lizhg_rocm22 作坊版，2026-10-19）：
+- dpsk_v4_metadata（CUB 依赖）：编译→链接→dlopen→`run` 符号导出全绿
+  （`LOAD_OK tvm_ffi.module.Module` / `RUN_FN ffi.Function`）；
+- causal_conv1d bf16 precise_math（uint2 依赖）：同配方 LOAD_OK + **数值
+  对拍 PASS**（batch 形态 F.conv1d 参考，max_abs_diff=9.4e-3 < 2e-2 bf16
+  阈）。
+
+**连带与后续**：
+- `SGL_CUDA_ARCH=750` 的语义依据：mocker 把 gfx938 映射为
+  `__CUDA_ARCH__=750`（static_assert 匹配），<900 使 `SGL_ARCH_HOPPER_…`
+  门保持关闭——与 HIP 分支强制 0 的行为一致，无 Hopper 专属路径误开。
+- mech 预算重锚预告：41F 中 CUB 族（dsv4 metadata/store/c1/c2）与 conv1d
+  族复跑将翻绿；38F/99P 基线待全量复跑后重锚收紧。
+- deepgemm 桥冲突：deepgemm `get_dtk_version(ROCM_HOME)` 在合成根下拿不
+  到版本而拒装（非致命 traceback）——`deep_gemm_dtk.py` 应改读 DTKROOT
+  （adapter 小改，待单测随役）。
+- 生产落地=镜像固化合成根 + adapter 侧收编两个 env；手工配方已可先行
+  自救。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```
