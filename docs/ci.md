@@ -89,6 +89,36 @@ JIT）；teardown 挂两处随 K7 深查役一并处理。L1 纳入建议：批 
 22 文件进 `l15_units` 段（bfa_overlap/批 C 文件暂不进，负面面留
 KNOWN_FAILURES 跟踪——批 C 数值族修复后再转正）。
 
+### L1.5e v0.5.22 树首跑分诊（R-17 升级适配役普查，2026-10-19，nmz26/baa9bef）
+
+树=/sglang-v0522（浅克隆 v0.5.22 tag），adapter 快照=当前 master，
+env 契约同 L1.5b，GPU4。上游 .22 自带 KNOWN_FAILURES.md（四类账+「未
+登记即回归」判红标准），HIP 新件全带 gate 理由。
+
+| 面 | v0.5.21 基线 | v0.5.22 首跑 | 判读 |
+|---|---|---|---|
+| mech 六目录 | 38F/99P/15S/173 子 | **41F/101P/29S/179 子**（697s） | **零例绿变红**；+14 skip=新增 dsv4 HIP 件（ROCm-only/gfx950 门）合法；41F 构成=K4 flash_mla None×10+K5 数值×10+**JIT 编不过 ninja×18（.21 仅 3，c2_512_64_128 等 .22 新 JIT 模块全编不过@gfx938）**+retry×4 |
+| PD disagg unit | 33 文件 515P+157 子 | 43 文件 **699P+344 子全绿** | 上游扩面+205 测零适配直跑 |
+| dspark | 156P+43 子全绿 | 144P+41 子+**1E** | 新 error=`Server process exited with code -9`（起 server 用例被杀，OOM 类待归因，单件） |
+| mock canary 七件 | 23P 全绿 | **rc=4 collection 炸** | **.22 真新雷=破损桥名单实锤**（见下） |
+| 批B unit/models | 23 绿/24 | **全绿且测数涨**（bfg 3+27→5+37、glmmoedsa 9→5、ptpc 10→11、hunyuan_v4 4→3——上游调了测数） | 模型族构造/路由契约面 .22 无破坏 |
+| 批C kernels/ops | K7/K8/挂 | **老病全在**：indexer_quant 15F+挂、q_rope_store 2F+挂（.21 8F→2F 收窄）、compress_plan_bounds 挂、compress_state 1P/3F+挂、bfa_overlap 挂 | 数值面收窄但 teardown 挂照旧 |
+
+**v0.5.22 破损桥名单（适配役工作面，按 P0 排序）**：
+1. **memory_pool.py `kv_fix` needle 失配**（text-patch 点漂移）——sitecustomize
+   启动即 RuntimeError（governance §3 响亮失败按设计工作），**serving boot
+   同炸=rel 线 P0**；
+2. **`add_norm.apply_flashinfer_allreduce_fusion` 符号消失**（.22 重构
+   layer_boundary.residual）——ar_norm 融合 seam 漂移；
+3. **dsv4 JIT 家族编不过扩面**（gfx938 编译栈 vs .22 新 JIT 模块 18 处）——
+   K2 家族从 3 件涨面，P1 评估逐模块；
+4. dspark server -9 单件归因（P2）+ canary 测试文件改名（脚本硬编码路径随
+   .22 更新即可）。
+
+结论：**v0.5.22 单测问题不算多**——机制面老族同构零新红，模型族面全绿，
+真增量=两根 needle/seam 漂移（其一 boot 级）+JIT 家族扩面；适配役从
+P0 两根漂移点开工。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```
