@@ -414,9 +414,10 @@ fusion-ledger / catalog）。
    （仅 main+rel；fork-MR 流程改写现"分支命名 feat/fix"节——个人分支
    概念从"主仓内命名"改为"自己 fork 内任意命名"）+ upstream-watch §3
    release 流程挂分支动作 + ci.md 环境铁律补一句（同批 commit）；
-   **主干定名**：主仓长期主干用 main（Gitee 默认可设），现 master 并入
-   main 或改名（一次迁清，配合托管平台迁移时点）；历史调试分支清点
-   （fork 化或删）。
+   **主干定名——已完成（2026-10-19）**：master(187b870) 快进合入 main
+   并推 Gitee（零冲突纯 ff），Gitee 默认分支已切 main、远端 master 已删
+   （ls-remote 仅剩 main）；本地/各工作区切换=checkout main + branch -u
+   origin/main。剩余：历史调试分支清点（fork 化或删）。
 4. master 未落地的生产调优清点：与 rel/v0.5.22 状态对账，确定各自
    回流/重验清单（首次双向同步演武）。
 
