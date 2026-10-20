@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import pathlib
 
-from . import _reg
+from . import registry as _reg
 
 logger = logging.getLogger("hcu.adapter")
 
