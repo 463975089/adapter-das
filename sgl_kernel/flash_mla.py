@@ -220,6 +220,8 @@ def _flash_mla_with_kvcache_sparse(
                         "topk": topk_length.reshape(-1).detach(),
                         "q": q.detach(),
                         "o": o.detach(),
+                        "k_head": k[0, 0, :8].detach(),
+                        "pool": k_cache,
                         "extra_topk": (
                             extra_topk_length.reshape(-1).detach()
                             if extra_topk_length is not None
