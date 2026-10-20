@@ -172,11 +172,14 @@ def _flash_mla_with_kvcache_sparse(
                 k_cache, (k_cache.shape[0], rs), (rs, 1)
             ).view(torch.int16)
             sel_last = int(idx2[0].max().item())
+            nzp = (raw != 0).sum(dim=1)  # nonzero int16 words per page
+            top5 = nzp.topk(min(5, nzp.numel()))
             rawstat = (
                 f"raw pg0={raw[0].abs().float().mean().item():.2f}"
                 f" pg1={raw[1].abs().float().mean().item():.2f}"
                 f" pg_sel_last={raw[sel_last].abs().float().mean().item():.2f}"
-                f" pg4k={raw[4000].abs().float().mean().item():.2f}"
+                f" | hotpages={(nzp > 64).sum().item()}"
+                f" top={list(zip(top5.indices.tolist()[:5], top5.values.tolist()[:5]))}"
             )
             print(
                 f"[flashmla-dbg #{n}] q={tuple(q.shape)} pool={tuple(k_cache.shape)}"
