@@ -37,9 +37,31 @@ set applies from a known state on already-patched trees.
 """
 
 import logging
+import os
 import pathlib
+import tempfile
 
 LOG = logging.getLogger("hcu.adapter")
+
+
+def _atomic_write(p: pathlib.Path, text: str) -> None:
+    """tmp-file + os.replace so concurrent install() runs (parent + 8 TP
+    scheduler children import sitecustomize within seconds of each other)
+    can never tear the file: readers see either the old or the new content
+    in full. A torn non-atomic write cost us a 119-line tail of
+    paged_mqa_metadata.cuh on nmz16 (2026-10-20, diagnosed via tree git diff).
+    """
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".hcu_dpsk_", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 _V1_REPL = "#include <hipcub/hipcub.hpp>  // HCU: DTK has hipCUB only (namespace cub)"
 
@@ -99,7 +121,7 @@ def install():
                 )
             text = text.replace(needle, repl)
 
-        p.write_text(text, encoding="utf-8")
+        _atomic_write(p, text)
 
         target = f"text:sglang/kernels/jit/csrc/{relpath}"
         for needle, _ in needles:
