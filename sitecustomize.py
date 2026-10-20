@@ -133,6 +133,9 @@ if getattr(torch.version, "hip", None) is not None:
                 _dgdb.install()
             import sglang.srt.models.deepseek_v4 as _dsv4
 
+            _dreg.ModelRegistry.models.setdefault(
+                "DeepseekV4ForCausalLM", _dsv4.DeepseekV4ForCausalLM
+            )
             _dreg.ModelRegistry.models["DeepseekV41ForCausalLM"] = (
                 _dsv4.DeepseekV4ForCausalLM
             )
