@@ -1,39 +1,38 @@
 """JIT DSV4-family portability needles — DTK hipcc vs CUDA-isms.
 
-Upstream v0.5.22 JIT-compiles the DeepSeek-V4 attention/indexer kernel
+Upstream v0.5.22 JIT-compiles the DeepSeek-V4 attention/indexer/MoE kernel
 family from `sglang/kernels/jit/csrc/deepseek_v4/`. On DTK gfx938 several
-CUDA-isms kill the hipcc build (DSV4-Flash boot chain, nmz16, 2026-10-20;
-walking the same family the CI mech ledger already mapped as the
-topk_v2/c_plan failures):
+CUDA-isms kill the hipcc build. Failure classes (all with landed precedents
+in earlier needles, except where noted):
 
-paged_mqa_metadata.cuh (module sgl_kernel_jit_dpsk_v4_metadata):
-1. `#include <cub/block/block_scan.cuh>` — DTK ships hipCUB only
-   (`/opt/dtk/include/hipcub`, rocPRIM backend). The AMD path of hipCUB
-   declares the CUB-mirroring API in `namespace hipcub` (the
-   `using namespace cub` in hipcub/config.hpp is the NVIDIA path), so the
-   swap needs a namespace alias alongside the umbrella include.
-2. mask-form `__shfl_up_sync/__shfl_sync(0xffffffff, ...)` in the
-   Phase-1/2 hand-rolled 32-lane prefix scans — DTK declares only the
-   non-mask family. Explicit-width HIP forms keep the exact CUDA 32-lane
-   warp segmentation on wave64.
+1. NVIDIA cub include -> DTK hipCUB umbrella + `namespace cub = hipcub`
+   alias (hipCUB's AMD path declares the API in namespace hipcub).
+2. mask-form shuffles (`__shfl*_sync`) -> non-mask HIP forms; explicit
+   width=32 where CUDA 32-lane warp segmentation matters on wave64.
+3. bare `__syncwarp()` -> `__builtin_amdgcn_wave_barrier()` under #if
+   (DTK has no __syncwarp in any form).
+4. structured binds into HIP vector types (float2/uint2, anonymous union)
+   -> member reads; the oldest ABI fact on this stack.
+5. `%laneid` PTX -> utils.cuh `::sglang::device::get_lane_id()`.
+6. `__shared__ alignas(N)` attribute placement -> swapped order.
+7. `::cudaMemcpy` -> `::hipMemcpy`.
+8. PTX scalar asm (div.full/add/rsqrt.approx.ftz) -> plain ops + rsqrtf.
+9. CUDA bit-trick intrinsics `__byte_perm`/`__dp4a` (topk hit packing) and
+   bf16 pair masks `__hgt2_mask`/`__heq2_mask` -> semantic-equivalent
+   scalar rewrites (same outputs; see needle comments).
 
-c_plan.cuh (module sgl_kernel_jit_dpsk_v4_compress_plan):
-3. `const auto [ragged_id, batch_id] = unpack_w(plan_w);` — structured
-   binding into HIP_vector_type (anonymous union, indecomposable by
-   clang); the 4th site of the ABI fact already needled for rope / dot
-   product / per-token-quant. unpack_w returns a real uint2, so member
-   reads are type-identical.
-
-Backlog from the same scan (no build error yet — land with evidence):
-store.cuh / main_norm_rope.cuh / mega_moe_pre_dispatch.cuh /
-silu_and_mul_masked_post_quant.cuh cast<fp32x2_t> binds,
-topk_bf16_small.cuh mask shuffles + laneid PTX, c4.cuh uint4 bind,
-topk_v2.cuh:1141 split_plan bind.
+Every needle was derived from the live boot/capture chain or the
+`dsv4_syntax_check.sh` preflight driver (wrapper-include + hipcc
+-fsyntax-only over the whole family), nmz16 2026-10-20. gfx950-only files
+(mxfp8_gemv_gfx95 static_asserts by design) and wo_a_fused (Hopper cluster
+PTX; wo_a takes the HIP streaming-dequant path instead) are intentionally
+NOT patched.
 
 Text-patch discipline per jit_ptgq: needle missing in an existing file
-raises loud (upstream changed); file absent skips quietly. The v1 of this
-patch wrote only the include swap; it is rolled back first so the needle
-set applies from a known state on already-patched trees.
+raises loud (upstream changed); file absent skips quietly. Superseded REPLs
+are rolled back via _UNDO before re-applying. All writes atomic
+(tempfile + os.replace): parent + 8 TP children run install() within
+seconds of each other and a torn write cost us a 119-line tail once.
 """
 
 import logging
@@ -45,12 +44,6 @@ LOG = logging.getLogger("hcu.adapter")
 
 
 def _atomic_write(p: pathlib.Path, text: str) -> None:
-    """tmp-file + os.replace so concurrent install() runs (parent + 8 TP
-    scheduler children import sitecustomize within seconds of each other)
-    can never tear the file: readers see either the old or the new content
-    in full. A torn non-atomic write cost us a 119-line tail of
-    paged_mqa_metadata.cuh on nmz16 (2026-10-20, diagnosed via tree git diff).
-    """
     fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".hcu_dpsk_", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
@@ -63,7 +56,6 @@ def _atomic_write(p: pathlib.Path, text: str) -> None:
             pass
         raise
 
-_V1_REPL = "#include <hipcub/hipcub.hpp>  // HCU: DTK has hipCUB only (namespace cub)"
 
 # superseded REPLs rolled back to their needle form before re-applying
 _UNDO = {
@@ -78,6 +70,43 @@ _UNDO = {
         ),
     ],
 }
+
+_CAST = "cast<fp32x2_t>"
+
+_ALIGNAS_BLOCK = (
+    "  __shared__ alignas(16) float seg_kv[kTileDim];\n"
+    "  __shared__ alignas(16) float seg_max[kTileDim];\n"
+    "  __shared__ alignas(16) float seg_sum[kTileDim];",
+    "  alignas(16) __shared__ float seg_kv[kTileDim];   // HCU: attr before storage class\n"
+    "  alignas(16) __shared__ float seg_max[kTileDim];\n"
+    "  alignas(16) __shared__ float seg_sum[kTileDim];",
+)
+
+_PACK_HITS = (
+    "  const auto lo = __byte_perm(m[0], m[1], 0x7531);\n"
+    "  const auto hi = __byte_perm(m[2], m[3], 0x7531);\n"
+    "  const auto nib = __dp4a(static_cast<int>(lo), static_cast<int>(0xF8FCFEFFu), 0);  // -1,-2,-4,-8\n"
+    "  return __dp4a(static_cast<int>(hi), static_cast<int>(0x80C0E0F0u), nib);          // -16..-128",
+    "  // HCU: CUDA __byte_perm/__dp4a sign-trick -> direct hit-bit packing\n"
+    "  // (identical output: bit e set iff element e's flag byte is 0xFF)\n"
+    "  uint32_t bits = 0;\n"
+    "#pragma unroll\n"
+    "  for (uint32_t e = 0; e < 8; ++e)\n"
+    "    bits |= (m[e >> 1] & (0xFFu << ((e & 1) * 8))) ? (1u << e) : 0u;\n"
+    "  return bits;",
+)
+
+_MHC_ASM = (
+    '      asm("div.full.f32 %0, %1, %2;" : "=f"(mean) : "f"(sum), "f"(5120.f));\n'
+    "      // Match Triton's unqualified PTX add: ptxas may contract the\n"
+    "      // constant division's reciprocal multiply with this epsilon add.\n"
+    '      asm("add.f32 %0, %1, %2;" : "=f"(mean) : "f"(mean), "f"(p.eps));\n'
+    '      asm("rsqrt.approx.ftz.f32 %0, %1;" : "=f"(inverse) : "f"(mean));',
+    "      mean = sum / 5120.f;  // HCU: PTX div.full -> plain rn division\n"
+    "      // (epsilon add kept separate from the division, as upstream notes)\n"
+    "      mean = mean + p.eps;\n"
+    "      inverse = rsqrtf(mean);  // HCU: rsqrt.approx.ftz -> rsqrtf",
+)
 
 _PATCHES = {
     "deepseek_v4/paged_mqa_metadata.cuh": [
@@ -103,9 +132,6 @@ _PATCHES = {
             "    const uint32_t batch_id = unpacked_w.y;",
         ),
     ],
-    # main decode attention kernel (module dpsk_v4_main_k_norm_rope_*):
-    # bare __syncwarp (rope precedent -> __syncwarp_full_mask shim), float2
-    # `freq` structured bind, mask-form xor shuffle in the butterfly reduce.
     "deepseek_v4/main_norm_rope.cuh": [
         (
             "  __syncwarp();",
@@ -126,9 +152,6 @@ _PATCHES = {
             "  // HCU: no mask-form shuffle",
         ),
     ],
-    # top-k bf16 small: %laneid PTX (concat_mla precedent -> utils.cuh HIP
-    # identity) + two mask-form shuffles (suffix-sum guarded by
-    # lane+offset<kWarpThreads; lane-31 broadcast).
     "deepseek_v4/topk_bf16_small.cuh": [
         (
             '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));',
@@ -144,17 +167,32 @@ _PATCHES = {
             "  warp_base = __shfl(warp_base, kWarpThreads - 1);"
             "  // HCU: no mask-form shuffle",
         ),
+        _PACK_HITS,
+        (
+            "      gt[j] = __hgt2_mask(vecs[i][j], pivot_x2);",
+            "      {\n"
+            "        const float2 _gv = __bfloat1622float2(vecs[i][j]);\n"
+            "        const float2 _gp = __bfloat1622float2(pivot_x2);\n"
+            "        gt[j] = (_gv.x > _gp.x ? 0xFFFFu : 0u) |"
+            " (_gv.y > _gp.y ? 0xFFFF0000u : 0u);  // HCU: __hgt2_mask\n"
+            "      }",
+        ),
+        (
+            "      eq[j] = __heq2_mask(vecs[i][j], pivot_x2);",
+            "      {\n"
+            "        const float2 _ev = __bfloat1622float2(vecs[i][j]);\n"
+            "        const float2 _ep = __bfloat1622float2(pivot_x2);\n"
+            "        eq[j] = (_ev.x == _ep.x ? 0xFFFFu : 0u) |"
+            " (_ev.y == _ep.y ? 0xFFFF0000u : 0u);  // HCU: __heq2_mask\n"
+            "      }",
+        ),
     ],
-    # flashmla scheduler metadata: butterfly xor reduce, partners stay within
-    # the 32-lane group for offsets <= 16.
     "deepseek_v4/flashmla_sched_meta.cuh": [
         (
             "    partial += __shfl_xor_sync(uint32_t(-1), partial, offset);",
             "    partial += __shfl_xor(partial, offset);  // HCU: no mask-form shuffle",
         ),
     ],
-    # prefill norm+rope variant: same float2 freq bind as main_norm_rope,
-    # plus its own bare __syncwarp (4-space indent, distinct needle).
     "deepseek_v4/fused_norm_rope.cuh": [
         (
             "    __syncwarp();",
@@ -168,6 +206,153 @@ _PATCHES = {
             "    const auto [freq_real, freq_imag] = freq;",
             "    const float freq_real = freq.x;  // HCU: float2 not decomposable\n"
             "    const float freq_imag = freq.y;",
+        ),
+    ],
+    "deepseek_v4/rope.cuh": [
+        (
+            "  const auto [f_real, f_imag] = freq_ptr[lane_id];",
+            "  const fp32x2_t _fr = freq_ptr[lane_id];  // HCU: float2 not decomposable\n"
+            "  const auto f_real = _fr.x, f_imag = _fr.y;",
+        ),
+        (
+            "  const auto [x_real, x_imag] = cast<fp32x2_t>(data);",
+            "  const fp32x2_t _xr = cast<fp32x2_t>(data);  // HCU: not decomposable\n"
+            "  const auto x_real = _xr.x, x_imag = _xr.y;",
+        ),
+    ],
+    "deepseek_v4/fp4_indexer_rope.cuh": [
+        (
+            "    const auto [scale, inv_scale] = fp4::block_scale(amax);",
+            "    const fp32x2_t _bs = fp4::block_scale(amax);  // HCU: not decomposable\n"
+            "    const auto scale = _bs.x, inv_scale = _bs.y;",
+        ),
+        (
+            "    const auto [h0, h1] = cast<fp32x2_t>(head_in[0]);",
+            "    const fp32x2_t _hv = cast<fp32x2_t>(head_in[0]);  // HCU\n"
+            "    const auto h0 = _hv.x, h1 = _hv.y;",
+        ),
+        (
+            "    const auto [t0, t1] = cast<fp32x2_t>(tail_in[0]);",
+            "    const fp32x2_t _tv = cast<fp32x2_t>(tail_in[0]);  // HCU\n"
+            "    const auto t0 = _tv.x, t1 = _tv.y;",
+        ),
+        (
+            "    const auto [wh0, wh1] = cast<fp32x2_t>(head_w[0]);",
+            "    const fp32x2_t _whv = cast<fp32x2_t>(head_w[0]);  // HCU\n"
+            "    const auto wh0 = _whv.x, wh1 = _whv.y;",
+        ),
+        (
+            "    const auto [wt0, wt1] = cast<fp32x2_t>(tail_w[0]);",
+            "    const fp32x2_t _wtv = cast<fp32x2_t>(tail_w[0]);  // HCU\n"
+            "    const auto wt0 = _wtv.x, wt1 = _wtv.y;",
+        ),
+    ],
+    "deepseek_v4/c1.cuh": [
+        (
+            f"      const auto [x, y] = {_CAST}(input[j]);",
+            "      const fp32x2_t _vi = cast<fp32x2_t>(input[j]);  // HCU\n"
+            "      const auto x = _vi.x, y = _vi.y;",
+        ),
+        (
+            f"      const auto [wx, wy] = {_CAST}(weight[j]);",
+            "      const fp32x2_t _vw = cast<fp32x2_t>(weight[j]);  // HCU\n"
+            "      const auto wx = _vw.x, wy = _vw.y;",
+        ),
+        (
+            f"    const auto [x, y] = {_CAST}(latent[j]);",
+            "    const fp32x2_t _vl = cast<fp32x2_t>(latent[j]);  // HCU\n"
+            "    const auto x = _vl.x, y = _vl.y;",
+        ),
+        (
+            f"      const auto [r0, r1] = {_CAST}(rotated);",
+            "      const fp32x2_t _vr = cast<fp32x2_t>(rotated);  // HCU\n"
+            "      const auto r0 = _vr.x, r1 = _vr.y;",
+        ),
+        (
+            "      const auto [x, y] = deepseek_v4::fp4::fake_quant_compressed_kv_x2({data[i * 2 + 0], data[i * 2 + 1]}, scale);",
+            "      const fp32x2_t _fq = deepseek_v4::fp4::fake_quant_compressed_kv_x2({data[i * 2 + 0], data[i * 2 + 1]}, scale);  // HCU\n"
+            "      const auto x = _fq.x, y = _fq.y;",
+        ),
+    ],
+    "deepseek_v4/c2.cuh": [
+        (
+            f"    const auto [x, y] = {_CAST}(cast<bf16x2_t>(packed));",
+            "    const fp32x2_t _vc = cast<fp32x2_t>(cast<bf16x2_t>(packed));  // HCU\n"
+            "    const auto x = _vc.x, y = _vc.y;",
+        ),
+        (
+            f"    const auto [wx, wy] = {_CAST}(weight[i]);",
+            "    const fp32x2_t _vw = cast<fp32x2_t>(weight[i]);  // HCU\n"
+            "    const auto wx = _vw.x, wy = _vw.y;",
+        ),
+        (
+            f"    const auto [x, y] = {_CAST}(out[i]);",
+            "    const fp32x2_t _vo = cast<fp32x2_t>(out[i]);  // HCU\n"
+            "    const auto x = _vo.x, y = _vo.y;",
+        ),
+        (
+            f"      const auto [r0, r1] = {_CAST}(rotated);",
+            "      const fp32x2_t _vr = cast<fp32x2_t>(rotated);  // HCU\n"
+            "      const auto r0 = _vr.x, r1 = _vr.y;",
+        ),
+        (
+            "      const auto [x, y] = deepseek_v4::fp4::fake_quant_compressed_kv_x2({staged[i * 2 + 0], staged[i * 2 + 1]}, scale);",
+            "      const fp32x2_t _fq = deepseek_v4::fp4::fake_quant_compressed_kv_x2({staged[i * 2 + 0], staged[i * 2 + 1]}, scale);  // HCU\n"
+            "      const auto x = _fq.x, y = _fq.y;",
+        ),
+    ],
+    "deepseek_v4/mega_moe_pre_dispatch.cuh": [
+        (
+            f"        const auto [v0, v1] = {_CAST}(in_vec[i]);",
+            "        const fp32x2_t _vm = cast<fp32x2_t>(in_vec[i]);  // HCU\n"
+            "        const auto v0 = _vm.x, v1 = _vm.y;",
+        ),
+    ],
+    "deepseek_v4/mhc_post_combine_norm_prefill.cuh": [
+        (
+            "      const float post = __shfl_sync(0xffffffff, coeff, 16 + i);",
+            "      const float post = __shfl(coeff, 16 + i, 32);  // HCU: no mask-form shuffle",
+        ),
+        (
+            "      const float pre = __shfl_sync(0xffffffff, coeff, 20 + i);",
+            "      const float pre = __shfl(coeff, 20 + i, 32);  // HCU",
+        ),
+        (
+            "      const float c0 = __shfl_sync(0xffffffff, coeff, i);",
+            "      const float c0 = __shfl(coeff, i, 32);  // HCU",
+        ),
+        (
+            "      const float c1 = __shfl_sync(0xffffffff, coeff, 4 + i);",
+            "      const float c1 = __shfl(coeff, 4 + i, 32);  // HCU",
+        ),
+        (
+            "      const float c2 = __shfl_sync(0xffffffff, coeff, 8 + i);",
+            "      const float c2 = __shfl(coeff, 8 + i, 32);  // HCU",
+        ),
+        (
+            "      const float c3 = __shfl_sync(0xffffffff, coeff, 12 + i);",
+            "      const float c3 = __shfl(coeff, 12 + i, 32);  // HCU",
+        ),
+        (
+            "      sum = __fadd_rn(sum, __shfl_xor_sync(0xffffffff, sum, offset));",
+            "      sum = __fadd_rn(sum, __shfl_xor(sum, offset));  // HCU: no mask-form shuffle",
+        ),
+        (
+            "    sum = __fadd_rn(sum, __shfl_xor_sync(0xffffffff, sum, 2));",
+            "    sum = __fadd_rn(sum, __shfl_xor(sum, 2));  // HCU",
+        ),
+        (
+            "    sum = __fadd_rn(sum, __shfl_xor_sync(0xffffffff, sum, 1));",
+            "    sum = __fadd_rn(sum, __shfl_xor(sum, 1));  // HCU",
+        ),
+        _MHC_ASM,
+    ],
+    "deepseek_v4/c128_online.cuh": [_ALIGNAS_BLOCK],
+    "deepseek_v4/c128_online_v2.cuh": [
+        _ALIGNAS_BLOCK,
+        (
+            "        RuntimeDeviceCheck(::cudaMemcpy(dst, src, bytes, ::cudaMemcpyHostToDevice));",
+            "        RuntimeDeviceCheck(::hipMemcpy(dst, src, bytes, ::hipMemcpyHostToDevice));  // HCU",
         ),
     ],
 }
@@ -189,10 +374,6 @@ def install():
         for old_repl, original in _UNDO.get(relpath, []):
             if old_repl in text:
                 text = text.replace(old_repl, original)
-        if relpath.endswith("paged_mqa_metadata.cuh") and _V1_REPL in text:
-            text = text.replace(
-                _V1_REPL, "#include <cub/block/block_scan.cuh>"
-            )
 
         for needle, repl in needles:
             if repl in text:

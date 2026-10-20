@@ -214,6 +214,79 @@ TEXT_PATCH_ALLOWLIST = {
         "    const auto [freq_real, freq_imag] = freq;",
     ),
     ("platform_detect", "    __syncwarp();"),
+    # --- DSV4 family batch #3 (syntax-preflight driver, nmz16 2026-10-20):
+    # --- float2 binds (rope/fp4_indexer_rope/c1/c2/mega), mask shuffles +
+    # --- PTX scalar asm (mhc_post_combine_norm_prefill), attribute
+    # --- placement + cudaMemcpy (c128_online*), CUDA bit intrinsics
+    # --- (topk_bf16_small). Details in sgl_kernel/_adapters/jit_dpskmeta.py.
+    ("platform_detect", "  const auto [f_real, f_imag] = freq_ptr[lane_id];"),
+    ("platform_detect", "  const auto [x_real, x_imag] = cast<fp32x2_t>(data);"),
+    ("platform_detect", "    const auto [scale, inv_scale] = fp4::block_scale(amax);"),
+    ("platform_detect", "    const auto [h0, h1] = cast<fp32x2_t>(head_in[0]);"),
+    ("platform_detect", "    const auto [t0, t1] = cast<fp32x2_t>(tail_in[0]);"),
+    ("platform_detect", "    const auto [wh0, wh1] = cast<fp32x2_t>(head_w[0]);"),
+    ("platform_detect", "    const auto [wt0, wt1] = cast<fp32x2_t>(tail_w[0]);"),
+    ("platform_detect", "      const auto [x, y] = cast<fp32x2_t>(input[j]);"),
+    ("platform_detect", "      const auto [wx, wy] = cast<fp32x2_t>(weight[j]);"),
+    ("platform_detect", "    const auto [x, y] = cast<fp32x2_t>(latent[j]);"),
+    ("platform_detect", "      const auto [r0, r1] = cast<fp32x2_t>(rotated);"),
+    (
+        "platform_detect",
+        "      const auto [x, y] = deepseek_v4::fp4::fake_quant_compressed_kv_x2({data[i * 2 + 0], data[i * 2 + 1]}, scale);",
+    ),
+    ("platform_detect", "    const auto [x, y] = cast<fp32x2_t>(cast<bf16x2_t>(packed));"),
+    ("platform_detect", "    const auto [wx, wy] = cast<fp32x2_t>(weight[i]);"),
+    ("platform_detect", "    const auto [x, y] = cast<fp32x2_t>(out[i]);"),
+    (
+        "platform_detect",
+        "      const auto [x, y] = deepseek_v4::fp4::fake_quant_compressed_kv_x2({staged[i * 2 + 0], staged[i * 2 + 1]}, scale);",
+    ),
+    ("platform_detect", "        const auto [v0, v1] = cast<fp32x2_t>(in_vec[i]);"),
+    ("platform_detect", "      const float post = __shfl_sync(0xffffffff, coeff, 16 + i);"),
+    ("platform_detect", "      const float pre = __shfl_sync(0xffffffff, coeff, 20 + i);"),
+    ("platform_detect", "      const float c0 = __shfl_sync(0xffffffff, coeff, i);"),
+    ("platform_detect", "      const float c1 = __shfl_sync(0xffffffff, coeff, 4 + i);"),
+    ("platform_detect", "      const float c2 = __shfl_sync(0xffffffff, coeff, 8 + i);"),
+    ("platform_detect", "      const float c3 = __shfl_sync(0xffffffff, coeff, 12 + i);"),
+    (
+        "platform_detect",
+        "      sum = __fadd_rn(sum, __shfl_xor_sync(0xffffffff, sum, offset));",
+    ),
+    (
+        "platform_detect",
+        "    sum = __fadd_rn(sum, __shfl_xor_sync(0xffffffff, sum, 2));",
+    ),
+    (
+        "platform_detect",
+        "    sum = __fadd_rn(sum, __shfl_xor_sync(0xffffffff, sum, 1));",
+    ),
+    (
+        "platform_detect",
+        '      asm("div.full.f32 %0, %1, %2;" : "=f"(mean) : "f"(sum), "f"(5120.f));\n'
+        "      // Match Triton's unqualified PTX add: ptxas may contract the\n"
+        "      // constant division's reciprocal multiply with this epsilon add.\n"
+        '      asm("add.f32 %0, %1, %2;" : "=f"(mean) : "f"(mean), "f"(p.eps));\n'
+        '      asm("rsqrt.approx.ftz.f32 %0, %1;" : "=f"(inverse) : "f"(mean));',
+    ),
+    (
+        "platform_detect",
+        "  __shared__ alignas(16) float seg_kv[kTileDim];\n"
+        "  __shared__ alignas(16) float seg_max[kTileDim];\n"
+        "  __shared__ alignas(16) float seg_sum[kTileDim];",
+    ),
+    (
+        "platform_detect",
+        "        RuntimeDeviceCheck(::cudaMemcpy(dst, src, bytes, ::cudaMemcpyHostToDevice));",
+    ),
+    (
+        "platform_detect",
+        "  const auto lo = __byte_perm(m[0], m[1], 0x7531);\n"
+        "  const auto hi = __byte_perm(m[2], m[3], 0x7531);\n"
+        "  const auto nib = __dp4a(static_cast<int>(lo), static_cast<int>(0xF8FCFEFFu), 0);  // -1,-2,-4,-8\n"
+        "  return __dp4a(static_cast<int>(hi), static_cast<int>(0x80C0E0F0u), nib);          // -16..-128",
+    ),
+    ("platform_detect", "      gt[j] = __hgt2_mask(vecs[i][j], pivot_x2);"),
+    ("platform_detect", "      eq[j] = __heq2_mask(vecs[i][j], pivot_x2);"),
     # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
     # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
     # indirection in utils.cuh exists for this reason). Six identical sites.
