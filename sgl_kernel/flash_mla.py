@@ -16,8 +16,17 @@ module supplies the same API surface:
   part in the qk dot-product only. The per-request query window is
   right-aligned (last s_q tokens), matching sglang's extend contract.
 
-bf16 kvcache only; fp8 kvcache (the descale_* kwargs) raises — fp8 sparse
-paths belong to the DSA/NSA backends, not this one.
+bf16 kvcache only for the dense paged form; fp8 kvcache (the descale_*
+kwargs) raises there.
+
+DSV4 sparse decode (block_table=None, indices=/topk_length=/extra_*) is a
+separate branch below: the DeepSeek-V4-Flash core-attention call passes
+page-level indices into the SWA pool plus an optional compressed "extra"
+pool, both in the V4 byte layout (448 fp8 nope + 64 bf16 rope + 7 ue8m0
+scales per token — see sglang/kernels/ops/attention/dsv4/kv_layout.py).
+The emulation gathers the selected pages through the tree's own triton
+dequantizer and runs the same fp32 math. Everything is tensor-only (no
+host reads), so it survives CUDA-graph decode capture.
 """
 
 import torch
@@ -29,6 +38,102 @@ import torch
 from sgl_kernel.flash_mla_sparse import flash_mla_sparse_fwd  # noqa: F401
 
 __all__ = ["flash_mla_with_kvcache", "get_mla_metadata", "flash_mla_sparse_fwd"]
+
+_DSV4_V4_BYTES_PER_TOKEN = 584  # KVLayout.V4: 576 data + 8 scale bytes
+
+
+def _dsv4_gather_pages(pool_view, page_ids, lengths):
+    """Gather selected pages of a V4-layout paged cache, dequantized to bf16.
+
+    pool_view: ``(pages, P, 1, 584)`` — the view the DSV4 backend builds for
+    the flashmla call. page_ids: ``(bs, W)`` int, -1-padded tail. lengths:
+    ``(bs,)`` valid page counts. Returns ``(k [bs, W*P, 512] bf16,
+    valid [bs, W*P] bool)``. All tensor ops — graph-capture safe.
+    """
+    from sglang.kernels.ops.attention.dsv4.dequant_k_cache import (
+        dequantize_k_cache_paged,
+    )
+
+    if pool_view.shape[-1] != _DSV4_V4_BYTES_PER_TOKEN:
+        raise NotImplementedError(
+            f"flash_mla (HCU emu): DSV4 sparse branch handles the V4 layout "
+            f"(584 B/token) only, got {pool_view.shape[-1]} B/token"
+        )
+    bs, width = page_ids.shape
+    page_size = pool_view.shape[1]
+    ids = page_ids.to(torch.int64).clamp_min(0)  # [bs, W]
+    in_page = torch.arange(page_size, device=page_ids.device)
+    # global token loc = page id * page_size + slot — the axis the tree's
+    # dequantizer indexes (bytes-per-page comes from the pool tensor itself,
+    # so page-stride padding is handled either way)
+    tok = (ids[:, :, None] * page_size + in_page[None, None, :]).reshape(
+        bs, width * page_size
+    )
+    k = dequantize_k_cache_paged(
+        pool_view.reshape(pool_view.shape[0], -1), tok.reshape(-1), page_size
+    ).reshape(bs, width * page_size, -1)  # [bs, W*P, 512] bf16
+    valid_pages = (
+        torch.arange(width, device=page_ids.device)[None, :]
+        < lengths.to(torch.int64).clamp_min(1)[:, None]
+    )  # clamp_min(1): a zero-length row would softmax all--inf into NaN
+    valid = valid_pages.unsqueeze(-1).expand(bs, width, page_size).reshape(
+        bs, width * page_size
+    )
+    return k, valid
+
+
+def _flash_mla_with_kvcache_sparse(
+    q,
+    k_cache,
+    head_dim_v,
+    softmax_scale,
+    indices,
+    topk_length,
+    attn_sink,
+    extra_k_cache,
+    extra_indices_in_kvcache,
+    extra_topk_length,
+):
+    """DSV4 core-attention form: selected SWA pages (+ optional compressed
+    extra pool), fp8 rope-absorbed cache. Mirrors the upstream call in
+    deepseek_v4_backend._forward_attention (q 4D, page-level 3D indices).
+    """
+    if q.dim() == 3:
+        q = q.unsqueeze(1)
+    bs, win, heads, d_qk = q.shape
+    if indices.ndim == 3:  # (bs, 1, W) page ids
+        indices = indices.reshape(indices.shape[0], -1)
+    k, valid = _dsv4_gather_pages(k_cache, indices, topk_length)
+    if extra_k_cache is not None and extra_indices_in_kvcache is not None:
+        if extra_indices_in_kvcache.ndim == 3:
+            extra_indices_in_kvcache = extra_indices_in_kvcache.reshape(
+                extra_indices_in_kvcache.shape[0], -1
+            )
+        k_extra, valid_extra = _dsv4_gather_pages(
+            extra_k_cache, extra_indices_in_kvcache, extra_topk_length
+        )
+        k = torch.cat([k, k_extra], dim=1)
+        valid = torch.cat([valid, valid_extra], dim=1)
+
+    scale = softmax_scale if softmax_scale is not None else d_qk**-0.5
+    qf = q.to(torch.float32)
+    kf = k.to(torch.float32)
+    v = kf[..., :head_dim_v]
+    # same operand shapes as the dense path's proven q@k 4D matmul
+    scores = torch.matmul(qf, kf.transpose(1, 2).unsqueeze(1))  # [bs,win,H,T]
+    scores = scores * scale
+    scores = scores.masked_fill(~valid[:, None, None, :], float("-inf"))
+    if attn_sink is not None:
+        scores = scores + attn_sink.to(torch.float32).reshape(1, 1, -1, 1)
+    probs = torch.softmax(scores, dim=-1)
+    # p@v as 3D bmm (gfx938 rejects the p@v 4D combo): fold (win, heads)
+    # into the batch — v needs no per-head expand this way
+    T = k.shape[1]
+    o = torch.matmul(probs.reshape(bs, win * heads, T), v).reshape(
+        bs, win, heads, head_dim_v
+    )
+    lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
+    return o.to(q.dtype), lse
 
 
 class FlashMLASchedMeta:
@@ -89,8 +194,35 @@ def flash_mla_with_kvcache(
     causal: bool = False,
     descale_q=None,
     descale_k=None,
+    indices=None,
+    topk_length=None,
+    attn_sink=None,
+    extra_k_cache=None,
+    extra_indices_in_kvcache=None,
+    extra_topk_length=None,
     **_ignored,
 ):
+    if block_table is None:
+        # DSV4 sparse core-attention: page-level indices, fp8 V4-layout
+        # pools (deepseek_v4_backend._forward_attention). tile scheduler /
+        # num_splits / is_fp8_kvcache are the CUDA kernel's business only.
+        if indices is None:
+            raise ValueError(
+                "flash_mla (HCU emu): block_table=None requires the DSV4 "
+                "sparse call form (indices=/topk_length=)"
+            )
+        return _flash_mla_with_kvcache_sparse(
+            q,
+            k_cache,
+            head_dim_v,
+            softmax_scale,
+            indices,
+            topk_length,
+            attn_sink,
+            extra_k_cache,
+            extra_indices_in_kvcache,
+            extra_topk_length,
+        )
     if q.dtype not in (torch.bfloat16, torch.float16):
         raise TypeError(
             f"flash_mla (HCU emu): q dtype {q.dtype} unsupported; bf16/fp16 "
