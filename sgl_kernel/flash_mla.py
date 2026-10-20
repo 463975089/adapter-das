@@ -266,6 +266,13 @@ def _flash_mla_with_kvcache_sparse(
                             else None
                         ),
                         "extra_pool": extra_k_cache,
+                        "kx_head": (
+                            k[0, indices.shape[1], :8].detach()
+                            if extra_k_cache is not None
+                            and extra_indices_in_kvcache is not None
+                            and k.shape[1] > indices.shape[1]
+                            else None
+                        ),
                     }
                 )
         except Exception:
