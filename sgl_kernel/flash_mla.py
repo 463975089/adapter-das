@@ -21,7 +21,7 @@ kwargs) raises there.
 
 DSV4 sparse decode (block_table=None, indices=/topk_length=/extra_*) is a
 separate branch below: the DeepSeek-V4-Flash core-attention call passes
-page-level indices into the SWA pool plus an optional compressed "extra"
+token-level indices into the SWA pool plus an optional compressed "extra"
 pool, both in the V4 byte layout (448 fp8 nope + 64 bf16 rope + 7 ue8m0
 scales per token — see sglang/kernels/ops/attention/dsv4/kv_layout.py).
 The emulation gathers the selected pages through the tree's own triton
@@ -52,12 +52,16 @@ _DSV4_V4_BYTES_PER_TOKEN = 584  # KVLayout.V4: 576 data + 8 scale bytes
 
 
 def _dsv4_gather_pages(pool_view, page_ids, lengths):
-    """Gather selected pages of a V4-layout paged cache, dequantized to bf16.
+    """Gather selected rows of a V4-layout paged cache, dequantized to bf16.
 
     pool_view: ``(pages, P, 1, 584)`` — the view the DSV4 backend builds for
-    the flashmla call. page_ids: ``(bs, W)`` int, -1-padded tail. lengths:
-    ``(bs,)`` valid page counts. Returns ``(k [bs, W*P, 512] bf16,
-    valid [bs, W*P] bool)``. All tensor ops — graph-capture safe.
+    the flashmla call. page_ids: ``(bs, W)`` int, -1-padded tail — these are
+    TOKEN locs into the pool's flat token axis (verified live: writes land at
+    loc 256..303 and the reader receives ids 265..272 of that same range; the
+    dequantizer's own contract is "token IDs into the cache" and upstream's
+    prefill arm feeds it swa_token_ids the same way). lengths: ``(bs,)``
+    valid row counts. Returns ``(k [bs, W, 512] bf16, valid [bs, W] bool)``.
+    All tensor ops — graph-capture safe.
     """
     from sglang.kernels.ops.attention.dsv4.dequant_k_cache import (
         dequantize_k_cache_paged,
@@ -69,7 +73,7 @@ def _dsv4_gather_pages(pool_view, page_ids, lengths):
             f"(584 B/token) only, got {pool_view.shape[-1]} B/token"
         )
     bs, width = page_ids.shape
-    page_size = pool_view.shape[1]
+    page_size = pool_view.shape[1]  # layout param for the dequantizer only
     if pool_view.element_size() != 1:
         raise NotImplementedError(
             f"flash_mla (HCU emu): DSV4 sparse branch expects a byte-typed "
@@ -77,33 +81,27 @@ def _dsv4_gather_pages(pool_view, page_ids, lengths):
         )
     # pool_view is usually NON-contiguous: paged pools pad each row to the
     # layout's TMA stride (V4 rounds the page stride up to a 576B multiple,
-    # e.g. 64*584 -> 37440), and the backend builds this view by row-slicing
-    # + dim-splitting, so stride(0) > P*584. Re-materialize the 2D
-    # (pages, row_stride) form via as_strided: contiguous by construction,
+    # e.g. 256*584 -> 149760), and the backend builds this view by
+    # row-slicing + dim-splitting, so stride(0) > P*584. Re-materialize the
+    # 2D (pages, row_stride) form via as_strided: contiguous by construction,
     # zero-copy, and it hands the dequant kernel the padded row stride its
     # page_base addressing already expects.
     row_stride = pool_view.stride(0)
     pool2d = torch.as_strided(
         pool_view, (pool_view.shape[0], row_stride), (row_stride, 1)
     )
-    ids = page_ids.to(torch.int64).clamp_min(0)  # [bs, W]
-    in_page = torch.arange(page_size, device=page_ids.device)
-    # global token loc = page id * page_size + slot — the axis the tree's
-    # dequantizer indexes (bytes-per-page comes from the pool tensor itself,
-    # so page-stride padding is handled either way)
-    tok = (ids[:, :, None] * page_size + in_page[None, None, :]).reshape(
-        bs, width * page_size
-    )
+    tok = page_ids.to(torch.int64)  # [bs, W] token locs, -1 tail
     k = dequantize_k_cache_paged(
-        pool2d, tok.reshape(-1), page_size
-    ).reshape(bs, width * page_size, -1)  # [bs, W*P, 512] bf16
-    valid_pages = (
-        torch.arange(width, device=page_ids.device)[None, :]
-        < lengths.to(torch.int64).clamp_min(1)[:, None]
-    )  # clamp_min(1): a zero-length row would softmax all--inf into NaN
-    valid = valid_pages.unsqueeze(-1).expand(bs, width, page_size).reshape(
-        bs, width * page_size
-    )
+        pool2d, tok.reshape(-1).to(torch.int32), page_size
+    ).reshape(bs, width, -1)  # [bs, W, 512] bf16
+    valid = (
+        (tok >= 0)
+        & (
+            torch.arange(width, device=page_ids.device)[None, :]
+            < lengths.to(torch.int64).clamp_min(1)[:, None]
+        )
+    )  # clamp_min(1): a zero-length row would softmax all--inf into NaN;
+    # negative locs clamp to row 0 for the gather, the mask kills them
     return k, valid
 
 
@@ -119,9 +117,9 @@ def _flash_mla_with_kvcache_sparse(
     extra_indices_in_kvcache,
     extra_topk_length,
 ):
-    """DSV4 core-attention form: selected SWA pages (+ optional compressed
+    """DSV4 core-attention form: selected SWA token rows (+ optional compressed
     extra pool), fp8 rope-absorbed cache. Mirrors the upstream call in
-    deepseek_v4_backend._forward_attention (q 4D, page-level 3D indices).
+    deepseek_v4_backend._forward_attention (q 4D, token-level 3D indices).
     """
     if q.dim() == 3:
         q = q.unsqueeze(1)
@@ -152,21 +150,17 @@ def _flash_mla_with_kvcache_sparse(
         n = _FLASHMLA_DBG_N[0]
         if not capturing and (n < 40 or n % 100 == 0):
             idx2 = indices.reshape(indices.shape[0], -1)
-            P = k_cache.shape[1]
             W = idx2.shape[1]
-            swa_k3d = (
-                k[:, : W * P].to(torch.float32).reshape(-1, W, P, k.shape[-1])
-            )  # [bs, W_pages, P, D] in selection order
-            va = k.to(torch.float32)[valid].abs().mean().item()
+            kf_dbg = k.to(torch.float32)  # [bs, W, D]
+            va = kf_dbg[valid].abs().mean().item()
             first6 = idx2[0, :6].tolist()
             pstats = "/".join(
-                f"#{j}(pg{first6[j] if j < len(first6) else -1})"
-                f":{swa_k3d[0, j].abs().mean().item():.4f}"
+                f"#{j}(loc{first6[j] if j < len(first6) else -1})"
+                f":{kf_dbg[0, j].abs().mean().item():.4f}"
                 for j in range(min(6, W))
             )
             # raw-byte nonzero-ness of suspect pages: 0 (never written?) and
-            # the newest selected page — distinguishes "write landed at a
-            # wrong page" (pg0 hot, selected cold) from "store never ran"
+            # the page holding the newest selected token loc
             rs = k_cache.stride(0)
             raw = torch.as_strided(
                 k_cache, (k_cache.shape[0], rs), (rs, 1)
@@ -177,7 +171,7 @@ def _flash_mla_with_kvcache_sparse(
             rawstat = (
                 f"raw pg0={raw[0].abs().float().mean().item():.2f}"
                 f" pg1={raw[1].abs().float().mean().item():.2f}"
-                f" pg_sel_last={raw[sel_last].abs().float().mean().item():.2f}"
+                f" pg{sel_last // max(1, k_cache.shape[1])}={raw[sel_last // max(1, k_cache.shape[1])].abs().float().mean().item():.2f}"
                 f" | hotpages={(nzp > 64).sum().item()}"
                 f" top={list(zip(top5.indices.tolist()[:5], top5.values.tolist()[:5]))}"
             )
@@ -280,7 +274,7 @@ def flash_mla_with_kvcache(
     **_ignored,
 ):
     if block_table is None:
-        # DSV4 sparse core-attention: page-level indices, fp8 V4-layout
+        # DSV4 sparse core-attention: token-level indices, fp8 V4-layout
         # pools (deepseek_v4_backend._forward_attention). tile scheduler /
         # num_splits / is_fp8_kvcache are the CUDA kernel's business only.
         if indices is None:
