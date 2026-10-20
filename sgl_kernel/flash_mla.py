@@ -61,6 +61,22 @@ def _dsv4_gather_pages(pool_view, page_ids, lengths):
         )
     bs, width = page_ids.shape
     page_size = pool_view.shape[1]
+    if pool_view.element_size() != 1:
+        raise NotImplementedError(
+            f"flash_mla (HCU emu): DSV4 sparse branch expects a byte-typed "
+            f"pool view, got {pool_view.dtype}"
+        )
+    # pool_view is usually NON-contiguous: paged pools pad each row to the
+    # layout's TMA stride (V4 rounds the page stride up to a 576B multiple,
+    # e.g. 64*584 -> 37440), and the backend builds this view by row-slicing
+    # + dim-splitting, so stride(0) > P*584. Re-materialize the 2D
+    # (pages, row_stride) form via as_strided: contiguous by construction,
+    # zero-copy, and it hands the dequant kernel the padded row stride its
+    # page_base addressing already expects.
+    row_stride = pool_view.stride(0)
+    pool2d = torch.as_strided(
+        pool_view, (pool_view.shape[0], row_stride), (row_stride, 1)
+    )
     ids = page_ids.to(torch.int64).clamp_min(0)  # [bs, W]
     in_page = torch.arange(page_size, device=page_ids.device)
     # global token loc = page id * page_size + slot — the axis the tree's
@@ -70,7 +86,7 @@ def _dsv4_gather_pages(pool_view, page_ids, lengths):
         bs, width * page_size
     )
     k = dequantize_k_cache_paged(
-        pool_view.reshape(pool_view.shape[0], -1), tok.reshape(-1), page_size
+        pool2d, tok.reshape(-1), page_size
     ).reshape(bs, width * page_size, -1)  # [bs, W*P, 512] bf16
     valid_pages = (
         torch.arange(width, device=page_ids.device)[None, :]
