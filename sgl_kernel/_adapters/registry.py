@@ -176,6 +176,13 @@ TEXT_PATCH_ALLOWLIST = {
     # width=32 HIP forms keep the exact CUDA 32-lane warp segmentation.
     ("platform_detect", "uint32_t y = __shfl_up_sync(0xffffffff, v, o);"),
     ("platform_detect", "running = __shfl_sync(0xffffffff, v, 31);"),
+    # c_plan.cuh compress-plan: structured bind into HIP uint2 (anonymous
+    # union) — 4th site of the ABI fact; unpack_w returns a real uint2 so
+    # member reads are type-identical (DSV4-Flash nmz16 capture chain).
+    (
+        "platform_detect",
+        "    const auto [ragged_id, batch_id] = unpack_w(plan_w);",
+    ),
     # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
     # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
     # indirection in utils.cuh exists for this reason). Six identical sites.
