@@ -141,6 +141,21 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: jit paged_mqa_metadata cub->hipcub patch not installed",
             exc_info=True,
         )
+    # DSV2/V4 capture-mode dual-stream MoE gate: the captured cross-stream
+    # (alt_stream shared expert) graph replays as deterministic garbage on
+    # DTK/ROCm gfx938 while eager stays perfect. Capture-only branch, so the
+    # gate costs nothing outside graphs. Gate tests torch.version.hip (the
+    # platform seam flips sglang's _is_hip to False). DSV4-Flash nmz16
+    # 2026-10-21; full fingerprint account in docs/models.md.
+    try:
+        from sgl_kernel._adapters import moe_dualstream_gate
+
+        moe_dualstream_gate.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: dual-stream MoE capture gate not installed",
+            exc_info=True,
+        )
     # JIT build progress reporter: one stderr/journal line per real ninja
     # compile (compiling/built/FAILED) so a cold 35-module JIT storm is
     # tellable from a wedge in gate logs; the gate heartbeat tails the
