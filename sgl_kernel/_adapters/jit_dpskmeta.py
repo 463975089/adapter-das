@@ -247,6 +247,31 @@ _PATCHES = {
             "    const auto wt0 = _wtv.x, wt1 = _wtv.y;",
         ),
     ],
+    "deepseek_v4/fp4_indexer_rope_hip.cuh": [
+        # the HIP dispatch target carries its own copies of the four binds
+        # (same needle strings as the non-_hip file; allowlist keys on the
+        # needle, so no new entries).
+        (
+            "    const auto [h0, h1] = cast<fp32x2_t>(head_in[0]);",
+            "    const fp32x2_t _hv = cast<fp32x2_t>(head_in[0]);  // HCU\n"
+            "    const auto h0 = _hv.x, h1 = _hv.y;",
+        ),
+        (
+            "    const auto [t0, t1] = cast<fp32x2_t>(tail_in[0]);",
+            "    const fp32x2_t _tv = cast<fp32x2_t>(tail_in[0]);  // HCU\n"
+            "    const auto t0 = _tv.x, t1 = _tv.y;",
+        ),
+        (
+            "    const auto [wh0, wh1] = cast<fp32x2_t>(head_w[0]);",
+            "    const fp32x2_t _whv = cast<fp32x2_t>(head_w[0]);  // HCU\n"
+            "    const auto wh0 = _whv.x, wh1 = _whv.y;",
+        ),
+        (
+            "    const auto [wt0, wt1] = cast<fp32x2_t>(tail_w[0]);",
+            "    const fp32x2_t _wtv = cast<fp32x2_t>(tail_w[0]);  // HCU\n"
+            "    const auto wt0 = _wtv.x, wt1 = _wtv.y;",
+        ),
+    ],
     "deepseek_v4/c1.cuh": [
         (
             f"      const auto [x, y] = {_CAST}(input[j]);",
