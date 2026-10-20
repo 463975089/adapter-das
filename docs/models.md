@@ -142,3 +142,23 @@
 启动 = server 起来 /health OX；生成 = 非 thinking 截断下 16 token 连贯；
 精度 = 语义锚点（London->Paris 类）+ 与 eager/graph 双变体一致；
 长文 = ~2700 token prompt（>DSA index_topk 覆盖 sparse 变体）。
+
+## 2026-10-20 夜：DSV4-Flash decode graph replay 精度退化——排除法实证账（定位到层 0→1 HC 边界机）
+
+**症状**：decode graph 开（prefill graph 关，`--cuda-graph-backend-prefill=disabled`）复现"首 token（eager prefill 出）对、重放步起 `#####` 型确定性乱码"；eager 全对。
+
+**排除法实证（全部 bit-exact 或行为正确，eager-vs-replay 逐层指纹对拍）**：
+1. DSV4 raw 元数据刷新（seq_lens/out_cache_loc/req_pool_indices 每步递增✓，`DSV4RawDecodeMetadata.copy_`→in-graph raw→full 升级链活，swa indices 因果窗 `[280,279..]` 逐步正确）；
+2. sparse flashmla emu：**层 0 的 q 与 attention 输出 o 与 eager 逐位一致**；隔离 capture/replay 保真测试（全 emu 链含树内 triton dequant，3 组内容）= 0.0e+00；
+3. KV 双池：SWA 池行 sane；compress(c4/c128) 池选定行层 2..42 与 eager 全部 0.0000（compress 写重放无罪）；
+4. 输入载入：fill_from/`try_small_copy`/`torch._foreach_copy_` 隔离全对；在线 dump 实证 input_ids 逐步回灌采样 token（223='␣'/553='1'/65='_'/5180='#'）、positions 17..25 递增；
+5. triton fused MoE（fp8 w8a8 block[128,128]，E=32 本地/N=256/K=4096/topk=6，含 fused_shared=1、routed_scaling=1.5、T=1/2、路由变化）隔离 capture/replay 全部 0.0e+00；
+6. allreduce 双后端（AiterCustomAllreduce / `--disable-custom-all-reduce`→rccl）同指纹乱码 → 集合通信无罪；
+7. metadata glue 默认关✓；MHC 简单臂三向（aiter/tilelang-post-off/torch 回退，env 实证 engagement）输出逐字节相同 → hc_pre/hc_post 简单臂与 stats_stream 开关均非因。
+
+**定位（final）**：模型 43 层全 sparse（first_k_dense_replacement=None）。层 0 q/o 精确、层 1 q 即偏（max|d|≈0.32）→ 污染进入**层 0 attention 输出之后、层 1 q 之前**的 HC（hyper-connection）边界机：`forward_hc_pre_from_prev` 的 `mhc.combine→self_attn→mhc.run_attn_post / mhc.combine→MoE→mhc.run_moe_post`（`_compute_triplet`=hc_mix_stats GEMM+sinkhorn 核、`_post_fusion`=post/comb 合成+norm；TP8 下 AR-MHC 融合臂关，需 TP4）。剩余嫌疑=树内 MHC 核族（hc_mix_stats/hc_split_sinkhorn/hc_combine/mhc.post）或生产 MoE 调用面（`_run_moe_ffn_dp_sync`/deferred finalize）在 capture/replay 下的行为。
+
+**方法论沉淀**：①重放期 python 不执行→"capture 期 stash 张量+重放前在 out_graph 钩子读活值"（adapter `_REPLAY_WATCH` 已提交产品化）；②逐层 q/o/k 指纹（`SGLANG_HCU_QFP`）+ topk 对齐锚（注意 boot warmup 生成与 prefill 走 fa3 不产 qfp）；③stdout 块缓冲→print 必须 flush=True；④多轮 capture 废弃轮 stash 全零=正常（w[-1] 才是活图）；⑤TP8 无 rank 标打印不可对拍。
+
+**收尾态**：容器树 5 个调试补丁已 `git checkout` 还原；生产=eager（--disable-cuda-graph）三探针全对恢复（数数 21/柏林/中文✓）；插桩在 adapter rel 线（709ae32..d145fe87）+ tmp_fetch/patch_*.py 可复用。**下一步**：`forward_hc_pre_from_prev` 内三分点 stash（post-combine/post-attn/post-run_moe_post）同法对拍→锁死单核→adapter text patch 或上报上游/HIP。
+
