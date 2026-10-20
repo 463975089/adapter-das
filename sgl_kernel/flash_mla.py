@@ -216,8 +216,12 @@ def _flash_mla_with_kvcache_sparse(
         # eager per-layer q fingerprint: first vals of the first head
         try:
             n = _FLASHMLA_DBG_N[0]
+            try:
+                r = torch.distributed.get_rank()
+            except Exception:
+                r = int(os.environ.get("RANK", 0))
             print(
-                f"[qfp #{n}] q0={q.reshape(-1)[:6].tolist()}"
+                f"[qfp R{r} #{n}] q0={q.reshape(-1)[:6].tolist()}"
                 f" o0={o.reshape(-1)[:4].tolist()}",
                 flush=True,
             )
