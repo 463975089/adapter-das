@@ -106,7 +106,7 @@ _METHOD_REPL = """        self.is_fp4_expert = False
         )
 
     def process_weights_after_loading_block_quant(self, layer: Module) -> None:
-""" + _GUARD + '"""'
+""" + _GUARD
 
 # v1 call-site (inside the _use_aiter arm) -- superseded by the guard; the
 # guard returns first, so removal is cosmetic but keeps the tree clean.
@@ -127,6 +127,10 @@ _V1_DEF_CONTEXT = (
 
 
 def _atomic_write(path: pathlib.Path, text: str) -> None:
+    # a needle patch that breaks the target's syntax takes the whole
+    # import chain down (platform seam included) -- compile-gate the new
+    # text so a bad patch raises here instead of at server boot.
+    compile(text, str(path), "exec")
     tmp = path.with_suffix(path.suffix + ".hcu_tmp")
     tmp.write_text(text)
     tmp.replace(path)
