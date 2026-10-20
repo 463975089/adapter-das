@@ -226,10 +226,20 @@ def _flash_mla_with_kvcache_sparse(
                     r = torch.distributed.get_rank()
                 except Exception:
                     r = int(os.environ.get("RANK", 0))
+                kx = ""
+                if extra_k_cache is not None and extra_indices_in_kvcache is not None:
+                    ke, _ = _dsv4_gather_pages(
+                        extra_k_cache,
+                        extra_indices_in_kvcache.reshape(
+                            extra_indices_in_kvcache.shape[0], -1
+                        ),
+                        extra_topk_length,
+                    )
+                    kx = f" kx0={ke.float().reshape(-1)[:6].tolist()}"
                 print(
                     f"[qfp R{r} #{n}] topk={topk_length.reshape(-1)[:2].tolist()}"
                     f" q0={q.reshape(-1)[:6].tolist()}"
-                    f" o0={o.reshape(-1)[:4].tolist()}",
+                    f" o0={o.reshape(-1)[:4].tolist()}{kx}",
                     flush=True,
                 )
             except Exception:
@@ -250,6 +260,12 @@ def _flash_mla_with_kvcache_sparse(
                             if extra_topk_length is not None
                             else None
                         ),
+                        "extra_idx": (
+                            extra_indices_in_kvcache.detach()
+                            if extra_indices_in_kvcache is not None
+                            else None
+                        ),
+                        "extra_pool": extra_k_cache,
                     }
                 )
         except Exception:
