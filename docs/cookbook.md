@@ -65,6 +65,35 @@ python3 -m sglang.launch_server --model-path /models/glm53f --served-model-name 
   --nccl-port 30397
 ```
 
+## 1.6 nmz18 × v0.5.22 × glm53f 配方（2026-10-20 四门全绿，R-17 三绑定首演）
+
+容器 `lzg-g53f-v0522`（sf_b075-20261018-0048 + privileged + hyhal + 模型只读 +
+`/public/home/lizhg/sglang-v0522` 公共盘树 + g53_tp4 工具盘）；adapter 在容器内
+`/root/hcu_v0522`（Gitee rel/v0.5.22 git 克隆，起服前 `git pull` + `git log -1`
+对账）。冷容器必做：三板斧种子导入 + tilelang 0.1.12 钉版（§1.5 同款）。
+
+```bash
+export PYTHONPATH=/root/hcu_v0522:/sglang-v0522/python
+export LD_LIBRARY_PATH=/opt/dtk/dcc/lib:/opt/dtk/.hyhal/rocm_smi/lib:/opt/dtk/hip/lib:/opt/dtk/lib
+export HIP_VISIBLE_DEVICES=0,1,2,3
+# 卫生 env 两行必带：镜像烤了 508 机器的 NCCL_TOPO_FILE，BW1101 上
+# ncclCommInitRank 直接 internal error（box16 g53f 脚本同款）
+unset NCCL_TOPO_FILE
+unset ROCR_VISIBLE_DEVICES
+python3 -m sglang.launch_server --model-path /models/glm53f --served-model-name glm53-flash \
+  --trust-remote-code --host 0.0.0.0 --port 30197 --tp-size 4 \
+  --page-size 64 --mem-fraction-static 0.62 --chunked-prefill-size 8192 \
+  --max-running-requests 16 --cuda-graph-max-bs-decode 16 \
+  --disable-radix-cache --disable-prefill-cuda-graph \
+  --dsa-topk-backend torch --dsa-prefill-backend fa3 --dsa-decode-backend flashmla_sparse \
+  --nccl-port 30397
+```
+
+注意：v0.5.22 model_hook 会把 page-size 自动改到 256（resolve 后 server_args
+实际 page_size=256），非 bug；权重 NFS 首载 ~49min（页缓存热后 ~13min）。
+锚定：Berlin/Tokyo 双绿、单流 10.0 tok/s（128tok×3 确定性）、c8 ~40 tok/s、
+~5k tok 双事实检索全对。
+
 ## 2. Qwen3.5 家族（VLM + GDN 线性注意力 + MoE）
 
 ### 2.1 Qwen3.5-122B-A10B-AWQ TP4（用户点名验证，四判定全过）

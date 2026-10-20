@@ -267,6 +267,22 @@ l0/cpu/gates/vendor PASS，mech **38F/101P 与基线持平**——成分对账�
   态）；l15 绊线待 -rf 名单定族。全门终态 GREEN 前置=三模块移植收口
   （topk/c_plan 归 adapter needle patch，quant 归 R-19 vendor 单）。
 
+### L1.5j nmz18 × v0.5.22 × glm53f serving 首跑四门全绿（2026-10-20，R-17 三绑定首演）
+
+nmz18 新容器 `lzg-g53f-v0522`（模型只读+v0522 树公共盘化
+`/public/home/lizhg/sglang-v0522`+三板斧种子+tilelang 0.1.12），配方=cookbook
+§1.6。三 boot 崩点连修（全部 adapter rel 线 commit，详见 models.md 2026-10-20
+行）：①`_hcu_check` 穿透式签名（.22 `dcp_size` 针脚，4ec080d）；②镜像烤
+508 拓扑 `NCCL_TOPO_FILE` 必须 unset（配方卫生 env，非 adapter 面）；③**R-19③
+quant 前判部分推翻**——"per_token_group_quant arch 映射层面受限"仅适用
+mocker/nvcc 路线；serving 走的 plain hipcc 路线只有 `__all_sync` 一个未声明
+标识符（DTK hipcc 有 `__all`/1 参 `__ballot`、无 mask-form 全家，gfx938 探针
+实证），jit_ptgq text patch 三文件全掩码投票换 `__all(pred)` 即治（d5086cf，
+语义严格等价=kernel 入口全 lane 活跃）。v0.5.22 把 per-token-group quant 重构
+为 JIT custom op 是 .21→.22 serving 面最大单点变化。出分：Berlin/Tokyo 双绿、
+单流 10.0 tok/s 确定性×3、c8 ~40 tok/s、~5k tok 双事实检索全对；kernels 门
+5F quant 族预期同修（待下轮锚定复跑确认后绊线回 0F）。
+
 ### L1.5i bw1000 系列（gfx936/bw47）攻略战——配方跨 ISA 实证+盒级三发现（2026-10-20 凌晨，nmz26/18 满载转场）
 
 nmz 双机满载，按用户指示转 bw7（bw47，gfx936/BW1000 系，8 卡空）继续。
