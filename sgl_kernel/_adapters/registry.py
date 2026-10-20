@@ -172,6 +172,19 @@ TEXT_PATCH_ALLOWLIST = {
     # per the tree's own lora JIT convention) — DSV4-Flash decode graph
     # capture, nmz16 gfx938 2026-10-20. See sgl_kernel/_adapters/jit_dpskmeta.py.
     ("platform_detect", "#include <cub/block/block_scan.cuh>"),
+    # python-tree text patches (needle == register detail, governance §3):
+    # capture-mode dual-stream MoE HIP gate (deepseek_v2.py, eebddcb; the
+    # file patch applies before this register call, so a missing allowlist
+    # entry only costs the banner -- fixed retroactively here) and the
+    # DSV4F DeepEP bf16 experts dequant hook (fp8.py, method-top guard).
+    ("platform_detect", "capture-mode dual-stream MoE gated off on real HIP"),
+    (
+        "platform_detect",
+        "SGLANG_HCU_EP_BF16=1: fp4 routed experts dequantized to "
+        "bf16 at load (DTK deepgemm fork fp8 grouped GEMMs are "
+        "per-channel-scale-only per R-04); pair with "
+        "--deepep-dispatcher-output-dtype bf16.",
+    ),
     # same file, Phase-1/2 hand scans: mask-form shuffles undeclared on DTK;
     # width=32 HIP forms keep the exact CUDA 32-lane warp segmentation.
     ("platform_detect", "uint32_t y = __shfl_up_sync(0xffffffff, v, o);"),

@@ -1,4 +1,4 @@
-"""DSV4-Flash DeepEP bf16 experts: fp8-block -> bf16 load-time dequant.
+"""DSV4-Flash DeepEP bf16 experts: fp4 -> bf16 load-time dequant.
 
 Why: on the DTK stack the DeepEP expert compute can only run through the
 deepgemm fork's grouped GEMMs (deepep_ll/deepep_normal formats have no
@@ -10,15 +10,18 @@ wrapper + triton contiguous reimpl), and sglang's deep_gemm moe runner
 branches on ``quant_info.w13_weight.dtype``: bf16 weights take
 ``_run_masked_bf16_gemm`` / ``_run_bf16_contiguous_gemm`` natively.
 
-This needle patch extends the existing SGLANG_DSV4_FP4_DEQUANT arm (fp4 ->
-block-fp8) with one env-gated extra step: dequantize the block-fp8 expert
-weights to plain bf16 Parameters and drop the scale params. Launch with
+The needle patch hooks the TOP of
+``Fp8MoEMethod.process_weights_after_loading_block_quant``: under
+``SGLANG_HCU_EP_BF16=1`` it runs the stock fp4->block-fp8 dequant
+(``_dequantize_aiter_fp4_experts``) and then converts block-fp8 -> bf16,
+returning before every fp8/aiter-processing arm. The stock dequant lives
+inside ``if _use_aiter and self.is_fp4_expert:`` -- under the platform
+seam ``_is_hip`` is False, so that arm (and any hook inside it) never
+runs in the server process; hence the method-top placement. Launch with
 
     SGLANG_HCU_EP_BF16=1 --deepep-dispatcher-output-dtype bf16
 
-(the server arg keeps the DeepEP dispatch itself in bf16/quant_type=0;
-weights bf16 makes the runner take the bf16 GEMM arms). TP-mode servers
-are unaffected: they never set the env.
+TP-mode servers are unaffected: they never set the env.
 """
 
 from __future__ import annotations
@@ -31,6 +34,37 @@ from . import registry as _reg
 logger = logging.getLogger("hcu.adapter")
 
 _PKG = "sglang/srt/layers/quantization/fp8.py"
+_DETAIL = (
+    "SGLANG_HCU_EP_BF16=1: fp4 routed experts dequantized to "
+    "bf16 at load (DTK deepgemm fork fp8 grouped GEMMs are "
+    "per-channel-scale-only per R-04); pair with "
+    "--deepep-dispatcher-output-dtype bf16."
+)
+
+_DEF_LINE = (
+    "    def process_weights_after_loading_block_quant("
+    "self, layer: Module) -> None:\n"
+)
+# fp8.py defines process_weights_after_loading_block_quant TWICE (an
+# earlier quant class at ~732 and Fp8MoEMethod at ~1767); _DEF_LINE alone
+# would hit the wrong class, so every guard insertion is anchored on the
+# Fp8MoEMethod-specific context (the v1 helper's closing or the pristine
+# warning_once block).
+
+_GUARD = (
+    "        # HCU dsv4_ep_bf16: fp4 -> fp8 -> bf16 in one step, ahead of every\n"
+    "        # fp8/aiter arm (the stock dequant arm is gated on _use_aiter, which\n"
+    "        # the platform seam keeps False in the server process).\n"
+    "        if (\n"
+    "            __import__(\"os\").environ.get(\"SGLANG_HCU_EP_BF16\", \"\") == \"1\"\n"
+    "            and self.is_fp4_expert\n"
+    "            and layer.w13_weight.dtype != torch.bfloat16\n"
+    "        ):\n"
+    "            self._dequantize_aiter_fp4_experts(layer)\n"
+    "            self._hcu_ep_bf16_dequant(layer)\n"
+    "            self.weight_block_size = [128, 128]\n"
+    "            return\n"
+)
 
 _METHOD_NEEDLE = """        self.is_fp4_expert = False
         logger.warning_once("Dequantized FP4 MoE expert weights to FP8.")
@@ -48,7 +82,6 @@ _METHOD_REPL = """        self.is_fp4_expert = False
         \"\"\"
         if layer.w13_weight.dtype == torch.bfloat16:
             return
-        import os
 
         def _dq(w, s):
             # w: [E, N, K] fp8 blockwise; s: [E, N/128, K/128] float scales
@@ -73,33 +106,24 @@ _METHOD_REPL = """        self.is_fp4_expert = False
         )
 
     def process_weights_after_loading_block_quant(self, layer: Module) -> None:
-"""
+""" + _GUARD + '"""'
 
-_CALL_NEEDLE = """                if _use_aiter and runner_is_aiter:
-                    layer.w13_weight.data = shuffle_weight(
-                        layer.w13_weight.contiguous(), (16, 16)
-                    )
-                    layer.w2_weight.data = shuffle_weight(
-                        layer.w2_weight.contiguous(), (16, 16)
-                    )
-                return
-
-        if self.convert_mxfp8_to_block:
-"""
-
-_CALL_REPL = """                if _use_aiter and runner_is_aiter:
-                    layer.w13_weight.data = shuffle_weight(
-                        layer.w13_weight.contiguous(), (16, 16)
-                    )
-                    layer.w2_weight.data = shuffle_weight(
-                        layer.w2_weight.contiguous(), (16, 16)
-                    )
-                if __import__("os").environ.get("SGLANG_HCU_EP_BF16", "") == "1":
+# v1 call-site (inside the _use_aiter arm) -- superseded by the guard; the
+# guard returns first, so removal is cosmetic but keeps the tree clean.
+_V1_CALL = """                if __import__("os").environ.get("SGLANG_HCU_EP_BF16", "") == "1":
                     self._hcu_ep_bf16_dequant(layer)
                 return
-
-        if self.convert_mxfp8_to_block:
 """
+# v1 helper-method tail + def line: the Fp8MoEMethod-scoped anchor for
+# adding the guard to a v1-patched tree.
+_V1_DEF_CONTEXT = (
+    "        logger.warning_once(\n"
+    "            \"HCU dsv4_ep_bf16: DeepEP expert weights dequantized to bf16 \"\n"
+    "            \"(fork fp8 grouped GEMMs are block-scale incompatible).\"\n"
+    "        )\n"
+    "\n"
+    "    def process_weights_after_loading_block_quant(self, layer: Module) -> None:\n"
+)
 
 
 def _atomic_write(path: pathlib.Path, text: str) -> None:
@@ -115,31 +139,32 @@ def install() -> None:
     p = pkg_root / "srt" / "layers" / "quantization" / "fp8.py"
     text = p.read_text()
 
-    if _CALL_REPL in text:
-        return  # already patched (idempotent)
-
-    if _METHOD_NEEDLE not in text or _CALL_NEEDLE not in text:
-        raise RuntimeError(
-            "HCU adapter: dsv4_ep_bf16 needle drifted in "
-            f"{_PKG} (method={_METHOD_NEEDLE in text}, call={_CALL_NEEDLE in text}); "
-            "re-anchor before upgrading the sglang tree."
-        )
-
-    text = text.replace(_METHOD_NEEDLE, _METHOD_REPL, 1)
-    text = text.replace(_CALL_NEEDLE, _CALL_REPL, 1)
-    _atomic_write(p, text)
+    if "HCU dsv4_ep_bf16: fp4 -> fp8 -> bf16 in one step" not in text:
+        if _V1_CALL in text:
+            text = text.replace(
+                _V1_CALL, "                return\n", 1
+            )
+        if _METHOD_NEEDLE in text:
+            # pristine tree: helper method + guard in one shot
+            text = text.replace(_METHOD_NEEDLE, _METHOD_REPL, 1)
+        elif _V1_DEF_CONTEXT in text:
+            # v1-patched tree: helper already present, add the guard only
+            text = text.replace(
+                _V1_DEF_CONTEXT, _V1_DEF_CONTEXT + _GUARD, 1
+            )
+        else:
+            raise RuntimeError(
+                "HCU adapter: dsv4_ep_bf16 needle drifted in "
+                f"{_PKG}; re-anchor before upgrading the sglang tree."
+            )
+        _atomic_write(p, text)
 
     _reg.register(
         "platform_detect",
         "dsv4-ep-bf16-experts",
         target=f"text:{_PKG}",
         mechanism=_reg.MECH_TEXT,
-        detail=(
-            "SGLANG_HCU_EP_BF16=1: block-fp8 routed experts dequantized to "
-            "bf16 at load (DTK deepgemm fork fp8 grouped GEMMs are "
-            "per-channel-scale-only per R-04); pair with "
-            "--deepep-dispatcher-output-dtype bf16."
-        ),
+        detail=_DETAIL,
     )
     logger.warning(
         "HCU adapter: dsv4_ep_bf16 installed (DeepEP bf16 experts, "
