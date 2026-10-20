@@ -89,6 +89,60 @@ _PATCHES = {
             "    const uint32_t batch_id = unpacked_w.y;",
         ),
     ],
+    # main decode attention kernel (module dpsk_v4_main_k_norm_rope_*):
+    # bare __syncwarp (rope precedent -> __syncwarp_full_mask shim), float2
+    # `freq` structured bind, mask-form xor shuffle in the butterfly reduce.
+    "deepseek_v4/main_norm_rope.cuh": [
+        (
+            "  __syncwarp();",
+            "  __syncwarp_full_mask();  // HCU portability shim (jit_rope precedent)",
+        ),
+        (
+            "  const auto [freq_real, freq_imag] = freq;",
+            "  const float freq_real = freq.x;  // HCU: float2 not decomposable\n"
+            "  const float freq_imag = freq.y;",
+        ),
+        (
+            "        const float other = __shfl_xor_sync(0xFFFFFFFFu, data[i], mask, kWarpThreads);",
+            "        const float other = __shfl_xor(data[i], mask, kWarpThreads);"
+            "  // HCU: no mask-form shuffle",
+        ),
+    ],
+    # top-k bf16 small: %laneid PTX (concat_mla precedent -> utils.cuh HIP
+    # identity) + two mask-form shuffles (suffix-sum guarded by
+    # lane+offset<kWarpThreads; lane-31 broadcast).
+    "deepseek_v4/topk_bf16_small.cuh": [
+        (
+            '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));',
+            "  // HCU: %laneid is NVIDIA-only; canonical HIP identity below\n"
+            "  lane_id = static_cast<uint32_t>(::sglang::device::get_lane_id());",
+        ),
+        (
+            "    const auto t = __shfl_down_sync(device::warp::kFullMask, inc, offset);",
+            "    const auto t = __shfl_down(inc, offset);  // HCU: no mask-form shuffle",
+        ),
+        (
+            "  warp_base = __shfl_sync(warp::kFullMask, warp_base, kWarpThreads - 1);",
+            "  warp_base = __shfl(warp_base, kWarpThreads - 1);"
+            "  // HCU: no mask-form shuffle",
+        ),
+    ],
+    # flashmla scheduler metadata: butterfly xor reduce, partners stay within
+    # the 32-lane group for offsets <= 16.
+    "deepseek_v4/flashmla_sched_meta.cuh": [
+        (
+            "    partial += __shfl_xor_sync(uint32_t(-1), partial, offset);",
+            "    partial += __shfl_xor(partial, offset);  // HCU: no mask-form shuffle",
+        ),
+    ],
+    # prefill norm+rope variant: same float2 freq bind as main_norm_rope.
+    "deepseek_v4/fused_norm_rope.cuh": [
+        (
+            "    const auto [freq_real, freq_imag] = freq;",
+            "    const float freq_real = freq.x;  // HCU: float2 not decomposable\n"
+            "    const float freq_imag = freq.y;",
+        ),
+    ],
 }
 
 

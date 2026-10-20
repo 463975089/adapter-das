@@ -183,6 +183,36 @@ TEXT_PATCH_ALLOWLIST = {
         "platform_detect",
         "    const auto [ragged_id, batch_id] = unpack_w(plan_w);",
     ),
+    # main_norm_rope / topk_bf16_small / flashmla_sched_meta / fused_norm_rope:
+    # bare __syncwarp, %laneid PTX, mask-form shuffles, float2 binds — all
+    # established needle classes (jit_rope / jit_concat_mla / warp.cuh
+    # precedents); DSV4-Flash capture chain 2026-10-20.
+    ("platform_detect", "  __syncwarp();"),
+    ("platform_detect", "  const auto [freq_real, freq_imag] = freq;"),
+    (
+        "platform_detect",
+        "        const float other = __shfl_xor_sync(0xFFFFFFFFu, data[i], mask, kWarpThreads);",
+    ),
+    (
+        "platform_detect",
+        '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));',
+    ),
+    (
+        "platform_detect",
+        "    const auto t = __shfl_down_sync(device::warp::kFullMask, inc, offset);",
+    ),
+    (
+        "platform_detect",
+        "  warp_base = __shfl_sync(warp::kFullMask, warp_base, kWarpThreads - 1);",
+    ),
+    (
+        "platform_detect",
+        "    partial += __shfl_xor_sync(uint32_t(-1), partial, offset);",
+    ),
+    (
+        "platform_detect",
+        "    const auto [freq_real, freq_imag] = freq;",
+    ),
     # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
     # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
     # indirection in utils.cuh exists for this reason). Six identical sites.
