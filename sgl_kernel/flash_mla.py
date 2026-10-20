@@ -38,6 +38,7 @@ import torch
 # content drift across decode steps is visible (syncs — eager only; skipped
 # under stream capture).
 _FLASHMLA_DEBUG = bool(int(os.environ.get("SGLANG_HCU_FLASHMLA_DEBUG", "0")))
+_QFP = bool(int(os.environ.get("SGLANG_HCU_QFP", "0")))
 _FLASHMLA_DBG_N = [0]
 
 # Graph-replay diagnosis: during capture the sparse emu stashes its captured
@@ -211,6 +212,17 @@ def _flash_mla_with_kvcache_sparse(
         bs, win, heads, head_dim_v
     )
     lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
+    if _QFP:
+        # eager per-layer q fingerprint: first vals of the first head
+        try:
+            n = _FLASHMLA_DBG_N[0]
+            print(
+                f"[qfp #{n}] q0={q.reshape(-1)[:6].tolist()}"
+                f" o0={o.reshape(-1)[:4].tolist()}",
+                flush=True,
+            )
+        except Exception:
+            pass
     if _FLASHMLA_DEBUG:
         try:
             if torch.cuda.is_current_stream_capturing() and len(_REPLAY_WATCH) < 3072:
