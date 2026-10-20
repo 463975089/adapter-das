@@ -218,12 +218,17 @@ kernels 段 14 测（w4a16_deepgemm 全家）——`cp -r /opt/dtk/.info <合成
 映射为 750），漏一条则回到 HIP 头双定义/hipcc uint2 语法缺口（nmz18 首轮
 壳版本错配复现过全套指纹，反向验证了根因分析）。
 
-**硬边界：镜像↔宿主机配对**。sf_b075（nmz26 现役镜像）在 nmz18 上 HIP
-运行时初始化死锁（vllm import 期 poll 无限等 /dev/dri/renderN，
-torch.cuda.device_count() 永不返回；hip-smi 可见卡）——用户态 HSA 与宿主
-内核驱动错配，**同款镜像跨机方案物理不可行**。nmz18 只能配 dtk26041-
-202610xx 老系（其能跑的老容器即此族）；判别一行：60 秒内 device_count
-出 8=配对兼容，挂死=错配。已写入 bootstrap 铁律。
+**硬边界修正（2026-10-20 锚定轮推翻前判）**：先前"sf_b075 × nmz18 宿主
+= HIP init 死锁、同款镜像跨机物理不可行"是**误诊**。真根因双因素：①容器
+未挂宿主 `/opt/hyhal`（HAL 缺失，bw47 战已证同型）；②冷 `~/.cache/tvm-ffi`
+触发 tvm_ffi 选件构建器**自锁**（fork 子进程再 import torch/HSA，父子互
+poll pipe 永挂；指纹=poll+renderD fd 全开+hsakmt shm deleted，与旧"死锁"
+完全同构）。同款镜像 sf_b075-20261018-0048 + `--privileged` + hyhal 挂载
++ tvm-ffi cache 播种后，nmz18 DC=8 秒出、REAL_INIT_OK、全门可跑。
+"镜像↔宿主配对"不成立；成立的是**镜像 × 挂载面 × cache 温度**三件套
+（判别探针保留：60s device_count + 真张量乘二连）。tvm-ffi 侧官方逃生门
+`TVM_FFI_DISABLE_TORCH_C_DLPACK=1`；cache_export/import 已把 tvm-ffi/
+torch_extensions 收进标准种子。
 
 **顺带治理两笔**：①共享盘 `/root/hcu_t2`（nmz26 在役树本体）是**非 git
 旧版同步树**，其 ci/l1_gpu_gate.sh 无 --up-tree（自动探测逮烘焙 v0521 触
@@ -233,19 +238,34 @@ git 化或重同步全树**）。②gate 位参在 `sh -c` 双跳里会被 `2 >`
 重定向（GPU 位参丢失 silently 跑 auto-pick）——调用统一
 `[GPU] --up-tree <path> >log 2>&1` 形态。
 
-**锚定待跑（数据落袋后改写本节）**：nmz26 卡空后，作坊根已补 `.info`
-（`/tmp/lizhg_rocm22`，v3 壳+软链齐）——`cd /root/hcu_t2 && ROCM_HOME=/
-tmp/lizhg_rocm22 LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so
-bash ci/l1_gpu_gate.sh <空卡号> --up-tree /sglang-v0522`。**38F 精算拆账
-（2026-10-20 对 L1.5f mech 详日账 /tmp/l1_l15_mech.log）**：
-`dpsk_v4_metadata` 编译失败 ×14 + `compress_plan` ×12 + `causal_conv1d`
-×6 = **32F 配方已逐颗实证可治**（三模块 LOAD_OK/补 ninja 出 .so/数值
-PASS），c1/c2 同族根（CUB/uint2）随配方同治；**残红预期 ≈6F** = gdn
-cutedsl ring verify（K1 真红）+ swa/gdn flashinfer CUDA 错（平台缺件
-K4 族账）——即配方锚定轮后 mech 预算线应从 38F/99P 收紧到约
-**6-10F/125±P**，全门终态 GREEN 即可写死。机时侧（同日实测）：nmz26 8
-卡满未松、nmz18 宿主 /opt/dtk 被管理侧卸载（布防线死）、bw47 楔死 box
-账——三机皆客满，锚定继续等 nmz26 空卡。
+**锚定已跑（2026-10-20 nmz18 复活轮；nmz26 满载 → 按"重建容器"路线复活
+nmz18：拉同款镜像+privileged+hyhal+三板斧种子，全配方 env、TSCALE=2）**：
+l0/cpu/gates/vendor PASS，mech **38F/101P 与基线持平**——成分对账（GPU1
+复跑 `-rf` 名单袋 nmz18 `/tmp/diag_mech_rf.log`）**推翻 32F 可治的拆账**：
+- `dpsk_v4_topk_v2` **构建失败**（cuda.cu:11 引用
+  `TopKKernel<false>::transform_packed`，v0522 头已是 `transform_paged`
+  ——针脚失配）→ retry×5 耗尽 → **13 败行 NoneType 连坐** + 4 行 retry
+  异常；
+- `compress_plan`（c_plan.cuh）**能装但运行期炸**（:562 PrefillPlan，
+  套件形状面超出隔离实证形状）×2；
+- gdn cutedsl MLIR 地址空间错配 ×3（K1 真红，账不变）+ 数值不 close
+  ×11（疑 topk/plan 缺件连坐）；
+- **结论修正**：配方路线与三模块隔离实证未被推翻，但 v0522 全链翻绿还压
+  **三个未移植模块**——topk（针脚改名，adapter 侧 patch 可治）/ c_plan
+  （运行期补形）/ per_token_group_quant（`__HIP_SATFINITE/__HIP_E4M3`
+  针脚 + `SGL_CUDA_ARCH=750` 触发 vec 16B 上限静态断言——arch 映射层面
+  受限，需降 vec 宽或提映射）。
+- **同轮附得（配方揭盖效应）**：kernels **5F/160P**（vs nmz26 无配方
+  0F/165P）——5F 全 quant bridge 族=quant 模块缺口的暴露面：无配方时
+  JIT 工具链不在场→bridge 优雅回退 aiter→绿；有配方 nvcc 在场→真编译
+  →硬失败。**配方会揭盖潜伏缺口**，跨机对账必须同配方形态。l15_upstream
+  **39F/87P/91sk**（vs 无配方 0F/88P/101sk）：配方把 10 个 skip 翻成真跑
+  撞同批缺口（dsa sparse fp8 cuda_graph 族为主；-rf 名单袋
+  `/tmp/diag_l15_rf.log`）。
+- **预算线重锚建议**：mech 绊线 38F/99P 维持（翻绿未达成，成分账如上）；
+  kernels 绊线 0F→容忍 5F quant 族（或先把 u8_bridge 测试钉 env 回退
+  态）；l15 绊线待 -rf 名单定族。全门终态 GREEN 前置=三模块移植收口
+  （topk/c_plan 归 adapter needle patch，quant 归 R-19 vendor 单）。
 
 ### L1.5i bw1000 系列（gfx936/bw47）攻略战——配方跨 ISA 实证+盒级三发现（2026-10-20 凌晨，nmz26/18 满载转场）
 

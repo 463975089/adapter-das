@@ -176,13 +176,17 @@ export LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so
 （上面的 `cp -r .info` 即为此；缺它则 bridge 拒装并连坐 kernels 段 14 测），
 长期修复为 `deep_gemm_dtk.py` 改读 DTKROOT。
 
-**镜像↔宿主机配对铁律（2026-10-19 nmz18 实测教训）**：镜像不是跨机通用
-的——sf_b075-20261018（nmz26 现役）放到 nmz18 上 HIP 运行时初始化直接
-死锁（内核栈：vllm import 期 poll 无限等 /dev/dri/renderN，用户态 HSA 与
-nmz18 宿主内核驱动版本错配；hip-smi 可见卡但 torch 起不来）。nmz18 只用
-dtk26041-202610xx 老系镜像，nmz26 只用 sf_b075 系；换机先跑
-`python -c "import torch; print(torch.cuda.device_count())"`（60s 内出 8
-即为配对兼容，挂死即镜像错配）。
+**容器三件套铁律（2026-10-20 锚定轮改写，替代已废弃的"镜像↔宿主配
+对"旧判）**：镜像本身跨机通用，旧"sf_b075 × nmz18 = HIP init 死锁"是
+误诊——真凶双因素：①容器缺宿主 `/opt/hyhal` 挂载（`--privileged` 起，
+HAL 从宿主来）；②冷 `~/.cache/tvm-ffi` 触发 tvm_ffi 选件构建器自锁
+（fork 子进程再 import torch/HSA → 父子互 poll pipe 永挂，指纹=poll+
+renderD fd 全开+hsakmt shm deleted——与"镜像错配死锁"完全同构）。
+新机新容器标准动作：同款镜像 + privileged + hyhal 挂载 + `ci/cache_import.sh`
+播种（种子现含 tvm-ffi/torch_extensions）；或对冷容器先
+`export TVM_FFI_DISABLE_TORCH_C_DLPACK=1` 兜底。验活二连：
+`python -c "import torch; print(torch.cuda.device_count())"`（60s 内出
+8）+ 真张量 `torch.randn(...)@` 一次（枚举走 NVML 会假活，真 init 才算）。
 
 ## 4c. aiter JIT cache：机制与收割（2026-10-20 实测定稿）
 
