@@ -46,7 +46,9 @@ def install():
             )
         text = text.replace(needle, repl)
         registered.append(needle)
-    p.write_text(text, encoding="utf-8")
+    from sgl_kernel._adapters.atomic_io import atomic_write
+
+    atomic_write(p, text)
 
     import sgl_kernel._adapters.registry as _reg
 

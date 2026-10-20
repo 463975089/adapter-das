@@ -123,7 +123,9 @@ def install():
     if n_dev:
         text = text.replace(_DLDEVICE_NEEDLE, _DLDEVICE_REPL)
         registered.extend([_DLDEVICE_NEEDLE] * n_dev)
-    p.write_text(text, encoding="utf-8")
+    from sgl_kernel._adapters.atomic_io import atomic_write
+
+    atomic_write(p, text)
     applied = len(registered)
 
     import sgl_kernel._adapters.registry as _reg

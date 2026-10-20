@@ -48,7 +48,9 @@ def install():
                 "dist_bc: needle not found in common.py -- upstream changed; "
                 "re-derive the patch point (governance §3)"
             )
-        src_path.write_text(src.replace(_NEEDLE, _REPLACE, 1), encoding="utf-8")
+        from sgl_kernel._adapters.atomic_io import atomic_write
+
+        atomic_write(src_path, src.replace(_NEEDLE, _REPLACE, 1))
         # invalidate the cached bytecode so children recompile
         pyc = src_path.with_suffix(".pyc")
         cache_dir = src_path.parent / "__pycache__"

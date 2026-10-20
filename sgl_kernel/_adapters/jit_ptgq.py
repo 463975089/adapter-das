@@ -49,7 +49,9 @@ def install():
                 f"jit_ptgq: needle missing in {_RELPATH}: {_NEEDLE[:60]!r} -- "
                 "upstream changed; re-derive (governance §3)"
             )
-        p.write_text(text.replace(_NEEDLE, _REPL), encoding="utf-8")
+        from sgl_kernel._adapters.atomic_io import atomic_write
+
+        atomic_write(p, text.replace(_NEEDLE, _REPL))
 
     _reg.register(
         "per_token_quant",

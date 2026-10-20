@@ -95,7 +95,9 @@ def install():
         if needle not in text:
             missing.append(rel)
             continue
-        p.write_text(text.replace(needle, repl), encoding="utf-8")
+        from sgl_kernel._adapters.atomic_io import atomic_write
+
+        atomic_write(p, text.replace(needle, repl))
         applied += 1
 
     if missing:

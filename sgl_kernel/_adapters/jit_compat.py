@@ -82,7 +82,9 @@ def install():
         if existing.strip():
             continue  # a real file lives there (non-adapter toolchain): don't touch
         try:
-            target.write_text(body, encoding="utf-8")
+            from sgl_kernel._adapters.atomic_io import atomic_write
+
+            atomic_write(target, body)
             written += 1
         except OSError:
             LOG.warning("HCU adapter: cannot write %s (read-only root?)", target)
