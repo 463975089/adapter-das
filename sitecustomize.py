@@ -156,6 +156,23 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: dual-stream MoE capture gate not installed",
             exc_info=True,
         )
+    # DSV4-Flash DeepEP bf16 experts: under --moe-a2a-backend deepep the
+    # expert compute must go through the DTK deepgemm fork, whose fp8
+    # grouped GEMMs are per-channel-scale-only (R-04) while DSV4F experts
+    # are 128x128 block-scaled. SGLANG_HCU_EP_BF16=1 dequantizes the fp4->
+    # fp8 experts one step further to bf16 so the runner's weight-dtype
+    # branch takes the validated bf16 masked/contiguous arms; pair with
+    # --deepep-dispatcher-output-dtype bf16. TP-only servers (env unset)
+    # are untouched.
+    try:
+        from sgl_kernel._adapters import dsv4_ep_bf16
+
+        dsv4_ep_bf16.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: dsv4_ep_bf16 (DeepEP bf16 experts) not installed",
+            exc_info=True,
+        )
     # JIT build progress reporter: one stderr/journal line per real ninja
     # compile (compiling/built/FAILED) so a cold 35-module JIT storm is
     # tellable from a wedge in gate logs; the gate heartbeat tails the
