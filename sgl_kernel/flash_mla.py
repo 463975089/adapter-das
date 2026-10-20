@@ -40,6 +40,13 @@ import torch
 _FLASHMLA_DEBUG = bool(int(os.environ.get("SGLANG_HCU_FLASHMLA_DEBUG", "0")))
 _FLASHMLA_DBG_N = [0]
 
+# Graph-replay diagnosis: during capture the sparse emu stashes its captured
+# input/output tensors here (indices/topk/q/o). At replay the recorded
+# kernels rewrite these buffers in place; an outside-the-graph reader can
+# then see exactly what the replayed kernels consumed last step. Refreshed
+# by SGLANG_HCU_REPLAY_DEBUG dumps in the backend.
+_REPLAY_WATCH = []
+
 # DSA sparse attention emu lives in its own module (imported as
 # `sgl_kernel.flash_mla_sparse`); re-export here so the historical import
 # path `from sgl_kernel.flash_mla import flash_mla_sparse_fwd` (dsa_backend
@@ -204,6 +211,24 @@ def _flash_mla_with_kvcache_sparse(
         bs, win, heads, head_dim_v
     )
     lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
+    if _FLASHMLA_DEBUG:
+        try:
+            if torch.cuda.is_current_stream_capturing() and len(_REPLAY_WATCH) < 64:
+                _REPLAY_WATCH.append(
+                    {
+                        "idx": indices.detach(),
+                        "topk": topk_length.reshape(-1).detach(),
+                        "q": q.detach(),
+                        "o": o.detach(),
+                        "extra_topk": (
+                            extra_topk_length.reshape(-1).detach()
+                            if extra_topk_length is not None
+                            else None
+                        ),
+                    }
+                )
+        except Exception:
+            pass
     return o.to(q.dtype), lse
 
 
