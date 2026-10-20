@@ -295,6 +295,30 @@ def install():
         if isinstance(_v, BaseException):
             _m.deep_gemm = shim
 
+    # masked-layout grouped GEMM (DeepEP low-latency decode, bf16): the
+    # fork only ships the packed-layout masked kernel and the bridge's
+    # pack cache DOUBLES expert memory (DSV4-Flash EP: 69 GB raw + 69 GB
+    # packed > 144 GB card -> OOM at decode graph capture, nmz16
+    # 2026-10-21). Triton reimplementation on NATIVE [E, N, K] weights:
+    # single copy, shared with the contiguous path. HCU_TRITON_MASKED=0
+    # keeps the fork pack path.
+    try:
+        from . import hcu_env as _env
+
+        if _env.enabled("HCU_TRITON_MASKED"):
+            from . import deep_gemm_masked_triton as _mt
+
+            shim.m_grouped_bf16_gemm_nt_masked = (
+                _mt.m_grouped_bf16_gemm_nt_masked
+            )
+    except Exception:
+        import logging
+
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: triton masked grouped GEMM not installed",
+            exc_info=True,
+        )
+
     # contiguous-layout grouped GEMM (DeepEP normal / auto prefill): the
     # DTK w16a16 contiguous kernel is broken (2D input VMFault, 3D input
     # wrong numbers) and the fork lacks the mk-alignment get/set pair the
