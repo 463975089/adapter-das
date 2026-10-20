@@ -110,6 +110,18 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: jit per-token-group-quant patch not installed",
             exc_info=True,
         )
+    # JIT DSV4 paged-mqa-metadata (indexer plan builder): the cuh includes
+    # NVIDIA cub for BlockScan; DTK has hipCUB only -> hipcc file-not-found
+    # kills decode graph capture (DSV4-Flash nmz16, 2026-10-20).
+    try:
+        from sgl_kernel._adapters import jit_dpskmeta
+
+        jit_dpskmeta.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit paged_mqa_metadata cub->hipcub patch not installed",
+            exc_info=True,
+        )
     # DeepSeek-V4.1-Flash checkpoints carry architectures
     # ["DeepseekV41ForCausalLM"], a name no sglang tree registers (checked
     # v0.5.22 and upstream main); the V4 class serves V41 configs via its

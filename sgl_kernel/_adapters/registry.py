@@ -167,6 +167,11 @@ TEXT_PATCH_ALLOWLIST = {
         "  return r;\n"
         "}",
     ),
+    # deepseek_v4/paged_mqa_metadata.cuh includes NVIDIA cub for BlockScan;
+    # DTK ships hipCUB only (namespace cub mirrors the API, umbrella header
+    # per the tree's own lora JIT convention) — DSV4-Flash decode graph
+    # capture, nmz16 gfx938 2026-10-20. See sgl_kernel/_adapters/jit_dpskmeta.py.
+    ("platform_detect", "#include <cub/block/block_scan.cuh>"),
     # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
     # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
     # indirection in utils.cuh exists for this reason). Six identical sites.
