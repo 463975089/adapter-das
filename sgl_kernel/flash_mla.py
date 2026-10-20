@@ -148,21 +148,28 @@ def _flash_mla_with_kvcache_sparse(
             capturing = torch.cuda.is_current_stream_capturing()
         except Exception:
             capturing = False
-        if not capturing and (_FLASHMLA_DBG_N[0] < 60 or _FLASHMLA_DBG_N[0] % 200 == 0):
-            _FLASHMLA_DBG_N[0] += 1
-            n = _FLASHMLA_DBG_N[0]
+        _FLASHMLA_DBG_N[0] += 1
+        n = _FLASHMLA_DBG_N[0]
+        if not capturing and (n < 40 or n % 100 == 0):
             idx2 = indices.reshape(indices.shape[0], -1)
-            fp = (
-                f"{k[0, :64].to(torch.float32).sum().item():.3f}/"
-                f"{k[0, :64].to(torch.float32).abs().mean().item():.4f}"
+            P = k_cache.shape[1]
+            W = idx2.shape[1]
+            swa_k3d = (
+                k[:, : W * P].to(torch.float32).reshape(-1, W, P, k.shape[-1])
+            )  # [bs, W_pages, P, D] in selection order
+            va = k.to(torch.float32)[valid].abs().mean().item()
+            first6 = idx2[0, :6].tolist()
+            pstats = "/".join(
+                f"#{j}(pg{first6[j] if j < len(first6) else -1})"
+                f":{swa_k3d[0, j].abs().mean().item():.4f}"
+                for j in range(min(6, W))
             )
             print(
                 f"[flashmla-dbg #{n}] q={tuple(q.shape)} pool={tuple(k_cache.shape)}"
                 f" stride={k_cache.stride(0)} idx[min={idx2.min().item()}"
                 f" max={idx2.max().item()} uniq={idx2.unique().numel()}]"
                 f" topk={topk_length.reshape(-1)[:8].tolist()}"
-                f" valid={valid[0].float().mean().item():.3f}"
-                f" row64sum/absmean={fp}"
+                f" validrows_absmean={va:.4f} page_absmean[{pstats}]"
                 + (
                     f" EXTRA pool={tuple(extra_k_cache.shape)}"
                     f" topk_e={extra_topk_length.reshape(-1)[:4].tolist()}"
