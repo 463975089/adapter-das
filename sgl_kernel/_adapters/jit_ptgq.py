@@ -75,7 +75,7 @@ def install():
     import sgl_kernel._adapters.registry as _reg
 
     _reg.register(
-        "quant",
+        "per_token_quant",  # catalog op: per-token/per-group quant kernels
         "dtk-hipcc-no-all-sync",
         target="text:sglang/kernels/jit/csrc/gemm/per_token_group_quant.cuh",
         mechanism=_reg.MECH_TEXT,
