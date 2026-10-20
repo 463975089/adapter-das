@@ -213,20 +213,27 @@ def _flash_mla_with_kvcache_sparse(
     )
     lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
     if _QFP:
-        # eager per-layer q fingerprint: first vals of the first head
+        # eager per-layer q fingerprint: first vals of the first head.
+        # .tolist() syncs — never inside stream capture.
         try:
-            n = _FLASHMLA_DBG_N[0]
-            try:
-                r = torch.distributed.get_rank()
-            except Exception:
-                r = int(os.environ.get("RANK", 0))
-            print(
-                f"[qfp R{r} #{n}] q0={q.reshape(-1)[:6].tolist()}"
-                f" o0={o.reshape(-1)[:4].tolist()}",
-                flush=True,
-            )
+            capturing = torch.cuda.is_current_stream_capturing()
         except Exception:
-            pass
+            capturing = False
+        if not capturing:
+            try:
+                n = _FLASHMLA_DBG_N[0]
+                try:
+                    r = torch.distributed.get_rank()
+                except Exception:
+                    r = int(os.environ.get("RANK", 0))
+                print(
+                    f"[qfp R{r} #{n}] topk={topk_length.reshape(-1)[:2].tolist()}"
+                    f" q0={q.reshape(-1)[:6].tolist()}"
+                    f" o0={o.reshape(-1)[:4].tolist()}",
+                    flush=True,
+                )
+            except Exception:
+                pass
     if _FLASHMLA_DEBUG:
         try:
             if torch.cuda.is_current_stream_capturing() and len(_REPLAY_WATCH) < 3072:
@@ -429,4 +436,22 @@ def flash_mla_with_kvcache(
     else:
         o = o.view(bs * win, heads, head_dim_v).to(dtype)
     lse = torch.logsumexp(scores, dim=-1)  # [bs, heads, win]
+    if _QFP:
+        try:
+            capturing = torch.cuda.is_current_stream_capturing()
+        except Exception:
+            capturing = False
+        if not capturing:
+            try:
+                try:
+                    r = torch.distributed.get_rank()
+                except Exception:
+                    r = int(os.environ.get("RANK", 0))
+                print(
+                    f"[qfpd R{r}] q0={q.reshape(-1)[:6].tolist()}"
+                    f" o0={o.reshape(-1)[:4].tolist()}",
+                    flush=True,
+                )
+            except Exception:
+                pass
     return o, lse
