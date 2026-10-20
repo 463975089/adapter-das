@@ -46,6 +46,25 @@ if getattr(torch.version, "hip", None) is not None:
         _he.log_summary()
     except Exception:
         _he = None
+    # deep_gemm name availability (DSV4 family): sglang.srt.models.deepseek_v4
+    # (and _dspark) import deep_gemm at module level, and the FIRST registry
+    # scan can happen as early as the sections below importing sglang.srt.
+    # Without the alias the scanner logs "Ignore import error ... No module
+    # named 'deep_gemm'" and caches the modules missing (the registry
+    # backfill section further down heals the cache, but the ignore line
+    # stays). Alias the DTK `deepgemm` wheel into sys.modules BEFORE any
+    # sglang.srt import so the first-pass scan imports them cleanly.
+    try:
+        import deep_gemm  # noqa: F401
+    except ImportError:
+        try:
+            from sgl_kernel._adapters import deep_gemm_dtk as _dgd_early
+
+            _dgd_early.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: early deep_gemm alias not installed", exc_info=True
+            )
     # platform semantics seam (governance §0.5 is_cuda route) MUST be the
     # first sglang-touching step: common.py freezes FP8_E4M3_MAX from
     # is_hip() at import time and every module's `from ... import is_hip`
