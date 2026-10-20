@@ -65,6 +65,16 @@ def _atomic_write(p: pathlib.Path, text: str) -> None:
 
 _V1_REPL = "#include <hipcub/hipcub.hpp>  // HCU: DTK has hipCUB only (namespace cub)"
 
+# superseded REPLs rolled back to their needle form before re-applying
+_UNDO = {
+    "deepseek_v4/main_norm_rope.cuh": [
+        (
+            "  __syncwarp_full_mask();  // HCU portability shim (jit_rope precedent)",
+            "  __syncwarp();",
+        ),
+    ],
+}
+
 _PATCHES = {
     "deepseek_v4/paged_mqa_metadata.cuh": [
         (
@@ -95,7 +105,7 @@ _PATCHES = {
     "deepseek_v4/main_norm_rope.cuh": [
         (
             "  __syncwarp();",
-            "  __syncwarp_full_mask();  // HCU portability shim (jit_rope precedent)",
+            "  __syncwarp(0xffffffffu);  // HCU: DTK takes the mask arg",
         ),
         (
             "  const auto [freq_real, freq_imag] = freq;",
@@ -158,7 +168,10 @@ def install():
             continue
         text = p.read_text(encoding="utf-8")
 
-        # self-heal trees carrying the v1 single-swap patch
+        # self-heal trees carrying superseded patches
+        for old_repl, original in _UNDO.get(relpath, []):
+            if old_repl in text:
+                text = text.replace(old_repl, original)
         if relpath.endswith("paged_mqa_metadata.cuh") and _V1_REPL in text:
             text = text.replace(
                 _V1_REPL, "#include <cub/block/block_scan.cuh>"
