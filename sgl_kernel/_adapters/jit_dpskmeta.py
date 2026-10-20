@@ -72,6 +72,10 @@ _UNDO = {
             "  __syncwarp_full_mask();  // HCU portability shim (jit_rope precedent)",
             "  __syncwarp();",
         ),
+        (
+            "  __syncwarp(0xffffffffu);  // HCU: DTK takes the mask arg",
+            "  __syncwarp();",
+        ),
     ],
 }
 
@@ -105,7 +109,11 @@ _PATCHES = {
     "deepseek_v4/main_norm_rope.cuh": [
         (
             "  __syncwarp();",
-            "  __syncwarp(0xffffffffu);  // HCU: DTK takes the mask arg",
+            "#if defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)\n"
+            "  __builtin_amdgcn_wave_barrier();  // HCU: wavefront barrier, DTK has no __syncwarp\n"
+            "#else\n"
+            "  __syncwarp(0xffffffffu);\n"
+            "#endif",
         ),
         (
             "  const auto [freq_real, freq_imag] = freq;",
