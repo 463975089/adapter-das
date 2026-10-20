@@ -213,7 +213,7 @@ def _flash_mla_with_kvcache_sparse(
     lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
     if _FLASHMLA_DEBUG:
         try:
-            if torch.cuda.is_current_stream_capturing() and len(_REPLAY_WATCH) < 64:
+            if torch.cuda.is_current_stream_capturing() and len(_REPLAY_WATCH) < 3072:
                 _REPLAY_WATCH.append(
                     {
                         "idx": indices.detach(),
