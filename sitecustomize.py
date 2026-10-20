@@ -113,15 +113,27 @@ if getattr(torch.version, "hip", None) is not None:
     # DeepSeek-V4.1-Flash checkpoints carry architectures
     # ["DeepseekV41ForCausalLM"], a name no sglang tree registers (checked
     # v0.5.22 and upstream main); the V4 class serves V41 configs via its
-    # model_type == "deepseek_v41" gates. Register the alias so the
-    # checkpoint loads without --json-model-override-args rewrites.
+    # model_type == "deepseek_v41" gates. Insert the alias directly into
+    # ModelRegistry.models -- deliberately NOT via get_supported_archs(),
+    # which would populate the registry cache before the DeepGEMM DTK
+    # bridge (section 9) makes `deep_gemm` importable; deepseek_v4 would
+    # then be cached-missing and even the V4 arch itself stops resolving.
+    # A dict insert survives the later `import_model_classes(...) | self.models`.
     try:
-        from sglang.srt.models.registry import ModelRegistry
+        import sglang.srt.models.registry as _dreg
 
-        if "DeepseekV41ForCausalLM" not in ModelRegistry.get_supported_archs():
+        if "DeepseekV41ForCausalLM" not in _dreg.ModelRegistry.models:
+            try:
+                import deep_gemm  # noqa: F401
+            except ImportError:
+                # deepseek_v4 imports deep_gemm at module level; the DTK
+                # bridge (section 9) has not run yet at this point.
+                from sgl_kernel._adapters import deep_gemm_dtk as _dgdb
+
+                _dgdb.install()
             import sglang.srt.models.deepseek_v4 as _dsv4
 
-            ModelRegistry.models["DeepseekV41ForCausalLM"] = (
+            _dreg.ModelRegistry.models["DeepseekV41ForCausalLM"] = (
                 _dsv4.DeepseekV4ForCausalLM
             )
             logging.getLogger("hcu.adapter").warning(
