@@ -99,6 +99,17 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: jit dsa store-cache portability patch not installed",
             exc_info=True,
         )
+    # JIT per-token-group quant (v0.5.22 family): DTK hipcc has no mask-form
+    # __all_sync -- glm53f decode graph capture dies on name lookup.
+    try:
+        from sgl_kernel._adapters import jit_ptgq
+
+        jit_ptgq.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit per-token-group-quant patch not installed",
+            exc_info=True,
+        )
     # JIT warp reduce: HIP arm hardcodes a __hip_bfloat162 shuffle receiver,
     # making reduce<T> un-compilable for every non-bf16 T (fp32 warp max in
     # the DSA k-cache store, integer/float reduces elsewhere).
