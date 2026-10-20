@@ -141,6 +141,20 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: jit paged_mqa_metadata cub->hipcub patch not installed",
             exc_info=True,
         )
+    # JIT build progress reporter: one stderr/journal line per real ninja
+    # compile (compiling/built/FAILED) so a cold 35-module JIT storm is
+    # tellable from a wedge in gate logs; the gate heartbeat tails the
+    # journal (ci/l1_gpu_gate.sh run_seg). Observability only -- a missed
+    # install costs a log line, never numerics.
+    try:
+        from sgl_kernel._adapters import jit_build_log
+
+        jit_build_log.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit build progress reporter not installed",
+            exc_info=True,
+        )
     # DeepSeek-V4.1-Flash checkpoints carry architectures
     # ["DeepseekV41ForCausalLM"], a name no sglang tree registers (checked
     # v0.5.22 and upstream main); the V4 class serves V41 configs via its

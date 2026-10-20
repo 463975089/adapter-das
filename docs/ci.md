@@ -326,6 +326,28 @@ gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非
    （零编译 import 秒级），到位后 CI 不再承担任何预编译时间，
    known-fail 预算线 JIT 族归零重锚。
 
+### 慢段可观测性：JIT 逐颗进度行 + gate 段心跳（2026-10-20）
+
+冷跑的"一小时静止"从日志可辨（用户报告：编译感觉像卡死/死循环，报错
+也不及时可见）。三层，全部行缓冲实时落盘：
+
+1. **JIT 逐颗进度行**：`sgl_kernel/_adapters/jit_build_log.py` 包上游
+   `ninja.build`（.21/.22 两树同位），每颗**真实**编译（缓存命中不进）
+   向 stderr+journal 各出一行：`HCU JIT: compiling|built|FAILED <模块>
+   ...`——FAILED 后调用侧 retry 会再记一对，retry 旋死 >2 对/模块即
+   可数；`HCU_JIT_PROGRESS_LOG` 期刊默认 `/tmp/hcu_jit_progress.log`，
+   O_APPEND 直写免疫 pytest fd-capture 与块缓冲（env-vars.md 登记）。
+2. **gate 段心跳**：`run_seg`/l15_mech 每段挂后台心跳，60s 一行
+   `L1 heartbeat [<段>]: elapsed=<n>s last=<journal 末行>`——journal
+   持续推进=在编译，冻结而 elapsed 增长=楔死（bw47 指纹形态），不必
+   等段超时才知死活；段 FAIL 时附 journal 尾 3 行。
+3. **pytest 行缓冲**：gate 全程 `PYTHONUNBUFFERED=1`，`tail -f
+   /tmp/l1_<段>.log` 可见逐测进度点（原块缓冲=整段黑箱的另一根）。
+
+哨兵 `tests/adapter/test_jit_build_log.py`（纯 python，无 GPU/无 sglang：
+成功/失败/幂等/期刊开关四钉）；sitecustomize 装配位在 jit 家族
+区块尾（序列测试契约：platform_seam 后、每桥 try 包裹）。
+
 ## MR 流（怎么"快速自动测试"）
 
 ```

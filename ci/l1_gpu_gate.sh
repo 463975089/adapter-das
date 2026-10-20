@@ -77,6 +77,16 @@ pick_gpu() {
 
 GPU="$(pick_gpu "${GPU_ARG:-}")" || { echo "L1: no free GPU (all >=5% VRAM) -- SKIP/QUEUE"; exit 2; }
 export HIP_VISIBLE_DEVICES="$GPU" CUDA_VISIBLE_DEVICES="$GPU"
+# Live observability for long segments (2026-10-20): (a) unbuffered pytest
+# output so `tail -f /tmp/l1_<seg>.log` streams per-test dots instead of a
+# block-buffered void; (b) a per-run JIT progress journal written by the
+# adapter's build reporter (sgl_kernel/_adapters/jit_build_log.py, one line
+# per real ninja compile) that run_seg's heartbeat tails. Unique per gate
+# run ($$) so a manual gate and an mr_watcher gate on the same container
+# never cross-read each other's compiles.
+export PYTHONUNBUFFERED=1
+JPROG="/tmp/hcu_jit_progress.$$.log"; export HCU_JIT_PROGRESS_LOG="$JPROG"
+: > "$JPROG"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 # some gates exercise upstream classes (rotary etc.) -- mount the sglang
 # source the container actually serves from, when present. Both known
@@ -102,14 +112,25 @@ case "$TSCALE" in ''|*[!0-9]*) TSCALE=1;; esac
 run_seg() {  # name timeout_base cmd...
     local name="$1"; local tmo=$(( $2 * TSCALE )); shift 2
     echo "L1: === $name (timeout ${tmo}s) ==="
+    # heartbeat: one line/60s = elapsed + last JIT journal entry, so a long
+    # compile storm (journal keeps advancing) is tellable from a wedge
+    # (frozen last line) without waiting for the timeout. Cancelled after
+    # the segment, so short segments just never print one.
+    ( t0=$(date +%s)
+      while sleep 60; do
+          last="$(tail -n 1 "$JPROG" 2>/dev/null)"
+          echo "L1 heartbeat [$name]: elapsed=$(( $(date +%s) - t0 ))s last=${last:-none}"
+      done ) & hbpid=$!
     if timeout "$tmo" "$@" > "/tmp/l1_${name}.log" 2>&1; then
         echo "L1: $name PASS"
     else
         local rc=$?
         echo "L1: $name FAIL (rc=$rc) -- tail:"
         tail -n 15 "/tmp/l1_${name}.log" | sed 's/^/    /'
+        [ -s "$JPROG" ] && { echo "    jit journal tail:"; tail -n 3 "$JPROG" | sed 's/^/      /'; }
         FAILS+=("$name")
     fi
+    kill "$hbpid" 2>/dev/null; wait "$hbpid" 2>/dev/null
 }
 
 # ---------------------------------------------------------------- segments
@@ -153,12 +174,18 @@ if [ -n "$UP_TREE" ]; then
         # pytest rc: ledgered failures are tolerated, a regression
         # (passed below floor / failed above ceiling) is not.
         echo "L1: === l15_mech (timeout $(( 1200 * TSCALE ))s, known-fail budget) ==="
+        ( t0=$(date +%s)
+          while sleep 60; do
+              last="$(tail -n 1 "$JPROG" 2>/dev/null)"
+              echo "L1 heartbeat [l15_mech]: elapsed=$(( $(date +%s) - t0 ))s last=${last:-none}"
+          done ) & hbpid=$!
         rc=0
         timeout $(( 1200 * TSCALE )) env HCU_DEEPGEMM_BRIDGE=1 \
             PYTHONPATH="$UP_TREE/python:$ROOT" \
             python3 -m pytest $MECH -q --no-header \
             -k "not tilelang" -rs -o faulthandler_timeout=580 --tb=line \
             > /tmp/l1_l15_mech.log 2>&1 || rc=$?
+        kill "$hbpid" 2>/dev/null; wait "$hbpid" 2>/dev/null
         line="$(grep -E '[0-9]+ failed' /tmp/l1_l15_mech.log | tail -1)"
         nfail="$(sed -n 's/^[^0-9]*\([0-9][0-9]*\) failed.*/\1/p' <<<"$line")"
         npass="$(sed -n 's/^[^0-9]*[0-9][0-9]* failed, \([0-9][0-9]*\) passed.*/\1/p' <<<"$line")"
@@ -171,6 +198,7 @@ if [ -n "$UP_TREE" ]; then
         else
             echo "L1: l15_mech FAIL (outside known-fail budget: $nfail failed / $npass passed vs baseline 38/99) -- tail:"
             tail -n 15 /tmp/l1_l15_mech.log | sed 's/^/    /'
+            [ -s "$JPROG" ] && { echo "    jit journal tail:"; tail -n 3 "$JPROG" | sed 's/^/      /'; }
             FAILS+=(l15_mech)
         fi
     else
