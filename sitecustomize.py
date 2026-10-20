@@ -1411,13 +1411,11 @@ if getattr(torch.version, "hip", None) is not None:
         def _hcu_dsa_constraint_hook(module):
             _orig = module._check_dsa_backend_constraints
 
-            def _hcu_check(kv_cache_dtype, prefill_backend, decode_backend, *, hip):
-                return _orig(
-                    kv_cache_dtype,
-                    prefill_backend,
-                    decode_backend,
-                    hip=True,
-                )
+            def _hcu_check(*args, **kwargs):
+                # v0.5.22 grew dcp_size (kwarg); stay pass-through so later
+                # upstream signature drift cannot break the seam again.
+                kwargs["hip"] = True
+                return _orig(*args, **kwargs)
 
             _hreg.register(
                 "platform_detect",
