@@ -119,10 +119,10 @@ if getattr(torch.version, "hip", None) is not None:
         from sglang.srt.models.registry import ModelRegistry
 
         if "DeepseekV41ForCausalLM" not in ModelRegistry.get_supported_archs():
-            import sglang.srt.models.deepseek_v4_mhc as _dsv4m
+            import sglang.srt.models.deepseek_v4 as _dsv4
 
             ModelRegistry.models["DeepseekV41ForCausalLM"] = (
-                _dsv4m.DeepseekV4ForCausalLM
+                _dsv4.DeepseekV4ForCausalLM
             )
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: DeepseekV41ForCausalLM -> DeepseekV4ForCausalLM "
