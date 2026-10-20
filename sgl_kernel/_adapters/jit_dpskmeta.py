@@ -153,8 +153,17 @@ _PATCHES = {
             "    partial += __shfl_xor(partial, offset);  // HCU: no mask-form shuffle",
         ),
     ],
-    # prefill norm+rope variant: same float2 freq bind as main_norm_rope.
+    # prefill norm+rope variant: same float2 freq bind as main_norm_rope,
+    # plus its own bare __syncwarp (4-space indent, distinct needle).
     "deepseek_v4/fused_norm_rope.cuh": [
+        (
+            "    __syncwarp();",
+            "#if defined(__HIP_DEVICE_COMPILE__) || defined(__HIP_PLATFORM_AMD__)\n"
+            "    __builtin_amdgcn_wave_barrier();  // HCU: DTK has no __syncwarp\n"
+            "#else\n"
+            "    __syncwarp(0xffffffffu);\n"
+            "#endif",
+        ),
         (
             "    const auto [freq_real, freq_imag] = freq;",
             "    const float freq_real = freq.x;  // HCU: float2 not decomposable\n"

@@ -213,6 +213,7 @@ TEXT_PATCH_ALLOWLIST = {
         "platform_detect",
         "    const auto [freq_real, freq_imag] = freq;",
     ),
+    ("platform_detect", "    __syncwarp();"),
     # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
     # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
     # indirection in utils.cuh exists for this reason). Six identical sites.
