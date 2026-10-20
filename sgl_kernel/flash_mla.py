@@ -164,12 +164,26 @@ def _flash_mla_with_kvcache_sparse(
                 f":{swa_k3d[0, j].abs().mean().item():.4f}"
                 for j in range(min(6, W))
             )
+            # raw-byte nonzero-ness of suspect pages: 0 (never written?) and
+            # the newest selected page — distinguishes "write landed at a
+            # wrong page" (pg0 hot, selected cold) from "store never ran"
+            rs = k_cache.stride(0)
+            raw = torch.as_strided(
+                k_cache, (k_cache.shape[0], rs), (rs, 1)
+            ).view(torch.int16)
+            sel_last = int(idx2[0].max().item())
+            rawstat = (
+                f"raw pg0={raw[0].abs().float().mean().item():.2f}"
+                f" pg1={raw[1].abs().float().mean().item():.2f}"
+                f" pg_sel_last={raw[sel_last].abs().float().mean().item():.2f}"
+                f" pg4k={raw[4000].abs().float().mean().item():.2f}"
+            )
             print(
                 f"[flashmla-dbg #{n}] q={tuple(q.shape)} pool={tuple(k_cache.shape)}"
                 f" stride={k_cache.stride(0)} idx[min={idx2.min().item()}"
                 f" max={idx2.max().item()} uniq={idx2.unique().numel()}]"
                 f" topk={topk_length.reshape(-1)[:8].tolist()}"
-                f" validrows_absmean={va:.4f} page_absmean[{pstats}]"
+                f" validrows_absmean={va:.4f} page_absmean[{pstats}] {rawstat}"
                 + (
                     f" EXTRA pool={tuple(extra_k_cache.shape)}"
                     f" topk_e={extra_topk_length.reshape(-1)[:4].tolist()}"
