@@ -92,7 +92,7 @@ def _dsv4_gather_pages(pool_view, page_ids, lengths):
     )
     tok = page_ids.to(torch.int64)  # [bs, W] token locs, -1 tail
     k = dequantize_k_cache_paged(
-        pool2d, tok.reshape(-1).to(torch.int32), page_size
+        pool2d, tok.clamp_min(0).reshape(-1).to(torch.int32), page_size
     ).reshape(bs, width, -1)  # [bs, W, 512] bf16
     valid = (
         (tok >= 0)
