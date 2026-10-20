@@ -146,6 +146,14 @@ _PATCHES = {
             "  const float freq_real = freq.x;  // HCU: float2 not decomposable\n"
             "  const float freq_imag = freq.y;",
         ),
+        # template-body float2 binds (syntax preflight cannot see these;
+        # they detonate at kernel instantiation — main_q_norm_rope module,
+        # nmz16 2026-10-20)
+        (
+            "  const auto [x_real, x_imag] = cast<fp32x2_t>(elem);",
+            "  const fp32x2_t _re = cast<fp32x2_t>(elem);  // HCU: float2 bind\n"
+            "  const auto x_real = _re.x, x_imag = _re.y;",
+        ),
         (
             "        const float other = __shfl_xor_sync(0xFFFFFFFFu, data[i], mask, kWarpThreads);",
             "        const float other = __shfl_xor(data[i], mask, kWarpThreads);"
@@ -206,6 +214,50 @@ _PATCHES = {
             "    const auto [freq_real, freq_imag] = freq;",
             "    const float freq_real = freq.x;  // HCU: float2 not decomposable\n"
             "    const float freq_imag = freq.y;",
+        ),
+        (
+            "    const auto [x_real, x_imag] = cast<fp32x2_t>(elem);",
+            "    const fp32x2_t _re = cast<fp32x2_t>(elem);  // HCU: float2 bind\n"
+            "    const auto x_real = _re.x, x_imag = _re.y;",
+        ),
+    ],
+    "deepseek_v4/store.cuh": [
+        (
+            "    const auto [x, y] = cast<fp32x2_t>(elems);",
+            "    const fp32x2_t _se = cast<fp32x2_t>(elems);  // HCU\n"
+            "    const auto x = _se.x, y = _se.y;",
+        ),
+        (
+            "    const auto [x, y] = cast<fp32x2_t>(elems[i]);",
+            "    const fp32x2_t _si = cast<fp32x2_t>(elems[i]);  // HCU\n"
+            "    const auto x = _si.x, y = _si.y;",
+        ),
+        (
+            "  const auto [x0, x1] = cast<fp32x2_t>(elems[0]);",
+            "  const fp32x2_t _s0 = cast<fp32x2_t>(elems[0]);  // HCU\n"
+            "  const auto x0 = _s0.x, x1 = _s0.y;",
+        ),
+        (
+            "  const auto [y0, y1] = cast<fp32x2_t>(elems[1]);",
+            "  const fp32x2_t _s1 = cast<fp32x2_t>(elems[1]);  // HCU\n"
+            "  const auto y0 = _s1.x, y1 = _s1.y;",
+        ),
+    ],
+    "deepseek_v4/silu_and_mul_masked_post_quant.cuh": [
+        (
+            "  const auto [g0, g1] = cast<fp32x2_t>(gate);",
+            "  const fp32x2_t _sg = cast<fp32x2_t>(gate);  // HCU\n"
+            "  const auto g0 = _sg.x, g1 = _sg.y;",
+        ),
+        (
+            "  const auto [u0, u1] = cast<fp32x2_t>(up);",
+            "  const fp32x2_t _su = cast<fp32x2_t>(up);  // HCU\n"
+            "  const auto u0 = _su.x, u1 = _su.y;",
+        ),
+        (
+            "    const auto [x, y] = silu_and_mul<kApplySwigluLimit>(gate_vec[i], up_vec[i], params.swiglu_limit);",
+            "    const fp32x2_t _sm = silu_and_mul<kApplySwigluLimit>(gate_vec[i], up_vec[i], params.swiglu_limit);  // HCU\n"
+            "    const auto x = _sm.x, y = _sm.y;",
         ),
     ],
     "deepseek_v4/rope.cuh": [

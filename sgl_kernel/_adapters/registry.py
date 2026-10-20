@@ -287,6 +287,20 @@ TEXT_PATCH_ALLOWLIST = {
     ),
     ("platform_detect", "      gt[j] = __hgt2_mask(vecs[i][j], pivot_x2);"),
     ("platform_detect", "      eq[j] = __heq2_mask(vecs[i][j], pivot_x2);"),
+    # --- DSV4 batch #4: template-body float2 binds (invisible to the
+    # --- syntax preflight; detonate at instantiation). Same ABI class.
+    ("platform_detect", "  const auto [x_real, x_imag] = cast<fp32x2_t>(elem);"),
+    ("platform_detect", "    const auto [x_real, x_imag] = cast<fp32x2_t>(elem);"),
+    ("platform_detect", "    const auto [x, y] = cast<fp32x2_t>(elems);"),
+    ("platform_detect", "    const auto [x, y] = cast<fp32x2_t>(elems[i]);"),
+    ("platform_detect", "  const auto [x0, x1] = cast<fp32x2_t>(elems[0]);"),
+    ("platform_detect", "  const auto [y0, y1] = cast<fp32x2_t>(elems[1]);"),
+    ("platform_detect", "  const auto [g0, g1] = cast<fp32x2_t>(gate);"),
+    ("platform_detect", "  const auto [u0, u1] = cast<fp32x2_t>(up);"),
+    (
+        "platform_detect",
+        "    const auto [x, y] = silu_and_mul<kApplySwigluLimit>(gate_vec[i], up_vec[i], params.swiglu_limit);",
+    ),
     # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
     # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
     # indirection in utils.cuh exists for this reason). Six identical sites.
