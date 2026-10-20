@@ -172,6 +172,10 @@ TEXT_PATCH_ALLOWLIST = {
     # per the tree's own lora JIT convention) — DSV4-Flash decode graph
     # capture, nmz16 gfx938 2026-10-20. See sgl_kernel/_adapters/jit_dpskmeta.py.
     ("platform_detect", "#include <cub/block/block_scan.cuh>"),
+    # same file, Phase-1/2 hand scans: mask-form shuffles undeclared on DTK;
+    # width=32 HIP forms keep the exact CUDA 32-lane warp segmentation.
+    ("platform_detect", "uint32_t y = __shfl_up_sync(0xffffffff, v, o);"),
+    ("platform_detect", "running = __shfl_sync(0xffffffff, v, 31);"),
     # concat_mla.cuh host side: TensorMatcher pins the dldevice enum to
     # kDLCUDA; ROCm tensors arrive as kDLROCM (upstream's own kDLGPU
     # indirection in utils.cuh exists for this reason). Six identical sites.
