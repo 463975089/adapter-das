@@ -65,6 +65,11 @@ TEXT_PATCH_ALLOWLIST = {
     # 448.0f and the packed convert at the DTK __hip_cvt family (OCP e4m3
     # == CUDA e4m3_fn; deep_gemm EP runner needs this JIT kernel).
     ("per_token_quant", "static constexpr float kMaxValue = DTypeTrait<fp8_e4m3_t>::kFloatMax;"),
+    # v0.5.22 per-token-group quant JIT: DTK hipcc declares plain __all but
+    # not the mask-form __all_sync, killing the whole module family at name
+    # lookup (glm53f decode graph capture, 2026-10-20). Full-mask vote from
+    # kernel entry == __all(pred); see sgl_kernel/_adapters/jit_ptgq.py.
+    ("per_token_quant", "if (__all_sync(warp::kFullMask, skip)) return;"),
     (
         "per_token_quant",
         "  SGL_DEVICE static packed2_t quant(const float2 v) {\n"
