@@ -110,6 +110,29 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: jit per-token-group-quant patch not installed",
             exc_info=True,
         )
+    # DeepSeek-V4.1-Flash checkpoints carry architectures
+    # ["DeepseekV41ForCausalLM"], a name no sglang tree registers (checked
+    # v0.5.22 and upstream main); the V4 class serves V41 configs via its
+    # model_type == "deepseek_v41" gates. Register the alias so the
+    # checkpoint loads without --json-model-override-args rewrites.
+    try:
+        from sglang.srt.models.registry import ModelRegistry
+
+        if "DeepseekV41ForCausalLM" not in ModelRegistry.get_supported_archs():
+            import sglang.srt.models.deepseek_v4_mhc as _dsv4m
+
+            ModelRegistry.models["DeepseekV41ForCausalLM"] = (
+                _dsv4m.DeepseekV4ForCausalLM
+            )
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: DeepseekV41ForCausalLM -> DeepseekV4ForCausalLM "
+                "registry alias installed (checkpoint arch ahead of upstream)"
+            )
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: deepseek_v41 registry alias not installed",
+            exc_info=True,
+        )
     # JIT warp reduce: HIP arm hardcodes a __hip_bfloat162 shuffle receiver,
     # making reduce<T> un-compilable for every non-bf16 T (fp32 warp max in
     # the DSA k-cache store, integer/float reduces elsewhere).
