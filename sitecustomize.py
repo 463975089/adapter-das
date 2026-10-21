@@ -372,6 +372,18 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: jit fp8-quant patch not installed", exc_info=True
         )
+    # DSV4 fp4->fp8 expert dequant: cast_e2m1fn_to_e4m3fn keeps the (1,32)
+    # scale grid while weight_block_size stays [32,32] -- align the MoE's
+    # advertised block shape so the W8A8 block path doesn't assert.
+    try:
+        from sgl_kernel._adapters import dsv4_fp4_dequant_blockshape
+
+        dsv4_fp4_dequant_blockshape.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: fp4-dequant block-shape patch not installed",
+            exc_info=True,
+        )
     # R-09(2/3): aiter per-token fp8 quant vendor tier -- rowwise wrapper
     # NameError fix (HIP has no sgl_per_token_quant_fp8), group plain arm
     # 15.1x, scaled_fp8_quant natives via upstream's own aiter calls, and
