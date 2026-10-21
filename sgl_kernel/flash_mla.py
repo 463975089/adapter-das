@@ -38,15 +38,7 @@ import torch
 # content drift across decode steps is visible (syncs — eager only; skipped
 # under stream capture).
 _FLASHMLA_DEBUG = bool(int(os.environ.get("SGLANG_HCU_FLASHMLA_DEBUG", "0")))
-_QFP = bool(int(os.environ.get("SGLANG_HCU_QFP", "0")))
 _FLASHMLA_DBG_N = [0]
-
-# Graph-replay diagnosis: during capture the sparse emu stashes its captured
-# input/output tensors here (indices/topk/q/o). At replay the recorded
-# kernels rewrite these buffers in place; an outside-the-graph reader can
-# then see exactly what the replayed kernels consumed last step. Refreshed
-# by SGLANG_HCU_REPLAY_DEBUG dumps in the backend.
-_REPLAY_WATCH = []
 
 # DSA sparse attention emu lives in its own module (imported as
 # `sgl_kernel.flash_mla_sparse`); re-export here so the historical import
@@ -212,71 +204,6 @@ def _flash_mla_with_kvcache_sparse(
         bs, win, heads, head_dim_v
     )
     lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
-    if _QFP:
-        # eager per-layer q fingerprint: first vals of the first head.
-        # .tolist() syncs — never inside stream capture.
-        try:
-            capturing = torch.cuda.is_current_stream_capturing()
-        except Exception:
-            capturing = False
-        if not capturing:
-            try:
-                n = _FLASHMLA_DBG_N[0]
-                try:
-                    r = torch.distributed.get_rank()
-                except Exception:
-                    r = int(os.environ.get("RANK", 0))
-                kx = ""
-                if extra_k_cache is not None and extra_indices_in_kvcache is not None:
-                    ke, _ = _dsv4_gather_pages(
-                        extra_k_cache,
-                        extra_indices_in_kvcache.reshape(
-                            extra_indices_in_kvcache.shape[0], -1
-                        ),
-                        extra_topk_length,
-                    )
-                    kx = f" kx0={ke.float().reshape(-1)[:6].tolist()}"
-                print(
-                    f"[qfp R{r} #{n}] topk={topk_length.reshape(-1)[:2].tolist()}"
-                    f" q0={q.reshape(-1)[:6].tolist()}"
-                    f" o0={o.reshape(-1)[:4].tolist()}{kx}",
-                    flush=True,
-                )
-            except Exception:
-                pass
-    if _FLASHMLA_DEBUG:
-        try:
-            if torch.cuda.is_current_stream_capturing() and len(_REPLAY_WATCH) < 3072:
-                _REPLAY_WATCH.append(
-                    {
-                        "idx": indices.detach(),
-                        "topk": topk_length.reshape(-1).detach(),
-                        "q": q.detach(),
-                        "o": o.detach(),
-                        "k_head": k[0, 0, :8].detach(),
-                        "pool": k_cache,
-                        "extra_topk": (
-                            extra_topk_length.reshape(-1).detach()
-                            if extra_topk_length is not None
-                            else None
-                        ),
-                        "extra_idx": (
-                            extra_indices_in_kvcache.detach()
-                            if extra_indices_in_kvcache is not None
-                            else None
-                        ),
-                        "extra_pool": extra_k_cache,
-                        "kx_head": (
-                            k[0, indices.shape[1], :8].detach()
-                            if extra_k_cache is not None
-                            and extra_indices_in_kvcache is not None
-                            and k.shape[1] > indices.shape[1]
-                            else None
-                        ),
-                    }
-                )
-        except Exception:
-            pass
     return o.to(q.dtype), lse
 
 
@@ -459,22 +386,4 @@ def flash_mla_with_kvcache(
     else:
         o = o.view(bs * win, heads, head_dim_v).to(dtype)
     lse = torch.logsumexp(scores, dim=-1)  # [bs, heads, win]
-    if _QFP:
-        try:
-            capturing = torch.cuda.is_current_stream_capturing()
-        except Exception:
-            capturing = False
-        if not capturing:
-            try:
-                try:
-                    r = torch.distributed.get_rank()
-                except Exception:
-                    r = int(os.environ.get("RANK", 0))
-                print(
-                    f"[qfpd R{r}] q0={q.reshape(-1)[:6].tolist()}"
-                    f" o0={o.reshape(-1)[:4].tolist()}",
-                    flush=True,
-                )
-            except Exception:
-                pass
     return o, lse
