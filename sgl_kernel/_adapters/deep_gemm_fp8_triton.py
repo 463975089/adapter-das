@@ -70,7 +70,8 @@ def _fp8_masked_kernel(
         # b[e] is [N, K]; load the tile transposed to [BLOCK_K, BLOCK_N]
         b8 = tl.load(b_rows + kk[:, None]).to(tl.bfloat16)
         p = tl.dot(a8, b8)
-        kb = k0 // BLOCK_K
+        # scale block is 128 regardless of BLOCK_K (BK=64 covers half a block)
+        kb = k0 // 128
         a_s = tl.load(as_rows + kb * stride_ask)
         b_s = tl.load(
             bs_ptr
@@ -153,8 +154,11 @@ def fp8_m_grouped_gemm_nt_masked(
         b.stride(0), b.stride(1),
         b_s.stride(0), b_s.stride(1), b_s.stride(2),
         out.stride(0), out.stride(1),
-        BLOCK_M=block_m, BLOCK_N=128, BLOCK_K=128,
-        num_warps=8, num_stages=3,
+        BLOCK_M=block_m, BLOCK_N=128, BLOCK_K=64,
+        # w4/s3 is the sweep winner on gfx938 (nmz16 2026-10-21): the fp8
+        # tile + convert working set at num_warps=8 serializes (11.9ms ->
+        # 2.15ms on the E32 m16 K4096 N4096 bench); bf16 masked uses w8.
+        num_warps=4, num_stages=3,
     )
     return out
 
@@ -193,7 +197,7 @@ def _fp8_contig_kernel(
         x8 = tl.load(x_rows + kk[None, :], mask=m_mask[:, None], other=0.0).to(tl.bfloat16)
         w8 = tl.load(w_rows + kk[:, None]).to(tl.bfloat16)
         p = tl.dot(x8, w8)
-        kb = k0 // BLOCK_K
+        kb = k0 // 128
         x_s = tl.load(xs_ptr + offs_m.to(tl.int64) * stride_xs_m + kb * stride_xs_k,
                       mask=m_mask, other=0.0)
         w_s = tl.load(
@@ -244,7 +248,7 @@ def m_grouped_fp8_gemm_nt_contiguous(lhs, rhs, out, m_indices, **unknown):
         b.stride(0), b.stride(1),
         b_s.stride(0), b_s.stride(1), b_s.stride(2),
         out.stride(0),
-        BLOCK_M=64, BLOCK_N=128, BLOCK_K=128,
-        num_warps=8, num_stages=3,
+        BLOCK_M=64, BLOCK_N=128, BLOCK_K=64,
+        num_warps=4, num_stages=3,
     )
     return out
