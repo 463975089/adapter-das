@@ -39,6 +39,22 @@ _PATCHES = (
     ("gemm/per_token_group_quant.cuh", _NEEDLE_QUANT, _REPL_QUANT),
 )
 
+# v0.5.22 added a second-generation kernel file whose fp8 store path calls
+# the CUDA conversion family by its __nv spelling (per_token_group_quant_
+# 8bit_v2.cuh:325/332 — gfx938 hipcc: unknown type name
+# '__nv_fp8x2_storage_t'; undeclared __NV_SATFINITE/__NV_E4M3). DTK's
+# amd_hip_fp8.h carries the identical-shape __hip family; the mapping is
+# purely nominal (both SATFINITE + OCP e4m3).
+_NEEDLE_V2_PACKED = "reinterpret_cast<__nv_fp8x2_storage_t*>(&output_buf)"
+_REPL_V2_PACKED = "reinterpret_cast<__hip_fp8x2_storage_t*>(&output_buf)"
+_NEEDLE_V2_CVT = "__nv_cvt_float2_to_fp8x2(outputx2, __NV_SATFINITE, __NV_E4M3)"
+_REPL_V2_CVT = "__hip_cvt_float2_to_fp8x2(outputx2, __HIP_SATFINITE, __HIP_E4M3)"
+
+_PATCHES_V2 = (
+    ("gemm/per_token_group_quant_8bit_v2.cuh", _NEEDLE_V2_PACKED, _REPL_V2_PACKED),
+    ("gemm/per_token_group_quant_8bit_v2.cuh", _NEEDLE_V2_CVT, _REPL_V2_CVT),
+)
+
 # HIP: __hip_bfloat162 has no __shfl_xor overload (reduce<double/bf162> in
 # the quant kernel goes through warp.cuh) — route it through the uint16
 # bit pattern and shuffle that.
@@ -83,7 +99,7 @@ def install():
     applied = 0
     missing = []
     for base, rel, needle, repl in (
-        [(csrc, r, n, rp) for (r, n, rp) in _PATCHES]
+        [(csrc, r, n, rp) for (r, n, rp) in _PATCHES + _PATCHES_V2]
         + [(inc, r, n, rp) for (r, n, rp) in _PATCHES_WARP]
     ):
         # _PATCHES_WARP rel paths are already relative to inc
@@ -113,7 +129,7 @@ def install():
     # TEXT_PATCH_ALLOWLIST keys are (op, exact needle); the registry gate
     # fingerprints a text patch by its detail, so each needle registers as
     # its own record (same op on the same file target is not a conflict).
-    for r, n, _rp in _PATCHES + _PATCHES_WARP:
+    for r, n, _rp in _PATCHES + _PATCHES_V2 + _PATCHES_WARP:
         _reg.register(
             "per_token_quant",
             "gfx936-hipcc-fp8-cvt",
