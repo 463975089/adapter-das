@@ -133,3 +133,102 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
   静默拆解），vendor 融合升档必须带门禁测试。
 - 与 BACKEND_CATALOG 对账结论（2026-10-18）：全部"已拆解"项均可在
   catalog/env-vars.md 找到对应 op 或 env 条目，无未登记拆解。
+
+## 五、v0.5.22 对齐复核（2026-10-22，性能分支对齐役）
+
+方法：/sglang-v0522 树 flashinfer.*/sgl_kernel.* 调用点重聚类（对照 §一/§二
+的 0.5.21 基线）+ V4.1-Flash dp8ep8+dspark bs16 带栈 20 步 trace 的
+torch-native 热核归因（`prof_dsv41f_dec20/1792592316*.trace.json.gz`，图内
+核无运行时关联，按"次数/步 ÷ 61 层"指纹 + 模型源码逐行对位）。热点总账见
+docs/vendor-kernels.md §8。
+
+### 5.1 MHC（超连接）pre 边界 = 最大 torch-native 面，实锤定罪
+
+**trace 指纹**（20 步 TP-0）：`bfloat16_to_float_copy` 1935ms/3720 次
+（186/步 ≈ 3×61 层）、`at::native::reduce_kernel` 1725ms/4920 次
+（246/步 ≈ 4×61 层）、`CUDAFunctorOnSelf_add` 174ms/1880 次、`FillFunctor`
+92ms、`direct_copy` 族 1716ms——四族合计 ~3.8s/20 步 ≈ ~190ms/步，全为
+逐层整数倍节律 = 每层模型代码里的 torch 链。
+
+**源码对位**（`srt/models/deepseek_v4_mhc.py::_mix_stats_impl`，两个子层
+×61 层）：
+
+```
+use_fused_stats = _is_gfx95_supported or (torch.version.cuda is not None
+                  and (is_blackwell or hopper_fused_stats))     # gfx938 全落空
+if use_fused_stats:  hc_mix_stats_sinkhorn(...)                  # 融合核
+elif torch.version.cuda is not None:  hc_mix_stats(...)          # triton 保底
+else:  x_flat.float(); rsqrt(square().mean(-1)); F.linear(...)   # ← 我们在这
+       + hc_split_sinkhorn(...)                                   # triton（健康）
+```
+
+HIP 上 `torch.version.cuda is None` 恒成立 → 我们每层走 `.float()`（fp32 全
+宽拷贝=bf16→f32 族）+ `square().mean`（reduce 族）+ fp32 skinny linear +
+rsqrt/mul（self_add/Fill 族）。post 侧已走 tilelang `mhc_post_split_h`
+（trace 860 次 29.5ms，健康）——**烧钱的只是 pre 边界**。
+
+**关键发现：上游自备 HIP 融合核，只被门拦住**。
+`kernels/ops/layernorm/mhc.py` L2513 `if _is_hip: hc_mix_reduce_sinkhorn_vec(...)`
+（`mhc_boundary_hip.py`：CDNA 无 tf32 → ieee fp32 mix-dot、块尺寸/滑窗常量
+显式调优、批不变树序设计——就是给 HIP 写的，MI350 gfx95 同款路径）。我们
+到不了它 purely 因为 `use_fused_stats` 的平台门。
+
+**对齐行动（按优先级）**：
+- **A1（首选，改一行门）**：needle/semantic 把 `use_fused_stats` 对 gfx938
+  放行（保持 batch-invariant 模式排除与 bf16 前提）→ 自动进
+  `hc_mix_stats_sinkhorn` 的 HIP 分支。验收：hc_split_sinkhorn 数值对拍
+  （pre/post/comb 三元组逐位或 fp32 容差）+ 四门 + 图捕获重放。收益上界
+  ~190ms/步（拍外真算部分），另每层 ~10 核 → 2-3 核。
+- A2（备选）：boltops.mhc `mhc_pre_big_fuse`/`hc_split_sinkhorn`（vendor，
+  见 vendor-kernels.md §3）；我方自研 tilelang mhc_pre 的 XID:81 页故障史
+  （SGLANG_OPT_USE_TILELANG_MHC_PRE=false）不构成对上游 HIP 分支的否证
+  ——不同实现。
+- A3（远期）：`SGLANG_OPT_DEEPGEMM_HC_PRENORM`（上游默认 True）被
+  sm90/sm100 门拦；DTK deepgemm `tf32_hc_pernorm_gemm` 在库，A1 之后评估。
+- 边界融合增量：aiter `fused_allreduce_mhc_post_*`（AR+MHC-post 同核）在
+  vendor-kernels §1——A1 落位后可与 R-09① 的 AR+norm 桥同框架收编。
+
+### 5.2 现状校正（§一/§二 表格 stale 行，2026-10-19 定裁已落但表未刷）
+
+| 表格行 | 账面态 | 实际态（2026-10-22） |
+|---|---|---|
+| AR+norm 融合 | 缺失（头部候补①） | **已落位**（R-09① aiter 桥 ar_norm_aiter.py，HCU_AR_NORM_IMPL auto 默认，纯 TP 拓扑门控） |
+| silu_and_mul+quant 融合 | 候补② | **已落位**（R-09② 整行组路由 aiter fused；V4.1 的 clamp 形态未盖——见 5.4-②） |
+| per-token quant | torch 已拆解 | **已落位**（R-09③ aiter 桥 quant_aiter auto 默认；boot 横幅实证） |
+| MQA logits（DSA indexer） | （0.5.21 未列） | triton 自研档 production（R-13 #4，13.2× emu）；vendor deepgemm 负值钳 0 缺陷在案 |
+| fa3 面 | emu/triton 已拆解 | triton varlen 面 q 行子分块修复后 11k 绿（c59135b），候选转强 |
+
+### 5.3 v0.5.22 新融合家族差量（0521→0522）
+
+新出现（均为 flashinfer-gated，HCU 不可用，维持已拆解形态）：`trtllm_mla_
+backend`/`trtllm_mha_backend`/`deepseek_v4_trtllm_backend`、`flashinfer_
+trtllm_moe`（moe_runner + token_dispatcher.flashinfer）、`flashinfer_comm_
+fusion`（trtllm allreduce fusion 面，我方对应物=R-09① aiter 桥）、
+`flashinfer.autotuner`、`top_k_page_table_transform`(3)/`top_k_ragged_
+transform`、`flashinfer.cute_dsl`、`flashinfer.fp4_quantization`（gfx938 无
+fp4 单元维持显式不做）。
+
+sgl_kernel 新面：`kvcacheio`(13 处，影子库 sgl_kernel/kvcacheio.py 已承接)、
+`gdn_attention`（HCU 走 HCU_LINEAR_ATTN_GDN=triton fla/aiter 档）、
+`qkv_proj_with_rope_fused_weight`（暂无 HCU 在役场景）、`fused_sigmoid_mul_
+cpu` 等 CPU 族（L0 路径，影子库按需补）。在树 kernel 新文件：
+`mhc_boundary_hip.py`（见 5.1）、`hy4_ihc.py`、`rms_normalize_hip.py`、
+`hc_combine_norm.py`、`mhc_mega.py`、`mhc_post_combine_norm_prefill.py`、
+`rmsnorm_fanout.py`、`fused_eh_norm.py`、`grouped_gemma_rmsnorm.py`、
+`mxfp8_epilogue.py`——**HIP-aware norm 家族比 0521 显著扩容，逐个按模型
+需求盘点**（IHC=GDN 系、fanout/eh_norm 待查）。
+
+### 5.4 对齐优先级重排（结合拍瓶颈与 V4.1 热点账）
+
+1. **MHC pre 门（5.1-A1）**——一行门 + 上游现成 HIP 核，性价比最高；
+2. **V4.1 silu_clamp×quant 融合**——R-09② 落的是标准 silu 整行组；
+   V4.1-Flash 走 clamp 形态（trace `silu_mul_clamp` 636ms +
+   `per_token_group_quant` 245ms 分离），对齐物=lightop
+   `fuse_silu_mul_clamp_quant(_ep)` / aiter `moe_c_situ_glu`；
+3. norm+rope(+quant/KV 写)前融合——lightop 族（vendor-kernels §2），
+   对 `fused_k_norm_rope_flashmla` 1165ms 大核位；
+4. DSA topk/select——上游 flashinfer.top_k* 维持已拆解（torch），对齐物=
+   boltops.step4_dsa `triton_topk_select_and_pack` 族 / lightop
+   `fast_topk_transform_*`；与 mech 账 topk_v2 构建失败合流处理；
+5. copy churn 常态治理——index_select/direct_copy 875 次/步多为布局胶水，
+   随 1-3 落位自然消退，剩余项在下次 trace 复盘归因。
