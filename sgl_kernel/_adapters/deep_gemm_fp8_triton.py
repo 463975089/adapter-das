@@ -61,7 +61,7 @@ def _fp8_masked_kernel(
 
     a_rows = a_ptr + e.to(tl.int64) * stride_ae + offs_m[:, None].to(tl.int64) * stride_am
     as_rows = as_ptr + e.to(tl.int64) * stride_ase + offs_m.to(tl.int64) * stride_asm
-    b_rows = b_ptr + e.to(tl.int64) * stride_be + offs_n[:, None].to(tl.int64) * stride_bn
+    b_rows = b_ptr + e.to(tl.int64) * stride_be + offs_n[None, :].to(tl.int64) * stride_bn
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for k0 in range(0, K, BLOCK_K):
@@ -185,7 +185,7 @@ def _fp8_contig_kernel(
     m_mask = offs_m < M
 
     x_rows = x_ptr + offs_m[:, None].to(tl.int64) * stride_xm
-    w_rows = w_ptr + e * stride_we + offs_n[:, None].to(tl.int64) * stride_wn
+    w_rows = w_ptr + e * stride_we + offs_n[None, :].to(tl.int64) * stride_wn
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for k0 in range(0, K, BLOCK_K):
