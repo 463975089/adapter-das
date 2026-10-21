@@ -99,14 +99,36 @@ export 块里有一组 DTK/HIP runtime env。graph 发射相关项与我们的 d
 ≈24k kernel；注意 graph 并行默认 4 流 × ~6k 包 < 默认队列 16384，"队列
 撑爆"的朴素解释不成立，API 自旋的真正瓶颈在 runtime 提交路径）；
 ② rank0 短板：TP1-3 nccl 各烧 2.5s/窗（p95 17.8ms）纯等 TP0（TP0 nccl
-仅 0.17s）。未测候选：`DEBUG_HIP_FORCE_GRAPH_QUEUES`（graph 并行流数，
-文档注明与队列池配合）、`HIP_GRAPH_LARGE_LAUNCH`（大型轻量核模式，我们
-24k 小核图对口）、`GPU_MAX_HW_QUEUES`（默认 27/进程/设备，非我们瓶颈）。
+仅 0.17s）。候选账（2026-10-21/22 nmz26 V4.1-Flash dp8ep8 实测推进）：
+`HIP_GRAPH_LARGE_LAUNCH=1` **已测=无操作**（bs16 dspark 1090ms/步 vs 基线
+1085ms，monster 拍逐拍同形、宿主 hipGraphLaunch 36.7ms 不变——疑该 DTK
+build 未读此键；recipe 已摘除）；`DEBUG_HIP_FORCE_GRAPH_QUEUES`（graph
+并行流数，文档注明与队列池配合）、`GPU_MAX_HW_QUEUES`（默认 27/进程/设备，
+非我们瓶颈）未测；`HSA_KERNARG_POOL_SIZE=8388608` **排队中**（nmz26 实验
+两遭 co-tenant 抢卡，脚本已备）。
 trace 存证：容器 `/root/logs/prof_torch/1792113313*.trace.json.gz`
 （Perfetto 可开）。后续走 docs/plugins.md P9 的 DTK 提报路径。cookbook
-同块其余（`HSA_KERNARG_POOL_SIZE=8388608`、`HIP_KERNEL_BATCH_CEILING=100`
+同块其余（`HIP_KERNEL_BATCH_CEILING=100`
 等）未测；块里的 `SGLANG_*` 旗标属 sglang-das 0.5.18 fork 专属功能
 （P1/P2 范畴），我们官方 v0.5.21 栈不设。
+
+**拍（beat）定性推进（2026-10-21/22 夜，V4.1-Flash dp8ep8+dspark bs16 20+10 步
+8-rank trace + 消融链）**：步内瓶颈不是提交路径（宿主 36.7ms/图、设备空转仅
+15%），而是**图内大同步的确定性等待拍**——每步 5-6 拍、每拍 ~116ms、拍距
+均匀 ~182ms、逐拍落点跨步稳定（±3ms）；拍内"被拉伸核"名字随机（markov/
+copy/quant/gemm/nccl 都中过）= 谁先消费未到的跨 rank 缓冲谁吃等待；
+**跨 rank 对齐（TP0/1/4 绝对时间）拍窗一致到 0.1ms=全 rank 同时停**，非某
+rank 慢（skew 会抖、此拍不抖）；dspark 拍数 6≈块大小 5+验证 1（每阶段一次
+大同步），无 dspark 2 拍（81+55ms）同机制。markov 采样核本体 µs 级小 grid
+（markov_sample.py triton，rows×~16 parts），118.1ms 全是等跨 rank partial
+gather。旁证：图内 nccl 8KB allreduce 微基准 33µs（快）、逐层 allgather_vec
+均值 ~550µs（快）——拍是**每步少数几次 logits/lm-head 级大同步**固有的。
+吞吐账（未 profiled 日志）：裸 decode 7.33 tok/s/rank（273ms/步）与 profiled
+268ms 一致=拍非 profiler 伪影；dspark ~7.3 tok/s/rank 与裸 decode 每 token
+持平（步 3×慢但每步 ~3 token）——**拍杀死前 dspark 无净收益**。trace 本地
+`prof_dsv41f_dec20/*.trace.json.gz`（ll_*=LARGE_LAUNCH 轮）。附：profiler
+`num_steps` 自动停 + trace 导出后服务器必崩（kill_process_tree，两次同签名，
+22:21/23:49）——迭代判决改用免 profiler 日志吞吐。
 
 ## R-08 回仓盘点表（2026-10-18 落地）
 
