@@ -192,3 +192,28 @@ cookbook §0 已注明 seam 默认清单 + "新配方行内每个 env 必须标�
   静默回退默认值（resolve 已兜底）。
 - `resolve(name)` 返回 `(value, source)`；行为接线处禁止再裸读
   `os.environ`，统一走注册表，保证日志汇总不漏。
+
+**拍围猎推进（2026-10-22 晨，续 R-08/拍定性）**：
+① `HSA_KERNARG_POOL_SIZE=8388608` 实测=**无操作**（nodspark 免 profiler 日志
+吞吐 7.33 tok/s/rank 与基线逐位一致）——env 梯子两连败（LARGE_LAUNCH 同），
+与"拍=大同步固定成本"定性互证；
+② **拍非 dp-attention 专属**：纯 TP8EP8（无 dp 汇聚）同负载 301ms/步
+（53.1 tok/s 总）vs dp8 273ms——拍在两拓扑都在，dp8 反而更快（61 次/层 TP
+AR 便宜得很）；共享嫌疑面收窄到每步骨架的 lm-head/logits/采样相位
+（nods 拍核=Cijk_S_PostGSU lm-head GEMM 55.4ms + 中步 copy 81ms）；
+③ **aiter AG 无罪**：nods trace `aiter::allgather_vec` 410 次均值 24µs——
+拍不是汇聚核慢，是下游消费核等的数据迟到（拍核=先读汇聚缓冲者）；
+④ **nods 流 97.5% busy**（idle 仅 68ms/2738ms）：拍不是空闲等待，是核内
+拉伸（真跑但慢 50×），时长逐字复现（80.9/55.4ms）= 确定性机制非热/频抖动；
+⑤ **profiler 毒化 TP8**：TP8 拓扑下 profiled 8.3s/步 vs 未 profiled 301ms
+（28×，逐核 ~1.5ms 额外失速、507 核 >100ms、含 nccl AR 88ms）——R-08 提交
+路径病在 TP8+profiler 组合下全面爆发；dp8 下 profiler 却近似无感（268≈273）。
+**TP8 拓扑取证一律免 profiler（日志吞吐法），trace 仅 dp8 可信**；
+⑥ profiler teardown 杀服务器第 3 次（TP8，05:52）——跨拓扑 100% 复现，
+num_steps 自动停+导出后必崩，系统性问题确认；
+⑦ MHC A1 双针（use_fused_stats 放行 HIP + mhc.py _is_hip 硬判）四门全绿
+图捕获零错但吞吐中性（7.28 vs 7.33）——**trace 家族总额是拍拉伸转嫁**的
+教训入账（真实功量 µs 级）；补丁保留（每层 ~10 核→2 核，图规模 -10%），
+diff 存 tmp_fetch/MHC_PATCHES.md 待 needle 化。
+下一步：拍机制取证需换工具（DTK rocprof/带内计时器/图内 hipEvent），
+trace 族在拍存在时不可用于功量归因。
