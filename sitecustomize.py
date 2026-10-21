@@ -173,6 +173,23 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: dsv4_ep_bf16 (DeepEP bf16 experts) not installed",
             exc_info=True,
         )
+    # Speculative-decode prepare H2D pinned ring: eagle_prepare_for_decode
+    # ships the per-request KV-lens CPU tensors with .to(non_blocking=True),
+    # which torch silently downgrades to a blocking copy for pageable
+    # memory -- stream-ordered behind the WAR-chained previous forward, the
+    # scheduler host thread stalls a full pipeline per spec decode step
+    # (DSV4F MTP nmz16: py-spy 12/12 at eagle_utils.py:1150, 1.29 s/step at
+    # bs1 vs ~0.4 s GPU, linear in batch). A pinned 8-deep ring makes the
+    # copy a true async DMA. Integer metadata only; HCU_SPEC_H2D_PIN=0 off.
+    try:
+        from sgl_kernel._adapters import spec_h2d_pin
+
+        spec_h2d_pin.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: spec_h2d_pin (spec H2D pinned ring) not installed",
+            exc_info=True,
+        )
     # JIT build progress reporter: one stderr/journal line per real ninja
     # compile (compiling/built/FAILED) so a cold 35-module JIT storm is
     # tellable from a wedge in gate logs; the gate heartbeat tails the

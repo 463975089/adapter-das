@@ -185,6 +185,18 @@ TEXT_PATCH_ALLOWLIST = {
         "per-channel-scale-only per R-04); pair with "
         "--deepep-dispatcher-output-dtype bf16.",
     ),
+    # spec-decode prepare H2D pinned ring (eagle_utils.py): pageable
+    # non_blocking .to() blocks the host behind the WAR-chained forward, a
+    # full-pipeline stall per spec decode step (DSV4F MTP nmz16, py-spy
+    # 12/12 at eagle_utils.py:1150).
+    (
+        "spec_decode",
+        "spec-decode prepare_for_decode KV-lens H2D via persistent pinned "
+        "ring: torch non_blocking is a no-op for pageable memory, so the "
+        "stock .to() blocks the host behind the WAR-chained previous "
+        "forward -- a full-pipeline stall per spec decode step (py-spy "
+        "12/12, DTK 2026-10-21).",
+    ),
     # same file, Phase-1/2 hand scans: mask-form shuffles undeclared on DTK;
     # width=32 HIP forms keep the exact CUDA 32-lane warp segmentation.
     ("platform_detect", "uint32_t y = __shfl_up_sync(0xffffffff, v, o);"),
