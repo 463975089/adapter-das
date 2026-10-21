@@ -2014,6 +2014,23 @@ if getattr(torch.version, "hip", None) is not None:
                 if not hasattr(_m, "deep_gemm"):
                     _m.deep_gemm = _sys.modules.get("deep_gemm")
 
+            # The retro-flip above fixes the FLAG but cannot materialize the
+            # definitions inside entrypoint's module-level `if ENABLE_JIT_-
+            # DEEPGEMM:` (executed earlier with the pre-bridge False): the
+            # fp8 arms then die on deep_gemm_wrapper.get_mn_major_tma_-
+            # aligned_tensor (DSV4F fp8 dp8ep8, nmz16 2026-10-21; audit:
+            # cached modules carry FLIPPED=True yet lack the fn; purge +
+            # reimport defines it against the shim + identity layout). Drop
+            # the stale modules AFTER the flip so every later import
+            # (including the _dgr import below) re-executes under True.
+            for _mn in (
+                "sglang.srt.layers.deep_gemm_wrapper",
+                "sglang.srt.layers.deep_gemm_wrapper.configurer",
+                "sglang.srt.layers.deep_gemm_wrapper.entrypoint",
+                "sglang.srt.layers.deep_gemm_wrapper.compile_utils",
+            ):
+                _sys.modules.pop(_mn, None)
+
             # DeepEP-normal (bf16 contiguous) MoE runner: upstream computes
             # `_legacy_silu_and_mul = silu_and_mul` only on CUDA, so HIP
             # runs carry None and the prefill path dies on call. sglang's
