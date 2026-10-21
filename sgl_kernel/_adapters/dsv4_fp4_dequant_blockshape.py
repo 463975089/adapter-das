@@ -75,7 +75,10 @@ def install():
     import sgl_kernel._adapters.registry as _reg
 
     _reg.register(
-        "fused_moe",
+        # op aligns with the sibling text patch on the same fp8.py target
+        # (dsv4_ep_bf16, platform_detect): the registry forbids a second op
+        # binding one target ("extend the existing entry").
+        "platform_detect",
         "dsv4-fp4-dequant-blockshape",
         target="text:sglang/srt/layers/quantization/fp8.py",
         mechanism=_reg.MECH_TEXT,
