@@ -284,6 +284,22 @@ def install():
     sys.modules["deep_gemm.utils"] = utils
     sys.modules["deep_gemm.utils.layout"] = layout
 
+    # An earlier import in THIS process (adapter import chain) may have
+    # evaluated deep_gemm_wrapper.configurer against the missing real
+    # ``deep_gemm`` package: ENABLE_JIT_DEEPGEMM then froze False and
+    # entrypoint skipped its ``if ENABLE_JIT_DEEPGEMM:`` definitions, so
+    # the fp8 arms later die on deep_gemm_wrapper.get_mn_major_tma_aligned_
+    # tensor (DSV4F fp8 dp8ep8 boot, nmz16 2026-10-21). Drop the package
+    # from sys.modules; the next import re-evaluates against this shim
+    # (fresh probe: ENABLE_JIT True, sm 93).
+    for _n in [
+        n
+        for n in sys.modules
+        if n == "sglang.srt.layers.deep_gemm_wrapper"
+        or n.startswith("sglang.srt.layers.deep_gemm_wrapper.")
+    ]:
+        del sys.modules[_n]
+
     # One-shot imports that ran before this install leave the sglang
     # `try: import deep_gemm except ImportError as e: deep_gemm = e` pattern
     # bound to the exception object (dsa_indexer_kpool.py does exactly this
