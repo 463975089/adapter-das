@@ -56,22 +56,22 @@ def install():
 
     p = pathlib.Path(_fp8.__file__)
     text = p.read_text(encoding="utf-8")
-    if _REPL in text:
-        return  # already applied
-    if _NEEDLE_V1 in text:
-        text = text.replace(_NEEDLE_V1, _REPL)
-    elif _NEEDLE in text:
-        text = text.replace(_NEEDLE, _REPL)
-    else:
-        LOG.warning(
-            "HCU adapter: fp4-dequant block-shape needle changed upstream "
-            "(fp8.py); SGLANG_DSV4_FP4_DEQUANT MoE may assert on scale rows "
-            "-- gap list"
-        )
-        return
-    from sgl_kernel._adapters.atomic_io import atomic_write
+    already = _REPL in text
+    if not already:
+        if _NEEDLE_V1 in text:
+            text = text.replace(_NEEDLE_V1, _REPL)
+        elif _NEEDLE in text:
+            text = text.replace(_NEEDLE, _REPL)
+        else:
+            LOG.warning(
+                "HCU adapter: fp4-dequant block-shape needle changed upstream "
+                "(fp8.py); SGLANG_DSV4_FP4_DEQUANT MoE may assert on scale "
+                "rows -- gap list"
+            )
+            return
+        from sgl_kernel._adapters.atomic_io import atomic_write
 
-    atomic_write(p, text)
+        atomic_write(p, text)
     import sgl_kernel._adapters.registry as _reg
 
     _reg.register(

@@ -185,6 +185,16 @@ TEXT_PATCH_ALLOWLIST = {
         "per-channel-scale-only per R-04); pair with "
         "--deepep-dispatcher-output-dtype bf16.",
     ),
+    # DSV4.1-Flash SGLANG_DSV4_FP4_DEQUANT route: cast_e2m1fn_to_e4m3fn
+    # requantizes the mxfp4 experts into [128,128] fp8 blocks, but the
+    # plain-else dequant arm leaves weight_block_size at the checkpoint
+    # [32,32], so the triton/aiter W8A8 block path asserts on scale rows
+    # (gfx938 nmz26 2026-10-21, V4.1-Flash dp8ep8+dspark a2a=none). See
+    # sgl_kernel/_adapters/dsv4_fp4_dequant_blockshape.py.
+    (
+        "fused_moe",
+        "weight_block_size=[128,128] after FP4->FP8 expert dequant",
+    ),
     # spec-decode prepare H2D pinned ring (eagle_utils.py): pageable
     # non_blocking .to() blocks the host behind the WAR-chained forward, a
     # full-pipeline stall per spec decode step (DSV4F MTP nmz16, py-spy
