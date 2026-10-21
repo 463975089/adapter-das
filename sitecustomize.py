@@ -2031,6 +2031,29 @@ if getattr(torch.version, "hip", None) is not None:
             ):
                 _sys.modules.pop(_mn, None)
 
+            # Re-import NOW and verify; if the re-exec still lands False
+            # (import-order dependent, scheduler spawn included), synthesize
+            # the identity outright -- the triton fp8 kernels consume the
+            # LOGICAL scale layout, so identity is the exact contract either
+            # way and the fp8 arms stop depending on this import dance.
+            import sglang.srt.layers.deep_gemm_wrapper as _dw
+
+            if not hasattr(_dw, "get_mn_major_tma_aligned_tensor"):
+                _dw.get_mn_major_tma_aligned_tensor = (
+                    lambda t, *a, **k: t
+                )
+                _ep = _sys.modules.get(
+                    "sglang.srt.layers.deep_gemm_wrapper.entrypoint"
+                )
+                if _ep is not None:
+                    _ep.get_mn_major_tma_aligned_tensor = (
+                        _dw.get_mn_major_tma_aligned_tensor
+                    )
+                logging.getLogger("hcu.adapter").warning(
+                    "HCU DeepGEMM bridge: wrapper re-import still lacked "
+                    "get_mn_major_tma_aligned_tensor; synthesized identity."
+                )
+
             # DeepEP-normal (bf16 contiguous) MoE runner: upstream computes
             # `_legacy_silu_and_mul = silu_and_mul` only on CUDA, so HIP
             # runs carry None and the prefill path dies on call. sglang's
