@@ -61,8 +61,18 @@ def install() -> None:
         orig = getattr(m, name, None)
         if orig is None or getattr(orig, "_hcu_fp8_ffi", False):
             continue
-        setattr(m, name, _wrap(orig))
+        wrapped = _wrap(orig)
+        setattr(m, name, wrapped)
         patched.append(name)
+        # modules that already did `from ...dsv4 import <name>` keep the
+        # ORIGINAL binding (e.g. the moe_runner deep_gemm module imported
+        # earlier in the adapter chain); rebind every existing holder so
+        # the alias does not depend on import order
+        import sys
+
+        for mod in list(sys.modules.values()):
+            if getattr(mod, name, None) is orig:
+                setattr(mod, name, wrapped)
 
     logger.warning(
         "HCU jit fp8 ffi alias installed (%s: fp8 args viewed uint8 for "
