@@ -190,7 +190,7 @@ TEXT_PATCH_ALLOWLIST = {
     # full-pipeline stall per spec decode step (DSV4F MTP nmz16, py-spy
     # 12/12 at eagle_utils.py:1150).
     (
-        "spec_decode",
+        "platform_detect",
         "spec-decode prepare_for_decode KV-lens H2D via persistent pinned "
         "ring: torch non_blocking is a no-op for pageable memory, so the "
         "stock .to() blocks the host behind the WAR-chained previous "

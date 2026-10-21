@@ -92,7 +92,7 @@ def install() -> None:
         _atomic_write(p, text)
 
     _reg.register(
-        "spec_decode",
+        "platform_detect",
         "spec-h2d-pinned-ring",
         target=f"text:{_PKG}",
         mechanism=_reg.MECH_TEXT,
