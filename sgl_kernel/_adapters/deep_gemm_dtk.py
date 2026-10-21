@@ -348,4 +348,34 @@ def install():
             "HCU adapter: triton contiguous grouped GEMM not installed",
             exc_info=True,
         )
+
+    # w8a8 block-scaled fp8 grouped GEMMs (DeepSeek 128x128 recipe): the
+    # fork's fp8 arms are per-channel-only with broken signed numerics
+    # (R-04), which had forced DSV4F DeepEP onto bf16 experts (2x weight
+    # bytes). Triton reimplementations on native [E, N, K] fp8 weights
+    # (masked + contiguous) halve the expert traffic. The wrapper's
+    # TMA-aligned scale transform is bypassed with an IDENTITY on the
+    # layout module -- entrypoint binds the function object at import
+    # time, so the identity must be in place before sglang imports, and
+    # these kernels index the logical [.., K//128] layout regardless.
+    try:
+        from . import hcu_env as _env
+
+        if _env.enabled("HCU_TRITON_MASKED_FP8"):
+            from . import deep_gemm_fp8_triton as _f8t
+
+            shim.fp8_m_grouped_gemm_nt_masked = (
+                _f8t.fp8_m_grouped_gemm_nt_masked
+            )
+            shim.m_grouped_fp8_gemm_nt_contiguous = (
+                _f8t.m_grouped_fp8_gemm_nt_contiguous
+            )
+            layout.get_mn_major_tma_aligned_tensor = lambda t, *a, **k: t
+    except Exception:
+        import logging
+
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: triton fp8 grouped GEMMs not installed",
+            exc_info=True,
+        )
     return shim
