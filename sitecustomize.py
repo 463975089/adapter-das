@@ -173,6 +173,20 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: dsv4_ep_bf16 (DeepEP bf16 experts) not installed",
             exc_info=True,
         )
+    # tvm-ffi fp8 dtype aliasing for the DSV4 JIT MoE activation kernels
+    # (silu_and_mul_{masked,contig}_post_quant): the kernels declare the
+    # fp8 output as uint8; CUDA torch fp8 tensors present as uint8 through
+    # DLPack, DTK ones present as float8_e4m3fn and the type match rejects
+    # them. View fp8 args as uint8 before module.run (byte-identical; the
+    # kernel writes raw fp8 patterns into the same storage).
+    try:
+        from sgl_kernel._adapters import jit_fp8_ffi
+
+        jit_fp8_ffi.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: jit fp8 ffi alias not installed", exc_info=True
+        )
     # Speculative-decode prepare H2D pinned ring: eagle_prepare_for_decode
     # ships the per-request KV-lens CPU tensors with .to(non_blocking=True),
     # which torch silently downgrades to a blocking copy for pageable
