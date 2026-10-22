@@ -11,8 +11,9 @@ is NOT usable on gfx938 (unit probes 2026-10-23, nmz26):
 1. deterministic miscompile: ~3.5% of output elements get wrong values (e.g.
    dequant 99.99 where the true activation is 60.5); deterministic across
    repeated runs, every row, both clamp and no-clamp template variants;
-2. ABI mismatch: the family writes e4m3fn with /448 scales while this stack's
-   production quant is e4m3fnuz /224 (``fp8_kernel.is_fp8_fnuz`` on gfx94x).
+2. (ruled out later: an ABI/e4m3fnuz mismatch was suspected and disproven —
+   gfx938 gcnArchName carries no "gfx94" substring, so is_fp8_fnuz() is False
+   and the production quant is e4m3fn /448, exactly what the cuh emits.)
 
 This module's kernel mirrors the production pair exactly (same clamp formula
 as ``sgl_kernel.elementwise.silu_and_mul_clamp``; same eps-then-divide-and-
@@ -55,14 +56,19 @@ def _silu_clamp_ptgq_kernel(
     bit8_min,
     bit8_max,
     GROUP: tl.constexpr,
+    GPB: tl.constexpr,  # groups per CTA; GROUP*GPB must be a power of 2
 ):
     # DSV4/GLM swiglu-clamp (glm5_next.swiglu_clamped semantics: gate caps max
     # only, up clamps both sides) composed with the sglang per-token-group
     # quant formula (eps-max absmax, divide by bit8_max, clamp, cast) in one
-    # pass with no bf16 round-trip.
+    # pass with no bf16 round-trip. One CTA handles GPB adjacent 128-groups
+    # (tile sweep nmz26 2026-10-23: GPB=1 halves large-M throughput vs the
+    # production pair — tiny 512B CTAs starve; GPB=2 keeps the 2.4-2.7x
+    # decode win and restores pair-parity at prefill M).
     row = tl.program_id(0).to(tl.int64)
-    g = tl.program_id(1)
-    cols = g * GROUP + tl.arange(0, GROUP)
+    gb = tl.program_id(1)
+    W: tl.constexpr = GROUP * GPB
+    cols = gb * W + tl.arange(0, W)
     mask = cols < D
     xb = X + row * x_stride
     gate = tl.load(xb + cols, mask=mask, other=0.0).to(tl.float32)
@@ -70,11 +76,16 @@ def _silu_clamp_ptgq_kernel(
     gate = tl.minimum(gate, limit)
     up = tl.minimum(tl.maximum(up, -limit), limit)
     y = gate * tl.sigmoid(gate) * up
-    _absmax = tl.maximum(tl.max(tl.abs(y)), eps)
+    y2 = tl.reshape(y, (GPB, GROUP))
+    _absmax = tl.maximum(tl.max(tl.abs(y2), axis=1), eps)
     y_s = _absmax / bit8_max
-    y_q = tl.clamp(y * (1.0 / y_s), bit8_min, bit8_max).to(Q.dtype.element_ty)
-    tl.store(Q + row * q_stride + cols, y_q, mask=mask)
-    tl.store(S + row * s_stride + g, y_s)
+    y_q = tl.clamp(y2 * (1.0 / y_s)[:, None], bit8_min, bit8_max)
+    tl.store(
+        Q + row * q_stride + cols,
+        tl.reshape(y_q, (W,)).to(Q.dtype.element_ty),
+        mask=mask,
+    )
+    tl.store(S + row * s_stride + gb * GPB + tl.arange(0, GPB), y_s)
 
 
 def silu_and_mul_clamp_quant(
@@ -91,13 +102,15 @@ def silu_and_mul_clamp_quant(
     D = N2 // 2
     if D % group_size != 0:
         raise ValueError(f"{D} not divisible by group {group_size}")
+    n_groups = D // group_size
     q = output_q if output_q is not None else torch.empty(
         (M, D), device=x.device, dtype=fp8_dtype
     )
     s = output_s if output_s is not None else torch.empty(
         (M, D // group_size), device=x.device, dtype=torch.float32
     )
-    grid = (M, D // group_size)
+    gpb = 2 if n_groups % 2 == 0 else 1
+    grid = (M, n_groups // gpb)
     _silu_clamp_ptgq_kernel[grid](
         x,
         q,
@@ -111,6 +124,7 @@ def silu_and_mul_clamp_quant(
         -float(fp8_max),
         float(fp8_max),
         GROUP=group_size,
+        GPB=gpb,
         num_warps=1,
         num_stages=1,
     )
