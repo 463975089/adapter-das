@@ -151,10 +151,32 @@ _REPLACEMENT = """                if swiglu_limit_for_silu_and_mul_clamp is not 
                         )
 """
 
+# second branch: the plain-silu arm (swiglu_limit=None — the shared-expert
+# fused_experts calls, trace: fused_moe_kernel => act_and_mul_kernel =>
+# per_token_group_quant_flat, ~43/step on dsv41f decode)
+_ANCHOR2 = """                else:
+                    silu_and_mul(intermediate_cache1.view(-1, N), intermediate_cache2)
+"""
+
+_REPLACEMENT2 = """                else:
+                    _hcu_fq = _hcu_silu_fused_quant(
+                        intermediate_cache1.view(-1, N),
+                        None,
+                        use_fp8_w8a8,
+                        block_shape,
+                        hooks,
+                    )
+                    if _hcu_fq is not None:
+                        intermediate_cache2, a2_scale = _hcu_fq
+                    else:
+                        silu_and_mul(intermediate_cache1.view(-1, N), intermediate_cache2)
+"""
+
 
 def _hcu_silu_fused_quant(x, limit, use_fp8_w8a8, block_shape, hooks):
-    """Route guard: only the dsv41f production shape (fp8 w8a8, [128,128]
-    blocks, no LoRA hooks). Anything else keeps the stock two-kernel pair."""
+    """Route guard: only the production shape (fp8 w8a8, [128,128] blocks, no
+    LoRA hooks). limit=None means plain silu (shared-expert fused_experts
+    calls); anything else unsupported keeps the stock two-kernel pair."""
     try:
         if (
             not use_fp8_w8a8
@@ -162,7 +184,8 @@ def _hcu_silu_fused_quant(x, limit, use_fp8_w8a8, block_shape, hooks):
             or tuple(block_shape or ()) != (128, 128)
         ):
             return None
-        return silu_and_mul_clamp_quant(x, float(limit), 128)
+        lim = float("inf") if limit is None else float(limit)
+        return silu_and_mul_clamp_quant(x, lim, 128)
     except Exception:
         LOG.warning("HCU silu fused-quant route failed; falling back to pair",
                     exc_info=True)
@@ -190,12 +213,13 @@ def install() -> None:
     k2 = text.find("\nclass ", i + 1)
     k = k if k >= 0 and (k2 < 0 or k < k2) else (k2 if k2 >= 0 else len(text))
     src = text[i:k]
-    if src.count(_ANCHOR) != 1:
+    if src.count(_ANCHOR) != 1 or src.count(_ANCHOR2) != 1:
         raise RuntimeError(
-            "dsv4 swiglu clamp call anchor not found exactly once (source drift?)"
+            "dsv4 swiglu activation anchors not found exactly once (source drift?)"
         )
     src = src.replace(_ASSERT_OLD, _ASSERT_NEW, 1)
     src = src.replace(_ANCHOR, _REPLACEMENT, 1)
+    src = src.replace(_ANCHOR2, _REPLACEMENT2, 1)
     _fm._hcu_silu_fused_quant = _hcu_silu_fused_quant
     exec(compile(src, _fm.__file__, "exec"), _fm.__dict__)
     code = getattr(_fm._fused_moe_kernel_sequence, "__code__", None)
