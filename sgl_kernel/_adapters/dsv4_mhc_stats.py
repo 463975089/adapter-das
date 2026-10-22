@@ -46,6 +46,17 @@ def install() -> None:
     if not getattr(_kern_mhc, "_is_hip", False):
         _kern_mhc._is_hip = True
         flipped = True
+    # Two more constants froze at import from the same seam-read `_is_hip`
+    # (nmz18 2026-10-23: arm-B boot died in triton compile --
+    # "input_precision must be one of ('ieee', 'tf32'). Got tf32x3").
+    # Launch sites read these module globals at call time, so rebinding is
+    # enough; "ieee" is the fp32 MFMA path the HIP arm is designed for.
+    if getattr(_kern_mhc, "_HC_MIX_DOT_PRECISION", "ieee") != "ieee":
+        _kern_mhc._HC_MIX_DOT_PRECISION = "ieee"
+        flipped = True
+    if getattr(_kern_mhc, "_HC_MIX_NUM_STAGES", 2) != 2:
+        _kern_mhc._HC_MIX_NUM_STAGES = 2
+        flipped = True
     if not hasattr(_kern_mhc, "hc_mix_reduce_sinkhorn_vec"):
         from sglang.kernels.ops.layernorm.mhc_boundary_hip import (
             hc_mix_reduce_sinkhorn_vec,
