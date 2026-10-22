@@ -1342,6 +1342,18 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: silu fused-quant needle not installed", exc_info=True
         )
 
+    # MHC pre-boundary fused stats on HIP (needle-ized from the 2026-10-22
+    # manual tree patches): use_fused_stats flip + mhc_boundary_hip import
+    # backfill under the cuda-semantics seam. HCU_MHC_STATS=0 disables.
+    try:
+        from sgl_kernel._adapters import dsv4_mhc_stats
+
+        dsv4_mhc_stats.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: MHC fused-stats needle not installed", exc_info=True
+        )
+
     # DSV4/GLM-5.2-DSA fused q/k norm+rope: upstream elementwise module
     # routes on module-level `_is_hip`/`_is_xpu` constants frozen at import.
     # Under the is_cuda seam both read False -> the CUDA JIT arm
