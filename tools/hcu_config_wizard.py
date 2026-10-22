@@ -13,6 +13,14 @@ Usage:
     python tools/hcu_config_wizard.py --show     # effective config now
     python tools/hcu_config_wizard.py --check F  # validate a config file
     python tools/hcu_config_wizard.py -o PATH    # non-default output path
+    python tools/hcu_config_wizard.py --autotune # measure & pick tiers on
+                                                 #   this machine (probe ->
+                                                 #   judges -> A/B microbench
+                                                 #   -> hcu_adapter.yaml +
+                                                 #   autotune_report.json)
+    python tools/hcu_config_wizard.py --autotune --dry
+                                                 # ladder/catalog walkthrough,
+                                                 # no subprocess judges
 """
 
 import argparse
@@ -138,8 +146,22 @@ def main():
                     help="validate a config file without loading it")
     ap.add_argument("-o", "--out", default="hcu_adapter.yaml",
                     help="wizard output path (default ./hcu_adapter.yaml)")
+    ap.add_argument("--autotune", action="store_true",
+                    help="measure tiers on this machine and write the yaml "
+                         "+ autotune_report.json (probe -> judges -> A/B)")
+    ap.add_argument("--dry", action="store_true",
+                    help="with --autotune: no judge subprocesses; walk the "
+                         "ladder/catalog only (config generation included)")
+    ap.add_argument("--autotune-out", default="autotune_report.json",
+                    help="report path for --autotune (default ./autotune_report.json)")
     args = ap.parse_args()
-    if args.list:
+    if args.autotune:
+        from tools._autotune import runner
+
+        deep_gpu = not args.dry
+        runner.run_autotune(out_yaml=args.out, out_report=args.autotune_out,
+                            deep_gpu_check=deep_gpu, dry=args.dry)
+    elif args.list:
         list_catalog()
     elif args.show:
         show_effective()
