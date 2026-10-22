@@ -141,6 +141,17 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: jit paged_mqa_metadata cub->hipcub patch not installed",
             exc_info=True,
         )
+    # DSA top-k v2 fusion (dsv41f decode): stride seam on the upstream JIT
+    # topk_v2 kernel + the v41 full-topk fused decode arm. Replaces the
+    # torch.topk fallbacks behind 57 mbtopk kernels/step (2026-10-22 trace).
+    try:
+        from sgl_kernel._adapters import dsa_topk_v2_hip
+
+        dsa_topk_v2_hip.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: dsa topk v2 fusion not installed", exc_info=True
+        )
     # DSV2/V4 capture-mode dual-stream MoE gate: the captured cross-stream
     # (alt_stream shared expert) graph replays as deterministic garbage on
     # DTK/ROCm gfx938 while eager stays perfect. Capture-only branch, so the
