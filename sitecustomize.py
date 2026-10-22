@@ -1327,6 +1327,21 @@ if getattr(torch.version, "hip", None) is not None:
                 exc_info=True,
             )
 
+    # DSV4 MoE silu-clamp x per-token-group-128 fp8 quant in ONE triton kernel
+    # (replaces the swiglu-clamp bf16 write + invoke-internal re-quant pair;
+    # upstream's fused JIT cuh family is numerically broken on gfx938 --
+    # deterministic ~3.5% wrong elements, probes 2026-10-23). Must run AFTER
+    # the swiglu-clamp rebind above (the fallback branch depends on it).
+    # HCU_SILU_FUSED_QUANT=0 restores the pair.
+    try:
+        from sgl_kernel._adapters import dsv4_silu_fused_quant
+
+        dsv4_silu_fused_quant.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: silu fused-quant needle not installed", exc_info=True
+        )
+
     # DSV4/GLM-5.2-DSA fused q/k norm+rope: upstream elementwise module
     # routes on module-level `_is_hip`/`_is_xpu` constants frozen at import.
     # Under the is_cuda seam both read False -> the CUDA JIT arm
