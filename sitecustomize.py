@@ -1354,6 +1354,23 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: MHC fused-stats needle not installed", exc_info=True
         )
 
+    # DSV4.1 sparse indexer rope/norm triton gates: dsv41_sparse gates its
+    # two pure-triton kernels (rope_tail_fake_quant_fp4, rmsnorm_fp32) on
+    # `torch.version.cuda is not None or is_gfx95_supported()` — both False
+    # on DTK (cuda=None, gfx938), forcing the torch complex-rope chain and
+    # torch rsqrt norm every step. Bitwise-verified on gfx938
+    # (tmp_fetch/parity_sparse_triton.py). HCU_DSV41_SPARSE_TRITON=0
+    # restores the torch fallbacks.
+    try:
+        from sgl_kernel._adapters import dsv4_sparse_triton_gates
+
+        dsv4_sparse_triton_gates.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: sparse triton-gate needle not installed",
+            exc_info=True,
+        )
+
     # DSV4/GLM-5.2-DSA fused q/k norm+rope: upstream elementwise module
     # routes on module-level `_is_hip`/`_is_xpu` constants frozen at import.
     # Under the is_cuda seam both read False -> the CUDA JIT arm
