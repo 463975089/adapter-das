@@ -64,3 +64,12 @@
 - **host 路真死因 = 执行层**：cut8+host 表 boot，表建成功（per_rank 755M 驻留/大页 100%；shared 布局撞 shmem THP=never 慢 10×告警）后：①图捕获内 fused_engram_gate triton 首编死锁（--disable-cuda-graph 绕过）②绕过后 eager 跑 gate → **ROCR-Runtime 7.2 VMFaultHandler 段错误**（GPU 访问注册 host 内存页错误，runtime 处理器自崩）。das 栈同 env 能跑 ⇒ ROCR/驱动处理差异。
 - 下步候选：注册 flag 变体（hipHostRegisterMapped/NumaUser）、全量 pre-fault 保 GPU 访问前驻留（本次 23.6G 虚拟仅 755M 驻留疑点）、或移植 das CPU_GATHER 思路（CPU 侧 gather 免 GPU 触 host）。
 - 设备路剂量响应（下午役）仍是 P0 主线；host 路=das 同构解法，卡在 ROCR VMFault。
+
+## 2026-10-23(夜) host 路 VMFault 三层根因全破 + 修复实证（nmz26 卡2 TP1 cut8）
+- **此前"多表注册失效"复现是我自己的脚本 bug**：multi 单测 mmap 对象是函数局部，返回即 GC → 悬空注册 → 必崩；unit 版模块级存活所以过。机制本身无罪。
+- **Bug B（剪层容量不变式）**：`EngramEmbedding.forward` shared 分支 gather **不带 row_lo/row_hi**（默认 2^62 不设界，生产全表覆盖全 id 空间故安全）；id=hash%prime+前缀 offset，上限=每层 24 素数之和。cut8 缩表 6M 但 vocab=4M → id 上限 96M → 越界读 base+idx×256，fault VA 散布表上方 ~20G（与 dmesg 吻合；device 路不崩=越界落相邻 VRAM 读垃圾）。**修复**：engram_vocab_size=250000 + num_embeddings=[Σprimes]=[6003388, 6013872]（容器脚本精确计算），修后 fault VA 全部落回表内。
+- **Bug C（host 路真凶）**：本仓 `sgl_kernel/_adapters/platform_seam.py` 把 sglang `is_hip()` 强制 False（HCU 伪装 CUDA 的平台决策）→ engram.py `_registered_device_ptr` 走 `return host_ptr` 短路——**hipHostGetDevicePointer 从未被调用**，内核拿裸 host VA，GPU 页表无此段 → VMFault。铁证：canary S 组（自己 ctypes 直连 libamdhip64）dev 全部重定位且通过；真表 dev==host 且崩；seam 环境实测 `is_hip()=False from platform_seam.py`。**修复**：指针翻译以 **libamdhip64 是否可加载**为准（find_loaded_library 失败→CDLL("libamdhip64.so") dlopen 兜底；真 CUDA 无此库 OSError→恒等不变），且翻译结果==host 即 raise 拒绝启动。
+- **Bug D（潜在，一并修）**：shared 布局注册前零预触（未跟踪风险）+ per_rank 注册后 finish_load MADV_COLLAPSE 重排 PTE（cut8h 首请求崩的另一解释）。**修复**：注册前整段写脏 0xAB（memfd/anon 脏页无写回目标永不回收，免疫加载期页缓存churn 回收）；注册后的表永不 collapse。
+- **修复后实证**：boot→load→dummy forward→prefill→DSPARK decode 全通 0 fault；`dev≠host` 重定位日志在案。**cut8 TPOT 对照：host=21.2-21.9s/256tok vs device=21.4-21.8s/256tok——持平**（TP1 无图小剂量代理，绝对值无意义；生产剂量性能与消拍待 8 卡）。
+- **补丁位置**：容器 /sglang-v0522/python/sglang/srt/layers/engram.py（4 处：预触写脏/指针翻译 seam 旁路+校验/禁 collapse/地址日志）；seam 本身不动（is_hip=False 是全平台决策，翻转会动 FP8 常量与内核选路）。
+- **生产化缺口（未做）**：per_rank 23.6G/rank 单次注册 >12G 必 err → 需**分块注册**（pincap 已证 12G×4=48G/进程过），_HostTable 尚未实现分块+逐块 device 指针；shared 布局全表 94G×2 不适用于生产。8 卡 matched-dose 消拍测试 = 下一个空窗的首项。

@@ -169,3 +169,9 @@
 
 **收尾态**：容器树调试补丁已 `git checkout` 还原（common.py `.copy()` 1 行=broadcast 只读缓冲修复，保留）；adapter 已拉 eebddcb（开机 banner "DSV2 capture-mode dual-stream MoE gated off on HIP" 可验针脚活）；生产=graph ON（/root/launch_dsv4f_v0522g.sh，log srv_dsv4f_v0522g.log）四门验证中。插桩在 adapter rel 线（709ae32..d145fe87）+ tmp_fetch/patch_hc_fp*.py 可复用。
 
+### 10-23 夜 engram host 路三层根因破案 + 修复全通（nmz26 卡2, cut8 TP1）
+- **症状链**：host 表 boot → 建表/注册全"成功" → 首次 GPU 触表必 KERNEL VMFault（shared 崩在建表 canary、per_rank 崩在首请求）；单元级同序列 5/5 全过——单元与 server 行为分裂。
+- **三层根因（叠罗汉，逐层剥）**：①multi 单测复现是我脚本 mmap 局部变量 GC 悬空假象；②cut8 剪层破了 id 空间不变式（shared 分支 gather 不设界 + id 上限=Σ24 素数，fault VA 散布表上方 20G 与 dmesg 精确吻合；device 路不崩=越界落相邻 VRAM）；③**真凶=platform_seam 强制 is_hip()=False → engram.py 指针翻译短路 return host_ptr，hipHostGetDevicePointer 从未被调用**（v11 教训同款陷阱：seam 语义下 HIP 判定不可信）。
+- **修复（容器 /sglang-v0522/.../engram.py 四处）**：指针翻译改以 **libamdhip64 可加载性**为准（find_loaded_library→CDLL soname 兜底）+ 翻译回显 host 即 raise；注册前整段写脏 0xAB（脏页无写回目标免疫页缓存churn 回收，das 不崩的同款护身符）；注册后永不 MADV_COLLAPSE；地址常驻日志。cut8 config 配平 vocab=250000/num_embeddings=[6003388,6013872]。
+- **实证**：boot→load→dummy→prefill→DSPARK decode 全通 0 fault；dev≠host 重定位在案；TPOT host=21.2-21.9s vs device=21.4-21.8s（256tok，持平）。**生产化缺口：per_rank 23.6G 单次注册>12G 必败 → 需分块注册（12G×N 已证 48G/进程过）；8 卡 matched-dose 消拍=下一空窗首项。**
+- 方法论增补：dmesg fault VA 与映射区间做**区间归属判定**（两 VA 之差=w_bytes 即 weight/scale 指针对）；canary 对照实验（已知好路径 S 组 vs 待验路径同进程同刻）分离"注册机制坏"与"指针翻译坏"。
