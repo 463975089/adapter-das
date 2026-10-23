@@ -380,6 +380,43 @@ def moe_align_block_size(
     # Dropping the lanes left intermediate_cache slots unwritten (garbage
     # combine). NB_ = number of buckets = real experts + sentinel bucket.
     nb = num_experts + 1
+    block_e = max(16, next_power_of_2(nb))
+    write_extra = 1 if cumsum_buffer.shape[0] > nb else 0
+
+    # Small shapes (every decode step: ~96-576 lanes) go through ONE
+    # single-CTA kernel instead of the 6-launch quartet (2 aten setup
+    # fills + hist + scan + fill + block_expert) — same outputs bit-exact
+    # except intra-segment token order, which the runner ignores.
+    fused_max = 2048
+    try:
+        from ._adapters.hcu_env import resolve
+
+        _mode, _src = resolve("HCU_MOE_ALIGN_FUSED")
+        if _mode in ("0", "off", "false"):
+            fused_max = 0
+        elif isinstance(_mode, str) and _mode.isdigit():
+            fused_max = int(_mode)
+    except Exception:
+        pass
+    if fused_max and numel <= fused_max:
+        _moe_align_fused_small_kernel[(1,)](
+            flat,
+            numel,
+            sorted_token_ids,
+            sorted_token_ids.shape[0],
+            experts_ids,
+            experts_ids.shape[0],
+            num_tokens_post_pad,
+            cumsum_buffer,
+            nb,
+            block_size,
+            NBLK_E=block_e,
+            WRITE_EXTRA=write_extra,
+            TILE_N=128,
+            TILE_E=64,
+        )
+        return
+
     sorted_token_ids.fill_(numel)
     counts = torch.zeros(nb, dtype=torch.int32, device=topk_ids.device)
     cursor = torch.empty(nb, dtype=torch.int32, device=topk_ids.device)
@@ -390,8 +427,6 @@ def moe_align_block_size(
         _moe_align_hist_kernel[grid](
             flat, numel, counts, nb, BLOCK=block_hist
         )
-    block_e = max(16, next_power_of_2(nb))
-    write_extra = 1 if cumsum_buffer.shape[0] > nb else 0
     _moe_align_scan_kernel[(1,)](
         counts,
         cumsum_buffer,
@@ -514,6 +549,101 @@ if HAS_TRITON:
             tl.store(experts_ptr + b, -1 if sentinel else eid)
         else:
             tl.store(experts_ptr + b, num_buckets)
+
+    @triton.jit
+    def _moe_align_fused_small_kernel(
+        ids_ptr,
+        numel,
+        sorted_ptr,
+        sorted_cap,
+        experts_ptr,
+        exp_cap,
+        post_pad_ptr,
+        cumsum_ptr,
+        nb,
+        block_size,
+        NBLK_E: tl.constexpr,
+        WRITE_EXTRA: tl.constexpr,
+        TILE_N: tl.constexpr,
+        TILE_E: tl.constexpr,
+    ):
+        # Single-CTA replacement for the hist/scan/fill/block_expert
+        # quartet (+ the two aten setup fills) at decode shapes: numel is
+        # at most a couple thousand lanes, so one program can hold the
+        # whole histogram in registers. Bucket mapping, scan math and the
+        # sentinel/tail conventions are bit-identical to the quartet; the
+        # only divergence is intra-segment token order (FIFO here,
+        # atomic-arrival there), which the fused_moe runner ignores.
+        e_offs = tl.arange(0, NBLK_E)
+        em = e_offs < nb
+
+        counts = tl.zeros((NBLK_E,), tl.int32)
+        for t0 in range(0, numel, TILE_N):
+            offs = t0 + tl.arange(0, TILE_N)
+            inb = offs < numel
+            e = tl.load(ids_ptr + offs, mask=inb, other=-1)
+            b = tl.where(inb & (e >= 0) & (e < nb - 1), e, nb - 1)
+            counts += tl.sum(
+                ((b[:, None] == e_offs[None, :]) & inb[:, None]).to(tl.int32),
+                axis=0,
+            )
+
+        aligned = tl.where(em, ((counts + block_size - 1) // block_size) * block_size, 0)
+        incl = tl.cumsum(aligned, 0)
+        excl = incl - aligned
+        total = tl.sum(aligned, 0)
+        tl.store(cumsum_ptr + e_offs, excl, mask=em)
+        tl.store(cumsum_ptr + nb, total)
+        if WRITE_EXTRA:
+            tl.store(cumsum_ptr + nb + 1, total)
+        tl.store(post_pad_ptr, total)
+
+        # fill the whole sorted buffer with the pad value (numel), then
+        # scatter the lanes into the first counts[b] slots of each
+        # block-aligned segment — disjoint, so ordering is free.
+        pad = numel + tl.zeros((TILE_N,), tl.int32)
+        for s0 in range(0, sorted_cap, TILE_N):
+            so = s0 + tl.arange(0, TILE_N)
+            tl.store(sorted_ptr + so, pad, mask=so < sorted_cap)
+
+        carry = tl.zeros((NBLK_E,), tl.int32)
+        for t0 in range(0, numel, TILE_N):
+            offs = t0 + tl.arange(0, TILE_N)
+            inb = offs < numel
+            e = tl.load(ids_ptr + offs, mask=inb, other=-1)
+            b = tl.where(inb & (e >= 0) & (e < nb - 1), e, nb - 1)
+            # write position = segment start + filled-so-far (carry) +
+            # in-tile rank among same-bucket lanes with a smaller index
+            earlier = (offs[None, :] < offs[:, None]) & (
+                b[None, :] == b[:, None]
+            ) & inb[None, :]
+            rank_in = tl.sum(earlier.to(tl.int32), axis=1)
+            seg = tl.sum(
+                tl.where(b[:, None] == e_offs[None, :], excl[None, :], 0), axis=1
+            )
+            car = tl.sum(
+                tl.where(b[:, None] == e_offs[None, :], carry[None, :], 0), axis=1
+            )
+            pos = seg + car + rank_in
+            tl.store(sorted_ptr + pos, offs.to(tl.int32), mask=inb)
+            carry += tl.sum(
+                ((b[:, None] == e_offs[None, :]) & inb[:, None]).to(tl.int32),
+                axis=0,
+            )
+
+        # block -> expert map: one owner per block start in [0, total);
+        # sentinel-bucket blocks carry -1, tail blocks carry nb
+        padded = (total + block_size - 1) // block_size
+        for b0 in range(0, exp_cap, TILE_E):
+            bi = b0 + tl.arange(0, TILE_E)
+            s = bi * block_size
+            owns = (excl[None, :] <= s[:, None]) & (
+                s[:, None] < (excl + aligned)[None, :]
+            ) & em[None, :]
+            hit = tl.max(tl.where(owns, (e_offs + 1)[None, :], 0), axis=1)
+            eid = hit - 1
+            val = tl.where(bi < padded, tl.where(eid == nb - 1, -1, eid), nb)
+            tl.store(experts_ptr + bi, val, mask=bi < exp_cap)
 
 
 def moe_sum(input_tensor: torch.Tensor, output_tensor: torch.Tensor):

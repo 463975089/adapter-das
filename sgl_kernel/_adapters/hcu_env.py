@@ -187,6 +187,17 @@ REGISTRY = {
                  "target 轨迹漂移 + 逐次不确定；二分定位 MTP 独立致病）。"
                  "sglang-das 用 hcu_get_last_loc 同向修复；=0 还原 stock 分发",
     },
+    "HCU_MOE_ALIGN_FUSED": {
+        "env": "HCU_MOE_ALIGN_FUSED", "default": "2048",
+        "about": "moe_align_block_size 小形状融合档：topk lanes<=N 时用"
+                 "单 CTA triton 核一发做完 hist+scan+fill+block_expert 及"
+                 "两个 aten setup fill（fill_/zeros），每层 6 核→1 核"
+                 "（decode 44 层=264→44 核/步，约 -220 核/步且削 5×图节点"
+                 "/层）。桶映射/扫描数学/哨兵(-1→专属桶→expert_id=-1)/尾块"
+                 "值与四件套 bit 级一致；段内 token 序为 FIFO（四件套是原子"
+                 "到达序，runner 按行独立不感知）。大形状（prefill）仍走"
+                 "四件套。=0 关闭（回归对照），=数字改阈值",
+    },
     "HCU_MQA_LOGITS_IMPL": {
         "env": "HCU_MQA_LOGITS_IMPL", "default": "triton",
         "about": "DSA indexer paged-MQA 实现档：vec=全窗口单遍双 bmm"

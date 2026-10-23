@@ -34,6 +34,9 @@ for e in kern:
     fam[key][1] += e.get("dur", 0)
 
 r20 = sum(1 for e in kern if "_ragged_mqa_logits_kernel" in e.get("name", ""))
+w10 = sum(1 for e in kern if "_moe_align_fused_small_kernel" in e.get("name", ""))
+w10q = sum(1 for e in kern if "_moe_align_hist_kernel" in e.get("name", ""))
+fills = sum(1 for e in kern if "FillFunctor" in e.get("name", ""))
 bbh = sum(1 for e in kern if e.get("name", "").startswith("Cijk_") and "_BBH_" in e.get("name", ""))
 dtou = sum(1 for e in ev if e.get("cat") == "gpu_memcpy"
            and (e.get("args", {}) or {}).get("name", "").upper().find("D2H") >= 0)
@@ -44,6 +47,9 @@ print(f"STALLS>20ms: {len(stalls)} (P0' verdict: expect 0)")
 for e in stalls[:5]:
     print(f"   stall {e.get('dur')/1000:.1f}ms {e.get('name','')[:60]}")
 print(f"R20 engaged: _ragged_mqa_logits_kernel={r20} ({r20/S:.1f}/step, expect ~44)")
+print(f"W10 engaged: fused_moe_align={w10} ({w10/S:.1f}/step, expect ~44) "
+      f"quartet_hist_remnant={w10q} ({w10q/S:.1f}/step, expect 0)")
+print(f"FillFunctor: {fills} ({fills/S:.1f}/step; wave6 had ~134 incl. 88 moe_align setup)")
 print(f"emu-remnant Cijk_BBH gemms: {bbh} ({bbh/S:.1f}/step; wave6 was ~47)")
 print(f"DtoH copies: {dtou} ({dtou/S:.1f}/step)")
 print("top families:")

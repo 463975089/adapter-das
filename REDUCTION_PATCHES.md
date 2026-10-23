@@ -177,3 +177,13 @@
 - **预期收益（待 P0′ 干净窗口 serving 验证）**：解码图 kernel 数 4499→~2200/步（-49%），图节点/capture 内存/回放同步显著缩，elementwise 家族几乎清零；步长应明显下行（与 0.2 图膨胀治理同向）。
 - **教训入账**：① trace 里无融合核名+有 eager 链 ≠ 没有融合实现——先查"我们的 shim 把 wheel 符号换成了什么"（dir() 探针会被 shim 自身污染，用 `__module__` 判真身）；② 本地 checkout 可能落后远端真树（本地 sglang 树无 `_is_hcu` 臂/v0522 已有），**分派分析必须对真树 grep**；③ "emu 装载理由"要逐 arch 复核（gfx936 动机不该自动覆盖 gfx938）。
 - 遗产：nmz18 部署树已同步（mqa_triton.py/deep_gemm_dtk.py/test 三件）；`tmp_fetch/wave6_trace11..17.py`（归因工具链：functor 解析/邻域锚定/原始序列/全家族普查/python 栈普查）；`tmp_fetch/probe_mqa2..4.py`+`probe_aiter_ragged.py`+`probe_lightop_mqa.py`（指纹探针族）。
+
+## wave10 (10-24 晨): moe_align 小形状单 CTA 融合核——每层 6→1 核（264→44 核/步）+ 窗口链点火
+
+- **问题**：moe_align 四件套（`_moe_align_hist/_scan/_fill/_block_expert` 各 44/步=176 核/步）+ 两个 aten setup（`sorted_token_ids.fill_`+`torch.zeros`，wave6 FillFunctor 88.1/步锚在 hist→hist 之间）= **每层 6 核 × 44 层 = 264 核/步**。四件套在我们自己的 `sgl_kernel/moe.py`（非 sglang 树/DTK wheel）；stock v0522 是 JIT CUDA（HIP 上不能建）。
+- **vendor 换核路线否决**：aiter/lightop 的 `moe_align_block_size` 实现的是标准语义（drop/朴素对齐），与我们的 **EP 哨兵桶语义**（-1→专属 LAST 桶→块 expert_id=-1→filter_expert 置零）不兼容——2.1 的"align 出参 ABI 坑"即此类。自己融合更干净。
+- **修复（R-21）**：`_moe_align_fused_small_kernel` 单 CTA 一发全做：寄存器直方图（one-hot 分块累加）→块对齐排他前缀（tl.cumsum，与 scan 核同数学）→整缓冲 pad 预填→FIFO 确定性散写（段内序与四件套的原子到达序不同，runner 按行独立无感）→块→专家映射（哨兵桶=-1/尾块=nb）。桶映射/OOB 防护/尾值/cumsum(E+2 extra) 全 bit 级一致。`HCU_MOE_ALIGN_FUSED`（默认 2048=lane 阈值，=0 关闭回归对照）已注册 hcu_env。
+- **门测试（nmz26 GPU2 gfx938 全绿 PASS）**：`tests/kernels/test_moe_align_fused_gfx938.py` 15 组 parity（prod96/576、哨兵 30%/全哨兵、numel0/1、单专家偏斜、2048 边界、2088 四件套臂、bs16/E384/E+2、bs128/int64、E8、OOB 道）+ CUDA 图捕获回放追踪 in-place 变更 + **核指纹 fused=1 vs quartet=6**。
+- **窗口链实战**：邻居 06:1x 撤退 8 卡全空（torch mem_get_info 实测 140G×8）——但 boot_watch2 恒报 99G 假窗未自动点火。根因：watch2 探针用 `/usr/bin/python3`（torch 2.11 无 HIP），mem_get_info 全异常→min 恒为初值 99，**真窗被假探针掩埋**。手动点火 launch_rt07（06:15:51），window_chain poller 接力（fired up→150s 沉降→prof_wave2 独占门→census→自动重启）。census 已加 W10/FillFunctor 计数行。
+- **预期**：decode 图 4499→~1980 核/步（R-20 -2300 + R-21 -220，累计 -56%）；44 层×5 个多余图节点削除。P0′ 干净重 trace 即出真账。
+- **教训入账**：① watchdog 探针必须与被保护进程同一 python/环境，且"探测失败"与"资源不足"必须可区分（默认值静默兜底=把真窗探成假窗）；② 小形状下"包装层 setup 核"（fill_/zeros）可与计算核同刀融合——单 CTA 寄存器直方图在 ≤2K lanes 完胜多核 hist+scan+fill 链；③ 语义特殊（哨兵桶）的内核 vendor 替换前先对拍语义，ABI 坑多为语义坑。
