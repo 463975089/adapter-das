@@ -187,3 +187,13 @@
 - **窗口链实战**：邻居 06:1x 撤退 8 卡全空（torch mem_get_info 实测 140G×8）——但 boot_watch2 恒报 99G 假窗未自动点火。根因：watch2 探针用 `/usr/bin/python3`（torch 2.11 无 HIP），mem_get_info 全异常→min 恒为初值 99，**真窗被假探针掩埋**。手动点火 launch_rt07（06:15:51），window_chain poller 接力（fired up→150s 沉降→prof_wave2 独占门→census→自动重启）。census 已加 W10/FillFunctor 计数行。
 - **预期**：decode 图 4499→~1980 核/步（R-20 -2300 + R-21 -220，累计 -56%）；44 层×5 个多余图节点削除。P0′ 干净重 trace 即出真账。
 - **教训入账**：① watchdog 探针必须与被保护进程同一 python/环境，且"探测失败"与"资源不足"必须可区分（默认值静默兜底=把真窗探成假窗）；② 小形状下"包装层 setup 核"（fill_/zeros）可与计算核同刀融合——单 CTA 寄存器直方图在 ≤2K lanes 完胜多核 hist+scan+fill 链；③ 语义特殊（哨兵桶）的内核 vendor 替换前先对拍语义，ABI 坑多为语义坑。
+
+## P0′ 判决 (10-24 06:24-06:30 nmz18 独占窗口全自动链): R-21 验收✓ + 三大翻案
+
+- **窗口链实战闭环**：邻居撤退（torch 口径 8×140G）→ boot_watch2 假 99G 掩窗（探针 /usr/bin/python3 无 HIP torch，mem_get_info 全异常恒报初值 99）→ 手动点火；**首战 mem-frac 0.70 死于 `minimum viable=0.7478`**（wave7b 已知账但配方未改）→ 0.80 重点火 3 分钟 boot → poller 06:21:57 捕 fired up → settle 150s → prof_wave2 独占门过（min_free=24G）→ 40 步 trace + census 自动落账 → 自动重启。
+- **R-21 serving 验收 ✓**：`_moe_align_fused_small_kernel` 43/步（21.5/半步段×2 图）、四件套残 0、FillFunctor 134→45.8/步（-88 恰为 moe setup 双 fill）。总核 4499→**4160/步**（-339≈R-21 全额）。
+- **翻案一（R-20 错账）**：`_ragged_mqa_logits_kernel`=0——生产 decode 走 **paged 计划**（paged_mqa_metadata_tiny 76 次=R-02 vec 路径），Cijk BBH 21.5+BSS 23/半步段=vec 双 bmm 正当实现，**ragged emu 不在生产路径**；wave9 "4499→~2200(-49%)" 预期作废。R-20 保留为 nonpaged 分支修复（正确但非热点）。教训：归因必须先确认"生产实际走的分支"（trace 分支证据>代码路径推理）。
+- **翻案二（邻居理论破产）**：独占窗口（8×115G 全为我们 server、无邻居增量）下 **117ms 量化停摆照样全现**（84 次/20 段≈4/步，成对 115.9×2+116.5×2 集中在 MoE/silu 段）+ kernel 时长 95× 膨胀（silu_ptgq 单核 2.85ms vs 单测 30µs）。wave7b "邻居分配风暴"归因错（重负载 probe 满载唤醒态无停摆≠生产低载无停摆的证明力被高估）。
+- **翻案三（膨胀=虚胖 dur）**：稳态尾窗 busy 81%/gap 19%、gap 全 <1ms、max 并发 2、时钟 sclk 1350 正常、降频排除——**dur 虚胖=流内串行等待摊入**（NCCL/跨 rank 集合等待核/图依赖），wave6/7 的"kernel 时间账"（161ms~3750ms/步）全部不可作墙钟依据；**唯一可信墙钟=步长**：当前 **1054ms/步**（527ms×verify/draft 两段）vs 1.7 验收线 550ms。
+- **下一波主靶重排**：① **116ms 成对停摆**（~232ms/步,MoE 段,独占仍在——需 8 rank trace 时间戳对齐找慢 rank/集合点；嫌疑=NCCL proxy 周期/XMI 门/EP allgather 等待）；② **elementwise 大军真凶**（vectorized 600+manual_unroll 333/半步段≈1900/步,非 MQA——候选=topk 后处理 sbtopk/mbtopk 邻域、quant scale 链、hc torch 段、dp gather/scatter）；③ per_token_group_quant_8bit_v2 88.5/段（177/步,88ms 段时长）。
+- 遗产：/root/w10_probe.py、w10_seg.py、w10_cut.py、w10_bi.py（分账工具链）；prof trace 1792794307.*.trace.json.gz×8。
