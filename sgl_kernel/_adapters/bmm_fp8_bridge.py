@@ -30,10 +30,14 @@ def install():
 
     def _hcu_bmm_fp8(A, B, A_scale, B_scale, dtype, out=None):
         out_dtype = dtype if out is None else out.dtype
+        # 2026-10-24 emu audit: keep the scales as 0-d GPU tensors. The old
+        # float(A_scale...) form cost TWO DtoH syncs per call (capture-unsafe,
+        # and a stall suspect wherever this bridge does run, e.g. prefill
+        # MLA-absorb); the tensor form is the same per-tensor fp32 math with
+        # zero host round-trips.
+        s = A_scale.reshape(-1)[0] * B_scale.reshape(-1)[0]
         result = (
-            torch.bmm(A.to(torch.float32), B.to(torch.float32))
-            * float(A_scale.reshape(-1)[0])
-            * float(B_scale.reshape(-1)[0])
+            torch.bmm(A.to(torch.float32), B.to(torch.float32)) * s
         ).to(out_dtype)
         if out is not None:
             out.copy_(result)
