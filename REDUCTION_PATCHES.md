@@ -204,3 +204,18 @@
 - **图谱（锚点→跟班数）**：① indexer 段=最大簇：`Cijk_Ailk_Bljk_SB_MT32x32x32`（44/步，每锚 10 aten 连发）+`Cijk_BSS`（18 锚×50 连发=900）+SB_MT32x32x16（228 锚带 912）≈ **topk/采样后处理链**（sbtopk gatherTopK/mbtopk 邻域，clamp_scalar 190/add 170/compare 120/masked_fill 92/bitwise_not 136/步）；② `_dequantize_k_cache_paged` **1:1 伴随** 96/步（掩码/索引核，可并入 dequant 核）；③ router/moe_sum_scale 各 ~2/锚、fused_k_norm_rope ~3/锚小尾巴；④ gpu_kernel_impl(+nocast) 800/步=TensorIterator 通配（cat/index/gather 类）。
 - **定性**：不是 wave9 推断的单点 ragged emu（那不在生产路径），是**横跨 indexer/MoE/norm 的 torch 胶水层总量**；收编价值=launch/图节点/等待面（62% 核数），墙钟贡献待 116ms 停摆解决后再评（dur 虚胖不可用）。
 - **下一刀排序**：116ms 成对停摆（232ms/步=步长 22%，per-rank 8 trace 对齐法）＞ indexer topk 后处理链融合（最大 aten 簇）＞ dequant 伴随核并入。
+
+## emu 审计 (10-24 晨, 用户指令: 日志 emu 即 bug, 优先修)
+
+**服务日志 4 个 emu 装载点的判决表**（日志 + 06:24 干净 trace + 代码/容器实证三方对齐）：
+
+| # | 日志证据 | 判决 | 行动 |
+|---|---------|------|------|
+| 1 | `[hcu] MQA-logits emu installed (paged→torch gather-GEMM, ragged→torch GEMM)` | **banner 过时**：resolve=triton 下两入口实际路由 triton 核（容器 probe 实证：paged 入口发 `_paged_mqa_logits_kernel`）；但 wrapper 每调用带 **9 个 aten 胶水**（q fp8→fp32 host 转换×N + w/ctx/bt 转换 + out zeros FillFunctor）= 10 核/调用半 emu | 修：胶水并入核内（q 按位解码如 R-20 ragged、out empty 化），目标 10→1-2；banner 改真身 |
+| 2 | `HCU_FA_IMPL=auto -- fa3 attention stays on the torch emulation` | **真 emu 在役**（dsa_prefill_backend=fa3 → prefill attention torch 模拟；=triton 有 decode 路线） | 修：prefill 段换 triton/原生路线（排 decode 优化后） |
+| 3 | `fp8_utils.bmm_fp8 bridged to torch-native dequant bmm` | **真 emu 在役**（dequant×2+aten bmm/call；trace 44/步层频 hipBLAS 家族嫌疑之一） | 修：融合 fp8 bmm（核内 dequant，gemm_fp8.py 基建在） |
+| 4 | `[HCU kprd] read-emu installed` | **死装载**（12 rank 装载 banner，0 调用行——两次日志审计一致） | 不修；防回归：装载时加计数器日志 |
+
+**MQA logits 生产实态（未闭环，下一波第一动作）**：trace 里我们两个 triton 核（`_paged/_ragged_mqa_logits_kernel`）都不在、flydsl 核不在、wheel 无 `fp8_fp4_paged_mqa_logits`（容器实证 exists:False）、三个选择 env 全默认 False、emu paged 版遇 preshuffle=True 必 raise（没崩）——排除法后每层 1×`Cijk_Ailk_SB_MT32x32x32`+10 aten 连发（45.6 锚×10=456 aten/步）的真实 caller 待定。**闭环手段：HCU_DUMP_MQA=1 定向复跑（3 分钟热 boot）拿调用指纹**。注意 `_quantize_fp4_indexer_kernel` 4.1/步（≈draft 4 层）暗示 draft 段走 fp4 indexer 而 target 40 层走别的。
+- 关键代码坐标（真树 v0522）：dsv4/indexer.py:818-841 fn 五叉选择（fp8_fp4/aiter_fp4/tilelang/aiter/torch_sm120/else deep_gemm）、:722 _nonpaged_mqa_logits→deep_gemm.fp8_mqa_logits、:1031 run_paged_indexer→fn(...)；dsa_indexer_kpool.py:1029 aiter_paged_mqa_logits(preshuffle=True)；dsa 包符号被 mqa_logits_emu.install() 换成 torch 版（遇 preshuffle raise，故 kpool 路径必崩 → 未走）。
+- 教训：装载 banner ≠ 运行实态（install 绑定 vs 运行时 impl 分派两层），emu 审计必须 trace 核名+容器 __module__ 实证双层验证。
