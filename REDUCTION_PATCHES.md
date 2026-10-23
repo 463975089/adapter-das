@@ -197,3 +197,10 @@
 - **翻案三（膨胀=虚胖 dur）**：稳态尾窗 busy 81%/gap 19%、gap 全 <1ms、max 并发 2、时钟 sclk 1350 正常、降频排除——**dur 虚胖=流内串行等待摊入**（NCCL/跨 rank 集合等待核/图依赖），wave6/7 的"kernel 时间账"（161ms~3750ms/步）全部不可作墙钟依据；**唯一可信墙钟=步长**：当前 **1054ms/步**（527ms×verify/draft 两段）vs 1.7 验收线 550ms。
 - **下一波主靶重排**：① **116ms 成对停摆**（~232ms/步,MoE 段,独占仍在——需 8 rank trace 时间戳对齐找慢 rank/集合点；嫌疑=NCCL proxy 周期/XMI 门/EP allgather 等待）；② **elementwise 大军真凶**（vectorized 600+manual_unroll 333/半步段≈1900/步,非 MQA——候选=topk 后处理 sbtopk/mbtopk 邻域、quant scale 链、hc torch 段、dp gather/scatter）；③ per_token_group_quant_8bit_v2 88.5/段（177/步,88ms 段时长）。
 - 遗产：/root/w10_probe.py、w10_seg.py、w10_cut.py、w10_bi.py（分账工具链）；prof trace 1792794307.*.trace.json.gz×8。
+
+## wave10 续: elementwise 大军真凶图谱（1.6 下一刀的靶单）
+
+- **量**：稳态尾窗（~5 步）aten 核 12919 → **~2584 aten/步**（占 4160 核/步的 62%）；3184 个 aten 连发段锚定到前置自有命名核。
+- **图谱（锚点→跟班数）**：① indexer 段=最大簇：`Cijk_Ailk_Bljk_SB_MT32x32x32`（44/步，每锚 10 aten 连发）+`Cijk_BSS`（18 锚×50 连发=900）+SB_MT32x32x16（228 锚带 912）≈ **topk/采样后处理链**（sbtopk gatherTopK/mbtopk 邻域，clamp_scalar 190/add 170/compare 120/masked_fill 92/bitwise_not 136/步）；② `_dequantize_k_cache_paged` **1:1 伴随** 96/步（掩码/索引核，可并入 dequant 核）；③ router/moe_sum_scale 各 ~2/锚、fused_k_norm_rope ~3/锚小尾巴；④ gpu_kernel_impl(+nocast) 800/步=TensorIterator 通配（cat/index/gather 类）。
+- **定性**：不是 wave9 推断的单点 ragged emu（那不在生产路径），是**横跨 indexer/MoE/norm 的 torch 胶水层总量**；收编价值=launch/图节点/等待面（62% 核数），墙钟贡献待 116ms 停摆解决后再评（dur 虚胖不可用）。
+- **下一刀排序**：116ms 成对停摆（232ms/步=步长 22%，per-rank 8 trace 对齐法）＞ indexer topk 后处理链融合（最大 aten 簇）＞ dequant 伴随核并入。
