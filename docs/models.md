@@ -175,3 +175,8 @@
 - **修复（容器 /sglang-v0522/.../engram.py 四处）**：指针翻译改以 **libamdhip64 可加载性**为准（find_loaded_library→CDLL soname 兜底）+ 翻译回显 host 即 raise；注册前整段写脏 0xAB（脏页无写回目标免疫页缓存churn 回收，das 不崩的同款护身符）；注册后永不 MADV_COLLAPSE；地址常驻日志。cut8 config 配平 vocab=250000/num_embeddings=[6003388,6013872]。
 - **实证**：boot→load→dummy→prefill→DSPARK decode 全通 0 fault；dev≠host 重定位在案；TPOT host=21.2-21.9s vs device=21.4-21.8s（256tok，持平）。**生产化缺口：per_rank 23.6G 单次注册>12G 必败 → 需分块注册（12G×N 已证 48G/进程过）；8 卡 matched-dose 消拍=下一空窗首项。**
 - 方法论增补：dmesg fault VA 与映射区间做**区间归属判定**（两 VA 之差=w_bytes 即 weight/scale 指针对）；canary 对照实验（已知好路径 S 组 vs 待验路径同进程同刻）分离"注册机制坏"与"指针翻译坏"。
+
+### 10-24 nmz18 单测三连（P1.1/1.2/1.3，卡 7）
+- **1.1 topk_v2 ragged 转正**：96 例 parity 集合语义 0 错（rem/topk/L/offsets 正交扫，4 reps）；非确定性=atomicAppend 发射到达序（topk_impl.cuh 612/617，paged 臂同源同在跑）；2.2-2.9× 快过 legacy；`HCU_TOPK_V2_RAGGED` 默认翻 1（nmz18 容器 dsa_topk_backend.py 已改）。**方法论：topk parity 一律比排序后集合，双跑分离"错"与"序"。**
+- **1.2/1.3 口径翻案（双双达标）**：rmsnorm 5.3-5.9µs=das 地板；router 10µs 快 das 2.8×。教训入库：**①trace 家族和÷单核地板=假膨胀 ②墙钟(bench loop)≠核时，必须 CUDA graph 重放 ③旧 trace 不代表当前树**（act_and_mul 3.1ms/reduce_bf16 438µs 都是 1.0a/b 前旧账）。P1 真残余=eager 段 per-call 50-90µs host 开销（→1.5/1.6）。
+- 容器遗产（/root）：topk_ragged_parity/bench.py、rmsnorm_bench2.py、router_graph/matrix.py、router_baseline.pt——复跑即可。

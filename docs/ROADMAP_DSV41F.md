@@ -40,12 +40,12 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
 - [x] 1.0a MoE combine emu→triton（467µs×40 层→74µs 级，5.7×，parity ≤1ulp）`[kern]`
 - [x] 1.0b silu v3 挂点修正（ENGAGED）`[kern]`
 - [x] 1.0c topk_v2 融合接通（paged 臂 parity 5/5，B 臂四门绿）`[kern][ada]`
-- [ ] **1.1 topk_v2 ragged 臂补 parity + 转正**（mbtopk 57/步残账）`[kern]`
-  验收：ragged 臂逐值 parity；单步 topk 族耗时 ≤100µs
-- [ ] **1.2 rmsnorm 家族对齐**（fused norm+qkv，fp32 acc 单舍入）`[kern]`
-  验收：≤3× das 地板（≤17µs）
-- [ ] **1.3 router/gate 融合**（fused gate sqrtsoftplus 等价）`[kern]`
-  验收：router ≤85µs（3× das）
+- [x] 1.1 topk_v2 ragged 臂补 parity + 转正（10-24 单测转正：96 例集合语义 0 错，"非确定"=atomicAppend 到达序与 paged 臂同源；2.2-2.9× 快过 legacy；`HCU_TOPK_V2_RAGGED` 默认 1，回退设 0；serving 验证并入 1.7）`[kern]`
+  验收：ragged 臂逐值 parity ✓（96/96）；单步 topk 族耗时 ≤100µs —— kernel 级 10-58µs ✓（serving 复核在 1.7）
+- [x] 1.2 rmsnorm 家族对齐（10-24 翻案：kernel-only 5.88µs @T64/H5120 = das 地板 5.6µs 同级，1-ulp parity；"450µs/80×"=旧 trace 家族和÷单核地板口径混算；eager 段 ~51µs/call 墙钟归 1.5/1.6）`[kern]`
+  验收：≤3× das 地板（≤17µs）✓（5.3µs trace p50 / 5.88µs graph 复测）
+- [x] 1.3 router/gate 融合（10-24 翻案：`_router_triton_kernel` 全融合本已在位，kernel-only 10µs @M64/E384/K6——快 das 28.4µs 2.8×；sqrtsoftplus-open 生产路径；num_warps 1→4 无效已试回滚；墙钟 ~100µs=wrapper 归 1.5/1.6）`[kern]`
+  验收：router ≤85µs（3× das）✓（10µs；prefill M2048=42µs/M8192=123µs）
 - [ ] **1.4 mqa_logits/paged indexer 路径**（das 单算子 2-3×=端到端 4%）`[kern]`
   验收：对齐 das 同位 ±30%
 - [ ] **1.5 DtoH 消泡**（active_pages 类图外同步点；das 账面 5%）`[ada]`

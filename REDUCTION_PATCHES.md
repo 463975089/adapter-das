@@ -73,3 +73,10 @@
 - **修复后实证**：boot→load→dummy forward→prefill→DSPARK decode 全通 0 fault；`dev≠host` 重定位日志在案。**cut8 TPOT 对照：host=21.2-21.9s/256tok vs device=21.4-21.8s/256tok——持平**（TP1 无图小剂量代理，绝对值无意义；生产剂量性能与消拍待 8 卡）。
 - **补丁位置**：容器 /sglang-v0522/python/sglang/srt/layers/engram.py（4 处：预触写脏/指针翻译 seam 旁路+校验/禁 collapse/地址日志）；seam 本身不动（is_hip=False 是全平台决策，翻转会动 FP8 常量与内核选路）。
 - **生产化缺口（未做）**：per_rank 23.6G/rank 单次注册 >12G 必 err → 需**分块注册**（pincap 已证 12G×4=48G/进程过），_HostTable 尚未实现分块+逐块 device 指针；shared 布局全表 94G×2 不适用于生产。8 卡 matched-dose 消拍测试 = 下一个空窗的首项。
+
+## 2026-10-24 nmz18 单测三连（P1.1 转正 + P1.2/1.3 口径翻案，卡 7）
+- **P1.1 topk_v2 ragged 臂转正**：96 例 parity 扫描（rem 对齐/任意 × topk{8,64,128} × L{256,4096} × prod/general offsets × 4 reps）**集合语义 0 错**；"非确定性"实为 atomicAppend 发射的到达序（topk_impl.cuh:612/617——与已转正 paged 臂同一套，flashmla_sparse 按集合消费）；微基准 **2.2-2.9×** 快过 legacy 臂（B512/L8k/k2048: 58 vs 156µs；legacy 在 topk=512 直接断言拒绝）；门 `HCU_TOPK_V2_RAGGED` 默认翻 1（dsa_topk_backend.py，注释留凭据；容器已改，回退设 0）。
+- **P1.2 rmsnorm 翻案（达标）**：`fused_add_rmsnorm` kernel-only（CUDA graph 重放）**5.88µs** @T=64/H=5120，parity 1-ulp（out maxdiff 0.0625=1bf16ulp，residual 精确 0）；旧 trace decode 段 p50=5.3µs 与 das 5.6µs 同级。**"450µs/80×"=旧 trace 家族和 ÷ das 单核地板的口径混算**；真差距是 eager 段每次调用 ~51µs 的 python/launch 墙钟（图内无感）。
+- **P1.3 router 翻案（达标）**：`_router_triton_kernel`（全融合 sigmoid/sqrtsoftplus-open/log1p + 分组 + topk + renorm）kernel-only **10.0µs** @M=64/E=384/K=6（das 28.4µs，我们快 2.8×；验收 ≤85µs 大幅满足）；M=2048→42µs、8192→123µs。三 scoring 变体全同速（libdevice.log1p 无罪）；num_warps 1→4 无改善且大 M 回退（已回滚）；墙钟 ~100µs=wrapper 开销（同 P1.2 结论）。
+- **旧 trace 复盘（prof_dsv41f_dec20 TP-0）**：20 步 DRAFT/VERIFY(bs=2)；exp n=860=43 层×20 步（head_gate sigmoid 非路由）；reduce_bf16 438µs p50=1.0a 之前的 emu MoE-sum（已修）；DtoH 仅 3/步（copy_result_to_cpu 常规）零 cudaStreamSynchronize；**>10ms 核间隙 61 处共 3004ms=拍本尊**；1.6 的 4121 核/步基线需新 trace（1.0a/b/c 后）。
+- **P1 真残余主题重定位**：kernel 地板全线 ≤das 同级；剩余膨胀=①eager 段 per-call ~50-90µs host 开销（1.5/1.6 主攻：融合+图覆盖）②核数（1.6，需新 trace 基线）③集中 A/B（1.7）。
