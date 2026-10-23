@@ -90,3 +90,15 @@
 - 遗产（nmz26 容器 /root）：mqa_bench4.py（fp8/bf16 四臂+parity 三指标）、mqa_bench5.py（int8 生产对：lightop vs pers-JIT）。
 - **P2.1 首攻实探（wfp4a8_groupwise 点火，差一步）**：checkpoint 专家张量实探=**原生 MXFP4**（I8 打包 e2m1 [2304,2560]=K5120 nibble + **F8_E8M0 [2304,160]**=K/32 组）——与 aiter wfp4a8_groupwise 消费布局**逐位对口**，现役 FP4_DEQUANT→fp8 迂回纯属无直连 kernel。点火战果：①kernel **预编 .so 在 wheel 内**（aiter/jit/module_moe_c_wfp4a8_kernel.so，零 JIT）且本 gfx 可加载、dtype/shape 检查可达——kernel ABI=**plain [E,N,K/2] uint8 + e8m0 [E,N,K/32]（无需 marlin shuffle）**，activation qgroup=per-token-group fp8；②dispatch map 收结构化 MODE（stage/routing/family/bm/profile 位段，csv 实例 11201102+21101201）且首个合法 MODE（11001101 族）过门；③**卡点=kernel 内段错误**：rowmajor/colmajor 两种 a_scale 布局（cm 布局 helper 已在树 :419）、delta/size_m 两释义组合皆崩——需 wheel 主给 MODE 表+delta/size_m 契约或其内部测试用例；备选=按 invoke_fused_moe_kernel_marlin 全 wrapper 移植（自备 config dict）。
 - **wheel 缺陷清单（本轮累计，待集中反馈给 wheel 主/自家仓库）**：deepgemm `paged_mqa_logits` 本 gfx metadata 全拒（fp8/int8 各臂）；lightop fp8 读核 fn 偏置 vs 生产写 fnuz=恰 2×；aiter `utility/fp4_utils` python 面缺 f32_to_e8m0/e8m0_to_f32/f32_to_mxfp4（per_1x32_f4_quant 不可用）；aiter moe_c wfp4a8 无配置表（17 json 全非 wfp4）+MODE 契约不明。
+
+## 2026-10-25(晚) nmz18 复活役：wfp4a16 直连 kernel 全契约破译（deepgemm 路通、布局定性）
+- **nmz18 环境恢复**：同居方修了驱动（renderD128-135 回归，8×BW1101 全空）；lzg-dsv41f-dspark 容器重启正常。新坑：本机 aiter `moe_align_block_size` 绑定=**出参式 ABI**（`(..., sorted_out, experts_ids_out, ntp_out)`），树内 fused_moe_c 老 wrapper 传参错位→段错误假象（非驱动问题）；直接 torch.ops 调用带预分配出参即通。
+- **aiter moe_c wfp4a8 定性=需 wheel 主**：同 commit ga76f3d 两台机器 dispatch 表不同（nmz26 过门 11001101 / nmz18 全拒）——**MODE 表是 build 级编译产物**，与台账"wheel 分叉"风险互证；gfx938/fp4_w4a8_groupwise32 配置目录真实存在（MODE 9525/9523）但本 build 不认。本条挂起，转 deepgemm 路。
+- **deepgemm `m_grouped_wfp4a16_gemm_nt_contiguous` 全契约破译（真 checkpoint 权重，E384/K5120/N2304）**：
+  ①权重布局=plain `[E,N,K/2]` uint8 但**每 4 字节单元内 nibble 需逆置换**：kernel K 序读 `[0,2,4,6,1,3,5,7]`（lo 全前 hi 全后）→ repack=`[lo0|lo2<<4, hi0|hi2<<4, lo1|lo3<<4, hi1|hi3<<4]`（one-hot 全 K 提取 5120 行解码矩阵，perm 拟合 conf=1.000、逐位 maxabs=0）；
+  ②scale=checkpoint e8m0 `[E,N,K/32]` **原样直用**（bias 127）；
+  ③m_indices 组行数**必须 128 对齐**（32/64 对齐 parity 崩 rel 1.2-1.7，128=精确）；
+  ④**parity：maxabs 0.0010 / rel 0.0027（bf16 级，decode+prefill 双验证）**——checkpoint 原生 MXFP4 零转换直连成立（除 nibble 重排，load 期一次性）。
+- **布局定性（对本役关键）**：contiguous+128 对齐对 decode（m≈1.5/专家）= pad 31104 行 **10.8ms/层**、prefill B512×6=16.9ms——**decode 不可用**（省的 dequant ~55ms/步全险被 40 层×10.8ms 吃回）；本 kernel=**prefill/EP 形态**（m/专家自然 ≥64 时 pad 浪费趋零）。**decode 的 wfp4 直连仍缺 masked 变体**（deepgemm 只有 w4a8-INT4 masked hipc；aiter moe_c 有 masked 但卡 MODE 契约）。
+- **决策点（还 wheel 主，二选一）**：A. deepgemm 加 `m_grouped_wfp4a16_gemm_nt_masked`（w8a8 masked 同款骨架，自家 wheel）；B. aiter moe_c wfp4a8 各 build 的 MODE 表/调优脚本（或给出 per-build 调优表生成 CLI）。任一到位，decode MoE 消 fp4→fp8 dequant（trace 第一大核族 1104ms）即通。
+- 遗产（nmz18 容器 /root）：dgm_wfp4_final.py（全契约终探针）、dgm_perm_extract.py（one-hot 置换提取器）、wfp4_ignite4.py、probe.log。
