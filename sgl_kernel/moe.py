@@ -518,7 +518,8 @@ if HAS_TRITON:
 
 def moe_sum(input_tensor: torch.Tensor, output_tensor: torch.Tensor):
     """output = sum of input over dim=1 (input [M, topk, D] -> output [M, D])."""
-    output_tensor.copy_(input_tensor.sum(dim=1))
+    if not _moe_sum_scale_triton(input_tensor, output_tensor, 0.0):
+        output_tensor.copy_(input_tensor.sum(dim=1))
 
 
 def moe_sum_reduce(
@@ -527,10 +528,74 @@ def moe_sum_reduce(
     routed_scaling_factor: float = 0,
 ):
     """output = sum(input, dim=1), scaled by routed_scaling_factor when != 0."""
-    out = input_tensor.sum(dim=1)
-    if routed_scaling_factor:
-        out = out * routed_scaling_factor
-    output_tensor.copy_(out.to(output_tensor.dtype))
+    if not _moe_sum_scale_triton(input_tensor, output_tensor, routed_scaling_factor):
+        out = input_tensor.sum(dim=1)
+        if routed_scaling_factor:
+            out = out * routed_scaling_factor
+        output_tensor.copy_(out.to(output_tensor.dtype))
+
+
+if HAS_TRITON:
+
+    @triton.jit
+    def _moe_sum_scale_kernel(
+        x_ptr,
+        y_ptr,
+        rsf,
+        K,
+        D,
+        stride_m,
+        BLOCK_D: tl.constexpr,
+    ):
+        # out[m, d] = rsf * sum_k x[m, k, d]  (fp32 accumulate, one store)
+        m = tl.program_id(0)
+        d = tl.program_id(1) * BLOCK_D + tl.arange(0, BLOCK_D)
+        acc = tl.zeros((BLOCK_D,), dtype=tl.float32)
+        base = x_ptr + m.to(tl.int64) * stride_m
+        for _ in range(K):
+            acc += tl.load(base + d, mask=d < D, other=0.0).to(tl.float32)
+            base += D
+        if rsf != 0.0:
+            acc = acc * rsf
+        tl.store(
+            y_ptr + m.to(tl.int64) * D + d,
+            acc.to(y_ptr.dtype.element_ty),
+            mask=d < D,
+        )
+
+
+def _moe_sum_scale_triton(x: torch.Tensor, y: torch.Tensor, rsf: float) -> bool:
+    """Launch the fused combine; False means caller must run the torch fallback.
+
+    Replaces the aten reduce+mul+copy triple (the in-graph combine was
+    reduce_kernel<128,4> at 135-165 GB/s plus two extra elementwise passes).
+    """
+    if not (
+        HAS_TRITON
+        and x.is_cuda
+        and x.dim() == 3
+        and x.dtype in (torch.bfloat16, torch.float16)
+        and x.is_contiguous()
+        and y.is_contiguous()
+        and y.shape[0] == x.shape[0]
+        and y.shape[1] == x.shape[2]
+        and x.shape[1] <= 64
+    ):
+        return False
+    M, K, D = x.shape
+    BLOCK_D = 512
+    grid = (M, triton.cdiv(D, BLOCK_D))
+    _moe_sum_scale_kernel[grid](
+        x,
+        y,
+        float(rsf) if rsf else 0.0,
+        K,
+        D,
+        x.stride(0),
+        BLOCK_D=BLOCK_D,
+        num_warps=4,
+    )
+    return True
 
 
 __all__ = [

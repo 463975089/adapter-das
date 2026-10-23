@@ -187,19 +187,82 @@ _REPLACEMENT2 = """                else:
 """
 
 
+# third branch: the EP-filtered routed arm (filter_expert=True whenever
+# num_experts != num_local_experts — always true under EP8): stock runs
+# act_and_mul_triton (trace: act_and_mul_kernel, 43/step on dsv41f) then a
+# separate per-token-group quant before the down GEMM.
+_ANCHOR3 = """            else:
+                act_and_mul_triton(
+                    intermediate_cache1.view(-1, N),
+                    intermediate_cache2,
+                    config,
+                    topk_ids,
+                    expert_ids,
+                    down_moe_use_tma,
+                    activation,
+                    swiglu_limit=swiglu_limit_for_triton,
+                )
+"""
+
+_REPLACEMENT3 = """            else:
+                _hcu_fq = _hcu_silu_fused_quant(
+                    intermediate_cache1.view(-1, N),
+                    swiglu_limit_for_triton,
+                    use_fp8_w8a8,
+                    block_shape,
+                    hooks,
+                )
+                if _hcu_fq is not None:
+                    intermediate_cache2, a2_scale = _hcu_fq
+                else:
+                    act_and_mul_triton(
+                        intermediate_cache1.view(-1, N),
+                        intermediate_cache2,
+                        config,
+                        topk_ids,
+                        expert_ids,
+                        down_moe_use_tma,
+                        activation,
+                        swiglu_limit=swiglu_limit_for_triton,
+                    )
+"""
+
+_route_state = {"miss_logged": False, "hit_logged": False}
+
+
 def _hcu_silu_fused_quant(x, limit, use_fp8_w8a8, block_shape, hooks):
     """Route guard: only the production shape (fp8 w8a8, [128,128] blocks, no
-    LoRA hooks). limit=None means plain silu (shared-expert fused_experts
-    calls); anything else unsupported keeps the stock two-kernel pair."""
+    LoRA hooks). limit=None means plain silu; anything else unsupported keeps
+    the stock two-kernel pair. First miss logs the failing conditions once per
+    process (nmz18 2026-10-23: the needle sat installed-but-inert because EP
+    routing takes the filter_expert arm the original anchors never covered;
+    the shared-expert arm's guard also silently rejected — diagnose, don't
+    guess)."""
     try:
         if (
             not use_fp8_w8a8
-            or hooks is not None
             or tuple(block_shape or ()) != (128, 128)
+            or hooks is not None
         ):
+            if not _route_state["miss_logged"]:
+                _route_state["miss_logged"] = True
+                LOG.warning(
+                    "HCU silu fused-quant route MISS (once): fp8_w8a8=%s"
+                    " block_shape=%r hooks=%r limit=%r x=%s",
+                    use_fp8_w8a8, block_shape,
+                    type(hooks).__name__ if hooks is not None else None,
+                    limit, tuple(x.shape),
+                )
             return None
         lim = float("inf") if limit is None else float(limit)
-        return silu_and_mul_clamp_quant(x, lim, 128)
+        out = silu_and_mul_clamp_quant(x, lim, 128)
+        if not _route_state["hit_logged"]:
+            _route_state["hit_logged"] = True
+            LOG.warning(
+                "HCU silu fused-quant ENGAGED (limit=%r shape=%s)",
+                limit, tuple(x.shape),
+            )
+        return out
     except Exception:
         LOG.warning("HCU silu fused-quant route failed; falling back to pair",
                     exc_info=True)
@@ -227,13 +290,18 @@ def install() -> None:
     k2 = text.find("\nclass ", i + 1)
     k = k if k >= 0 and (k2 < 0 or k < k2) else (k2 if k2 >= 0 else len(text))
     src = text[i:k]
-    if src.count(_ANCHOR) != 1 or src.count(_ANCHOR2) != 1:
+    if (
+        src.count(_ANCHOR) != 1
+        or src.count(_ANCHOR2) != 1
+        or src.count(_ANCHOR3) != 1
+    ):
         raise RuntimeError(
             "dsv4 swiglu activation anchors not found exactly once (source drift?)"
         )
     src = src.replace(_ASSERT_OLD, _ASSERT_NEW, 1)
     src = src.replace(_ANCHOR, _REPLACEMENT, 1)
     src = src.replace(_ANCHOR2, _REPLACEMENT2, 1)
+    src = src.replace(_ANCHOR3, _REPLACEMENT3, 1)
     _fm._hcu_silu_fused_quant = _hcu_silu_fused_quant
     exec(compile(src, _fm.__file__, "exec"), _fm.__dict__)
     code = getattr(_fm._fused_moe_kernel_sequence, "__code__", None)
