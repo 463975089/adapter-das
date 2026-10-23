@@ -50,8 +50,9 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
   验收：对齐 das 同位 ±30% ✓（10µs vs das 地板族 5-6µs；大 B 已贴 HBM 带宽）
 - [x] **1.5 DtoH 消泡**（active_pages 类图外同步点；das 账面 5%）`[ada]`（10-26 运行期验收：新鲜 39 步 trace **DtoH 2.1 次/步、~30µs/步**=常数级残留，无阻塞型图外同步（hipEventSynchronize=标准步边界）；代码普查 3 候选均在非生产算法。**通过**）
   验收：trace 图外同步归零 ✓（残留常数级 2.1 次/步 30µs，非阻塞）
-- [ ] **1.6 杂项 elementwise/copy 收编**（融合进邻居 kernel）`[kern]`（10-26 新鲜基线：**4499 核/步**（2249.6/图×draft+verify 两图）；最大池=torch eager elementwise 两族 `vectorized_elementwise` 660/步 4495ms + `manual_unroll` 342/步 3930ms=**合计 28% GPU 时间**；次池=`apply_rotary_emb_triton` 46.5/步×1116µs/call（bs2 病态时长，疑全 KV/大 padding）、`_silu_clamp_ptgq` 22×1930µs、`_hc_mix_stats_partial` 23×1652µs；fp4 dequant 家族已证=载入期一次性，步内无此池）
+- [ ] **1.6 杂项 elementwise/copy 收编**（融合进邻居 kernel）`[kern]`（10-26 新鲜基线：**4499 核/步**（2249.6/图×draft+verify 两图）；最大池=torch eager elementwise 两族 `vectorized_elementwise` 660/步 4495ms + `manual_unroll` 342/步 3930ms=**合计 28% GPU 时间**；次池=`apply_rotary_emb_triton` 46.5/步×1116µs/call（bs2 病态时长，疑全 KV/大 padding）、`_silu_clamp_ptgq` 22×1930µs、`_hc_mix_stats_partial` 23×1652µs；fp4 dequant 家族已证=载入期一次性，步内无此池。**10-26(晚)修正**：以上平均时长含监控停摆怪物事件假账，剔除后每步真实 kernel 仅 ~161ms，重排：silu_clamp_ptgq 27.2ms/步（p50 598µs 真慢）、elementwise 两族 38ms/步、moe_sum_scale 14.5、nccl 14.1、hc_mix_stats 13.1、rope 9.4（p50 6µs 正常，量多而已））
   验收：verify 图 kernel 4121→≤2600（口径与旧账 4121 同量级，1.7 统一）
+- [ ] **P0′ 宿主监控栈 DCU 采集冻卡（10-26 定案，最大单杠杆 ~3×）**`[env]`：v5_exporter `--dcu.enabled` 轮询 quiesce 8 卡 ~117ms×4/步（8 rank 同刻 99-100%、对照旧 trace 零 gap、cgroup/steal/launch 全排除）——上报管理渠道停用/避让；生效后重跑干净负载复核 ~3×（39→~110+ tok/s），并重抓 prof 重锚 1.6 基线
 - [ ] **1.6b flashinfer.sampling.softmax adapter 洞（wave6 已补）**`[ada]`（非 greedy 采样解码曾必崩：DSPARK verify SoftmaxTemp→flashinfer softmax 只有 loud stub；triton port 落 `sgl_kernel/sampling.py`+allowlist 绑定，单测 11 项绿+graph 安全，167.9µs@N112×V151936=0.54×torch 链；采样解码生产验证通过）
 - [ ] **1.7 集中 serving A/B + 四门**（P1 全项改完一次跑，带无 dspark 臂）
   验收：P0 基础上 step ≤550ms；无 op 超 das 同位 3×
