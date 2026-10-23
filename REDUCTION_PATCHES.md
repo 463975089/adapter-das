@@ -131,3 +131,19 @@
 - **处置**：监控栈是邻居/运维设施（sugon basic-auth），按铁律不动它——**上报用户走管理渠道**：v5_exporter 关 `--dcu.enabled` 或拉长采集周期/避让压测窗口；生效后重跑 16×600 干净负载复核 ~3×。
 - **wave6 普查修正**：核族排名按"剔除怪物后 kept 时间"重排（每步）：silu_clamp_ptgq 27.2ms（17%，p50 598µs 真·均匀慢=1.6 靶）、vectorized_elementwise 22.0ms、manual_unroll 16.0ms、moe_sum_scale 14.5ms、nccl 14.1ms（含对端等待）、hc_mix_stats 13.1ms、rope 9.4ms（p50 6µs，纯量多）。hipGraphLaunch p50 11-20ms/次（2249 节点大图宿主提交成本，独立小池）。
 - 遗产：本地 `tmp_fetch/wave6_trace2..6.py`（分布/gap 解剖/跨 rank/launch 串行检验/对照）、`prof_dsv41f_dec20/dsv41f_tp{0,1,4,7}_wave6.trace.json.gz` + 旧对照 trace。
+
+## 2026-10-24(nmz18 深夜) wave7: 停摆归因复核——纯 torch 探针排除"轻负载冻卡"+ das 对比受阻全记录（环境连环坑入账）
+
+- **纯 torch 图回放探针（8 进程×8 卡，零 sglang/零模型，exporter 在役）**：graph 相位 10.9 万次迭代/卡（100 核/图）+ eager 相位 3.0 万次/卡，**全部零 >20ms 停摆**（均值 411-419µs/1510µs）——**exporter 不冻轻负载 GPU**。wave6b 的"监控冻卡"结论收窄为：需要"重负载（大显存占用进程）条件"才成立，或另有真凶；停摆问题保持 OPEN。
+- **das 对比四连阻（每个都是硬事实入账）**：
+  ① stock 0.5.18（dist-packages）无 deepseek_v41 注册（仅 v4/v4_dspark），dsv41f 只能走 v0522 树；
+  ② v0522 树单独起（不挂 adapter shim）死于 `aiter.ops.triton.gemm` 缺失——该缺口由 hcu_v0522 的 aiter shim 补，"纯树 das"在本容器不存在；
+  ③ Qwen3.8-Flash-Next-Channel-INT8（qwen4_exp，stock 原生支持）：我们树 w8a8-**INT8** MoE=`NotImplementedError: only for NPU`；
+  ④ DSV4.1-Channel-**FP8**（同模型 das 参考量化）：461→~1TB 参数（fp8 ~125G/卡），tp8 载完权重无 KV 空间（OOM 11.45G 分配）；Channel-**INT4**-w4a8（461G）：compressed-tensors 解析 `KeyError: 'Linear'`。换模型路线今晚全灭。
+- **环境连环坑（后续 boot 配方都要带）**：
+  ①**NCCL 8 卡 init 全盒坏**：`Add XGMI error: could not find GPU 5000`——镜像烘焙 `NCCL_TOPO_FILE=built-in-508-topo` 在驱动重载后失配；2 卡正常（走 shm 兜底）颇具迷惑性；**解法=`NCCL_TOPO_FILE=`（空=自探测，实测 8 卡 allreduce 通）**，且 launch_rt.sh 原作者本来就 `unset NCCL_TOPO_FILE`（老配方早留了后手）；
+  ②**custom allreduce 2GB exportable IPC buffer 分配失败（GTT 耗尽）**：崩溃风暴后残留 exportable 分配未释放（设备级、跨容器）；`--disable-custom-all-reduce` 可绕（牺牲 AR 走 nccl）；
+  ③冷容器 tvm-ffi 自锁复现一次：`TVM_FFI_DISABLE_TORCH_C_DLPACK=1` 免疫有效（CI 波结论再证）；
+  ④**邻居 vllm 三容器突发抢卡**（pzm/laibao/duyl，~107G/卡 短跑型）：00:52-01:5x 每轮 boot 都在赌窗口，OOM 与"spawn 静默挂"（master+spawner 活、8 scheduler 无声消失）皆此因。**生产 server 已停**，待静默窗口用 `/root/launch_rt07.sh`（mem-frac 0.70 版）重起。
+- **下一步判决实验（静默窗口优先做，零模型依赖）**：纯 torch 探针加"重负载条件"——每卡先 allocate ~100G 再跑图回放循环；若 117ms 停摆复现=exporter×重负载交互实锤；若仍零=真凶在 sglang 栈内（nccl 逐层屏障 × 某 rank 周期性宿主延迟），再走 das 同形臂对照。
+- 遗产：`tmp_fetch/stall_probe.py`（轻负载探针，已验）、`tmp_fetch/nccl_mini.py`（8 卡 allreduce 判具）、`tmp_fetch/launch_qwen_adapter_1026.sh`（das 对比容器配方：tvm-ffi 盾+topo 清空+AR 禁用全套）、nmz18 容器 `lzg-das-qwen`（idle sleep infinity，含仓库挂载 /models_qua，停摆实验复用；不需要时可 docker rm）。
