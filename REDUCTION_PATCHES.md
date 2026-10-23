@@ -147,3 +147,13 @@
   ④**邻居 vllm 三容器突发抢卡**（pzm/laibao/duyl，~107G/卡 短跑型）：00:52-01:5x 每轮 boot 都在赌窗口，OOM 与"spawn 静默挂"（master+spawner 活、8 scheduler 无声消失）皆此因。**生产 server 已停**，待静默窗口用 `/root/launch_rt07.sh`（mem-frac 0.70 版）重起。
 - **下一步判决实验（静默窗口优先做，零模型依赖）**：纯 torch 探针加"重负载条件"——每卡先 allocate ~100G 再跑图回放循环；若 117ms 停摆复现=exporter×重负载交互实锤；若仍零=真凶在 sglang 栈内（nccl 逐层屏障 × 某 rank 周期性宿主延迟），再走 das 同形臂对照。
 - 遗产：`tmp_fetch/stall_probe.py`（轻负载探针，已验）、`tmp_fetch/nccl_mini.py`（8 卡 allreduce 判具）、`tmp_fetch/launch_qwen_adapter_1026.sh`（das 对比容器配方：tvm-ffi 盾+topo 清空+AR 禁用全套）、nmz18 容器 `lzg-das-qwen`（idle sleep infinity，含仓库挂载 /models_qua，停摆实验复用；不需要时可 docker rm）。
+
+## 2026-10-24(凌晨续) wave7b: 三连探针排除法 + 分配风暴主嫌疑 + 共存不可能定量
+
+- **重负载探针**（每卡驻留 128G 到剩 11G + 图回放）：GPU1-7 各 ~9.6 万次迭代**零停摆**；唯独 GPU0（有邻居散占者、仅剩 5G）96 次停摆、慢 12×、**~438ms 量化**（与 117ms 不同现象=显存压力抖动）。
+- **IPC 映射探针**（每卡双进程共享 CUDA 张量，custom-AR 同款机制）：GPU1-7 双 rank 零停摆；GPU0 双进程各 300+ 停摆。**IPC 映射不是触发条件；"卡上有外部进程活动"才是**。
+- **旧 trace 补刀两刀**：①停摆窗口内 CPU 覆盖率 1.00 但无任何短 op=宿主全程阻塞在长等待调用（eventSynchronize 类）；②324 个怪物事件**零互相重叠**=真实串行占卡窗口，非时间戳扭曲。
+- **主嫌疑易主：邻居 vllm 的启动/显存分配风暴 × KFD/MMU 锁竞争冻在飞 kernel**（22:29 抓 trace 时邻居 tp8 正在初始化：8 卡同冻 ✓、117ms 量化=分配锁周期 ✓、das 彼时无此活动 ✓、三次纯 torch 探针时刻无风暴 ✓、exporter 降为从犯或清白——19:56 部署时间与邻居容器上线同窗，相关性需静默窗口复测拆解）。
+- **共存不可能的定量**：栈内权重+dequant 后 KV 最小需 0.748×144≈108G/卡；邻居稳态占 45G/卡 → 153G>144G。本轮 0.55 启动死于 `ValueError: minimum viable = 0.7478`（终于是个干净报错）。**boot 只能等邻居退场**。
+- **在役自动化**：`/root/boot_watch.sh` 看门狗（8 卡 ≥120G 空闲连续两次→自动点火 launch_rt07.sh），已武装；下一会话只需查 `/root/logs/srv_rt_1025.log` fired up + 跑 `/root/prof_wave.sh` 重抓 trace 判决（预期：零 117ms 停摆+步长 ~250ms=风暴理论闭合）。
+- 遗产：`tmp_fetch/heavy_probe.py`、`tmp_fetch/ipc_probe.py`、`tmp_fetch/wave6_trace7.py`（停摆窗 CPU 状态）、`tmp_fetch/wave6_trace8.py`（怪物重叠检验）、`tmp_fetch/boot_watch.sh`；容器 /root/heavy_probe.out、ipc_probe.out、hstall_*.json、ipc_*.json。
