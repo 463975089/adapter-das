@@ -49,3 +49,11 @@
 - 推翻"我方旧 userspace"：dsv41f 容器=dtk26041/torch2.11 同代；das 亦在 nmz 系调试 ⇒ 残余差分=env+代码构成。
 - env 排空：expandable_segments HCU 平台不支持（das 配方该行同为摆设）；烤 env 差=OMPI 惰性+NCCL_TOPO_FILE（已 unset）；ROCSHMEM/NCCL/MC 系仅 engage deepep。可测残余=HSA_FORCE_FINE_GRAIN_PCIE=1 与 HSA_KERNARG_POOL_SIZE=8M。
 - staged 四臂 /root/launch_ab1023_{A,B,C,D}.sh（A 基线/B kernarg/C fine-grain/D 双开），空窗即跑；代码构成嫌疑（engram 设备表/ROCM_HOME shim/topk v2）列 strip 梯队后备。
+
+## 2026-10-23(下午) 剪层复现器役：拍的 engram 剂量响应首证（nmz26 卡 2-3，双卡 TP2）
+- **卡 4-7 归属判定（用户质询）**：非我方残留——TP4/TP2 两次崩溃均释放干净（0 活进程 0 kfd 占用），4-7 为 1022-1023-NMZ26-dtk 三件套（Up 4h）加载期撞窗。
+- **cut8 剪层 boot 配方钉死**：符号链接模型目录+改 config（num_hidden_layers 8 / candidate_source_layer_id 4 / index_source_layer_ids [2,3,4] 保序在 candidate 处收口 / dspark_target_layer_ids [5,6,7] / engram_vocab_size 缩 / engram_num_embeddings 缩 / E384 不可动-形状断言）；launch_cut8_A.sh（PYTHONUNBUFFERED 必须+chmod+x；TP2 卡 2,3，mem-fraction 0.86+max-total-tokens 8192+graph bs8）。boot ~90s，主模型 57.5G/卡+draft 7G。
+- **103G→57.5G 之谜解**：engram 大表本体=engram_num_embeddings（每层 384M 项，两表 ~189G@TP8），非 engram_vocab_size。
+- **拍的剂量响应（idle，stall_detect 15s×2 卡×多轮）**：engram/卡 1.5G（cut8d）双卡全净 0 gap；23.6G（cut8e，=生产 TP8 每卡尺寸）卡 3 突发 15 gap/3.1% duty、复测 0.3/0.1%（间歇）；47G（cut8f）卡 2 突发 5 gap 10-25ms（与生产 25.3/45.3ms 量子同族）后归零。**结论：engram 设备表大小=拍触发器（onset 剂量 ~23.6G/卡），但稳态 48.6% 级全幅拍还需放大器（8 卡全载/全表/流量）**。
+- **剪层模型首请求崩**（vocab 8M×容量 6M 不一致疑越界→rank 死→gloo 断连）：loaded 路径复现待容量配平（每层容量=3 ngram×8 heads×vocab=24×vocab）。
+- 遗产（容器 /root）：dsv41f_cut8/、launch_cut8_A.sh、mk_cut8b.py——下轮直接用。
