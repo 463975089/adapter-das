@@ -57,3 +57,10 @@
 - **拍的剂量响应（idle，stall_detect 15s×2 卡×多轮）**：engram/卡 1.5G（cut8d）双卡全净 0 gap；23.6G（cut8e，=生产 TP8 每卡尺寸）卡 3 突发 15 gap/3.1% duty、复测 0.3/0.1%（间歇）；47G（cut8f）卡 2 突发 5 gap 10-25ms（与生产 25.3/45.3ms 量子同族）后归零。**结论：engram 设备表大小=拍触发器（onset 剂量 ~23.6G/卡），但稳态 48.6% 级全幅拍还需放大器（8 卡全载/全表/流量）**。
 - **剪层模型首请求崩**（vocab 8M×容量 6M 不一致疑越界→rank 死→gloo 断连）：loaded 路径复现待容量配平（每层容量=3 ngram×8 heads×vocab=24×vocab）。
 - 遗产（容器 /root）：dsv41f_cut8/、launch_cut8_A.sh、mk_cut8b.py——下轮直接用。
+
+## 2026-10-23(傍晚) engram host 路再役（用户问向：engram 放 CPU）
+- **das 对照实锤**：cookbook 全配方 `SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE=1 + per_rank + CPU_GATHER=0`——das 就是 host 表，与"其不拍+我方剂量响应"三角自洽。
+- **注册上限翻案**：单次 cudaHostRegister >12G 死（10-21 结论保留），但**分块 12G×4=48G/进程全过**（60G 才 err=1；ulimit/cgroup 均 unlimited，纯 HSA 层）——生产 TP8 per_rank 23.6G/进程装得下。
+- **host 路真死因 = 执行层**：cut8+host 表 boot，表建成功（per_rank 755M 驻留/大页 100%；shared 布局撞 shmem THP=never 慢 10×告警）后：①图捕获内 fused_engram_gate triton 首编死锁（--disable-cuda-graph 绕过）②绕过后 eager 跑 gate → **ROCR-Runtime 7.2 VMFaultHandler 段错误**（GPU 访问注册 host 内存页错误，runtime 处理器自崩）。das 栈同 env 能跑 ⇒ ROCR/驱动处理差异。
+- 下步候选：注册 flag 变体（hipHostRegisterMapped/NumaUser）、全量 pre-fault 保 GPU 访问前驻留（本次 23.6G 虚拟仅 755M 驻留疑点）、或移植 das CPU_GATHER 思路（CPU 侧 gather 免 GPU 触 host）。
+- 设备路剂量响应（下午役）仍是 P0 主线；host 路=das 同构解法，卡在 ROCR VMFault。
