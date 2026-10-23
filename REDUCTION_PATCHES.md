@@ -157,3 +157,12 @@
 - **共存不可能的定量**：栈内权重+dequant 后 KV 最小需 0.748×144≈108G/卡；邻居稳态占 45G/卡 → 153G>144G。本轮 0.55 启动死于 `ValueError: minimum viable = 0.7478`（终于是个干净报错）。**boot 只能等邻居退场**。
 - **在役自动化**：`/root/boot_watch.sh` 看门狗（8 卡 ≥120G 空闲连续两次→自动点火 launch_rt07.sh），已武装；下一会话只需查 `/root/logs/srv_rt_1025.log` fired up + 跑 `/root/prof_wave.sh` 重抓 trace 判决（预期：零 117ms 停摆+步长 ~250ms=风暴理论闭合）。
 - 遗产：`tmp_fetch/heavy_probe.py`、`tmp_fetch/ipc_probe.py`、`tmp_fetch/wave6_trace7.py`（停摆窗 CPU 状态）、`tmp_fetch/wave6_trace8.py`（怪物重叠检验）、`tmp_fetch/boot_watch.sh`；容器 /root/heavy_probe.out、ipc_probe.out、hstall_*.json、ipc_*.json。
+
+## 2026-10-24(晨) wave8: 1.6 首靶 silu_clamp_ptgq 洗清 + wave6 基线定性为"共卡污染"
+
+- **silu_clamp_ptgq（过滤后第一大真慢族 27.2ms/步）洗清**：standalone 复现生产形状（真实 M=576=96 行×topk6，自 AB1023 ENGAGED 日志取证；非 trace 首事件的 960）——CUDA-graph 36.9µs@M960 / ~30µs@M576，**生产 trace 的 598µs=环境膨胀 ~20×，kernel 与 P1.0b 挂点本身健康**。参数扫附带收获：GPB=2/ROWS=2=26.2µs（1.4×白捡，量级 0.5ms/步暂不做）。
+- **DVFS 排除**：稀疏发射（duty 100%→0.1%）kernel 仅 36.9→42.7µs（+16%），单进程场景时钟不惩罚突发。
+- **SM 并发排除但暴露盲区**：trace 内全家族零跨流并发（纯串行流）——但 **profiler 只记本进程 kernel，邻居进程的 kernel 对 trace 不可见**。
+- **wave6 基线定性翻案：共卡污染**。footprint 选择性膨胀模式（rmsnorm/softmax p50 与单测吻合不膨胀；silu/router/mix_stats/moe_sum/nccl 多 MB 族膨胀 8-20×）+ 盲区 + 时间窗（22:29=邻居 tp8 初始化期）→ **22:29 trace 是邻居共卡负载下的污染基线：其 kernel 时长、81% busy、161ms/步"真实 kernel 时间"全部是被邻居 HBM/SM 争抢拖慢的上界值**；4121/4499 核数/步、DtoH 2.1/步、拓扑结论不受影响。干净基线必须独占窗口重抓——看门狗已值守（boot_watch.sh ≥120G×2 自动点火）。
+- **全战役教训一条**：共享盒上抓 prof 前必须验"独占"（fuser /dev/dri + mem_get_info 全空），否则 trace 是别人负载的混合账。
+- 遗产：`tmp_fetch/silu_ptgq_bench.py`、`tmp_fetch/dvfs_probe.py`、`tmp_fetch/wave6_trace9.py`（并发盲区检验）、`tmp_fetch/wave6_trace10.py`（grid 取样）；容器 /root/silu_ptgq_bench.py、dvfs_probe.py。
