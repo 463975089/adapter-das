@@ -219,3 +219,10 @@
 **MQA logits 生产实态（未闭环，下一波第一动作）**：trace 里我们两个 triton 核（`_paged/_ragged_mqa_logits_kernel`）都不在、flydsl 核不在、wheel 无 `fp8_fp4_paged_mqa_logits`（容器实证 exists:False）、三个选择 env 全默认 False、emu paged 版遇 preshuffle=True 必 raise（没崩）——排除法后每层 1×`Cijk_Ailk_SB_MT32x32x32`+10 aten 连发（45.6 锚×10=456 aten/步）的真实 caller 待定。**闭环手段：HCU_DUMP_MQA=1 定向复跑（3 分钟热 boot）拿调用指纹**。注意 `_quantize_fp4_indexer_kernel` 4.1/步（≈draft 4 层）暗示 draft 段走 fp4 indexer 而 target 40 层走别的。
 - 关键代码坐标（真树 v0522）：dsv4/indexer.py:818-841 fn 五叉选择（fp8_fp4/aiter_fp4/tilelang/aiter/torch_sm120/else deep_gemm）、:722 _nonpaged_mqa_logits→deep_gemm.fp8_mqa_logits、:1031 run_paged_indexer→fn(...)；dsa_indexer_kpool.py:1029 aiter_paged_mqa_logits(preshuffle=True)；dsa 包符号被 mqa_logits_emu.install() 换成 torch 版（遇 preshuffle raise，故 kpool 路径必崩 → 未走）。
 - 教训：装载 banner ≠ 运行实态（install 绑定 vs 运行时 impl 分派两层），emu 审计必须 trace 核名+容器 __module__ 实证双层验证。
+
+## emu 审计续 (10-24 07:00-07:05 定向复跑): MQA 实态再排除三条 + 层频翻案
+
+- **HCU_DUMP_MQA=1 定向复跑**（06:49 重启 + 60tok 请求）：`[HCU mqa]`/`[HCU mqa-emu]` **全程 0 行** = decode 生成路径**一次都不调** deep_gemm 命名空间两个 shim 入口和 emu 入口（三入口全排除）。
+- **fn 真身探针**（needle dsv4/indexer.py:848 forward_c4_indexer fn 选择后，HCU_DUMP_MQA 门控）也 **0 行** = **decode 不执行 forward_c4_indexer**（C4Indexer.forward→attn_backend 链在 decode 被短路或走别路）。探针保留在树（env 门控零开销），下轮加三针（forward 入口/方法入口/fn 后）定位断点。
+- **层频翻案（关键认知修正）**：重数 trace——indexer 全家族都在 **2-16/步**区间（topk_split_select 8/步、gatherTopK 4.5、mbtopk 4、_quantize_fp4 4.1、_store_fp4 4.1、metadata_tiny 2、_rope_tail_fp4 16.4、_dequantize_k_cache_paged 83≈2/层）而**非 44/步**：**DSV4.1F 的 DSA indexer MQA 不是每层跑**（低频复用/间隔层结构待查）。→ 每层 44/步的 `Cijk_Ailk_SB`+10 aten 连发（456 aten/步）**不是 indexer MQA**，是每层 MLA/投影/别的结构——1.6 下一刀的归因靶要重定位（嫌疑：bmm_fp8 桥的逐层投影调用 或 MHC/compressor 的 torch 段）。
+- **修正后的 emu 优先级**：① bmm_fp8 桥（在役、逐层量级嫌疑升至第一）② MQA wrapper 9 aten 胶水（latent——生产未走，修好待路径回归）③ fa3 emu（prefill）④ kprd（死装载）。116ms 停摆仍墙钟第一。
