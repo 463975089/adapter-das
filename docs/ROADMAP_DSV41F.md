@@ -15,7 +15,7 @@
 | GPU duty | ~36%（拍吃 64%） | 86.9% 零停摆 |
 | 单步 kernel | verify 4121 / draft 255 | verify 2196 / draft 206 |
 
-台阶：**300ms ─P0消拍×2.8→ 110~145 ─P1地板+砍核×2~3→ 50~70 ─P2 deepgemm LL→ 35~50 ─P4拓扑→ 20~30ms**。逐级验收不跳级。量化对齐按用户定向**暂缓**（P3 桶，先对齐其他差异；台阶数字与量化正交）。
+台阶：**300ms ─P0消拍×2.8→ 110~145 ─P1地板+砍核×2~3→ 50~70 ─P2 deepgemm LL→ 35~50 ─P4轻项→ 30~45ms**。逐级验收不跳级。量化对齐与拓扑重项（PD/EPLB/sbo）按用户定向**暂缓**；台阶数字与量化正交。
 
 ---
 
@@ -63,18 +63,22 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
 - [ ] 2.3 a2a 对照集中 A/B：aiter AG vs deepep LL（ROCSHMEM 参数照 das 配方）`[env]`
   验收：decode MoE 段对齐 das 同位 ±30%；GEMM 占 busy ≥40%
 
-## P3 量化对齐（暂缓 —— 用户定向：先对齐其他差异）
+## 暂缓桶（用户 2026-10-23 定向：先对齐其他差异）
 
+量化对齐：
 - [ ] 3.1 dense 层 blockwise→channelwise 布局（对齐 das rocBLAS channelwise 快核路）`[kern]`
 - [ ] 3.2 INT4-W4A8 权重路径（模型现成 fix_mtp；W4A16 桥改 W4A8 或 aiter 表；先过 R-10 勘误的 scheme 坑）`[ada][kern]`
 - [ ] 3.3 精度成本评估后决定是否启动（收益主要在吞吐/容量/prefill，不在 TPOT）
 
-## P4 拓扑与调度（×1.2~1.5，工程量最大）
+拓扑重项：
+- [ ] X.1 PD 分离（decode 节点隔离 + mooncake/IB；需第二节点）
+- [ ] X.2 静态 EPLB（自做专家分布统计 .pt → init-expert-location）
+- [ ] X.3 sbo 近似（共享专家与 dispatch 双流 overlap，das 账面 1.5%）
 
-- [ ] 4.1 PD 分离（decode 节点隔离 + mooncake/IB）`[env][ada]` —— **需第二节点，用户决策**；das 17ms 是 decode 节点口径
-- [ ] 4.2 静态 EPLB（自做专家分布统计 .pt → init-expert-location）`[env][ada]`
+## P4 轻项（拓扑类重项已按用户定向暂缓）
+
 - [ ] 4.3 rocBLAS 调优库（ROCBLAS_TENSILE_LIBPATH）+ NCCL_SIMPLE_CHANNELS=32 `[env]`
-- [ ] 4.4 sbo 近似（共享专家与 dispatch 双流 overlap，das 账面 1.5%）`[ada]`
+  验收：dense GEMM 段对齐 das 同位 ±20%
 
 ## P5 das 持续优化收割（滚动）
 
@@ -86,7 +90,7 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
 ## 决策点（拍板后勾掉）
 
 - [ ] D1 lightop/deepgemm wheel 复用许可（同公司资产，问 das 团队/袁元；P1/P2 加速器）
-- [ ] D2 PD 分离是否在范围（P4.1，需第二节点+IB）
+- [x] D2 PD 分离是否在范围 —— 已拍板（2026-10-23）：先不做（连同 EPLB/sbo 入暂缓桶）
 - [ ] D3 8 卡机时窗口（P0 四臂 ~3h；P1 集中 A/B 每轮 ~1h）
 - [ ] D4 P0 落地前 A/B 均带无 dspark 臂（裸 decode 273ms 基线，省机时）
 
@@ -99,6 +103,7 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
 ## 台阶总账
 
 ```
-现状 300ms ─P0→ 110~145 ─P1→ 50~70 ─P2→ 35~50 ─(P3 暂缓)─ P4→ 20~30ms（das 17ms 级）
-统一节点现实终点 ~30~45ms；进 20ms 档必须 P4.1。P0/P1 完成前不承诺绝对数。
+现状 300ms ─P0→ 110~145 ─P1→ 50~70 ─P2→ 35~50 ─P4 轻项→ 30~45ms
+（量化/拓扑重项暂缓，本役终点 ~30~45ms；das 17ms 级含 PD 分离红利，不在本役口径）
+P0/P1 完成前不承诺绝对数。
 ```
