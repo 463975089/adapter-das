@@ -75,12 +75,14 @@ def register() -> None:
     try:
         from sgl_kernel.sampling import (
             min_p_sampling_from_probs,
+            softmax,
             top_k_top_p_sampling_from_probs,
         )
 
         _FI_SAMPLING_ALLOW = {
             "flashinfer.sampling": {
                 "min_p_sampling_from_probs": min_p_sampling_from_probs,
+                "softmax": softmax,
                 "top_k_top_p_sampling_from_probs": top_k_top_p_sampling_from_probs,
             },
         }
@@ -99,6 +101,14 @@ def register() -> None:
                 target="flashinfer.sampling:min_p/topk_topp",
                 mechanism=_reg.MECH_SEAM,
                 detail="torch reference tier; sglang sampler face",
+            )
+            _reg.register(
+                "sampling",
+                softmax,
+                target="flashinfer.sampling:softmax",
+                mechanism=_reg.MECH_SEAM,
+                detail="triton port (online 2-pass row softmax with per-row"
+                " temperature); dspark verify SoftmaxTemp hot path",
             )
         except Exception:
             pass

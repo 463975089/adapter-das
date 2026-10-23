@@ -102,3 +102,18 @@
 - **布局定性（对本役关键）**：contiguous+128 对齐对 decode（m≈1.5/专家）= pad 31104 行 **10.8ms/层**、prefill B512×6=16.9ms——**decode 不可用**（省的 dequant ~55ms/步全险被 40 层×10.8ms 吃回）；本 kernel=**prefill/EP 形态**（m/专家自然 ≥64 时 pad 浪费趋零）。**decode 的 wfp4 直连仍缺 masked 变体**（deepgemm 只有 w4a8-INT4 masked hipc；aiter moe_c 有 masked 但卡 MODE 契约）。
 - **决策点（还 wheel 主，二选一）**：A. deepgemm 加 `m_grouped_wfp4a16_gemm_nt_masked`（w8a8 masked 同款骨架，自家 wheel）；B. aiter moe_c wfp4a8 各 build 的 MODE 表/调优脚本（或给出 per-build 调优表生成 CLI）。任一到位，decode MoE 消 fp4→fp8 dequant（trace 第一大核族 1104ms）即通。
 - 遗产（nmz18 容器 /root）：dgm_wfp4_final.py（全契约终探针）、dgm_perm_extract.py（one-hot 置换提取器）、wfp4_ignite4.py、probe.log。
+
+## 2026-10-26 wave6 nmz18：softmax adapter 洞补齐（生产采样解码解锁）+ 新鲜 decode trace 基线（P1.5 验收/1.6 基线）
+
+- **生产阻塞根因：非 greedy 采样解码必崩**。DSPARK verify accept 链 `SoftmaxTemp.execute → softmax_temp_flashinfer → flashinfer.sampling.softmax`，该入口在我们 hcu-adapter 只有 loud stub——import 成功（Missing 句柄不抛 ImportError）→ dispatch 判 flashinfer 可用 → 调用即 `NotImplementedError` 打死全部 8 scheduler。greedy 走 `AcceptGreedy` 臂不炸，warmup 掩盖了洞；上一轮"16 并发负载完成"实为 server 半路崩（prof 空盘、日志无 throughput 的真因）。
+- **修法（零上游改动，纯 adapter 补洞）**：`sgl_kernel/sampling.py` 新增 triton port `_softmax_rows_kernel`（online 两遍行 softmax：pass1 online max/sum、pass2 归一写回；逐行温度，BLOCK_V=8192/num_warps=8；temp≤0 当 1.0 防除零；标量温度广播/奇 vocab/-inf 列/bf16/非连续行全兼容），绑进 `_adapters/flashinfer` allowlist + registry（MECH_SEAM）。部署前 md5 校验本地=共享盘 `hcu_v0522_nmz18`（NFS）两文件同源后才推。
+- **单测 11 项全绿**（容器 GPU）：maxabs ≤1.6e-6、行和 1±1e-6、CUDA-graph 捕获安全；serving 形状 N112×V151936 **167.9µs**（torch 链 312.7µs 的 0.54×）；生产 trace 实测 78 次（draft+verify 各一/步）×76.9µs。生产验证：temp=0.7 采样解码 48 token 正常返回、0 异常。
+- **新鲜 decode trace 基线**（TP0，39 步×2 图=78 graph launch，bs2/rank，16 并发×600tok @temp0.7；`prof_dsv41f_dec20/dsv41f_tp0_wave6.trace.json.gz`）：
+  - 步长 ~950ms（profiler 开销内口径），GPU busy 81%（30.0s/37.05s），>5ms 空泡 121 个共 6.9s——其中 ~60.4ms×39 = **步间 host 泡 ~60ms/步（6%）**，116ms×2 为 warmup 段。
+  - **P1.5 运行期验收：DtoH 2.1 次/步、~30µs/步**（166 次共 1.2ms）——残留常数级、无阻塞型图外同步（hipEventSynchronize 40 次=标准步边界等待；普查出的 3 候选均在非生产算法）。**P1.5 判定通过**。HtoD 5.5/步、DtoD 73.6/步 183ms（量级无害）。
+  - **1.6 基线：4499 核/步**（175468 事件/39 步；2249.6/图）——与旧账 4121 同量级（口径差异 1.7 统一）。
+  - **核族排名（1.6 靶子）**：`vectorized_elementwise` 660/步 4495ms + `elementwise_manual_unroll` 342/步 3930ms = **torch eager elementwise 两族合计 28% GPU 时间=最大融合池**；`apply_rotary_emb_triton` 46.5/步×**1116µs/call（bs2 下病态，疑对全 KV/大 padding 做）**=51.6ms/步；`_silu_clamp_ptgq` 22×1930µs=42.5ms/步；`_hc_mix_stats_partial` 23×1652µs=38ms/步；nccl 23×1123µs=25.8ms/步；`_moe_sum_scale` 22×1138µs=25.1ms/步；aiter `allgather_vec` 21.5×630µs=13.5ms/步。
+  - **fp4→fp8 dequant 家族从每步热点消失**："streaming dequant fp8 wo_a"=**载入期一次性**（log 载入段），decode 步内只剩 `_dequantize_k_cache_paged` 41.5/步×122µs（DSA indexer，P1.4 已核最优）——旧账"1104ms dequant 族"确认为载入窗口混入，**decode 步内无此池**。
+  - 采样侧首次可测（干净基线，无 profiler，16×600tok @temp0.7）：**246s 完成=系统 ~39 tok/s @bs16、单 rank 稳态 5.1-6.9 tok/s**，accept len 2.23，折算 **~915ms/步**（与 trace 950ms 吻合=步长真实非 profiler 开销；profiler 窗内 0.5-0.7 tok/s 为死锁拖累均值作废）。此为 1.7 四门 A/B 的 A 臂锚点。
+  - **环境副作用登记：profiling stop 后 scheduler 死锁**（trace 导出成功后 /health 无响应、进程 0% CPU，重启恢复）——prof 一次即重启规避，根因未查。
+- 遗产：本地 `tmp_fetch/fi_softmax_test.py`（adapter 单测）、`tmp_fetch/wave6_trace.py`（trace 普查器）、容器 /root/fi_softmax_test.py、/root/prof_wave.sh、/root/prof_new/（8 rank trace）。
