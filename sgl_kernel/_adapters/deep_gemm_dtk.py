@@ -225,6 +225,25 @@ def install():
                     "fp8_mqa_logits shim expects kv as the (k, scale) tuple"
                 )
             kv, kv_scales = kv[0], kv[1]
+            # R-20: the C4 nonpaged plan (dsv4/indexer.py:732) hits this
+            # entry 44x per decode step; the torch emu is ~58 aten kernels
+            # per call (the dominant wave6 elementwise family, fingerprinted
+            # 2026-10-24). Route to the homegrown triton sibling under the
+            # same impl switch as the paged entry (R-13 #4 default = triton);
+            # the emu stays the golden and the explicit fallback.
+            impl = "loop"
+            try:
+                from .hcu_env import resolve
+
+                impl, _src = resolve("HCU_MQA_LOGITS_IMPL")
+            except Exception:
+                pass
+            if impl == "triton":
+                from .mqa_triton import triton_ragged_mqa_logits as _tri_r
+
+                return _tri_r(
+                    q_fp8, kv, kv_scales, weights, cu_starts, cu_ends
+                )
             return _mle._ragged_fp8_mqa_logits(
                 q_fp8, kv, kv_scales, weights, cu_starts, cu_ends, **_kw
             )

@@ -197,3 +197,109 @@ def triton_paged_mqa_logits(
         num_warps=4,
     )
     return out
+
+
+if tl is not None:
+
+    @triton.jit
+    def _ragged_mqa_logits_kernel(
+        q_ptr,  # (N, H, D) fp32, pre-decoded
+        w_ptr,  # (N, H) fp32
+        k_ptr,  # (T, D) uint8 (fp8 storage)
+        sf_ptr,  # (T,) fp32
+        ks_ptr,  # (N,) int32
+        ke_ptr,  # (N,) int32
+        out_ptr,  # (N, T) fp32, written for every column
+        T,
+        H: tl.constexpr,
+        D: tl.constexpr,
+        TT: tl.constexpr,
+    ):
+        # RAGGED sibling of _paged_mqa_logits_kernel (C4 nonpaged plan,
+        # dsv4/indexer.py:_nonpaged_mqa_logits -> deep_gemm.fp8_mqa_logits):
+        # k is a CONTIGUOUS gathered buffer (no page table, no interleave —
+        # the gather already deinterleaved), each row reads [ks, ke) and is
+        # -inf outside, mirroring mqa_logits_emu._ragged_fp8_mqa_logits
+        # exactly. The emu is ~58 aten kernels per call (fingerprinted
+        # 2026-10-24 nmz18: 38 manual_unroll + 31 vectorized + 6 Cijk bmm +
+        # 6 reduce + arange) x 44 C4 layers/step — the biggest single
+        # elementwise family in the wave6 decode trace.
+        i = tl.program_id(0)
+        t0 = tl.program_id(1) * TT
+        t = t0 + tl.arange(0, TT)
+        tmask = t < T
+        ks = tl.load(ks_ptr + i)
+        ke = tl.load(ke_ptr + i)
+        valid = (t >= ks) & (t < ke) & tmask
+        d = tl.arange(0, D)
+        if t0 >= ke or (t0 + TT) <= ks:
+            # outside the window: only the -inf fill matters
+            tl.store(
+                out_ptr + i.to(tl.int64) * T + t,
+                tl.full((TT,), float("-inf"), tl.float32),
+                mask=tmask,
+            )
+            return
+        u = tl.load(
+            k_ptr + t.to(tl.int64)[:, None] * D + d[None, :], mask=tmask[:, None], other=0
+        ).to(tl.int32)
+        sgn = (u >> 7) & 1
+        e = (u >> 3) & 15
+        m = u & 7
+        pw = tl.where(e == 0, -6, e - 7)
+        mant = tl.where(e == 0, m, m + 8).to(tl.float32) * 0.125
+        two = ((pw + 127) << 23).to(tl.float32, bitcast=True)
+        kf = tl.where(sgn == 1, -(mant * two), mant * two)
+        acc = tl.zeros((TT,), tl.float32)
+        for h in tl.static_range(H):
+            qv = tl.load(q_ptr + (i * H + h) * D + d)
+            wh = tl.load(w_ptr + i * H + h)
+            acc += wh * tl.sum(kf * qv[None, :], axis=1)
+        sf = tl.load(sf_ptr + t, mask=tmask, other=0.0)
+        tl.store(
+            out_ptr + i.to(tl.int64) * T + t,
+            tl.where(valid, acc * sf, float("-inf")),
+            mask=tmask,
+        )
+
+
+def triton_ragged_mqa_logits(q_fp8, kv, kv_scales, weights, cu_starts, cu_ends):
+    """deep_gemm.fp8_mqa_logits face (ragged): out [N,T] fp32, -inf outside
+    each row's [ks, ke). Same contract as mqa_logits_emu._ragged_fp8_mqa_logits
+    (which stays the golden + the HCU_MQA_LOGITS_IMPL!=triton path)."""
+    from .dsa_paged_mqa import _as_view, _fp8_view_dtype
+
+    k_fp8, scale = kv, kv_scales
+    if k_fp8.dtype in (torch.uint8, torch.int8):
+        k_u8 = k_fp8.contiguous().view(torch.uint8)
+    else:
+        k_u8 = _as_view(k_fp8.contiguous(), _fp8_view_dtype()).view(torch.uint8)
+    T, D = k_u8.shape
+    if _fp8_view_dtype() is not torch.float8_e4m3fn:
+        raise NotImplementedError("fnuz pool: ragged triton arm is e4m3fn-only")
+    q_flat = q_fp8.reshape(-1, q_fp8.shape[-2], q_fp8.shape[-1]) if q_fp8.dim() == 4 else q_fp8
+    q_b = _as_view(q_flat, _fp8_view_dtype()).to(torch.float32).contiguous()
+    N, H, _ = q_b.shape
+    w = weights.reshape(N, H).to(torch.float32).contiguous()
+    ks = cu_starts.to(torch.int32).reshape(-1).contiguous()
+    ke = cu_ends.to(torch.int32).reshape(-1).contiguous()
+    sf = kv_scales.reshape(-1).to(torch.float32).contiguous()
+    out = torch.empty((N, T), dtype=torch.float32, device=q_b.device)
+    if N == 0 or T == 0:
+        return out
+    TT = 256
+    _ragged_mqa_logits_kernel[(N, triton.cdiv(T, TT))](
+        q_b,
+        w,
+        k_u8,
+        sf,
+        ks,
+        ke,
+        out,
+        T,
+        H=H,
+        D=D,
+        TT=TT,
+        num_warps=4,
+    )
+    return out
