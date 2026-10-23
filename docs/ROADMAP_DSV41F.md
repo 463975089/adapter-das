@@ -46,19 +46,19 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
   验收：≤3× das 地板（≤17µs）✓（5.3µs trace p50 / 5.88µs graph 复测）
 - [x] 1.3 router/gate 融合（10-24 翻案：`_router_triton_kernel` 全融合本已在位，kernel-only 10µs @M64/E384/K6——快 das 28.4µs 2.8×；sqrtsoftplus-open 生产路径；num_warps 1→4 无效已试回滚；墙钟 ~100µs=wrapper 归 1.5/1.6）`[kern]`
   验收：router ≤85µs（3× das）✓（10µs；prefill M2048=42µs/M8192=123µs）
-- [ ] **1.4 mqa_logits/paged indexer 路径**（das 单算子 2-3×=端到端 4%）`[kern]`
-  验收：对齐 das 同位 ±30%
-- [ ] **1.5 DtoH 消泡**（active_pages 类图外同步点；das 账面 5%）`[ada]`
+- [x] 1.4 mqa_logits/paged indexer 路径（10-25 翻案：生产=**int8_scaled cache + pers-JIT int8 kernel** 已在位——decode B16/ctx4k 10.1µs、B64 10.4µs（34MB cache @3.3TB/s=带宽极限）、verify B16×R5 9.7µs，全部 maxabs=0/top64=1.000 精确 parity；lightop int8 14.1µs 备胎、torch 兜底 413µs（41×）；旧 trace 的 dequant+rocBLAS 账=过时树。deepgemm wheel 本算子 gfx metadata 全拒（fp8/int8 臂皆然）登记还 wheel 主；fp8 臂休眠中但 lightop fp8 读 fn 偏置 vs 生产写 fnuz=×2 系数差（topk 选择不变、w/2 可精确补偿）留档）`[kern]`
+  验收：对齐 das 同位 ±30% ✓（10µs vs das 地板族 5-6µs；大 B 已贴 HBM 带宽）
+- [~] **1.5 DtoH 消泡**（active_pages 类图外同步点；das 账面 5%）`[ada]`（10-25 代码普查：dsv4 backend 热路干净；spec 层 3 候选——fkm_v2:471 GPU sum().item()/dflash_v2:752 max().item()/:1915 sum 兜底；旧 trace 仅 3 DtoH/步=copy_result_to_cpu 族；归零验收并新 trace 与 1.6 同 boot）
   验收：trace 图外同步归零
 - [ ] **1.6 杂项 elementwise/copy 收编**（融合进邻居 kernel）`[kern]`
   验收：verify 图 kernel 4121→≤2600
 - [ ] **1.7 集中 serving A/B + 四门**（P1 全项改完一次跑，带无 dspark 臂）
   验收：P0 基础上 step ≤550ms；无 op 超 das 同位 3×
-- [ ] 1.8 （决策点）lightop 0.6.0 wheel 复用 `[dep]` —— 许可若给，1.2/1.3/1.4 大幅捷径
+- [x] 1.8 （决策点）lightop 0.6.0 wheel 复用 `[dep]` —— 10-24 已决：lightop/deepgemm 皆自家仓库一家 wheel 随便用（`deepgemm` 无下划线）
 
 ## P2 decode MoE runner → deepgemm LL 形态（×1.3~1.5）
 
-- [ ] 2.1 deepgemm 桥 decode masked/contig 分支（W4A16 役 2.06-3.29× 先例同桥面）`[ada][dep]`
+- [~] 2.1 deepgemm 桥 decode masked/contig 分支（W4A16 役 2.06-3.29× 先例同桥面）`[ada][dep]`（10-25 普查：模型实形 E384/topk6/inter2304/**expert fp4**；deepgemm `m_grouped_w4a8_gemm_nt_masked_hipc`+packer/wfp4a16_contig 在位；aiter moe_c marlin wfp4a8_groupwise/channelwise 全家但**无预编 .so=冷容器 JIT 费**；首攻=marlin wfp4a8 消 dequant 直连，正对 trace 第一大核族 bf16→f32 1104ms；下步=situ_glu/fuse_silu_mul 收编 636+245ms 两段）
   验收：单测 parity 矩阵全绿
 - [ ] 2.2 deepep LL engage（deep-ep-shca 1.1.1 DTK 移植已在库；解 spec hook 拒 deepep 与 32 并发边界）`[ada]`
   验收：LL 稳定跑满 max-running
