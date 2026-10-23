@@ -58,7 +58,7 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
 
 ## P2 decode MoE runner → deepgemm LL 形态（×1.3~1.5）
 
-- [~] 2.1 deepgemm 桥 decode masked/contig 分支（W4A16 役 2.06-3.29× 先例同桥面）`[ada][dep]`（10-25 普查：模型实形 E384/topk6/inter2304/**expert fp4**；deepgemm `m_grouped_w4a8_gemm_nt_masked_hipc`+packer/wfp4a16_contig 在位；aiter moe_c marlin wfp4a8_groupwise/channelwise 全家但**无预编 .so=冷容器 JIT 费**；首攻=marlin wfp4a8 消 dequant 直连，正对 trace 第一大核族 bf16→f32 1104ms；下步=situ_glu/fuse_silu_mul 收编 636+245ms 两段）
+- [~] 2.1 deepgemm 桥 decode masked/contig 分支（W4A16 役 2.06-3.29× 先例同桥面）`[ada][dep]`（10-25 普查：模型实形 E384/topk6/inter2304/**expert fp4**；deepgemm `m_grouped_w4a8_gemm_nt_masked_hipc`+packer/wfp4a16_contig 在位；aiter moe_c marlin wfp4a8_groupwise/channelwise 全家但**无预编 .so=冷容器 JIT 费**；首攻=marlin wfp4a8 消 dequant 直连，正对 trace 第一大核族 bf16→f32 1104ms；下步=situ_glu/fuse_silu_mul 收编 636+245ms 两段。10-25 实探：**checkpoint 原生 MXFP4 与 kernel ABI 逐位对口+预编 .so 可载**，卡点=MODE 位段/delta-size_m 契约（首合法 MODE 即段错误，rm/cm scale 皆试）——需 wheel 主契约或全 wrapper 移植）
   验收：单测 parity 矩阵全绿
 - [ ] 2.2 deepep LL engage（deep-ep-shca 1.1.1 DTK 移植已在库；解 spec hook 拒 deepep 与 32 并发边界）`[ada]`
   验收：LL 稳定跑满 max-running
