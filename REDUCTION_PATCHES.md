@@ -256,3 +256,22 @@
 1. nmz18 宿主复位后第一件事：launch_rt07.sh 原配方 40 步 trace 复测——A/B 家族消失 → 根因=KFD 劣化，W11 结案归基础设施；
 2. 若仍在（驱动版本级）：env 臂 `GPU_MAX_HW_QUEUES=16/32`（只试过下调 4=更差，从未上调）、`GPU_USE_SYNC_OBJECTS=1/0`、`HIP_USE_GRAPH_QUEUE_POOL`；仍不行再软件缓解：batch_result_processor 的 Event.synchronize 改 query-spin 闪避 + DSPARK draft 边界集合通信减负。
 - 遗产脚本：tmp_fetch/w11_*.py（boundary/deepdive/host_in_gap/stream_chain/eager_tick_host/eager_span/eager_tile/cross_rank/cross_rank2/resume_align）、bench_sync_tick.py/.2（nmz26 card0 已验证干净）；nmz26 /root/launch_tp4_dspark.sh+nospec.sh（tp4 配方，实测不可用：模型装不下，留作 4 卡小模型臂模板）。
+
+## W12: 停摆收口战 (10-25 01:00-01:30, 静态深挖+合成复现战役)
+
+**图发射 tick 实锤（W11 量子定位）**：TP-0 hipGraphLaunch n=76 = 37×1-5ms + 37×15-25ms（top 20.0-20.9ms），时序**严格交替**（1.4/19.6/1.4/19.6...）——每步第二次图发射确定性吃满一个 ~19.5ms tick；且快发射 1.4ms 也为健康卡（0.097ms）的 14×。两段发射均在 DRAFT 相位内（DSPARK 每步两图：接续队列者快、打醒空队列者吃 tick）。
+
+**TP-0 单点掉队坐实（上轮"8 rank 同层同时冻结"再修正）**：跨 rank 空闲窗普查——真 GPU 空闲窗**只存在于 TP-0**（148 个，即承载真实请求的 DP rank），其余 7 rank 同期以 allgather 长核**自旋**形态陪等（长核≠空闲）；A 家族（全 rank 同时空窗）唯一 1 例 45.7ms，释放 spread=0.0ms。停摆损失主体=TP-0 单点 × 全组陪等。
+
+**合成复现战役（nmz26 健康卡 card0-3，全部打不出 tick）**：
+- 单进程全配方（双流图+copy 流 pinned DtoH+Event.synchronize+idle 环）：sync 全 <0.1ms；step wall 7/800 毛刺（17.6/18.6/43.8ms，接近 1×/2× tick 但零星）
+- 4 进程 NCCL×4 卡全配方：sync 全 <0.1ms；各 rank 仅 1 次一次性 >130ms（NCCL comm 初始化）
+- 内存压力 125G/144G（=nmz18 服务态密度）：replay p50 0.097ms、sync µs，无 tick
+- 早前：32 流队列压力仅 5ms 尾巴；安静卡全绿
+
+**判决**：~19.4ms tick 无法在健康硬件上用任何软件拓扑（队列/内存/NCCL/图/拷贝流/同步环）复现 → 根因收敛至 **nmz18 KFD 实例劣化**（与 113G×8 显存泄漏同根：发射路径慢 14-200×、完成检测/队列唤醒吃 1-6 个 20ms tick、每步损失 ≈21ms 发射 tick + A/B 家族停摆）。软件侧已无待试假说；nmz18 宿主复位为唯一解锁动作，复位即终局实验。
+
+**踩坑两枚（入经验）**：① 容器预置 NCCL_TOPO_FILE 为 8 卡拓扑，4 卡进程组必须置空（原配方有 unset 我漏抄，报 `Add XGMI error: could not find GPU 5000`）；② pkill -f 自匹配第三次（bash -c 命令行含目标名→杀己 shell→后续命令静默未执行；铁律=pkill 单独一条 ssh，launch 另起）。
+
+**预置终局脚本**：nmz18 lzg-dsv41f-dspark /root/w13_postreboot.sh（一键：probe_cards 体检→launch_rt07→grab_q4 40 步→trace_census→gap/launch-tick 直方图→VERDICT 行）。复位后 `bash /root/w13_postreboot.sh w13` 一条命令出判决：gaps/tick 归零→KFD 根因结案；仍在→驱动版本病，上 GPU_MAX_HW_QUEUES=16/32、GPU_USE_SYNC_OBJECTS 臂。
+- 遗产：tmp_fetch/repro_tick.py（全配方复现器，--nccl/--graph/--pinned/--xdst 四刀二分）、bench_pressure.py（灌压基准）、w12_more.py/w12_which_graph.py；nmz26 /root/ 留 repro_tick.py+bench_pressure.py。
