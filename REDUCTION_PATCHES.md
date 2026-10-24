@@ -226,3 +226,13 @@
 - **fn 真身探针**（needle dsv4/indexer.py:848 forward_c4_indexer fn 选择后，HCU_DUMP_MQA 门控）也 **0 行** = **decode 不执行 forward_c4_indexer**（C4Indexer.forward→attn_backend 链在 decode 被短路或走别路）。探针保留在树（env 门控零开销），下轮加三针（forward 入口/方法入口/fn 后）定位断点。
 - **层频翻案（关键认知修正）**：重数 trace——indexer 全家族都在 **2-16/步**区间（topk_split_select 8/步、gatherTopK 4.5、mbtopk 4、_quantize_fp4 4.1、_store_fp4 4.1、metadata_tiny 2、_rope_tail_fp4 16.4、_dequantize_k_cache_paged 83≈2/层）而**非 44/步**：**DSV4.1F 的 DSA indexer MQA 不是每层跑**（低频复用/间隔层结构待查）。→ 每层 44/步的 `Cijk_Ailk_SB`+10 aten 连发（456 aten/步）**不是 indexer MQA**，是每层 MLA/投影/别的结构——1.6 下一刀的归因靶要重定位（嫌疑：bmm_fp8 桥的逐层投影调用 或 MHC/compressor 的 torch 段）。
 - **修正后的 emu 优先级**：① bmm_fp8 桥（在役、逐层量级嫌疑升至第一）② MQA wrapper 9 aten 胶水（latent——生产未走，修好待路径回归）③ fa3 emu（prefill）④ kprd（死装载）。116ms 停摆仍墙钟第一。
+
+## 116ms 停摆深挖 (10-24 晚, 零成本本地 trace 分析, 四连判决)
+
+1. **116ms ≠ 计算（记账型等待实锤）**：victim `grid=[160,1,1]` 的 w8a8 小核"跑"116.9ms 算力上不可能；所有 victim 前后 gap=+0.00ms（GPU 时间轴被名义占据）、窗内 0 个并发核开始、hipPointerGetAttribute 洗清（10377 次共 8ms p50 0.47µs）。
+2. **8 rank 同层同时刻集体等待**：跨 rank 层位指纹 TP-1..7 完全一致（L5/L12/L18/L23/L27/L31，间隔 5-7 层；TP-0 仅受害者换名）——**每 ~5-6 层一次全局冻结**，间隔撞 `speculative_dspark_block_size=5` 的块边界形态。受害者随机（w8a8/nccl/BSS/cross_device_reduce/elementwise/moe_align_fused 谁在跑谁背锅）。
+3. **无 DSPARK 的 eager 下 116ms 家族消失（>100ms=0）**，但露出**新量子 20.3±0.2ms**（9 次、受害者随机、python 栈=常态层循环 `_forward_layers_hc_post`）——116 与 20 不同源：116 需 DSPARK（或图），20 是更底层 tick（候选：宿主 exporter 采样周期/cgroup CPU 限流/驱动 tick）。
+4. **结构性账**：hipEventSynchronize 39 次×均 917ms=35.7s（≈每步一次，调度等待主体）；hipGraphLaunch 76×均 10.5ms；hipDeviceSynchronize 1×1081ms；hipMemcpyWithStream 66×922ms。
+- 已排除累计：邻居（独占照现）、GPU_MAX_HW_QUEUE=4（无效果且端到端 -23%）、hipPointerGetAttribute 慢 ioctl、python GC/阻塞（eager 栈是常态层循环）、硬件时钟（sclk 1350 正常）、hipLaunch 发射饥饿（gap<1ms 无空洞）。
+- **下一刀（切分实验）**：图模式+无 DSPARK 一次 boot+短 prof——116ms 消失则 DSPARK 块边界同步实锤（读 spec verify 段 host 路径，注意 `speculative_dspark_sps_table_path` 生产未配置）；仍在则图回放机制。并行只读普查：宿主 exporter/rocm-smi 定时器周期对表 20ms 量子、cgroup cpu.max。
+- 遗产：本轮分析全在本地 prof_1024/ 三套 trace（图基线/eager栈/queue对照），零 GPU 成本。
