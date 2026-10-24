@@ -236,3 +236,23 @@
 - 已排除累计：邻居（独占照现）、GPU_MAX_HW_QUEUE=4（无效果且端到端 -23%）、hipPointerGetAttribute 慢 ioctl、python GC/阻塞（eager 栈是常态层循环）、硬件时钟（sclk 1350 正常）、hipLaunch 发射饥饿（gap<1ms 无空洞）。
 - **下一刀（切分实验）**：图模式+无 DSPARK 一次 boot+短 prof——116ms 消失则 DSPARK 块边界同步实锤（读 spec verify 段 host 路径，注意 `speculative_dspark_sps_table_path` 生产未配置）；仍在则图回放机制。并行只读普查：宿主 exporter/rocm-smi 定时器周期对表 20ms 量子、cgroup cpu.max。
 - 遗产：本轮分析全在本地 prof_1024/ 三套 trace（图基线/eager栈/queue对照），零 GPU 成本。
+
+## W11: 116ms 停摆机制判决 (10-25 凌晨, 静态 trace 深挖 + 单卡微基准)
+
+**背景**：切分实验（图+无DSPARK）与用户消融思路（跳算子看停摆）双线被硬件堵死——nmz18 KFD 泄漏 113G×8 待宿主复位、nmz26 仅 4 空卡装不下 dsv41f（476G/4=119G 权重 + 47G engram TP4 分片 > 144G 卡，实测 TP4 boot OOM 于权重段；另 4 卡被同事容器占住）。改走零成本静态深挖本地 prof_1024 trace + nmz26 空卡单元复现。
+
+**五连判决**：
+1. **块边界=图边界假说证伪**：图模式 decode 每步仅 **2 次 hipGraphLaunch**（draft+verify 整图，层循环在图内，T3 实测 launches/step=2）；停摆窗口内 0 次 graph launch（对齐率 1/149）——DSPARK 不按 block 分图，"每 5-6 层停摆"与图边界无关。
+2. **双家族分型（跨 rank 绝对时刻对齐，8 trace 同窗 40.99s ±2ms 已验证）**：
+   - **A 家族（45-60ms×大量）**：8 rank GPU **同时全空窗**（其余 rank 窗内零事件）；本 rank host 整步卡在 `process_batch_result → Event.synchronize`（实测一例 dur=1046ms≈整步）；copy 流 3 个 DtoH（早已提交）不执行；**同一 graph 重放内部横跨停摆**（track108 段结束→48.9ms 空洞→track212 段续跑同 corr）；host 苏醒后下一个 `hipGraphLaunch` 调用本身耗时 **19.46ms**。= **GPU 对已入队工作不执行的驱动级停摆**。
+   - **B 家族（116ms×少数）**：单 rank 本地停摆 116ms，**其余 7 rank 在 allgather 核自旋等待**（实测窗内 TP-1..3 各 ~111ms allgather 忙等）——掉队者模型：一个 rank 的本地停摆把全组钉死。上轮"8 rank 同层同时冻结"结论修正：同层位指纹成立，但 A/B 两种成因不同。
+3. **量子结构 ~19.4ms**：簇 20/56-58/116-118 = 1×/3×/6× 周期（gap#70 实测 48.9≈2.5×，hipGraphLaunch 19.46 实证周期出现在提交路径上）。
+4. **eager 的 20.3ms×75 是另一回事 = host python 每层开销**：99.5% 被 python 帧覆盖（`_call_impl→forward_hc_pre_from_prev/run_attn_hc/run_ffn_hc` 链，~20ms/层×32=650ms/步）——eager 天然 host-bound，与驱动 tick 无关。上轮"eager 20.3ms 量子"归因修正。
+5. **健康卡复现不出**：nmz26 card0 单卡微基准（2000 次/项）——sync-warm p50=24µs、idle-2/50ms 后 sync p50=3µs、graph replay p50=16µs；32 流压力仅出 5ms 尾巴（launch p99=10ms）。**20ms 量子在安静卡上不存在** → 触发条件在 nmz18 服务拓扑（8 进程/xGMI/NCCL 多 comm/邻居共用 KFD）或 nmz18 KFD 病态实例本身。warm 路径 1/2000 孤例 25.7ms 提示机制存在但安静态极低频。
+
+**用户消融思路（跳过耗时算子）的判决：证伪**——两家族停摆窗内 GPU 零 kernel（A 家族）或受害者本非慢算子（B 家族掉队者的 116ms 也是排队不执行），"耗时异常算子"不存在，跳算子消不掉驱动级完成/调度 tick，反而更多空闲→更多唤醒。证据链完整，无需再跑消融臂。
+
+**复活后行动清单（一次 reboot 两用：KFD 泄漏+停摆嫌疑同源）**：
+1. nmz18 宿主复位后第一件事：launch_rt07.sh 原配方 40 步 trace 复测——A/B 家族消失 → 根因=KFD 劣化，W11 结案归基础设施；
+2. 若仍在（驱动版本级）：env 臂 `GPU_MAX_HW_QUEUES=16/32`（只试过下调 4=更差，从未上调）、`GPU_USE_SYNC_OBJECTS=1/0`、`HIP_USE_GRAPH_QUEUE_POOL`；仍不行再软件缓解：batch_result_processor 的 Event.synchronize 改 query-spin 闪避 + DSPARK draft 边界集合通信减负。
+- 遗产脚本：tmp_fetch/w11_*.py（boundary/deepdive/host_in_gap/stream_chain/eager_tick_host/eager_span/eager_tile/cross_rank/cross_rank2/resume_align）、bench_sync_tick.py/.2（nmz26 card0 已验证干净）；nmz26 /root/launch_tp4_dspark.sh+nospec.sh（tp4 配方，实测不可用：模型装不下，留作 4 卡小模型臂模板）。
