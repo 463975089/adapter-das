@@ -46,6 +46,18 @@ if getattr(torch.version, "hip", None) is not None:
         _he.log_summary()
     except Exception:
         _he = None
+    # NCCL_TOPO_FILE card-count mismatch guard (box16 4-proc fatality,
+    # 2026-10-25): image-preset full-card topo XML + subset visibility =
+    # fatal XGMI error at the first collective. Pure env hygiene — must
+    # run before anything initializes NCCL (i.e. before all bridges).
+    try:
+        from sgl_kernel._adapters import nccl_topo_guard
+
+        nccl_topo_guard.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: nccl topo guard not installed", exc_info=True
+        )
     # deep_gemm name availability (DSV4 family): sglang.srt.models.deepseek_v4
     # (and _dspark) import deep_gemm at module level, and the FIRST registry
     # scan can happen as early as the sections below importing sglang.srt.
@@ -86,6 +98,18 @@ if getattr(torch.version, "hip", None) is not None:
     except Exception:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: dist broadcast bridge not installed", exc_info=True
+        )
+    # cold-JIT watchdog floor (box16 cold-boot fatality, 2026-10-25): cold
+    # caches + stock 300s watchdog = SIGQUIT mid compile storm. Wraps the
+    # watchdog factory BEFORE scheduler.py from-imports it; explicit
+    # --watchdog-timeout always wins (watchdog_cold.py).
+    try:
+        from sgl_kernel._adapters import watchdog_cold
+
+        watchdog_cold.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: cold-JIT watchdog floor not installed", exc_info=True
         )
     # KV-pool stride tensor fix (torch2.11 numpy-scalar dtype infer); text
     # patch per governance §3 tier-3, allowlist entry "kv_pool_strides".

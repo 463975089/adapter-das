@@ -15,6 +15,14 @@ compile without touching a single upstream .cuh. Each forwarder maps its CUDA
 name to the HIP equivalent and defers entirely to DTK's headers (types,
 intrinsics, `__HIP_PLATFORM_AMD__` dispatch all stay vendor-defined).
 
+Beyond the include, third-party JIT csrc is often written against CUDA
+*tokens* (`__nv_fp8x2_e4m3`, `__nv_cvt_*`, team-image sgl-kernel JIT on
+box16 dtk2604 — all 43 modules compiled only with these aliases, and the
+same set originated on nmz26). The forwarders therefore also carry the
+empirically-required `__nv_*` type/intrinsic aliases for the HIP
+equivalents (proven on dtk2604/dtk26041; a future DTK that renames the
+__hip_* side breaks loudly at include time — extend _FORWARDS then).
+
 This mirrors kernel-space header shims the ROCm ecosystem ships (clang's
 cuda_wrappers act identically for `#include <cuda_bf16.h>` under nvcc
 compat mode) — DTK's llvm just doesn't enable that wrapper set on this
@@ -27,11 +35,15 @@ import pathlib
 LOG = logging.getLogger("hcu.adapter")
 
 # CUDA header name -> lines forwarding to the HIP/DTK equivalent
-# (double-include safe: HIP headers have their own guards).
+# (double-include safe: HIP headers have their own guards; repeated
+# identical `using` aliases are likewise legal C++).
 _FORWARDS = {
     "cuda_bf16.h": [
         "#pragma once",
         "#include <hip/hip_bf16.h>",
+        # csrc written for CUDA gets __nv_bfloat16 only via this header,
+        # so the alias belongs here (same argument as the fp8 set below).
+        "using __nv_bfloat16 = __hip_bfloat16;",
     ],
     "cuda_fp16.h": [
         "#pragma once",
@@ -40,6 +52,14 @@ _FORWARDS = {
     "cuda_fp8.h": [
         "#pragma once",
         "#include <hip/hip_fp8.h>",
+        # __nv_* token aliases (empirically-required set, box16 2026-10-25;
+        # note the _fnuz suffix on the HIP fp8 type name).
+        "using __nv_fp8x2_storage_t = __hip_fp8x2_storage_t;",
+        "using __nv_fp8x2_e4m3 = __hip_fp8x2_e4m3_fnuz;",
+        "#define __NV_E4M3 __HIP_E4M3",
+        "#define __NV_SATFINITE __HIP_SATFINITE",
+        "#define __nv_cvt_float2_to_fp8x2 __hip_cvt_float2_to_fp8x2",
+        "#define __nv_cvt_fp8x2_to_halfraw2 __hip_cvt_fp8x2_to_halfraw2",
     ],
     "cuda.h": [
         "#pragma once",

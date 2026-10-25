@@ -143,6 +143,28 @@ REGISTRY = {
                  "SGLANG_MAMBA_CONV_DTYPE=float16（上游 conv 池硬编码 bf16，"
                  "fp16 首 forward 必崩）；显式 export 永远赢；off=退回手敲",
     },
+    # bring-up env guards (box16 campaign 2026-10-25; each acts only on a
+    # detectable failure precondition and logs one line when it acts)
+    "HCU_NCCL_TOPO_GUARD": {
+        "env": "HCU_NCCL_TOPO_GUARD", "default": "1",
+        "about": "NCCL_TOPO_FILE 卡数失配守卫（nccl_topo_guard.py）：镜像预"
+                 "设全卡拓扑 XML 而可见卡为子集（HIP_VISIBLE_DEVICES=0-3 等）"
+                 "时，NCCL 首个集合通信即致命 XGMI 错（could not find GPU "
+                 "5000，box16 4-proc 2026-10-25）。守卫数 XML <gpu> 节点 vs "
+                 "torch 可见卡数：失配→清空该 env（NCCL 回退 sysfs 自侦，任"
+                 "意子集皆正确）+一行日志；匹配→保留不动；判不了→保留。"
+                 "=0 关闭（调试层）",
+    },
+    "HCU_JIT_WATCHDOG": {
+        "env": "HCU_JIT_WATCHDOG", "default": "1",
+        "about": "冷 JIT watchdog 地板（watchdog_cold.py）：冷容器首捕获 8 "
+                 "rank 全量 JIT 编译风暴超 sglang 默认 watchdog 300s→SIGQUIT "
+                 "杀树（box16 冷启 16 并发首请求，2026-10-25 实锤）。"
+                 "TRITON_CACHE_DIR/TORCH_EXTENSIONS_DIR 文件数均 <200 判冷；"
+                 "冷且用户未显式给 --watchdog-timeout（值=300 默认）时抬地"
+                 "板到 1500s（box16 实证装得下编译风暴）；显式值恒赢；种子"
+                 "warm 盒不受影响；=0 关闭（调试层）",
+    },
     # custom all-reduce
     "HCU_AITER_AR": {
         "env": "HCU_AITER_AR", "default": "0",
