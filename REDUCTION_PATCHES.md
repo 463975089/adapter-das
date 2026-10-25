@@ -275,3 +275,20 @@
 
 **预置终局脚本**：nmz18 lzg-dsv41f-dspark /root/w13_postreboot.sh（一键：probe_cards 体检→launch_rt07→grab_q4 40 步→trace_census→gap/launch-tick 直方图→VERDICT 行）。复位后 `bash /root/w13_postreboot.sh w13` 一条命令出判决：gaps/tick 归零→KFD 根因结案；仍在→驱动版本病，上 GPU_MAX_HW_QUEUES=16/32、GPU_USE_SYNC_OBJECTS 臂。
 - 遗产：tmp_fetch/repro_tick.py（全配方复现器，--nccl/--graph/--pinned/--xdst 四刀二分）、bench_pressure.py（灌压基准）、w12_more.py/w12_which_graph.py；nmz26 /root/ 留 repro_tick.py+bench_pressure.py。
+
+## W13: box16 第三盒复现 + 图发射 tick 机制破解 (10-25 08:30-11:10)
+
+**平台就绪**（box16 card0-7 空 8 卡，BW1200=gfx938 同架构、每卡 144G）：装 ssh 公钥免密（askpass 在后台化执行下不可用的根治）；自有容器 lzg-stall-repro（团队 sglang:0.5.18-dtk26041-dpskv4 镜像 + /data_add2:/models ro + hyhal 挂载，抄邻居 sby 配方）；模型用本地盘 DeepSeek-V4.1-Flash-Channel-FP8（基础版踩镜像 triton MoE hidden-size 断言 + deepep 踩 forward_deepgemm_masked deprecated，Channel-FP8+a2a none+triton runner 可跑）。
+
+**bring-up 三坑入账**：① JIT 冷编 cuda_fp8.h 缺失→装 `__nv_*→__hip_*` 记号别名垫片（/opt/dtk/include/cuda_fp8.h，注意 AMD 类型带 _fnuz 后缀；nmz26 靠 43 模块种子 cache 从未现场编过、我们 v0522 树源码已移植 __hip_ 记号——镜像 0.5.18 源码还是 __nv_）；② 16 并发首请求触发全 rank 冷 Triton 编译 >300s 被 watchdog 杀→--watchdog-timeout 1500 + 先单请求预热；③ 杀服务要 `pkill -f "sglang::"`（scheduler 子进程改名，单杀 launch_server 留孤儿占端口）。
+
+**判决链（双盒对照 + 线性律）**：
+1. **tick 双盒实锤**：box16 健康卡 ARM1（tp8/dp8/ep8 图模式无spec）38/38 次图发射全部 16.5-22.6ms（无一快发射）——~20ms 图发射 tick 不是 nmz18 病态专属，是**驱动族级属性**（W12 "KFD 劣化收敛"结论半推翻）。
+2. **A/B 家族（GPU 空转停摆）box16 无**：decode 段 >15ms gap 仅 4 个且全在 prefill 段（eager moe_align 前 host 时间）——116ms/60ms 停摆家族仍是 nmz18 特有（或 DSPARK 依赖，末臂验证中）。
+3. **tick 机制破解（单元级线性律）**：图内 NCCL 集合节点数 × ~100µs/节点 = 发射成本——1 AR=0.28ms、30 AR=2.7ms、90 AR=9.5ms（4 进程 tp4，p50，800 次/臂，线性完美）；对照组 3000 纯 kernel 图=0.34ms（kernel 数无关）；eager allreduce=0.08ms（不在图内无惩罚）。服务图 dp-attention 每层 allgather×32 层+边界 ≈200 集合节点 → ~20ms = tick。**hipGraphLaunch 提交路径对图内每个 NCCL 节点做逐节点翻译/打补丁（~100µs/个）**。
+4. **env 旋钮两臂无效**：GPU_MAX_HW_QUEUES=16（16/18 tick p50 17.2ms）、GPU_USE_SYNC_OBJECTS=1（15/18 p50 17.1ms）——机制在节点翻译层不在队列调度层。
+5. **单元复现边界**：安静单卡/多流压力/125G 内存压力/4 进程 NCCL 全配方/图内 1 AR——全干净；唯一杠杆=图内集合节点数。
+
+**修复方向（依机制）**：① 减图内集合节点数（dp-attention gather 跨层合并/批量化、ncclDevKernel 换 custom-AR 核——普通 kernel 无此惩罚）；② 厂商报告线性律（附 1/30/90 AR 数据，DTK runtime graph-launch 逐节点成本）；③ DSPARK 边界 rs+rsv 若也是 nccl 节点入图，块边界的集合数也是税。**注意：tick 修复收益 ≈20ms×2/步（nmz18 实测每步一快一慢）；A/B 停摆家族（61% 步时主损）仍待 DSPARK 臂/复位 nmz18 判归属。**
+
+- 遗产：box16 /root/{arm.sh（参数化 env+自动 boot+prof+判决）、verdict2.py、bench_graph_nccl.py（线性律复现器）、bench_sync_tick.py、launch_arm1.sh}；本地 tmp_fetch 同名 + cuda_fp8_shim.h（垫片源）；box16 ssh 免密（~/.ssh/config Host box16）。
