@@ -2695,6 +2695,30 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: w4a16 MoE bridge not installed", exc_info=True
         )
 
+    # 10.6. Channel-wise int4 MoE kwarg rewrite (2026-10-25, box16
+    #      dsv41f-INT4 bring-up): same fused_experts hook surface as the
+    #      two arms above. strategy="channel" (group=-1) arrives with
+    #      block_shape=[0,-1]; the tree's triton gptq dequant branch only
+    #      fires for block_shape[1] > 0, so u8 packed weights hit the
+    #      plain kernel's tl.dot(bf16, u8) and triton aborts at compile
+    #      time (first hit = decode graph capture). channel == one group
+    #      per whole K row: rewrite to block_shape=[0, max(K_up, K_down)]
+    #      (the [E, N, 1] scales the scheme produced already match), so
+    #      the stock gptq branch serves it -- capture included. Only the
+    #      use_int4_w4a16 + group<=0 face is touched.
+    #      Knob: HCU_WNA16_CHANNEL_MOE = 1 | 0 (default 1).
+    try:
+        from sgl_kernel._adapters import wna16_channel_moe as _wnch
+
+        _wnch.install()
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: wna16 channel-int4 rewrite not installed",
+            exc_info=True,
+        )
+
     # 11. Prefill context-parallel bridge (2026-10-12): stock v0.5.21
     #     validate_prefill_cp_platform rejects HIP outright; HCU_PREFILL_CP=1
     #     (opt-in) opens the gate so the upstream CP machinery (zigzag/

@@ -165,6 +165,20 @@ REGISTRY = {
                  "板到 1500s（box16 实证装得下编译风暴）；显式值恒赢；种子"
                  "warm 盒不受影响；=0 关闭（调试层）",
     },
+    "HCU_WNA16_CHANNEL_MOE": {
+        "env": "HCU_WNA16_CHANNEL_MOE", "default": "1",
+        "about": "channel-wise int4 MoE 改写（wna16_channel_moe.py）："
+                 "compressed-tensors pack-quantized strategy=channel（group="
+                 "-1，如 DeepSeek-V4.1-Flash-INT4）经 WNA16TritonMoE 给出 "
+                 "block_shape=[0,-1]，树上 triton invoke 的 gptq 反量化分支"
+                 "只在 block_shape[1]>0 走，u8 packed 权重直落普通 kernel 的 "
+                 "tl.dot(bf16,u8) 编译期炸（首中=decode 图捕获，服务起不来，"
+                 "box16 2026-10-25）。channel≡整行一组的退化 group-wise：改写"
+                 "block_shape=[0,max(K_up,K_down)]（两 GEMM cdiv==1，scheme 转"
+                 "置后的 [E,N,1] scale 直配），数值等价、零权重转换、capture "
+                 "安全。仅命中 use_int4_w4a16 且 group≤0 的调用面；fp8/int8/"
+                 "分组 int4/bf16 不动；=0 还原 stock",
+    },
     # custom all-reduce
     "HCU_AITER_AR": {
         "env": "HCU_AITER_AR", "default": "0",
