@@ -303,3 +303,13 @@ box16（健康盒）+ DSPARK（同生产配方 block5）：图发射 36 次中 1
 - eager 20.3ms = 每层 host python（W11），正交。
 
 box16 清场：sglang 服务进程已杀（卡 0-7 释放），容器 lzg-stall-repro 保留（复现器/判决脚本在 /root，供厂商报告复演）。
+
+## 2026-10-25/26(box16 钟) W14 box16 DSV4.1-Flash-INT4 役：停摆判决（无）+ 45x 缺口二分钉死（地板=每层计算/host，非通信非拍）+ channel-int4/draft-MoE 配套
+- **停摆判决（本役主问）**：adapter(f74faec+本役推针)+树(32 文件 parity)+DSV4.1-Flash-INT4 dp8ep8+DSPARK——三次干净 run（无 profiler）零 watchdog/零调度死/吞吐稳态无间歇塌陷（每 rank 每区间 2.41 tok/s 恒定）⇒ **box16 无 nmz18 式 116/60ms 停摆家族**（与 W13 续"KFD 专属"互证）；驱动族 tick（p50 10.43ms，W13 已定罪=图内 NCCL 集合节点逐节点提交 ~100µs×~200 节点）在但不闸步。
+- **二分账（短上下文 8×200 @temp0.7，全部干净无 profiler）**：DSPARK(block5, 模拟 accept 2.93)=**1.86s/步** → 无 spec dp8+dp-attention=**443ms/步**（graph=True，40 层→10.4ms/层）→ 无 spec tp8 dp1 ep8=**305ms/步**（dp-attention 族贡献 ~140ms）→ **NCCL 8 卡微基准地板全健康**（allreduce 81µs/a2a 112µs/allgather 110µs/barrier 133µs，步通信总量 ≤~16ms）⇒ **病灶=每层 kernel/host 计算**，305ms 与 nmz18 账 L130"消拍后地板 250-300ms"分毫不差=同一共享缺口族（L39 阶梯：vendor 地板+核数砍半→40-70ms→deepgemm LL→17ms），das 镜像同形 37.6ms=45x 全程已知、无 box16 新病。
+- **DSPARK 4.3x 放大与 nmz18 同型**（915ms vs ~300 地板=3-3.7x）：两嫌疑均已排除——draft MoE E=16 默认配置实测 0.26-0.71ms/call（非 71.8ms 型灾难；调优后 0.25-0.35，收益 ~5ms/步不值重火）、match-expected 模拟机关=CPU 伯努利+小张量（µs 级）；放大本体=draft/verify 机构（~280ms/草稿 token vs 主前向 443ms/40 层）归 P1.6 核数/融合线。
+- **channel-int4 全链（d1270e2）**：compressed-tensors strategy=channel group=-1 → 树 gptq 分支门 block_shape[1]>0 不过 → tl.dot(bf16,u8) 编译炸；adapter 改写 [0,maxK] 退化 group + [E,N,1] scale 直配，8 rank 命中、boot/decode/采样全通。E=48 int4 调优（rayless，容器 ray GCS 超时）：UP 8192 71.8→10.2ms/DOWN→5ms，运行期 "Using MoE kernel config" 实证。**调优器欠账：未套 smem 守卫预算（BN=256/stages≥2 条目运行期被钳 _SAFE）——重调时 tuner 须按 _implied_smem≤64K 过滤。** E=16,N=2304 draft 配置亦写（E=128 experts/层 bf16 w13[16,4608,5120]/w2[16,5120,2304]，safetensors 头实证）。
+- **最终数（adapter 栈）**：P1 bs16 in64k out1k @accept2.93：wall 1339s/系统 11.9 tok/s/含 prefill TPOT 1339ms（decode 相位步时 1.86s→单 token ~635ms）；P2 短上下文 8×200 spec 126.4s vs 无 spec 89.2s vs tp8 61.0s；warm 64k prefill 203-266s（attention 主导，预期内）。
+- **roctracer 双重毒（box16 dtk26041 实锤，方法学）**：①/start_profile+stop 后 ~90s 调度器段错误（RoctracerActivityApi teardown）；②小核时长膨胀 ~160x（silu_and_mul_clamp 0.054ms standalone vs 8.5ms traced）⇒ 本 DTK 栈一切 trace 绝对值作废，真值=客户端墙钟+Decode-batch 节奏。
+- **杂项坑**：box16 /models 挂载**间歇 ENOENT**（重载偶发，python open 报 No such file 而 bash 可读；listdir 拼路径即过）；box16 adapter 部署快照缺 nccl_topo_guard/watchdog_cold（f74faec 早于 9b21831，本役脚本手动 unset NCCL_TOPO_FILE 等价兜住，下次部署应刷 HEAD）；容器内 141 个 sglang:: defunct 僵尸（PID1 收养，零资源，不可 kill 只能容器重启清，不影响他用）。
+- **遗产**：box16 /root：bench16ns.sh（无 spec 臂）/bench16tp.sh（tp8 臂）/bench16coll.py+sh（集合微基准）/tuned16d.py（draft MoE 探针+调优）/probe_dflt16.py（默认配置成本）；本地 tmp_fetch 同名镜像。box16 已清场：sglang 活体 0，卡 0-7 全空（140/144G），容器 lzg-stall-repro 保留。
