@@ -292,3 +292,14 @@
 **修复方向（依机制）**：① 减图内集合节点数（dp-attention gather 跨层合并/批量化、ncclDevKernel 换 custom-AR 核——普通 kernel 无此惩罚）；② 厂商报告线性律（附 1/30/90 AR 数据，DTK runtime graph-launch 逐节点成本）；③ DSPARK 边界 rs+rsv 若也是 nccl 节点入图，块边界的集合数也是税。**注意：tick 修复收益 ≈20ms×2/步（nmz18 实测每步一快一慢）；A/B 停摆家族（61% 步时主损）仍待 DSPARK 臂/复位 nmz18 判归属。**
 
 - 遗产：box16 /root/{arm.sh（参数化 env+自动 boot+prof+判决）、verdict2.py、bench_graph_nccl.py（线性律复现器）、bench_sync_tick.py、launch_arm1.sh}；本地 tmp_fetch 同名 + cuda_fp8_shim.h（垫片源）；box16 ssh 免密（~/.ssh/config Host box16）。
+
+## W13 续: DSPARK 臂判决——两半谜题各归其主 (10-25 11:20-11:40)
+
+box16（健康盒）+ DSPARK（同生产配方 block5）：图发射 36 次中 18 次 tick（p50 19.29ms max 24.8ms）——**与 nmz18 的 37/76 交替形态完全一致**（draft/verify 两图中集合节点多者吃 tick，符合逐节点线性律）；而 **A/B 停摆家族全 trace 仅 1 例 40-70ms**（nmz18 为每步多次）。
+
+**终局判决（两半各归其主）**：
+- **~20ms 图发射 tick** = HIP runtime 对图内 NCCL 集合节点的逐节点提交成本（~100µs×~200 节点）。驱动族级（nmz18/box16、DSPARK/无）。修复=减图内集合节点（gather 跨层合并、custom-AR 核替换 ncclDevKernel 节点）+ 厂商报告（线性律三锚点 1/30/90 AR）。
+- **116/60ms 停摆家族（GPU 不执行已入队活，步时主损 61%）** = **nmz18 KFD 实例病态专属**——健康盒同拓扑同 DSPARK 不复现。宿主复位即应消失（w13_postreboot.sh 一键判决，预期修正：复位后 tick 仍在（族级正常）、A/B 家族应归零）。
+- eager 20.3ms = 每层 host python（W11），正交。
+
+box16 清场：sglang 服务进程已杀（卡 0-7 释放），容器 lzg-stall-repro 保留（复现器/判决脚本在 /root，供厂商报告复演）。
