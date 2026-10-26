@@ -2719,6 +2719,29 @@ if getattr(torch.version, "hip", None) is not None:
             exc_info=True,
         )
 
+    # 10.7. moe_c W4A16 vendor tier (2026-10-26, box16 dsv41f-INT4): the
+    #       outermost fused_experts arm. Drives DTK aiter's
+    #       moe_c_moe_gemm_marlin_w4a16 vendor GEMMs (align -> GEMM1 ->
+    #       exact dsv4 clamp-silu -> GEMM2 -> sum) for the int4 channel
+    #       face: probe parity med 0.0055, M16 full-layer 1161us vs the
+    #       stock triton gptq kernel's 8100us (7x; the triton floor is
+    #       latency-bound, no sub-ms config exists). Wheel-law guards: g32
+    #       grid (channel scales expanded by value), gemm1 (K/32)%16==0,
+    #       N%256, I>=256 with gemm2 K zero-padded (nibble 8) to a 512
+    #       multiple when I isn't one (2304 -> 2560, exact math). Falls
+    #       through to the 10.6/10.5/10/stock chain on any miss.
+    #       Knob: HCU_W4A16_MOE_IMPL = moe_c (explicit; auto keeps triton).
+    try:
+        from sgl_kernel._adapters import moe_c_w4a16 as _mcw
+
+        _mcw.install()
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: moe_c w4a16 bridge not installed", exc_info=True
+        )
+
     # 11. Prefill context-parallel bridge (2026-10-12): stock v0.5.21
     #     validate_prefill_cp_platform rejects HIP outright; HCU_PREFILL_CP=1
     #     (opt-in) opens the gate so the upstream CP machinery (zigzag/

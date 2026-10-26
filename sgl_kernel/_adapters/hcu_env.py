@@ -333,15 +333,21 @@ REGISTRY = {
     "HCU_W4A16_MOE_IMPL": {
         "env": "HCU_W4A16_MOE_IMPL", "default": "auto",
         "about": "W4A16 MoE（moe_wna16，AWQ/GPTQ-int4 线）专家 GEMM 档："
-                 "auto=现答 triton（stock MoeWNA16 臂不变）；**deepgemm**="
+                 "auto=现答 triton（stock MoeWNA16 臂不变）；**moe_c**="
+                 "aiter 轮 moe_c w4a16 marlin 厂商 GEMM 桥（moe_c_w4a16."
+                 "py，box16 dsv41f-INT4 2026-10-26：align→厂商GEMM1→dsv4 "
+                 "精确 clamp-silu→厂商GEMM2→sum，探针 7×于 triton 8.1ms/"
+                 "层（M16 全层 1161us）、parity med 0.0055、capture 安全；"
+                 "守卫=g32 网格（channel 网格按值复制展开）、gemm1 K/32"
+                 "%16==0、N%256、I≥256 且 I 非 512 倍数时 K 补零到 512 倍"
+                 "数（nibble 8 数学等价，2304→2560））；**deepgemm**="
                  "R-05 桥（DTK 轮 masked w4a16 grouped C++ gemm 作专家 GEMM"
                  "，自管 dispatch/silu/combine 小管线，eager-only v1：捕获"
                  "路径与 inplace 恒回 triton）——接手条件=无零点对称臂"
                  "（(q−8)·s 与轮同规）、g∈{32,64,128}（64/128 载入期一次性"
                  "扩到 32 格）、K%128/I%128/2I%16 对齐、qweight 定格即"
                  "轮 b 格式零转换（marlin repack+scale 展开缓存于权重张量"
-                 "）；守 candidate：单测三段式齐，serving A/B（对 moe_wna16"
-                 " triton bench）+e2e 待排；triton=关闭此桥",
+                 "）；triton=关闭此桥",
     },
     "HCU_PREFILL_CP": {
         "env": "HCU_PREFILL_CP", "default": "0",
