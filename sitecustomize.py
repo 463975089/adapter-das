@@ -58,6 +58,21 @@ if getattr(torch.version, "hip", None) is not None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: nccl topo guard not installed", exc_info=True
         )
+    # tvm-ffi dlpack cold-build recursion breaker (R-18; nmz26 dsv41f cold
+    # container 2026-10-26): the bridge eager-import chains (dsa_topk_v2 ->
+    # xgrammar -> tvm_ffi) run in EVERY python3 carrying our PYTHONPATH, so
+    # tvm_ffi's own build helper child re-enters sitecustomize, hits the
+    # same cold cache, and spawns again — 122-process pileup (bootstrap §3).
+    # Must run BEFORE any bridge that can reach tvm_ffi. HCU_TVMFFI_WARMUP=0
+    # opts out (tvmffi_warmup.py; automates the bootstrap §3 manual recipe).
+    try:
+        from sgl_kernel._adapters import tvmffi_warmup
+
+        tvmffi_warmup.install()
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: tvm-ffi dlpack warmup not installed", exc_info=True
+        )
     # deep_gemm name availability (DSV4 family): sglang.srt.models.deepseek_v4
     # (and _dspark) import deep_gemm at module level, and the FIRST registry
     # scan can happen as early as the sections below importing sglang.srt.

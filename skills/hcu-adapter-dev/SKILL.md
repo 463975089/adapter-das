@@ -63,6 +63,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 写或改任何 kernel / 测试 | `references/test-suite.md` |
 | 加一个快关（kill switch） | `references/kill-switches.md` |
 | 排查精度问题（输出垃圾/分叉/漂移） | `references/precision-triage.md` |
+| 端到端性能优化（开箱基线/profiler 归因/算子优化需求/回归） | `references/e2e-performance.md`（细节检索个人知识库 kb，手册内有 kb:<id> 引用） |
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |

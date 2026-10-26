@@ -133,6 +133,17 @@ nmz26 lzg-g53-tp8 ← nmz18 lzg-nsa-tp8，md5 b1fb7b35 校验一致）：
 
 30 秒级完成，等效于直构；上方法为无源可拷时的备选。
 
+**自动化（rel/v0.5.22 起，2026-10-26）**：adapter `tvmffi_warmup.py` 已把本节
+预热自动化——sitecustomize 前部（先于 dsa_topk_v2 等重桥）探温
+`~/.cache/tvm-ffi/**.so`，冷则 flock 排他 + 剥 PYTHONPATH 亲跑 tvm_ffi 自带
+构建脚本；加载器仍要自派子进程时窗口内 Popen 包装注入干净 env 物理断自递归
+（R-18：桥 eager import 链使每个 python3 重进 tvm_ffi，nmz26 dsv41f 冷容器
+2026-10-26 复现 9+ 进程堆积）。`HCU_TVMFFI_WARMUP=0` 可关。
+**⚠ 上文「或者：launch 脚本第一行加 `python3 -c "import tvm_ffi"`（带
+PYTHONPATH）」的等效变体已失效**——10-24 起 dsa_topk_v2 eager import 使带
+PYTHONPATH 的裸 import 在 sitecustomize 阶段即触发自递归；手工预热一律
+`env -u PYTHONPATH`（命令替换里查路径的那一步也要）。
+
 ## 4. 运行时库路径补丁
 
 ```bash

@@ -10,3 +10,7 @@ tests/golden/*.local.json
 .bridge_result.json
 tools/tunnel_ssh.py
 upstream_watch/
+tmp_fetch/
+.tmp/
+.zcode/
+nul

@@ -165,6 +165,18 @@ REGISTRY = {
                  "板到 1500s（box16 实证装得下编译风暴）；显式值恒赢；种子"
                  "warm 盒不受影响；=0 关闭（调试层）",
     },
+    "HCU_TVMFFI_WARMUP": {
+        "env": "HCU_TVMFFI_WARMUP", "default": "1",
+        "about": "tvm-ffi dlpack 首编自递归 breaker（tvmffi_warmup.py）：冷缓"
+                 "存下 tvm_ffi 首次 import 派构建子进程，子进程继承 "
+                 "PYTHONPATH 重进 sitecustomize → 桥 eager import 链"
+                 "（dsa_topk_v2→xgrammar→tvm_ffi）再派子进程 → 自递归堆积"
+                 "（bootstrap §3 的 122 进程/50 分钟案；nmz26 dsv41f 冷容器 "
+                 "2026-10-26 复现）。sitecustomize 前部探温 ~/.cache/tvm-ffi"
+                 "/**.so，冷则 flock 排他 + 剥 PYTHONPATH 亲跑 tvm_ffi 自带"
+                 "构建脚本（§3 自动化），加载器仍要自派子进程时窗口内 Popen "
+                 "包装注入干净 env 物理断路。=0 关闭（调试层）",
+    },
     "HCU_WNA16_CHANNEL_MOE": {
         "env": "HCU_WNA16_CHANNEL_MOE", "default": "1",
         "about": "channel-wise int4 MoE 改写（wna16_channel_moe.py）："
