@@ -237,3 +237,27 @@ L0 结构门禁（零依赖秒级，Gitee Go 云端）+ L1 GPU 数值门禁（�
 7. DeepSeek-R1-L4 + flashmla（`--decode-attention-backend flashmla --prefill-attention-backend triton --page-size 64`）为**验证 rig**（截层模型语义本坏，只测链路非精度），物料 `tests/tools/_launch_r1l4_*.sh`。
 8. **任何启动恒显式 `--attention-backend triton/fa3`**：不指定时默认解析到 aiter，dense prefill 的 `mha_batch_prefill_func` 是模块不可调用，首 forward 必崩（PD prefill 首测实测）。
 9. **DeepEP EP 并行三模式全开**（bf16 MoE）：`low_latency`/`auto`/`normal` 均已验证（normal/auto 的 contiguous grouped GEMM 走 adapter triton 内核，`HCU_TRITON_CONTIG=1` 默认开）；必须 `--moe-runner-backend deep_gemm` + `HCU_DEEPGEMM_BRIDGE=1` + bf16 dispatch env（见 §3 命令块）。FP8 DeepEP（normal 线）仍锁：DTK a_scale 语义与 sglang 128-block 不匹配。
+
+## 5. trace 耗时异常排查配方（驱动空泡吸收家族，2026-10-26 box16 实战提炼）
+
+**背景（历史口供，用户 2026-10-26）**：DTK 栈 prof 早年 trace 里 kernel 之间常见空泡（提前下发/graphlaunch 也在），runtime 一度归驱动、一度归编译器；后来驱动侧"解了"——**空泡从 trace 消失、kernel 耗时变长=空泡时间被折算进 kernel 窗**。nmz18/nmz26 的拍（GPU 不执行已入队活）与本问题同源。上层可绕：das 用整 MoE 单核 vendor kernel（aiter moe_c/lightop marlin）后很少复现——**核少而肥=泡触发面小**。
+
+**症状指纹**（占其一即入本流程）：
+1. 某核 trace 耗时远超其工作量应有的量级（如 elementwise 级工作记出 ms 级）；
+2. 每颗 X 核的**后继核**耗时异常，而该后继核在其他位置正常（全局 p50 对比）；
+3. 嫌疑核自身记录**低得离谱**（如 GEMM 记 7µs）+主流"覆盖"接近满载但墙钟慢；
+4. 同核 standalone 快、in-server 慢，且步时**稳态慢**（不是间歇塌陷——稳慢=每步都在交泡税，box16 教训：稳慢比间歇更隐蔽）。
+
+**排查主线**（顺序执行，全部 tracer 无关取证优先）：
+1. **别信 trace 绝对值，先看结构**：correlation→谁发射（hipGraphLaunch=图内）、前后继关系、同流 gap；
+2. **后继吸收检验**：对每颗嫌疑核取后继核耗时 vs 该后继核全局 p50——"后继异常"=前核真值被位移/吸收（实证：gptq 记 7µs，后继 act 记 5056µs≈UP 真值）；
+3. **真值三板斧**（cuda events，不经 roctracer）：
+   a. standalone 探针：同核同形状热编译后事件计时（注意**短探针才准**——长扫描撞降频，同配置可差 3x：1.2ms vs 3.9ms 实测）；
+   b. 图内差分：capture 含/不含嫌疑核的 graph 重放墙钟差（图内外一致=真慢；probe_graph_pair.py 模板）；
+   c. 工作量缩放：专家数/M 扫描——**耗时平坦=固定税（泡），按比例=真算力病**（int4 GEMM 实证：M=1 与 M=6 同耗 1182/1186µs=token 无关，专家数 1→48 才 730→3785µs）；
+4. **通信排除**：8 卡集合微基准（allreduce 81µs/a2a 112µs 级=健康，模板 bench16coll.py）；
+5. 结论落地：内核级病→换 vendor 核（照 das 接法），配置级病→调优器**必须套 smem 守卫预算**否则运行期被钳（tuner 欠账教训）。
+
+**采集协议坑**：/start_profile+stop 后 ~90s 调度器段错误（roctracer teardown）——**一次采集一重启**；trace 用 num_steps 自动停采集窗。
+
+**战例**：REDUCTION_PATCHES W14/W14 补（box16 int4 GEMM 定罪全过程）；trace 存档 prof_dsv41f_box16_decode/。
