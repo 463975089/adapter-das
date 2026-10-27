@@ -205,6 +205,32 @@ plugin 承载的"上游没有的新能力"（自研量化格式、新算子、�
 独自承担全部兼容成本。若某能力确定无上游化价值（纯平台私有优化），须
 在 plugin 仓 README 明示"不上游化"决定及其理由，避免默认处于悬置态。
 
+### 5.2 算子档晋级门（2026-10-26 定）：接入即晋级，对比测试案例是发现器
+
+**vendor 算子档（aiter/deepgemm/lightop/boltops 等轮子家的核）的晋级
+不以性能对比为门——能接入即晋级**（接入判据 = 真实调用面跑通 + 数值
+对拍过参照）。性能/精度问题不是晋级阻塞，而是**对算子组提需求、提 bug
+的输入**（通道 [operator-requests.md](operator-requests.md)，提报标准
+§0 已有）。此前散见的「production 晋级 = serving A/B」表述只适用于
+**自研实现档**（emu→triton 家族——核是我们自己的，性能是我们的账）；
+vendor 档的性能账在轮子同事，adapter 不背。
+
+**但 adapter 必须配对比测试案例，让这类问题能被"跑测试"发现**，而不是
+靠肉眼猜或用户投诉：
+
+- **数值对拍**（vs 参照路径/金标准，容差明示）——失配即档位回撤/哨兵
+  转红，属阻塞；
+- **计时对拍**（vs 现 active 路径，同形状逐 M 计时）——比值只记录在案
+  不阻塞，作为 operator-requests 的「现状账」证据（慢多少倍、挡什么）；
+- 惯例参照 R-02 哨兵双事实模式：positive-matches-ref + 缺陷-persists
+  两条钉子——**轮子修好后哨兵意外转绿即自动解除回撤**，重跑门禁晋级。
+
+对照现状：mqa vendor 档（`tests/kernels/test_mqa_vendor_gfx938.py`）、
+quant aiter 档（`tests/kernels/test_quant_aiter_gfx938.py`）已是此形态；
+moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
+（parity vs stock triton 臂 + 逐 M 计时，box16 探针一次性数据在案未固化）
+为欠账，接入 serving 后补。
+
 ## 6. L0 静态规约速查（ci/l0_gate.py）
 
 | 检查名 | 级别 | 规则 |
