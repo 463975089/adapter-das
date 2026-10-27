@@ -75,7 +75,9 @@ The package configuration must include `hcu_adapter` and all existing
 
 ## MR 2: vLLM v0.32 runtime integration
 
-MR 2 starts from MR 1 after it lands. It audits the validated
+MR 2 is stacked from the MR 1 head on an independent branch. During review its
+base is the MR 1 branch; after MR 1 lands, its base moves to refreshed `main`.
+It audits the validated
 `hcu-vllm-adapter` `compat/vllm-v0.32.0` branch against official vLLM v0.32.0.
 Official behavior remains authoritative; the adapter imports only HCU gaps
 that are still required.
