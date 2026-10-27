@@ -2757,6 +2757,48 @@ if getattr(torch.version, "hip", None) is not None:
             "HCU adapter: moe_c w4a16 bridge not installed", exc_info=True
         )
 
+    # 10.8. CT W4A8 MoE scheme route (2026-10-26, nmz26 dsv41f
+    #      Channel-INT4-w4a8): DAS-converted checkpoints carry regex-only
+    #      config_groups, so target_scheme_map has no "Linear" bucket and
+    #      CompressedTensorsW4AFP8MoE.__init__ dies on KeyError('Linear')
+    #      at model build (weights never load). Route the int4-group face
+    #      to the upstream WNA16TritonMoE ROCm arm (act quant ignored --
+    #      upstream's own nvfp4 w4a4->w4a16 degradation pattern), or
+    #      heal-only pass-through for future stock-scheme work.
+    #      Knob: HCU_W4A8_MOE = w4a16 (default) | heal | 0.
+    try:
+        from sgl_kernel._adapters import ct_w4a8_moe as _cw4a8
+
+        _cw4a8.install()
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: CT W4A8 MoE route bridge not installed",
+            exc_info=True,
+        )
+
+    # 10.9. DSV4 wqkv_a CT-int8 scale fuse (2026-10-26, nmz16 dsv41f
+    #      Channel-INT4-w4a8): the v0522 load_weights fuse branch catches
+    #      .weight / .weight_scale_inv / .qweight but NOT the CT INT8
+    #      per-channel .weight_scale -- the DAS w4a8 attn scales are
+    #      dropped ("not found in params_dict") and wqkv_a dequantizes
+    #      with an uninitialized scale (boot-fine, numerics-garbage).
+    #      Idempotent needle; disabling the fuse is NOT a workaround (the
+    #      name-mapped group targets only match the fused wqkv_a name).
+    #      Knob: HCU_DSV4_WQKV_SCALE = 1 (default) | 0.
+    try:
+        from sgl_kernel._adapters import dsv4_wqkv_scale_patch as _dwsp
+
+        _dwsp.install()
+    except ImportError:
+        pass
+    except Exception:
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: dsv4 wqkv_a scale-fuse patch not installed",
+            exc_info=True,
+        )
+
     # 11. Prefill context-parallel bridge (2026-10-12): stock v0.5.21
     #     validate_prefill_cp_platform rejects HIP outright; HCU_PREFILL_CP=1
     #     (opt-in) opens the gate so the upstream CP machinery (zigzag/

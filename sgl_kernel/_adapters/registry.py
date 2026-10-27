@@ -178,6 +178,15 @@ TEXT_PATCH_ALLOWLIST = {
     # entry only costs the banner -- fixed retroactively here) and the
     # DSV4F DeepEP bf16 experts dequant hook (fp8.py, method-top guard).
     ("platform_detect", "capture-mode dual-stream MoE gated off on real HIP"),
+    # dsv4 wqkv_a fuse branch (deepseek_v4.py load_weights) catches fp8
+    # .weight_scale_inv + GGUF .qweight but not the compressed-tensors INT8
+    # per-channel .weight_scale: DAS w4a8 attn scales dropped, wqkv_a
+    # dequantizes with uninitialized scale. nmz16 2026-10-26; upstream gap
+    # on every platform. See sgl_kernel/_adapters/dsv4_wqkv_scale_patch.py.
+    (
+        "platform_detect",
+        "dsv4 wqkv_a fuse: accept CT int8 per-channel .weight_scale shards",
+    ),
     (
         "platform_detect",
         "SGLANG_HCU_EP_BF16=1: fp4 routed experts dequantized to "
