@@ -276,7 +276,7 @@ def test_install_smoke_and_dump_wiring():
         r = json.loads(line[len("RESULT "):])
         assert r["vp"] == "none", r
         assert r["is_cuda"] is True, r
-        assert r["rms_mod"] == "hcu_adapter.bridges.sglang", r
+        assert r["rms_mod"] == "hcu_adapter.bridges.vllm", r
         assert r["dump_keys"] == ["env", "ops", "unbound"], r
         assert r["mqa_src"] == "explicit", r  # L4: 显式 env 赢 setdefault
 

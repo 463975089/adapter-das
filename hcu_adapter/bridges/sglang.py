@@ -520,35 +520,11 @@ def install() -> None:
                 "HCU adapter: gdn aiter router not installed", exc_info=True
             )
         try:
-            import vllm._custom_ops as _vco
+            # Unconditional rebind: torch's lazy op namespace can pass an
+            # import-time probe and still miss the native symbol at call time.
+            from hcu_adapter.bridges import vllm as _vllm_bridge
 
-            from sgl_kernel import rmsnorm as _sk_rmsnorm
-
-            # Unconditional rebind: the old `hasattr(torch.ops._C, ...)` gate
-            # went wrong under is_cuda semantics — torch's lazy op-namespace
-            # resolves against the CUDA library set here and raises
-            # AttributeError *at call time* even when the probe passed, so the
-            # bridge was skipped and the first layernorm crashed. Our python
-            # wrappers are behavior-equivalent (triton kernels, fp32 accum),
-            # so always taking over is correct on HCU regardless of what the
-            # native build carries.
-
-            def rms_norm(out, input, weight, epsilon):
-                _sk_rmsnorm(input, weight, epsilon, out=out)
-
-            def fused_add_rms_norm(
-                out, input, residual_out, residual, weight, epsilon
-            ):
-                # sglang calls the 6-arg HIP form: out = rmsnorm(residual+input),
-                # residual_out = residual+input. vllm's 4-arg in-place form is
-                # bridged into it without extra copies.
-                residual_in = residual if residual_out is residual else residual_out
-                residual_in.copy_(residual)
-                residual_in.add_(input)
-                _sk_rmsnorm(residual_in, weight, epsilon, out=out)
-
-            _vco.rms_norm = rms_norm
-            _vco.fused_add_rms_norm = fused_add_rms_norm
+            _vllm_bridge.install_rms_norm_bridge()
         except Exception:  # pragma: no cover - vllm absent: sglang falls back natively
             pass
 
