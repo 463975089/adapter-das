@@ -4,7 +4,7 @@
 
 **Goal:** Add the minimum official vLLM v0.32 platform and general-plugin integration to the multi-host adapter without changing the sglang chain or importing plugin-only optimizations.
 
-**Architecture:** `hcu_adapter.bridges.vllm` remains the single vLLM bridge and exports vLLM's official entry-point callbacks. The lazily imported `HcuPlatform` class lives in `hcu_adapter.bridges.vllm_platform` so sitecustomize and plugin discovery do not import vLLM prematurely.
+**Architecture:** `hcu_adapter.bridges.vllm` remains the single vLLM bridge and exports vLLM's official entry-point callbacks. The module exposes `HcuPlatform` lazily from that same file, so the prescribed bridge layout stays intact while sitecustomize and plugin discovery do not import vLLM prematurely.
 
 **Tech Stack:** Python 3.11+, setuptools entry points, vLLM v0.32 plugin API, pytest.
 
@@ -45,7 +45,6 @@
 
 **Files:**
 - Modify: `hcu_adapter/bridges/vllm.py`
-- Create: `hcu_adapter/bridges/vllm_platform.py`
 - Modify: `pyproject.toml`
 
 **Interfaces:**
@@ -53,7 +52,7 @@
 - Produces: `hcu_platform_plugin() -> str | None`, `hcu_runtime_plugin() -> None`, and `HcuPlatform`.
 
 - [ ] **Step 1: Implement the v0.32 compatibility gate, lazy HCU detection, DTK runtime guard, and PID-local run-once latch in `bridges/vllm.py`.**
-- [ ] **Step 2: Implement the minimal `RocmPlatform` subclass in `vllm_platform.py`, delegating official behavior and selecting upstream Triton attention only when no backend is explicit.**
+- [ ] **Step 2: Expose the minimal `RocmPlatform` subclass lazily from `bridges/vllm.py`, delegating official behavior and selecting upstream Triton attention only when no backend is explicit.**
 - [ ] **Step 3: Register both official entry points under the shared `hcu_adapter` name.**
 - [ ] **Step 4: Run the focused tests and verify they pass.**
 - [ ] **Step 5: Commit as `vllm: add official v0.32 runtime seam`.**

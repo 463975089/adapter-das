@@ -6,7 +6,9 @@ Run: python3 -m pytest -q tests/adapter/test_vllm_bridge.py
 from __future__ import annotations
 
 import inspect
-import importlib
+import os
+from pathlib import Path
+import subprocess
 import sys
 from types import ModuleType
 from types import SimpleNamespace
@@ -188,7 +190,7 @@ def test_platform_plugin_gates_once_and_returns_the_lazy_class_path(monkeypatch)
     first = bridge.hcu_platform_plugin()
     repeated = bridge.hcu_platform_plugin()
 
-    assert first == "hcu_adapter.bridges.vllm_platform.HcuPlatform"
+    assert first == "hcu_adapter.bridges.vllm.HcuPlatform"
     assert repeated == first
     assert calls == ["version"]
 
@@ -255,14 +257,9 @@ def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(
         "vllm.v1.attention.backends.registry": registry,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
-    monkeypatch.delitem(
-        sys.modules, "hcu_adapter.bridges.vllm_platform", raising=False
-    )
+    monkeypatch.delitem(bridge.__dict__, "HcuPlatform", raising=False)
 
-    platform_module = importlib.import_module(
-        "hcu_adapter.bridges.vllm_platform"
-    )
-    platform = platform_module.HcuPlatform
+    platform = bridge.HcuPlatform
     selector = object()
 
     assert platform.device_name == "hcu"
@@ -276,6 +273,32 @@ def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(
         selector,
         16,
     )
+
+
+def test_import_and_install_do_not_eagerly_import_vllm():
+    repo_root = Path(__file__).resolve().parents[2]
+    environment = os.environ.copy()
+    environment["HCU_ADAPTER_HOST"] = "none"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "from hcu_adapter.bridges import vllm as bridge; "
+                "bridge.install(); "
+                "assert not any(name == 'vllm' or name.startswith('vllm.') "
+                "for name in sys.modules), sorted(name for name in sys.modules "
+                "if name == 'vllm' or name.startswith('vllm.'))"
+            ),
+        ],
+        cwd=repo_root,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def _install_with_fake_custom_ops(monkeypatch):

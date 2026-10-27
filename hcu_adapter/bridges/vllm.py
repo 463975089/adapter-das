@@ -16,7 +16,7 @@ TARGET_VLLM_RELEASE = (0, 32, 0)
 SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx936", "gfx938"})
 HYGON_PCI_VENDOR_ID = "0x1d94"
 _PCI_DEVICES_ROOT = Path("/sys/bus/pci/devices")
-_PLATFORM_CLASS = "hcu_adapter.bridges.vllm_platform.HcuPlatform"
+_PLATFORM_CLASS = "hcu_adapter.bridges.vllm.HcuPlatform"
 _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
 
@@ -219,6 +219,51 @@ def install() -> None:
     """Defer vLLM activation to its official plugin discovery lifecycle."""
 
 
+def _hcu_platform_class() -> type:
+    """Build the official ROCm-derived platform only when vLLM requests it."""
+    existing = globals().get("HcuPlatform")
+    if existing is not None:
+        return existing
+
+    from vllm.platforms.rocm import RocmPlatform
+
+    class _HcuPlatform(RocmPlatform):
+        """Reuse official ROCm behavior under an HCU platform identity."""
+
+        device_name = "hcu"
+
+        @classmethod
+        def get_attn_backend_cls(
+            cls,
+            selected_backend,
+            attn_selector_config,
+            num_heads=None,
+        ) -> str:
+            if selected_backend is None:
+                from vllm.v1.attention.backends.registry import (
+                    AttentionBackendEnum,
+                )
+
+                selected_backend = AttentionBackendEnum.TRITON_ATTN
+            return super().get_attn_backend_cls(
+                selected_backend,
+                attn_selector_config,
+                num_heads,
+            )
+
+    _HcuPlatform.__name__ = "HcuPlatform"
+    _HcuPlatform.__qualname__ = "HcuPlatform"
+    globals()["HcuPlatform"] = _HcuPlatform
+    return _HcuPlatform
+
+
+def __getattr__(name: str):
+    """Expose HcuPlatform lazily without importing vLLM at adapter startup."""
+    if name == "HcuPlatform":
+        return _hcu_platform_class()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def hcu_platform_plugin() -> str | None:
     """Return the lazy HCU platform class only on a validated HCU host."""
     if not detect_hcu().detected:
@@ -230,8 +275,7 @@ def hcu_platform_plugin() -> str | None:
 def _ensure_hcu_platform_selected() -> None:
     platforms = import_module("vllm.platforms")
     selected = getattr(platforms, "current_platform")
-    platform_module = import_module("hcu_adapter.bridges.vllm_platform")
-    expected_class = platform_module.HcuPlatform
+    expected_class = _hcu_platform_class()
     selected_class = selected if isinstance(selected, type) else type(selected)
     if selected_class is not expected_class:
         selected_name = f"{selected_class.__module__}.{selected_class.__qualname__}"
