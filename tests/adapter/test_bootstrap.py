@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+import hcu_adapter.bootstrap as bootstrap
 from hcu_adapter.bootstrap import (
     ACTIVE_HOST_ENV,
     detect_host,
@@ -104,3 +105,81 @@ def test_selected_host_is_propagated_without_overwriting_public_choice(host):
         "HCU_ADAPTER_HOST": "auto",
         ACTIVE_HOST_ENV: host,
     }
+
+
+class _Bridge:
+    def __init__(self, event, events, failure=None):
+        self.event = event
+        self.events = events
+        self.failure = failure
+
+    def install(self):
+        self.events.append(self.event)
+        if self.failure is not None:
+            raise self.failure
+
+
+def _arm_install(monkeypatch, *, hip=True, available=("sglang",), common_failure=None):
+    events = []
+    modules = {
+        "hcu_adapter.bridges.common": _Bridge(
+            "common", events, failure=common_failure
+        ),
+        "hcu_adapter.bridges.sglang": _Bridge("sglang", events),
+        "hcu_adapter.bridges.vllm": _Bridge("vllm", events),
+    }
+    monkeypatch.setattr(bootstrap, "_is_hip", lambda: hip)
+    monkeypatch.setattr(bootstrap, "_available_hosts", lambda: set(available))
+    monkeypatch.setattr(bootstrap, "_loaded_module_names", lambda: ())
+    monkeypatch.setattr(
+        bootstrap.importlib,
+        "import_module",
+        lambda name: modules[name],
+    )
+    monkeypatch.setattr(bootstrap, "_installed_pid", None)
+    monkeypatch.delenv(ACTIVE_HOST_ENV, raising=False)
+    monkeypatch.setenv("HCU_ADAPTER_HOST", "auto")
+    return events
+
+
+def test_install_runs_common_before_the_selected_host(monkeypatch):
+    events = _arm_install(monkeypatch)
+
+    bootstrap.install()
+
+    assert events == ["common", "sglang"]
+
+
+def test_install_is_process_idempotent(monkeypatch):
+    events = _arm_install(monkeypatch)
+
+    bootstrap.install()
+    bootstrap.install()
+
+    assert events == ["common", "sglang"]
+
+
+def test_common_failure_does_not_block_the_selected_host(monkeypatch):
+    events = _arm_install(monkeypatch, common_failure=RuntimeError("guard failed"))
+
+    bootstrap.install()
+
+    assert events == ["common", "sglang"]
+
+
+def test_install_is_a_noop_on_non_hip(monkeypatch):
+    events = _arm_install(monkeypatch, hip=False)
+
+    bootstrap.install()
+
+    assert events == []
+    assert ACTIVE_HOST_ENV not in bootstrap.os.environ
+
+
+def test_install_is_a_noop_when_no_host_is_available(monkeypatch):
+    events = _arm_install(monkeypatch, available=())
+
+    bootstrap.install()
+
+    assert events == []
+    assert ACTIVE_HOST_ENV not in bootstrap.os.environ

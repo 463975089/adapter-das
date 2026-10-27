@@ -141,8 +141,10 @@ def test_registry_entry_and_manual_reconcile():
     assert "moe_c_w4a16.py" in row[0]
 
 
-def test_sitecustomize_wiring_outermost():
-    src = (ROOT / "sitecustomize.py").read_text(encoding="utf-8")
+def test_sglang_bridge_wiring_outermost():
+    src = (ROOT / "hcu_adapter" / "bridges" / "sglang.py").read_text(
+        encoding="utf-8"
+    )
     assert "moe_c_w4a16 as _mcw" in src
     assert "_mcw.install()" in src
     # chained after every other fused_experts arm (10 -> 10.5 -> 10.6 -> 10.7)

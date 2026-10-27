@@ -204,12 +204,18 @@ def test_registry_rows_in_manual():
         assert f"`{name}`" in manual, f"{name} missing from docs/env-vars.md"
 
 
-def test_sitecustomize_wires_both_guards():
-    src = (ROOT / "sitecustomize.py").read_text(encoding="utf-8")
-    # topo guard is env hygiene: before any sglang-touching bridge
-    assert src.index("nccl_topo_guard.install()") < src.index("platform_seam")
+def test_bootstrap_bridges_wire_both_guards():
+    common = (ROOT / "hcu_adapter" / "bridges" / "common.py").read_text(
+        encoding="utf-8"
+    )
+    sglang = (ROOT / "hcu_adapter" / "bridges" / "sglang.py").read_text(
+        encoding="utf-8"
+    )
+    # common.install runs before the host bridge (test_bootstrap.py); keep
+    # topology hygiene in common and the scheduler wrapper in the host chain.
+    assert "nccl_topo_guard.install()" in common
     # watchdog wraps the factory before scheduler.py imports it
-    assert "watchdog_cold.install()" in src
+    assert "watchdog_cold.install()" in sglang
 
 
 if __name__ == "__main__":

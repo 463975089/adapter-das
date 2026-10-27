@@ -150,8 +150,10 @@ def test_registry_entry_and_manual_reconcile():
     assert entry["about"].split("（")[0] in manual  # 头段与手册一致
 
 
-def test_sitecustomize_wiring():
-    src = (ROOT / "sitecustomize.py").read_text(encoding="utf-8")
+def test_sglang_bridge_wiring():
+    src = (ROOT / "hcu_adapter" / "bridges" / "sglang.py").read_text(
+        encoding="utf-8"
+    )
     assert "wna16_channel_moe as _wnch" in src
     assert "_wnch.install()" in src
     # chained after the other two fused_experts arms (10 -> 10.5 -> 10.6)

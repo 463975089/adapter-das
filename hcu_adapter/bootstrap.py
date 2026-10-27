@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
+import logging
+import os
+import sys
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from pathlib import PurePath
 
@@ -11,6 +16,9 @@ ACTIVE_HOST_ENV = "_HCU_ADAPTER_ACTIVE_HOST"
 _HOSTS = frozenset({"sglang", "vllm"})
 _PUBLIC_CHOICES = _HOSTS | {"auto", "none"}
 _PROPAGATED_CHOICES = _HOSTS | {"none"}
+_installed_pid: int | None = None
+
+LOG = logging.getLogger("hcu.adapter")
 
 
 def _choice(raw: object, *, variable: str, allowed: frozenset[str]) -> str:
@@ -95,3 +103,69 @@ def propagate_host(host: str, environment: MutableMapping[str, str]) -> None:
         allowed=_PROPAGATED_CHOICES,
     )
     environment[ACTIVE_HOST_ENV] = selected
+
+
+def _is_hip() -> bool:
+    try:
+        import torch
+
+        return getattr(torch.version, "hip", None) is not None
+    except Exception:
+        return False
+
+
+def _available_hosts() -> set[str]:
+    available = set()
+    for host in _HOSTS:
+        try:
+            if importlib.util.find_spec(host) is not None:
+                available.add(host)
+        except (ImportError, AttributeError, ValueError):
+            continue
+    return available
+
+
+def _loaded_module_names() -> tuple[str, ...]:
+    return tuple(sys.modules)
+
+
+def install() -> None:
+    """Install common guards and one host bridge at most once per process."""
+    global _installed_pid
+
+    pid = os.getpid()
+    if _installed_pid == pid:
+        return
+    if not _is_hip():
+        _installed_pid = pid
+        return
+
+    try:
+        host = detect_host(
+            argv=sys.argv,
+            loaded_modules=_loaded_module_names(),
+            available=_available_hosts(),
+            environment=os.environ,
+        )
+    except ValueError as exc:
+        _installed_pid = pid
+        LOG.warning("HCU adapter bootstrap disabled: %s", exc)
+        return
+
+    if host is None:
+        _installed_pid = pid
+        return
+
+    _installed_pid = pid
+    propagate_host(host, os.environ)
+    LOG.warning("HCU adapter bootstrap: host=%s", host)
+
+    try:
+        importlib.import_module("hcu_adapter.bridges.common").install()
+    except Exception:
+        LOG.warning("HCU adapter: common bridge not installed", exc_info=True)
+
+    try:
+        importlib.import_module(f"hcu_adapter.bridges.{host}").install()
+    except Exception:
+        LOG.warning("HCU adapter: %s bridge not installed", host, exc_info=True)

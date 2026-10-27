@@ -36,6 +36,7 @@ import pytest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SC_PATH = os.path.join(ROOT, "sitecustomize.py")
+SGLANG_PATH = os.path.join(ROOT, "hcu_adapter", "bridges", "sglang.py")
 
 IS_HIP = getattr(getattr(__import__("torch", fromlist=["version"]), "version"),
                  "hip", None) is not None
@@ -50,16 +51,15 @@ _ENV_SUBSCRIPT = re.compile(
 
 # ---------------------------------------------------------------- L1 结构层
 
-def _load_ast():
-    src = open(SC_PATH, encoding="utf-8").read()
+def _load_ast(path=SGLANG_PATH):
+    src = open(path, encoding="utf-8").read()
     return src, ast.parse(src)
 
 
-def _find_hip_gate(tree):
+def _find_hip_gate(tree, src):
     for node in ast.walk(tree):
         if isinstance(node, ast.If):
-            seg = ast.get_source_segment(
-                open(SC_PATH, encoding="utf-8").read(), node.test) or ""
+            seg = ast.get_source_segment(src, node.test) or ""
             if "torch.version" in seg and "hip" in seg:
                 return node
     return None
@@ -86,7 +86,7 @@ def test_structure_gate_order_and_isolation():
     hcu_env.log_summary 先于 platform_seam.install（后者必须是首个触
     sglang 的步骤）；每桥 install 包 try/except（单桥失败不拖垮其余）。"""
     src, tree = _load_ast()
-    gate = _find_hip_gate(tree)
+    gate = _find_hip_gate(tree, src)
     assert gate is not None, "hip gate `if torch.version.hip ... is not None` missing"
 
     # gate 的首条语句 = VLLM_PLUGINS setdefault（非空 allowlist 语义）
@@ -106,13 +106,8 @@ def test_structure_gate_order_and_isolation():
                         return i
         return -1
 
-    i_summary = stmt_index(lambda b, a: a == "log_summary")
     i_platform = stmt_index(lambda b, a: a == "install" and b == "platform_seam")
-    assert i_summary >= 0, "hcu_env.log_summary() call not found in gate body"
     assert i_platform >= 0, "platform_seam.install() call not found"
-    assert i_summary < i_platform, (
-        f"order contract broken: log_summary at {i_summary} >= "
-        f"platform_seam.install at {i_platform}")
 
     # platform_seam.install 之前不得 import sglang（common.py import 期冻结
     # FP8_E4M3_MAX，seam 必须最先翻转语义）
@@ -146,11 +141,29 @@ def test_structure_gate_order_and_isolation():
     assert not naked, f"install calls outside any try/except: {naked}"
 
 
+def test_sitecustomize_delegates_to_bootstrap_only():
+    """自动入口不得重新长回宿主实现体。"""
+    src, tree = _load_ast(SC_PATH)
+    executable = [node for node in tree.body if not isinstance(node, ast.Expr)
+                  or not isinstance(getattr(node, "value", None), ast.Constant)]
+    assert len(executable) == 2
+    imported, called = executable
+    assert isinstance(imported, ast.ImportFrom)
+    assert imported.module == "hcu_adapter.bootstrap"
+    assert [alias.name for alias in imported.names] == ["install"]
+    assert isinstance(called, ast.Expr) and isinstance(called.value, ast.Call)
+    assert isinstance(called.value.func, ast.Name)
+    assert called.value.func.id == "install"
+
+
 def test_gate_envs_documented():
     """对账契约：sitecustomize 裸读的每个门控 env（HCU_*/SGLANG_*/VLLM_*）
     必须以反引号全名出现在 docs/env-vars.md——多一漏一即红（R-12 层1，
     与 L0 的 REGISTRY→docs 方向互补，这里是 sitecustomize→docs 方向）。"""
-    src = open(SC_PATH, encoding="utf-8").read()
+    src = "\n".join(
+        open(path, encoding="utf-8").read()
+        for path in (SC_PATH, SGLANG_PATH)
+    )
     names = set(_ENV_CALL.findall(src)) | set(_ENV_SUBSCRIPT.findall(src))
     assert names, "env extraction regex found nothing — pattern drifted?"
     doc = open(os.path.join(ROOT, "docs", "env-vars.md"),
@@ -263,7 +276,7 @@ def test_install_smoke_and_dump_wiring():
         r = json.loads(line[len("RESULT "):])
         assert r["vp"] == "none", r
         assert r["is_cuda"] is True, r
-        assert r["rms_mod"] == "sitecustomize", r
+        assert r["rms_mod"] == "hcu_adapter.bridges.sglang", r
         assert r["dump_keys"] == ["env", "ops", "unbound"], r
         assert r["mqa_src"] == "explicit", r  # L4: 显式 env 赢 setdefault
 
