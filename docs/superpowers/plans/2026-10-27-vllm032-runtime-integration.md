@@ -37,9 +37,9 @@
 **Interfaces:**
 - Produces: executable contracts for v0.32 compatibility, HCU detection, DTK runtime path, process-local idempotency, and entry-point metadata.
 
-- [ ] **Step 1: Add failing tests for accepted/rejected release versions, HCU detection, explicit/derived runtime library paths, parent/child lifecycle behavior, and the two official entry points.**
-- [ ] **Step 2: Run the focused tests and verify they fail because the MR 2 APIs and metadata are absent.**
-- [ ] **Step 3: Commit as `test: pin vllm 0.32 runtime contracts`.**
+- [x] **Step 1: Add failing tests for accepted/rejected release versions, HCU detection, explicit/derived runtime library paths, parent/child lifecycle behavior, and the two official entry points.**
+- [x] **Step 2: Run the focused tests and verify they fail because the MR 2 APIs and metadata are absent.**
+- [x] **Step 3: Commit as `test: pin vllm 0.32 runtime contracts`.**
 
 ### Task 2: Implement the official vLLM plugin seam
 
@@ -51,11 +51,11 @@
 - Consumes: Task 1 contracts.
 - Produces: `hcu_platform_plugin() -> str | None`, `hcu_runtime_plugin() -> None`, and `HcuPlatform`.
 
-- [ ] **Step 1: Implement the v0.32 compatibility gate, lazy HCU detection, DTK runtime guard, and PID-local run-once latch in `bridges/vllm.py`.**
-- [ ] **Step 2: Expose the minimal `RocmPlatform` subclass lazily from `bridges/vllm.py`, delegating official behavior and selecting upstream Triton attention only when no backend is explicit.**
-- [ ] **Step 3: Register both official entry points under the shared `hcu_adapter` name.**
-- [ ] **Step 4: Run the focused tests and verify they pass.**
-- [ ] **Step 5: Commit as `vllm: add official v0.32 runtime seam`.**
+- [x] **Step 1: Implement the v0.32 compatibility gate, lazy HCU detection, DTK runtime guard, and PID-local run-once latch in `bridges/vllm.py`.**
+- [x] **Step 2: Expose the minimal `RocmPlatform` subclass lazily from `bridges/vllm.py`, delegating official behavior and selecting upstream Triton attention only when no backend is explicit.**
+- [x] **Step 3: Register both official entry points under the shared `hcu_adapter` name.**
+- [x] **Step 4: Run the focused tests and verify they pass.**
+- [x] **Step 5: Commit as `vllm: add official v0.32 runtime seam`.**
 
 ### Task 3: Prove isolation and document the stacked MR
 
@@ -69,7 +69,7 @@
 - Consumes: Task 2 entry points and MR 1 dispatch.
 - Produces: documented ownership and regression evidence that the sglang/sitecustomize paths are unchanged.
 
-- [ ] **Step 1: Document vLLM callback ownership, lazy platform import, and the plugin optimization boundary.**
-- [ ] **Step 2: Run adapter/CPU/L0 gates and the official vLLM v0.32 source contract tests.**
-- [ ] **Step 3: Inspect the MR 1..MR 2 diff and verify `sitecustomize.py`, `bootstrap.py`, and `bridges/sglang.py` are unchanged.**
-- [ ] **Step 4: Commit as `docs: record vllm 0.32 runtime boundary`.**
+- [x] **Step 1: Document vLLM callback ownership, lazy platform import, and the plugin optimization boundary.**
+- [x] **Step 2: Run adapter/CPU/L0 gates and the official vLLM v0.32 source contract tests.**
+- [x] **Step 3: Inspect the MR 1..MR 2 diff and verify `sitecustomize.py`, `bootstrap.py`, and `bridges/sglang.py` are unchanged.**
+- [x] **Step 4: Commit as `docs: record vllm 0.32 runtime boundary`.**
