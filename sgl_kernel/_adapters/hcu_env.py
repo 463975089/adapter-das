@@ -117,6 +117,13 @@ def _auto_mqa_emu():
 
 
 REGISTRY = {
+    # bootstrap host selection: auto needs no operator configuration; the
+    # dispatcher propagates its result to spawn children through a private key.
+    "HCU_ADAPTER_HOST": {
+        "env": "HCU_ADAPTER_HOST", "default": "auto",
+        "about": "宿主分发：auto 自动识别；sglang/vllm 显式固定；none 禁用。"
+                 "自动结果由 adapter 私有键传给 spawn 子进程，部署无需手设。",
+    },
     # kill switches (triage; see kill_switch.py) — explicit-only by nature
     "HCU_DISABLE_OPS": {
         "env": "HCU_DISABLE_OPS", "default": "",
