@@ -6,6 +6,7 @@ Run: python3 -m pytest -q tests/adapter/test_vllm_bridge.py
 from __future__ import annotations
 
 import inspect
+import importlib
 import sys
 from types import ModuleType
 from types import SimpleNamespace
@@ -155,6 +156,126 @@ def test_failed_process_action_is_latched_but_not_inherited(monkeypatch):
     actions.run_once("runtime", lambda: calls.append(pid))
 
     assert calls == [101, 202]
+
+
+def test_platform_plugin_is_a_non_hcu_noop(monkeypatch):
+    monkeypatch.setattr(
+        bridge,
+        "detect_hcu",
+        lambda: bridge.HcuDetection(False, None, "no supported HCU"),
+    )
+    monkeypatch.setattr(
+        bridge,
+        "_ensure_vllm_compatible",
+        lambda: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+
+    assert bridge.hcu_platform_plugin() is None
+
+
+def test_platform_plugin_gates_once_and_returns_the_lazy_class_path(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        bridge,
+        "detect_hcu",
+        lambda: bridge.HcuDetection(True, "gfx938", ""),
+    )
+    monkeypatch.setattr(
+        bridge, "_ensure_vllm_compatible", lambda: calls.append("version")
+    )
+    monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
+
+    first = bridge.hcu_platform_plugin()
+    repeated = bridge.hcu_platform_plugin()
+
+    assert first == "hcu_adapter.bridges.vllm_platform.HcuPlatform"
+    assert repeated == first
+    assert calls == ["version"]
+
+
+def test_runtime_plugin_runs_the_required_vllm_sequence_once(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        bridge,
+        "detect_hcu",
+        lambda: bridge.HcuDetection(True, "gfx938", ""),
+    )
+    monkeypatch.setattr(
+        bridge, "_ensure_vllm_compatible", lambda: calls.append("version")
+    )
+    monkeypatch.setattr(
+        bridge,
+        "_ensure_hcu_platform_selected",
+        lambda: calls.append("platform"),
+    )
+    monkeypatch.setattr(
+        bridge,
+        "configure_vllm_hip_runtime_path",
+        lambda: calls.append("dtk"),
+    )
+    monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
+
+    assert bridge.hcu_runtime_plugin() is None
+    assert bridge.hcu_runtime_plugin() is None
+
+    assert calls == ["version", "platform", "dtk"]
+
+
+def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(
+    monkeypatch,
+):
+    class RocmPlatform:
+        @classmethod
+        def get_attn_backend_cls(
+            cls, selected_backend, attn_selector_config, num_heads=None
+        ):
+            return selected_backend, attn_selector_config, num_heads
+
+    fake_vllm = ModuleType("vllm")
+    fake_vllm.__path__ = []
+    platforms = ModuleType("vllm.platforms")
+    platforms.__path__ = []
+    rocm = ModuleType("vllm.platforms.rocm")
+    rocm.RocmPlatform = RocmPlatform
+    v1 = ModuleType("vllm.v1")
+    v1.__path__ = []
+    attention = ModuleType("vllm.v1.attention")
+    attention.__path__ = []
+    backends = ModuleType("vllm.v1.attention.backends")
+    backends.__path__ = []
+    registry = ModuleType("vllm.v1.attention.backends.registry")
+    registry.AttentionBackendEnum = SimpleNamespace(TRITON_ATTN="TRITON_ATTN")
+    for name, module in {
+        "vllm": fake_vllm,
+        "vllm.platforms": platforms,
+        "vllm.platforms.rocm": rocm,
+        "vllm.v1": v1,
+        "vllm.v1.attention": attention,
+        "vllm.v1.attention.backends": backends,
+        "vllm.v1.attention.backends.registry": registry,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.delitem(
+        sys.modules, "hcu_adapter.bridges.vllm_platform", raising=False
+    )
+
+    platform_module = importlib.import_module(
+        "hcu_adapter.bridges.vllm_platform"
+    )
+    platform = platform_module.HcuPlatform
+    selector = object()
+
+    assert platform.device_name == "hcu"
+    assert platform.get_attn_backend_cls(None, selector, 32) == (
+        "TRITON_ATTN",
+        selector,
+        32,
+    )
+    assert platform.get_attn_backend_cls("EXPLICIT", selector, 16) == (
+        "EXPLICIT",
+        selector,
+        16,
+    )
 
 
 def _install_with_fake_custom_ops(monkeypatch):
