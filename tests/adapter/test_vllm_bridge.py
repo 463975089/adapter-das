@@ -8,10 +8,153 @@ from __future__ import annotations
 import inspect
 import sys
 from types import ModuleType
+from types import SimpleNamespace
 
+import pytest
 import torch
 
 from hcu_adapter.bridges import vllm as bridge
+
+
+@pytest.mark.parametrize(
+    "version",
+    (
+        "0.32.0",
+        "0.32.0rc1",
+        "0.32.0.dev7",
+        "0.32.0.post1",
+        "0.32.0+rocm723",
+    ),
+)
+def test_vllm_release_gate_accepts_only_the_032_release_line(version):
+    assert bridge.is_supported_vllm_version(version) is True
+
+
+@pytest.mark.parametrize(
+    "version",
+    (None, "not-a-version", "1!0.32.0", "0.31.0", "0.32.1", "0.33.0"),
+)
+def test_vllm_release_gate_rejects_missing_malformed_or_other_releases(version):
+    assert bridge.is_supported_vllm_version(version) is False
+
+
+class _FakeAccelerator:
+    def __init__(self, *, available=True, architecture="gfx938"):
+        self.available = available
+        self.architecture = architecture
+        self.property_calls = 0
+
+    def is_available(self):
+        return self.available
+
+    def get_device_properties(self, index):
+        assert index == 0
+        self.property_calls += 1
+        return SimpleNamespace(gcnArchName=self.architecture)
+
+
+def _fake_torch(*, hip="6.2", available=True, architecture="gfx938"):
+    accelerator = _FakeAccelerator(
+        available=available, architecture=architecture
+    )
+    return SimpleNamespace(
+        version=SimpleNamespace(hip=hip), cuda=accelerator
+    ), accelerator
+
+
+@pytest.mark.parametrize("architecture", ("gfx928", "gfx936", "gfx938"))
+def test_hcu_detection_accepts_the_validated_architectures(architecture):
+    torch_module, _ = _fake_torch(architecture=architecture)
+
+    result = bridge.detect_hcu(torch_module)
+
+    assert result.detected is True
+    assert result.architecture == architecture
+    assert result.reason == ""
+
+
+def test_hcu_detection_rejects_non_hip_without_querying_a_device():
+    torch_module, accelerator = _fake_torch(hip=None, architecture="gfx938")
+
+    result = bridge.detect_hcu(torch_module)
+
+    assert result.detected is False
+    assert "HIP" in result.reason
+    assert accelerator.property_calls == 0
+
+
+def test_hcu_detection_rejects_an_unvalidated_rocm_architecture():
+    torch_module, _ = _fake_torch(architecture="gfx942")
+
+    result = bridge.detect_hcu(torch_module)
+
+    assert result.detected is False
+    assert result.architecture == "gfx942"
+    assert "unsupported" in result.reason
+
+
+def test_dtk_runtime_guard_preserves_an_explicit_operator_path(tmp_path):
+    explicit = tmp_path / "operator-selected.so"
+    environment = {
+        "DTKROOT": str(tmp_path / "dtk"),
+        "VLLM_CUDART_SO_PATH": str(explicit),
+    }
+
+    configured = bridge.configure_vllm_hip_runtime_path(environment)
+
+    assert configured == str(explicit)
+    assert environment["VLLM_CUDART_SO_PATH"] == str(explicit)
+
+
+def test_dtk_runtime_guard_derives_an_existing_library(tmp_path):
+    root = tmp_path / "dtk"
+    library = root / "lib" / "libamdhip64.so.4"
+    library.parent.mkdir(parents=True)
+    library.write_bytes(b"hip runtime")
+    (root / "lib" / "libamdhip64.so").symlink_to(library.name)
+    environment = {"DTKROOT": str(root)}
+
+    configured = bridge.configure_vllm_hip_runtime_path(environment)
+
+    assert configured == str(library)
+    assert environment["VLLM_CUDART_SO_PATH"] == str(library)
+
+
+def test_process_actions_run_once_per_pid_and_reset_after_fork_like_change(
+    monkeypatch,
+):
+    pid = 101
+    monkeypatch.setattr(bridge.os, "getpid", lambda: pid)
+    actions = bridge.ProcessLocalActions()
+    calls = []
+
+    actions.run_once("runtime", lambda: calls.append(pid))
+    actions.run_once("runtime", lambda: calls.append(-1))
+    pid = 202
+    actions.run_once("runtime", lambda: calls.append(pid))
+
+    assert calls == [101, 202]
+
+
+def test_failed_process_action_is_latched_but_not_inherited(monkeypatch):
+    pid = 101
+    monkeypatch.setattr(bridge.os, "getpid", lambda: pid)
+    actions = bridge.ProcessLocalActions()
+    calls = []
+
+    def fail():
+        calls.append(pid)
+        raise ValueError("incompatible vLLM API")
+
+    with pytest.raises(bridge.LatchedVllmRuntimeError, match="incompatible"):
+        actions.run_once("runtime", fail)
+    with pytest.raises(bridge.LatchedVllmRuntimeError, match="incompatible"):
+        actions.run_once("runtime", lambda: calls.append(-1))
+
+    pid = 202
+    actions.run_once("runtime", lambda: calls.append(pid))
+
+    assert calls == [101, 202]
 
 
 def _install_with_fake_custom_ops(monkeypatch):
