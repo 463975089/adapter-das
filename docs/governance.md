@@ -12,13 +12,14 @@
 > 配套机制代码：`sgl_kernel/_adapters/registry.py`（运行时注册表 + dump）、
 > `ci/l0_gate.py`（三条静态规约）。本文的每条 HARD 规则都应能被 L0 检查。
 
-## 0. 目标终态（sitecustomize 收敛 + 双仓边界）
+## 0. 目标终态（薄入口 + 宿主分发 + 双仓边界）
 
-- sitecustomize.py 的终态定位是**编排器**（<200 行：探测 → 按序调用各
-  域桥的 `install()` → log_summary/dump），不含任何具体桥的实现体。
+- `sitecustomize.py` 固定为三行自动加载入口，只调用
+  `hcu_adapter.bootstrap.install()`；宿主探测和 common/host 顺序由
+  `bootstrap.py` 负责，宿主实现位于 `hcu_adapter/bridges/`。
 - 判据一句话：**改官方代码行为**（换绑、断言放宽、判定词 wrap）是行为
-  还原手段，其实现体留在本仓、文件化到 `_adapters/<域>.py`；sitecustomize
-  里只准剩调用行。
+  还原手段，其实现体留在本仓、按宿主放入 `hcu_adapter/bridges/`，按算子/
+  机制放入 `sgl_kernel/_adapters/<域>.py`；`sitecustomize` 里只准保留入口。
 - **双仓边界**：为行为一致服务的改动归 adapter 仓；上游没有的新能力归
   plugin 仓——**plugin 的目的同样是性能优化**（算子融合、专项内核、新调度
   路径等官方代码没有的功能），只是它以"新增能力"的形态存在，与 adapter 的
@@ -26,8 +27,9 @@
   "上游在 AMD/CUDA 上有没有这个行为？"有而我们没有 → adapter 补齐到一致
   （其中性能优化照做：三档档内演进、vendor 竞速）；上游也没有（哪怕动机
   就是性能，如算子融合）→ plugin 仓。
-- 现存长桥按 architecture.md §9 的 P1-P3 迁出，每次迁移容器 e2e 复验；
-  **不新增**：review 拒收往 sitecustomize 加实现体的 MR（L0
+- 现存 `bridges/sglang.py` 长桥按 architecture.md §9 的 P1-P3 迁出，每次
+  迁移容器 e2e 复验；**不新增**：review 拒收往 sitecustomize/bootstrap
+  加实现体或往宿主桥加数值内核的 MR（L0
   `glue-numerics` 是下界，不是目标线）。
 
 ## 0.5 平台语义路线（2026-10-12 定）：走 is_cuda 分支，不走 is_hip 分支
@@ -86,13 +88,16 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
 | 层 | 仓库 | 允许 | 禁止 |
 |---|---|---|---|
 | **内核库** `sgl_kernel/*.py` | adapter | 算子的数值实现（triton 首档 / vendor 封装 / torch 兜底） | 依赖 sglang 内部模块（保持 framework-free） |
-| **域桥** `_adapters/<域>.py` | adapter | 行为还原 glue 的实现体：函数换绑、签名适配、断言放宽、判定词 wrap——install() 入口 + 开关 + register 登记 | **任何数值逻辑**（数学放内核库）；上游没有的新能力（那归 plugin 仓） |
-| **编排器** `sitecustomize.py` | adapter | 探测 + 按序调用各域桥 `install()` + log_summary/dump | 实现体（目标 <200 行；§0） |
+| **宿主桥** `hcu_adapter/bridges/<host>.py` | adapter | 宿主级行为还原 glue、ABI 适配和安装顺序；common 只放跨框架守卫 | 数值内核；把一个宿主的补丁装进另一个宿主；上游没有的新能力 |
+| **算子/机制桥** `sgl_kernel/_adapters/<域>.py` | adapter | 函数换绑、断言放宽、判定词 wrap——install() 入口 + 开关 + register 登记 | **任何数值逻辑**（数学放内核库）；上游没有的新能力（那归 plugin 仓） |
+| **分发器** `hcu_adapter/bootstrap.py` | adapter | 探测宿主 + 先 common 后唯一宿主桥；失败隔离 | 具体桥实现、宿主 eager import、数值逻辑 |
+| **自动入口** `sitecustomize.py` | adapter | `from hcu_adapter.bootstrap import install; install()` | 探测、分支、桥实现 |
 | **上游 seam** | sglang | 正式插件接入（`--quantization`、attention-backend registry、moe-runner-backend 等） | — |
 | **plugin** | **独立仓** | 上游没有的新能力，目的即性能优化：算子融合、专项内核、新后端、新调度机制；优先经上游 seam 接入，无 seam 时提供自己的注册入口 | 把行为补丁反向塞回 adapter 职责面 |
 
 一句话红线（L0 `glue-numerics` 强制）：**算子数学只准出现在内核库；
-sitecustomize.py 不 import triton、不出现 `@triton.jit`、不引用 `tl.*`。**
+`sitecustomize.py`、`hcu_adapter/bootstrap.py` 与 `hcu_adapter/bridges/*.py`
+不 import triton、不出现 `@triton.jit`、不引用 `tl.*`。**
 
 ## 2. 算子的两个角色（解决"重复实现"）
 
@@ -118,13 +123,14 @@ sitecustomize.py 不 import triton、不出现 `@triton.jit`、不引用 `tl.*`�
    无技术债的位置。plugin 仓提供的新后端/新机制也优先为此准备 seam 实现。
 2. **rebind（函数换绑，adapter 仓内）**：上游无 seam 但入口是纯 Python，
    且缺失的行为上游在 AMD/CUDA 上存在。实现体全量放本仓
-   `_adapters/<域>.py`（内核函数在 `sgl_kernel/`，域桥只做绑定动作），
+   `hcu_adapter/bridges/<host>.py` 或 `sgl_kernel/_adapters/<域>.py`（内核函数
+   在 `sgl_kernel/`，桥只做绑定动作），
    `install()` 入口 + env/yaml 开关 + 安装时 `registry.register(...)`
-   登记，sitecustomize 里只留一行调用。
+   登记，由宿主桥在原顺序点调用。
 3. **text-patch（源码文本替换+重编译，adapter 仓内）**：断言放宽类。
    **白名单制**：每个 needle 必须登记在 `registry.py` 的
    `TEXT_PATCH_ALLOWLIST`（含 op 与上游原文），新增条目 = 治理评审 =
-   MR 说明"为何 1/2 不可行"。L0 `text-patch` 规约扫 sitecustomize 里的
+   MR 说明"为何 1/2 不可行"。L0 `text-patch` 规约扫全部 routing glue 里的
    `.replace("assert _is_cuda...")` 目标串，不在册即红。当前在册 2 处：
    fused_moe swiglu-clamp 断言放宽（GLM-5.3-Flash/DeepSeek-V4 MoE）、
    prefill-CP rope 守卫断言。
@@ -235,6 +241,6 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
 
 | 检查名 | 级别 | 规则 |
 |---|---|---|
-| `glue-numerics` | HARD | sitecustomize.py 无 triton import/jit/`tl.`（注释里的提及不触发） |
+| `glue-numerics` | HARD | sitecustomize/bootstrap/宿主 bridges 无 triton import/jit/`tl.`（注释里的提及不触发） |
 | `text-patch` | HARD | 每个 `_is_cuda` 系 `.replace` needle 都在 `TEXT_PATCH_ALLOWLIST` |
 | `registry-ops` | HARD | 每个 `registry.register(...)` 的 op 都是 catalog 条目 |

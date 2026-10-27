@@ -11,7 +11,7 @@ the invariants that historically broke us (see docs/ci.md):
     3. no secrets in tracked files                 -- gitee/tokens
     4. every HCU_* var in hcu_env REGISTRY has a docs/env-vars.md row
     5. every var referenced by BACKEND_CATALOG exists in REGISTRY
-    6. every sgl_kernel module sitecustomize imports resolves to a file
+    6. every sgl_kernel module routing glue imports resolves to a file
     7. hcu_adapter.example.yaml op keys are real catalog ops
 
   SOFT (warnings; --strict turns them into failures for local dev)
@@ -144,17 +144,32 @@ def check_catalog_refs(r, reg):
         r.fail("catalog-refs", f"{v} referenced by BACKEND_CATALOG but absent from REGISTRY")
 
 
-def check_sitecustomize_imports(r):
-    p = os.path.join(ROOT, "sitecustomize.py")
-    src = open(p, encoding="utf-8").read()
+def routing_glue_files():
+    """Return the thin loader, dispatcher, and framework bridge sources."""
+    files = ["sitecustomize.py", "hcu_adapter/bootstrap.py"]
+    bridge_dir = os.path.join(ROOT, "hcu_adapter", "bridges")
+    files.extend(
+        f"hcu_adapter/bridges/{name}"
+        for name in sorted(os.listdir(bridge_dir))
+        if name.endswith(".py")
+    )
+    return files
+
+
+def check_routing_glue_imports(r):
     mods = set()
-    for m in re.finditer(r"from (sgl_kernel(?:\._adapters)?(?:\.[\w.]+)?) import ([\w, ]+)", src):
-        base = m.group(1)
-        for name in m.group(2).split(","):
-            name = name.strip().split(" as ")[0].strip()
-            if not name or not name.isidentifier():
-                continue
-            mods.add((base, name))
+    for rp in routing_glue_files():
+        src = open(os.path.join(ROOT, rp), encoding="utf-8").read()
+        for m in re.finditer(
+            r"from (sgl_kernel(?:\._adapters)?(?:\.[\w.]+)?) import ([\w, ]+)",
+            src,
+        ):
+            base = m.group(1)
+            for name in m.group(2).split(","):
+                name = name.strip().split(" as ")[0].strip()
+                if not name or not name.isidentifier():
+                    continue
+                mods.add((base, name))
     # symbols re-exported by the sgl_kernel package __init__: any word-level
     # mention means the import line lives there (multi-line paren imports too)
     init_src = open(os.path.join(ROOT, "sgl_kernel/__init__.py"), encoding="utf-8").read()
@@ -174,7 +189,7 @@ def check_sitecustomize_imports(r):
             if not (os.path.isfile(path) or os.path.isfile(pkgf)):
                 broken.append(base)
     for mod in broken:
-        r.fail("sitecustomize-imports", f"sitecustomize imports {mod} but no such module file")
+        r.fail("routing-imports", f"routing glue imports {mod} but no such module file")
     return len(mods)
 
 
@@ -225,7 +240,6 @@ def check_bare_environ(r, reg):
 # The glue layer routes, the kernel library computes. These three keep the
 # boundary machine-checked so the team can grow without re-blurring it.
 
-NUMERIC_CODE_GLUE_FILES = ("sitecustomize.py",)
 NUMERIC_CODE_PATTERNS = [
     (re.compile(r"^\s*@triton\.jit", re.M), "@triton.jit kernel"),
     (re.compile(r"^\s*import\s+triton\b", re.M), "import triton"),
@@ -234,13 +248,12 @@ NUMERIC_CODE_PATTERNS = [
 
 
 def check_glue_has_no_numerics(r):
-    """HARD: sitecustomize.py is routing glue only -- no operator math.
+    """HARD: host routing glue has no embedded Triton operator math.
 
-    Kernels belong in sgl_kernel/*.py (or _adapters/<domain>.py for
-    mechanism bridges). Diagnosing 'which implementation served this
-    tensor' is impossible when the glue layer itself computes.
+    Kernels belong in sgl_kernel/*.py. Diagnosing 'which implementation
+    served this tensor' is impossible when the glue layer itself computes.
     """
-    for rp in NUMERIC_CODE_GLUE_FILES:
+    for rp in routing_glue_files():
         p = os.path.join(ROOT, rp)
         if not os.path.isfile(p):
             continue
@@ -276,8 +289,8 @@ def _parse_allowlist():
 def check_text_patch_allowlist(r):
     """HARD: source-replace recompiles are allowlisted in registry.py.
 
-    Every `assert _is_cuda or _is_xpu`-style needle patched in
-    sitecustomize.py must appear in the registry's TEXT_PATCH_ALLOWLIST
+    Every `assert _is_cuda or _is_xpu`-style needle patched in routing
+    glue must appear in the registry's TEXT_PATCH_ALLOWLIST
     (governance review each time this ladder rung is used). We count the
     literal `_is_cuda or _is_xpu` replace targets -- the only pattern in
     play; new needles must be added to the allowlist AND this check.
@@ -287,30 +300,32 @@ def check_text_patch_allowlist(r):
         r.fail("text-patch", "cannot parse TEXT_PATCH_ALLOWLIST from "
                "sgl_kernel/_adapters/registry.py")
         return
-    p = os.path.join(ROOT, "sitecustomize.py")
-    if not os.path.isfile(p):
-        return
-    src = open(p, encoding="utf-8").read()
     allowed_needles = {n for _, n in needles}
-    # candidate needles: any quoted string starting with `assert _is_cuda`
-    # that a .replaceepatch is feeding (first arg of .replace( — the
-    # upstream text being replaced)
-    for m in re.finditer(
-            r"\.replace\(\s*[rbf]?['\"]([^'\"]*)['\"]", src):
-        needle = m.group(1)
-        if "_is_cuda" not in needle:
-            continue
-        # allowlist entries are the `_old` constant strings upstream uses
-        if not any(needle in a or a in needle for a in allowed_needles):
-            line = src[: m.start()].count("\n") + 1
-            r.fail("text-patch", f"sitecustomize.py:{line} patches source"
-                   f" text {needle!r} not in registry TEXT_PATCH_ALLOWLIST")
+    sources = []
+    for rp in routing_glue_files():
+        src = open(os.path.join(ROOT, rp), encoding="utf-8").read()
+        sources.append((rp, src))
+        # candidate needles: any quoted string starting with `assert _is_cuda`
+        # that a .replace patch is feeding (first arg of .replace( — the
+        # upstream text being replaced)
+        for m in re.finditer(
+                r"\.replace\(\s*[rbf]?['\"]([^'\"]*)['\"]", src):
+            needle = m.group(1)
+            if "_is_cuda" not in needle:
+                continue
+            # allowlist entries are the `_old` constant strings upstream uses
+            if not any(needle in a or a in needle for a in allowed_needles):
+                line = src[: m.start()].count("\n") + 1
+                r.fail("text-patch", f"{rp}:{line} patches source text "
+                       f"{needle!r} not in registry TEXT_PATCH_ALLOWLIST")
     # count distinct patch installs vs allowlist size: allowlist shrinks
     # only via governance review; hidden extra sites fail the needle scan
-    n_installs = len(re.findall(r"\.replace\(\s*\"", src))
+    n_installs = sum(
+        len(re.findall(r"\.replace\(\s*\"", src)) for _, src in sources
+    )
     if n_installs > len(needles):
-        r.warn("text-patch", f"sitecustomize.py has {n_installs} .replace("
-               f") sites vs {len(needles)} allowlisted needles -- review")
+        r.warn("text-patch", f"routing glue has {n_installs} .replace() sites "
+               f"vs {len(needles)} allowlisted needles -- review")
 
 
 def check_registry_ops_in_catalog(r):
@@ -322,7 +337,8 @@ def check_registry_ops_in_catalog(r):
         r"registry\.register\(\s*\n?\s*(?:op\s*=\s*)?\"([a-z0-9_]+)\"")
     for p in iter_files(".py"):
         rp = rel(p)
-        if "/_adapters/" not in rp and rp != "sitecustomize.py":
+        if ("/_adapters/" not in rp and "/bridges/" not in rp
+                and rp != "sitecustomize.py"):
             continue
         try:
             src = open(p, encoding="utf-8").read()
@@ -352,7 +368,7 @@ def main():
         r.fail("registry", "could not parse any HCU_* names from hcu_env.py")
     check_registry_docs(r, reg)
     check_catalog_refs(r, reg)
-    check_sitecustomize_imports(r)
+    check_routing_glue_imports(r)
     check_example_yaml(r)
     check_bare_environ(r, reg)
     check_glue_has_no_numerics(r)

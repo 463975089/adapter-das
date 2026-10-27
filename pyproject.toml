@@ -14,7 +14,10 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["sgl_kernel"]
+py-modules = ["sitecustomize"]
+
+[tool.setuptools.packages.find]
+include = ["hcu_adapter*", "sgl_kernel*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

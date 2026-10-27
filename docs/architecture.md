@@ -22,7 +22,10 @@
 （vendor 次选）→ ③ **triton 自研先行**（保证新模型先跑通）→ ④ 响亮 stub
 （import 成功、调用报错带指引）。
 
-其余 import 面（vllm 桥、vendor 库桩）由 `sitecustomize.py` 随进程自动接管。
+其余 import 面由三行 `sitecustomize.py` 引导
+`hcu_adapter.bootstrap`，再按宿主只安装 `bridges/sglang.py` 或
+`bridges/vllm.py`；跨框架启动守卫在 `bridges/common.py`，vendor 库桩仍由
+`sgl_kernel/_adapters/` 接管。
 sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端模型）
 在 HIP 平台默认 AOT 后端（`forward_aot` → `import sgl_kernel`），同名影
 子包即零修改插入点；CUDA 语义模式下算子层照常经 catalog/三档路由取实现。
@@ -49,7 +52,7 @@ sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端�
 | 层 | 内容 | 备注 |
 |---|---|---|
 | 应用层 | **sglang 官方代码**（python 零修改）＋ **plugin**（规划） | plugin：算子融合 / 调度逻辑优化 / 硬件平台无关的优化 |
-| 适配层 | **adapter 影子库替换层**（本仓库）：`sitecustomize.py` ＋ `sgl_kernel` 同名影子包 ＋ `_adapters` 元路径影子库 | 三档实现路由；配合 skill（`hcu-adapter-dev`）快速排查定位精度问题 |
+| 适配层 | **adapter 影子库替换层**（本仓库）：`sitecustomize.py` 薄入口 ＋ `hcu_adapter` 宿主分发/桥 ＋ `sgl_kernel` 同名影子包 ＋ `_adapters` 元路径影子库 | 三档实现路由；配合 skill（`hcu-adapter-dev`）快速排查定位精度问题 |
 | 算子库层 | triton（自研首档）· lightop · aiter · flash_mla / flash_attn · deepgemm（待适配）· mooncake / deepep（待适配） | 见 §4 逐项说明 |
 | 运行时层 | **PyTorch（HIP 版）** | 张量计算 · 显存管理 · kernel launch；三档中的 torch 兜底也在这层 |
 | 驱动 · 工具链层 | **DTK（DCU Toolkit）** | HIP/ROCm 软件栈：驱动 · 编译器 · 运行时 |
@@ -62,10 +65,12 @@ flowchart TB
         PLUGIN["plugin（独立仓）：算子融合 / 新内核 / 新后端（性能优化）"]
     end
     subgraph ADPT["适配层：adapter 影子库替换（本仓库）"]
-        SC["sitecustomize.py 自动接管 import"]
+        SC["sitecustomize.py → hcu_adapter.bootstrap"]
+        HOST["bridges/common + sglang / vllm"]
         SK["sgl_kernel 同名影子包（AOT 默认内核）"]
         STUB["_adapters 元路径影子库 + hcu_env + kill_switch"]
     end
+    SC --> HOST
     subgraph OPS["算子库层"]
         TRITON["triton 自研首档"]
         LIGHTOP["lightop"]
@@ -84,11 +89,13 @@ flowchart TB
 
 ## 4. 组件协调关系
 
-### 适配层三组件（本仓库）
+### 适配层组件（本仓库）
 
 | 组件 | 职责 | 与其他组件的关系 |
 |---|---|---|
-| `sitecustomize.py` | PYTHONPATH 自动加载的 import 接管层 | 桥接 vllm `_custom_ops` 的 `rms_norm` / `fused_add_rms_norm`（HIP 6 参形态）到 `sgl_kernel`；`apply_token_bitmask_inplace_cuda` → sglang 仓内 triton；flashmla backend 的 flashinfer wrapper 构造桩；int8/fp8 量化路径重绑定（slimquant 等） |
+| `sitecustomize.py` | PYTHONPATH 自动加载的薄入口 | 只导入并调用 `hcu_adapter.bootstrap.install()`；任何宿主逻辑进入这里都视为回归 |
+| `hcu_adapter/bootstrap.py` | 宿主探测和分发 | 显式 `HCU_ADAPTER_HOST` 优先；否则按继承标记、argv、已加载模块、包可用性选唯一宿主；common 先于宿主桥安装 |
+| `hcu_adapter/bridges/` | 跨框架与宿主专属 glue | `common.py` 放启动守卫；`sglang.py` 保持既有桥顺序；`vllm.py` 提供 `_custom_ops` ABI 桥，vLLM 0.32 platform/plugin 接入由后续独立 MR 承担 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径 | elementwise / layernorm / rope / moe / `gemm_fp8`·`gemm_int8` / `flash_mla` emu / `kvcacheio`；API 逐字对齐官方 sgl-kernel；内部按三档路由取 triton / vendor / torch |
 | `sgl_kernel/_adapters/` | 元路径影子库（import hook） | `aiter` 真包优先 + 缺口填空；`flashinfer` / `flash_attn` 桩（import 成功、调用响亮报错）；`hcu_env` 环境注册表、`kill_switch` 快关；slimquant / mqa_logits_emu / dsa_topk 等模型级补丁 |
 
@@ -135,8 +142,10 @@ adapter 只做**行为还原**（上游在 AMD/CUDA 上有的行为，HCU 补齐
 ```
 python -m sglang.launch_server
   └─ PYTHONPATH = hcu-sglang-adapter : sglang/python
-       └─ sitecustomize.py 自动加载（hcu_env 打印生效变量汇总）
-            └─ sglang.kernels（BaseFusedOp）--forward_aot--> sgl_kernel 影子包
+       └─ sitecustomize.py → hcu_adapter.bootstrap.install()
+            ├─ bridges/common.py（env 摘要 / NCCL topo / tvmffi 守卫）
+            └─ bridges/sglang.py（只安装 sglang 宿主桥，既有顺序不变）
+                 └─ sglang.kernels（BaseFusedOp）--forward_aot--> sgl_kernel 影子包
                  ├─ triton 自研核（首档）
                  ├─ vendor 封装（lightop / aiter / flash_mla …，hcu_env + 快关门控）
                  └─ torch 兜底
@@ -155,7 +164,10 @@ python -m sglang.launch_server
 
 ```
 hcu-sglang-adapter/
-├─ sitecustomize.py            # import 接管层（顺序化桥，§9 拆分计划）
+├─ sitecustomize.py            # 三行自动加载入口
+├─ hcu_adapter/
+│   ├─ bootstrap.py            # 宿主探测 + common/host 分发
+│   └─ bridges/                # common / sglang / vllm / deepinfer
 ├─ sgl_kernel/                 # 同名影子包 = sglang 的 AOT 默认内核路径
 │   ├─ elementwise/layernorm/rope/allreduce/flash_attn.py …   # op 模块（三档路由）
 │   ├─ gemm_fp8.py / gemm_int8.py / flash_mla.py / kvcacheio.py
@@ -188,7 +200,8 @@ hcu-sglang-adapter/
 多人协作下容易被局部最优侵蚀的四条不变量，评审时对照：
 
 1. **sglang python 零修改**——一切适配经 import 面进入：影子包 / 元路径桩 /
-   sitecustomize 桥。出现"顺手改一下上游文件"的冲动时，答案永远是加桥。
+   `hcu_adapter` 宿主桥。出现"顺手改一下上游文件"的冲动时，答案永远是先找
+   上游 seam，再按治理边界加桥。
 2. **三档路由**（triton 首档 → vendor 封装 → torch 兜底）——正确性优先，
    性能在档内演进；任何 op 至少有 torch 兜底保证 import 永不失败。
 3. **配置裁决链** env > `hcu_adapter.yaml` > arch/wheel 自动探测 > 默认值；
@@ -207,24 +220,24 @@ hcu-sglang-adapter/
 
 | # | 债 | 现状 | 计划 |
 |---|---|---|---|
-| 1 | `sitecustomize.py` 单体（1200+ 行顺序化桥） | 最大维护负债：所有桥共享一个命名空间，改动互相影响、review 困难 | **分阶段拆分**（见下），每阶段容器 e2e 复验后合入 |
+| 1 | `bridges/sglang.py` 仍是 3000+ 行顺序化遗留链 | 薄入口与宿主隔离已完成，但 sglang 域内桥仍共享命名空间 | **分阶段拆分**（见下），每阶段容器 e2e 复验后合入 |
 | 2 | `tests/tools/` 90+ 文件 | 已用 `_test_/_probe_/_launch_/_dbg_` 前缀语法事实上分层；`_dbg_` 用完即删（2026-10 已清 12 个结案取证脚本） | 语法固化为 README 规约（不搬迁：路径被 CI/文档/记忆引用，搬迁成本>收益） |
 | 3 | `_adapters/` 混三类文件 | 语义分类未显式 | §7 三分类表归位约定：新桥一律独立文件，不再长入 sitecustomize |
 | 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（board.md「协作与分支规约」共享节点节）+ CI worktree 作为唯一第二执行面 |
 
-**sitecustomize 拆分计划**（容器停机期只规划，不执行；目标终态见
+**宿主桥后续拆分计划**（薄 `sitecustomize` 与宿主分发已落地；目标终态见
 governance.md §0——adapter 职能 = 影子库/算子路由/质量检测的**行为还原**，
 上游没有的功能归**独立 plugin 仓**（经上游 seam/注册机制接入），
-sitecustomize 只剩编排器）：
+`sitecustomize` 保持三行入口）：
 
-- **P1（无风险）**：把纯函数桥（rms_norm 重绑定、int8/fp8 重绑定、
-  flashinfer 构造桩等）抽到 `sgl_kernel/_adapters/<域>.py`（install() +
-  开关 + registry.register），sitecustomize 只保留"探测 + 调 install()"
-  的编排调用。行为等价，import 顺序不变。
+- **P1（进行中）**：把纯函数桥（int8/fp8 重绑定、flashinfer 构造桩等）从
+  `hcu_adapter/bridges/sglang.py` 抽到单职责模块（install() + 开关 +
+  registry.register）；RMSNorm ABI 桥已归位 `bridges/vllm.py`。行为等价，
+  import 顺序不变。
 - **P2（需 e2e）**：判定词类桥（model_overrides wrap、CP gate 等）迁到
-  `_adapters` post_hooks，sitecustomize 缩成 <200 行编排器 + vllm 专用桥。
-- **P3**：P2 全量 e2e（cookbook 冒烟套件）通过后，sitecustomize 正式声明为
-  "编排器"，新桥禁入——这已从计划升格为规约（governance §0 / board.md 协作规约
+  `_adapters` post_hooks，缩短 `bridges/sglang.py`。
+- **P3**：P2 全量 e2e（cookbook 冒烟套件）通过后，宿主桥只保留顺序编排，
+  新实现体禁入——这已从计划升格为规约（governance §0 / board.md 协作规约
   §3b），**现在起新需求先过双仓判别：行为还原才进本仓，功能扩展落
   plugin 仓**；本仓的新域桥也直接落 `_adapters/<域>.py`，不等 P1-P3 完成。
 
@@ -255,4 +268,3 @@ flowchart TB
         O4["CI owner：ci/ + watcher 运维 + 卡池协调"]
     end
 ```
-
