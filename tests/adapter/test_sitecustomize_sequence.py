@@ -1,9 +1,9 @@
-"""R-12: sitecustomize.py install-sequence regression pins（总装入口回归防护）.
+"""R-12: automatic bootstrap install-sequence regression pins（总装入口回归防护）.
 
-sitecustomize.py (~2800 行) 是 adapter 总装入口：PYTHONPATH 含 adapter 根的
-每个 python 进程自动 import 它——env registry → platform seam → 三十余座桥
-的安装序列全在这一个文件，回归爆炸半径 = 所有 boot。本文件把 PM 梳理的五
-层覆盖面钉成可执行测试（2026-10-19）：
+三行 sitecustomize 自动调用 hcu_adapter.bootstrap，后者先装 common 守卫，
+再选择唯一宿主桥；既有三十余座 sglang 桥的顺序链位于
+hcu_adapter/bridges/sglang.py。本文件把该高爆炸半径启动面的五层覆盖钉成
+可执行测试（2026-10-19，2026-10-27 随多宿主迁移更新）：
 
   L1 structure   AST 顺序/门控/隔离契约 + 门控 env 与 docs/env-vars.md 对账
                  （多一漏一即红；纯静态，任何机器可跑）
@@ -41,7 +41,7 @@ SGLANG_PATH = os.path.join(ROOT, "hcu_adapter", "bridges", "sglang.py")
 IS_HIP = getattr(getattr(__import__("torch", fromlist=["version"]), "version"),
                  "hip", None) is not None
 
-# 门控 env 读取的提取模式（sitecustomize 的裸 os.environ 读点；经
+# 门控 env 读取的提取模式（routing glue 的裸 os.environ 读点；经
 # hcu_env.resolve/enabled 的读取不在此列——那本就是正典路径）
 _ENV_CALL = re.compile(
     r'os\.environ(?:\.get|\.setdefault)?\(\s*["\']([A-Z][A-Z0-9_]+)["\']')
@@ -83,8 +83,9 @@ def _parent_map(tree):
 
 def test_structure_gate_order_and_isolation():
     """顺序契约：hip 门包裹全链；VLLM_PLUGINS setdefault 先于一切；
-    hcu_env.log_summary 先于 platform_seam.install（后者必须是首个触
-    sglang 的步骤）；每桥 install 包 try/except（单桥失败不拖垮其余）。"""
+    platform_seam.install 必须是宿主链首个触 sglang 的步骤；每桥 install
+    包 try/except（单桥失败不拖垮其余）。common-before-host 由 bootstrap
+    契约测试单独固定。"""
     src, tree = _load_ast()
     gate = _find_hip_gate(tree, src)
     assert gate is not None, "hip gate `if torch.version.hip ... is not None` missing"
@@ -157,7 +158,7 @@ def test_sitecustomize_delegates_to_bootstrap_only():
 
 
 def test_gate_envs_documented():
-    """对账契约：sitecustomize 裸读的每个门控 env（HCU_*/SGLANG_*/VLLM_*）
+    """对账契约：routing glue 裸读的门控 env（HCU_*/SGLANG_*/VLLM_*）
     必须以反引号全名出现在 docs/env-vars.md——多一漏一即红（R-12 层1，
     与 L0 的 REGISTRY→docs 方向互补，这里是 sitecustomize→docs 方向）。"""
     src = "\n".join(
@@ -170,7 +171,7 @@ def test_gate_envs_documented():
                encoding="utf-8").read()
     undocumented = sorted(n for n in names if f"`{n}`" not in doc)
     assert not undocumented, (
-        f"gate envs read in sitecustomize.py but not documented "
+        f"gate envs read in routing glue but not documented "
         f"(backticked full name) in docs/env-vars.md: {undocumented}")
 
 
@@ -248,7 +249,7 @@ def test_sglang_reachability_probe_contract():
            "cannot import sglang.srt, skip instead of fail (R-13 #6 guard)")
 def test_install_smoke_and_dump_wiring():
     """干净子进程 import 全链后：platform 语义翻转（is_cuda()=True on HIP）、
-    vllm._custom_ops.rms_norm 重绑到 sitecustomize 桥、VLLM_PLUGINS 被
+    vllm._custom_ops.rms_norm 重绑到 vllm 宿主桥、VLLM_PLUGINS 被
     setdefault 成 "none"、HCU_ADAPTER_DUMP 布线落盘 registry.dump
     （ops/unbound/env 三键；import 期 ops 尚空是预期——dump 在链首
     log_summary 期写）。"""

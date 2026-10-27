@@ -72,6 +72,13 @@ def test_launch_intent_selects_exactly_one_host(argv, expected):
     assert _detect(argv=argv, available=("sglang", "vllm")) == expected
 
 
+def test_non_launcher_argument_does_not_override_host_selection():
+    assert _detect(
+        argv=("python", "serve.py", "--served-model-name", "vllm.demo"),
+        available=("sglang", "vllm"),
+    ) == "sglang"
+
+
 @pytest.mark.parametrize("module_name", ["sglang", "sglang.srt.server"])
 def test_loaded_sglang_module_selects_sglang(module_name):
     assert _detect(loaded=(module_name,), available=("sglang", "vllm")) == "sglang"
@@ -142,12 +149,13 @@ def _arm_install(monkeypatch, *, hip=True, available=("sglang",), common_failure
     return events
 
 
-def test_install_runs_common_before_the_selected_host(monkeypatch):
+def test_install_runs_common_before_the_selected_host(monkeypatch, caplog):
     events = _arm_install(monkeypatch)
 
     bootstrap.install()
 
     assert events == ["common", "sglang"]
+    assert "host=sglang source=availability" in caplog.text
 
 
 def test_install_is_process_idempotent(monkeypatch):

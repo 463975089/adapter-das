@@ -30,18 +30,24 @@ def _choice(raw: object, *, variable: str, allowed: frozenset[str]) -> str:
 
 
 def _host_from_argv(argv: Sequence[str]) -> str | None:
-    for index, raw in enumerate(argv):
+    if not argv:
+        return None
+
+    launcher = str(argv[0]).strip().lower()
+    basename = PurePath(launcher).name
+    if basename in _HOSTS:
+        return basename
+    if "/" not in launcher:
+        module_root = launcher.split(".", 1)[0]
+        if module_root in _HOSTS:
+            return module_root
+
+    for index, raw in enumerate(argv[:-1]):
         token = str(raw).strip().lower()
-        basename = PurePath(token).name
-        if basename in _HOSTS:
-            return basename
-        if token == "-m" and index + 1 < len(argv):
+        if token == "-m":
             module_root = str(argv[index + 1]).split(".", 1)[0].lower()
             if module_root in _HOSTS:
                 return module_root
-        module_root = token.split(".", 1)[0]
-        if module_root in _HOSTS:
-            return module_root
     return None
 
 
@@ -55,20 +61,19 @@ def _host_from_loaded(loaded_modules: Iterable[str]) -> str | None:
     return None
 
 
-def detect_host(
+def _detect_host(
     argv: Sequence[str],
     loaded_modules: Iterable[str],
     available: Iterable[str],
     environment: Mapping[str, str],
-) -> str | None:
-    """Select exactly one framework without importing either framework."""
+) -> tuple[str | None, str]:
     public = _choice(
         environment.get(HOST_ENV, "auto"),
         variable=HOST_ENV,
         allowed=_PUBLIC_CHOICES,
     )
     if public != "auto":
-        return None if public == "none" else public
+        return (None if public == "none" else public), "explicit"
 
     inherited_raw = environment.get(ACTIVE_HOST_ENV)
     if inherited_raw:
@@ -77,22 +82,33 @@ def detect_host(
             variable=ACTIVE_HOST_ENV,
             allowed=_PROPAGATED_CHOICES,
         )
-        return None if inherited == "none" else inherited
+        return (None if inherited == "none" else inherited), "inherited"
 
     intended = _host_from_argv(argv)
     if intended is not None:
-        return intended
+        return intended, "argv"
 
     loaded = _host_from_loaded(loaded_modules)
     if loaded is not None:
-        return loaded
+        return loaded, "loaded-module"
 
     present = set(available) & _HOSTS
     if len(present) == 1:
-        return next(iter(present))
+        return next(iter(present)), "availability"
     if present == _HOSTS:
-        return "sglang"
-    return None
+        return "sglang", "legacy-default"
+    return None, "unavailable"
+
+
+def detect_host(
+    argv: Sequence[str],
+    loaded_modules: Iterable[str],
+    available: Iterable[str],
+    environment: Mapping[str, str],
+) -> str | None:
+    """Select exactly one framework without importing either framework."""
+    host, _ = _detect_host(argv, loaded_modules, available, environment)
+    return host
 
 
 def propagate_host(host: str, environment: MutableMapping[str, str]) -> None:
@@ -141,7 +157,7 @@ def install() -> None:
         return
 
     try:
-        host = detect_host(
+        host, source = _detect_host(
             argv=sys.argv,
             loaded_modules=_loaded_module_names(),
             available=_available_hosts(),
@@ -158,7 +174,7 @@ def install() -> None:
 
     _installed_pid = pid
     propagate_host(host, os.environ)
-    LOG.warning("HCU adapter bootstrap: host=%s", host)
+    LOG.warning("HCU adapter bootstrap: host=%s source=%s", host, source)
 
     try:
         importlib.import_module("hcu_adapter.bridges.common").install()
