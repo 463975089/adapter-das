@@ -75,7 +75,9 @@ kv cache io 的 triton·torch 实现，API 逐字对齐官方 sgl-kernel）见
 
 | 组件 | 作用 |
 |---|---|
-| `sitecustomize.py` | PYTHONPATH 自动加载的 import 接管层：桥接 vllm `_custom_ops` 的 `rms_norm` / `fused_add_rms_norm`（HIP 6 参形态）到本包；`apply_token_bitmask_inplace_cuda` → sglang 仓内 triton 实现；flashmla backend 的 flashinfer wrapper 构造桩；int8/fp8 量化路径重绑定 |
+| `sitecustomize.py` | PYTHONPATH 自动加载的三行入口；只调用 `hcu_adapter.bootstrap.install()`，不承载探测、桥实现或数值逻辑 |
+| `hcu_adapter/bootstrap.py` | 宿主分发器：按 `HCU_ADAPTER_HOST`、启动参数、已加载模块和可用包确定 `sglang` / `vllm` / `none`，先装 common，再只装所选宿主桥 |
+| `hcu_adapter/bridges/` | 宿主专属 glue：`sglang.py` 保持既有桥顺序，`vllm.py` 集中 vLLM `_custom_ops` ABI 绑定，`common.py` 只放跨框架启动守卫；官方已有的行为不在这里重复实现 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径：elementwise / layernorm / rope / moe / kv cache io / fp8·int8 GEMM / flash_mla emu，API 逐字对齐官方 sgl-kernel |
 | `sgl_kernel/_adapters/` | 元路径影子库：`aiter` 真包（DTK vendor wheel）优先 + 缺口填空（`fused_clamp_act_mul` 等）、`flashinfer` / `flash_attn` 桩——import 成功、未实现调用响亮报错；另含 `hcu_env` 环境注册表、`kill_switch` 快关、slimquant / paged-MQA logits（emu/triton 双档）/ dsa_topk / quant·ar-norm 等 vendor 桥模型级补丁 |
 | `sgl_kernel/kvcacheio.py` | PD 分离/分层 KV transfer（transfer_kv_* 契约，上游 mooncake 等 KV 传输路径的调用面）的完整 torch 移植 |
