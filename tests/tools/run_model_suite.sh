@@ -2,13 +2,13 @@
 # Model-suite batch runner: wait for a free HCU, then validate each model in
 # docs/models.md, one at a time, four-gate each (launch/generation/precision/
 # long-context). State + logs under /root/logs/model_suite.
-# Usage (inside lzg_pr418_test):  bash /root/run_model_suite.sh [model-id ...]
+# Usage (inside pr418_test):  bash /root/run_model_suite.sh [model-id ...]
 set -u
 export LD_LIBRARY_PATH=/opt/dtk/.hyhal/rocm_smi/lib:$LD_LIBRARY_PATH
 PORT=30036
 LOGD=/root/logs/model_suite
 mkdir -p $LOGD
-SGLANG_V0521=/public/home/lizhg/sglang-v0521/python
+SGLANG_V0521=$HOME/sglang-v0521/python
 ADAPTER=/root/hcu_t2
 export PYTHONPATH=$ADAPTER:$SGLANG_V0521
 export SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python

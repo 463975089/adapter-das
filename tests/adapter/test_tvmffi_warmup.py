@@ -17,8 +17,8 @@ import types
 
 import pytest
 
-from sgl_kernel._adapters import hcu_env
-from sgl_kernel._adapters import tvmffi_warmup as tw
+from hcu_adapter import hcu_env
+from hcu_adapter import tvmffi_warmup as tw
 
 
 @pytest.fixture()

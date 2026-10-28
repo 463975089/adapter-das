@@ -40,10 +40,10 @@ ops:
 
 ## 后端目录（BACKEND_CATALOG）
 
-`sgl_kernel/_adapters/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
+`hcu_adapter/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
 后端 → 状态与备注。向导和未来的 Web UI 都从它渲染，新后端接线后自动出现在选择项里。
 **实现归籍与角色（active/ref）规约见 [governance.md](governance.md)**：算子数学
-只在 `sgl_kernel/`，行为桥放 `_adapters/<域>.py` 并登记运行时注册表——启动日志
+只在 `sgl_kernel/`，行为桥放 `hcu_adapter/<域>.py` 并登记运行时注册表——启动日志
 `HCU adapter runtime:` 行 + `HCU_ADAPTER_DUMP` JSON 可查每个算子当前实际谁在跑
 （plugin 仓的后端同样要登记，含直调 lightop/aiter 的路径）。
 

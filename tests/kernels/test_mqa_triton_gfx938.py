@@ -30,8 +30,8 @@ from sglang.kernels.ops.attention.fused_store_index_cache import (  # noqa: E402
     fused_store_index_k_cache,
 )
 
-from sgl_kernel._adapters.dsa_paged_mqa import fp8_paged_mqa_logits as emu  # noqa: E402
-from sgl_kernel._adapters.mqa_triton import triton_paged_mqa_logits as tri  # noqa: E402
+from hcu_adapter.dsa_paged_mqa import fp8_paged_mqa_logits as emu  # noqa: E402
+from hcu_adapter.mqa_triton import triton_paged_mqa_logits as tri  # noqa: E402
 
 FAILS = []
 
@@ -116,7 +116,7 @@ def _rel_topk(ref, got, lens):
 
 
 def main():
-    import sgl_kernel._adapters.dsa_paged_mqa as _dp
+    import hcu_adapter.dsa_paged_mqa as _dp
 
     _dp._fp8_view_dtype = lambda: torch.float8_e4m3fn  # emu reads fn bytes
 

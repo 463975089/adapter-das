@@ -1,6 +1,6 @@
 #!/bin/bash
 # GLM-5.3-Flash (/models/glm53f) TP4 production recipe — nmz26 container
-# lzg-g53-tp8, GPU4-7, port 30187, log /root/logs/srv_g53f_tp4.log
+# g53-tp8, GPU4-7, port 30187, log /root/logs/srv_g53f_tp4.log
 # stack: dtk26041 + torch 2.11 + official sglang v0.5.21 + adapter (hcu_t2)
 # 2026-10-16: anchors green (Berlin id=19808 etc.), decode 0.43s/step
 # (host hipGraphLaunch ~300ms); cookbook graph-dispatch trio added below,

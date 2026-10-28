@@ -1,6 +1,6 @@
 # DTK vendor 算子库 API 梳理（实机内省，优化参考手册）
 
-> 2026-10-22 在 nmz26 `lzg-dsv41f-dspark` 容器（dtk2604 栈）对 8 个 vendor wheel
+> 2026-10-22 在 nmz26 `dsv41f-dspark` 容器（dtk2604 栈）对 8 个 vendor wheel
 > 做导入级 API 内省整理。目的：回答"还有哪些算子可用、能让性能更快"，并把
 > 每个库的 API 面、我们栈的集成现状、与当前热点的映射关系沉淀成一张可查的账。
 > 取证脚本 `tmp_fetch/introspect_libs.py` / `introspect2.py`（python

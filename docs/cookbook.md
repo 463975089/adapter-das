@@ -1,6 +1,6 @@
 # HCU sglang 启动 Cookbook（已验证配方）
 
-所有配方均在 **nmz26 验证容器（容器名 lzg_pr418_test，验证者个人前缀命名，仅作环境记录）+ 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（Gitee master）** 实测通过（GLM-5-W4A8 在 nmz18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
+所有配方均在 **nmz26 验证容器（容器名仅作环境记录）+ 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（主线）** 实测通过（GLM-5-W4A8 在 nmz18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
 
 ## 0. 公共环境（每个配方都带）
 
@@ -67,9 +67,9 @@ python3 -m sglang.launch_server --model-path /models/glm53f --served-model-name 
 
 ## 1.6 nmz18 × v0.5.22 × glm53f 配方（2026-10-20 四门全绿，R-17 三绑定首演）
 
-容器 `lzg-g53f-v0522`（sf_b075-20261018-0048 + privileged + hyhal + 模型只读 +
-`/public/home/lizhg/sglang-v0522` 公共盘树 + g53_tp4 工具盘）；adapter 在容器内
-`/root/hcu_v0522`（Gitee rel/v0.5.22 git 克隆，起服前 `git pull` + `git log -1`
+容器 `g53f-v0522`（sf_b075-20261018-0048 + privileged + hyhal + 模型只读 +
+`$HOME/sglang-v0522` 公共盘树 + g53_tp4 工具盘）；adapter 在容器内
+`/root/hcu_v0522`（主仓 rel/v0.5.22 git 克隆，起服前 `git pull` + `git log -1`
 对账）。冷容器必做：三板斧种子导入 + tilelang 0.1.12 钉版（§1.5 同款）。
 
 ```bash
@@ -203,7 +203,7 @@ python -m sglang.launch_server \
 #    for i in $(seq 0 9); do mknod /dev/infiniband/uverbs$i c 231 $((192+i));
 #      mknod /dev/infiniband/issm$i c 231 $((64+i)); done; chmod 666 /dev/infiniband/*
 # 2) cgroup devices 白名单（否则 open 报 EPERM；需 docker 组权限，只动自己的容器）：
-#    docker run --rm --privileged lzg-mtv-img:latest sh -c \
+#    docker run --rm --privileged mtv-img:latest sh -c \
 #      'mkdir -p /tmp/cg && mount -t cgroup -o devices none /tmp/cg && \
 #       echo "c 231:* rwm" > /tmp/cg/docker/<容器长ID>/devices.allow'
 #    （daemon 禁挂 cgroup 路径时改用 --pid host + nsenter -t 1 -m 进宿主 mount ns 执行）
@@ -224,7 +224,7 @@ CUDA_VISIBLE_DEVICES=6 python -m sglang.launch_server \
 
 ## 3.5 CI（MR 自动测试）
 
-L0 结构门禁（零依赖秒级，Gitee Go 云端）+ L1 GPU 数值门禁（容器内自动挑空闲卡，MR watcher 评论回帖）+ L2 e2e（夜间/发版）。启用与归层规则见 [ci.md](ci.md)；入口 `ci/l0_gate.py` / `ci/l1_gpu_gate.sh` / `ci/mr_watcher.py`。
+L0 结构门禁（零依赖秒级，托管平台 CI）+ L1 GPU 数值门禁（容器内自动挑空闲卡，结果回帖 MR）+ L2 e2e（夜间/发版）。启用与归层规则见 [ci.md](ci.md)；入口 `ci/l0_gate.py` / `ci/l1_gpu_gate.sh`。
 
 ## 4. 平台约束（必读）
 

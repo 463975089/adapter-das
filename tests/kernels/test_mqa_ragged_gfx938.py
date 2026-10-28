@@ -29,8 +29,8 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sgl_kernel._adapters import mqa_logits_emu as emu_mod  # noqa: E402
-from sgl_kernel._adapters.mqa_triton import triton_ragged_mqa_logits as tri  # noqa: E402
+from hcu_adapter import mqa_logits_emu as emu_mod  # noqa: E402
+from hcu_adapter.mqa_triton import triton_ragged_mqa_logits as tri  # noqa: E402
 
 FAILS = []
 

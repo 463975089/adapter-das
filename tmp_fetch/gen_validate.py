@@ -5,7 +5,7 @@ import pathlib
 import sys
 
 sys.path.insert(0, ".")
-from sgl_kernel._adapters import jit_compat  # noqa: E402
+from hcu_adapter import jit_compat  # noqa: E402
 
 mark = jit_compat._MARK
 bodies = {

@@ -71,7 +71,7 @@ P2/P3/P4 都押在 lightop 0.6.0 + torch 2.11 + dtk2604 这一代栈上（wheel 
 ## 10-23 增补（修正 + 用户输入吸收）
 
 - **prof 量化档实证 = FP8**（per_token_quant_fp8 / rocBLAS F8BS channelwise / deepgemm kGroupGemm fp32 累加，零 int4 标记；形状 5120×2304 与我方同款）⇒ das 在 bw1000 **FP8 就到 66ms/步（TPOT 17ms 级）**，INT4 是后续优化。量化布局仍有差：das dense 层 channelwise（Channel-FP8 checkpoint）vs 我方 fp4→fp8 [128,128] block-wise 全链（FP4_DEQUANT=1）——decode GEMM 微秒级下影响小，按用户定向暂缓对齐（roadmap P3），台阶分解与量化正交。
-- **「我方旧 userspace」说被推翻**：lzg-dsv41f-dspark 镜像即 dtk26041/torch2.11/HIP6.3.26113，与盒上健康容器同代同驱动；das 团队也在 nmz 系调试。残余差分=**env + 框架代码构成（v0522+adapter vs 0.5.18-das）**。
+- **「我方旧 userspace」说被推翻**：dsv41f-dspark 镜像即 dtk26041/torch2.11/HIP6.3.26113，与盒上健康容器同代同驱动；das 团队也在 nmz 系调试。残余差分=**env + 框架代码构成（v0522+adapter vs 0.5.18-das）**。
 - env 侧已排空：expandable_segments 平台不支持（HCU torch 硬拒，das 配方里那行同样是摆设）；镜像烤 env 差异仅 OMPI（惰性）+NCCL_TOPO_FILE（launch 已 unset）；ROCSHMEM_/NCCL_/MC_ 系只 engage deepep 路径（我们不跑）；das PD 配方本无抗拍旋钮。**可测残余=HSA 层两钮**：HSA_FORCE_FINE_GRAIN_PCIE=1（das 4 卡配方有）、HSA_KERNARG_POOL_SIZE=8M（自提）。
 - 代码构成嫌疑（idle 也拍⇒驻留态触发）：engram 设备表 ~23.6G/卡、ROCM_HOME JIT shim、DSA topk v2/adapter 常开件。
 - **已 staged 四臂**（nmz18 /root/launch_ab1023_{A,B,C,D}.sh）：A 基线 / B kernarg / C fine-grain-pcie / D 双开；每臂=boot+4s idle 探测+bench，~40 分钟。

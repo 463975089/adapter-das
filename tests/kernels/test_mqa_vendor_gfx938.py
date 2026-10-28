@@ -35,8 +35,8 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sgl_kernel._adapters.dsa_paged_mqa import fp8_paged_mqa_logits as emu  # noqa: E402
-from sgl_kernel._adapters.mqa_vendor import (  # noqa: E402
+from hcu_adapter.dsa_paged_mqa import fp8_paged_mqa_logits as emu  # noqa: E402
+from hcu_adapter.mqa_vendor import (  # noqa: E402
     deepgemm_paged_mqa_logits as vendor,
 )
 
@@ -59,7 +59,7 @@ def _make_case(dev, signed, n_rows=4, pages=8, page_slots=64, seed=7):
     wheel bug is invisible and the op must match the emu exactly.
     signed=True: ordinary randn — the sign clamp must garble the output.
     """
-    import sgl_kernel._adapters.dsa_paged_mqa as _dp
+    import hcu_adapter.dsa_paged_mqa as _dp
 
     _dp._fp8_view_dtype = lambda: torch.float8_e4m3fn  # emu reads fn bytes
     g = torch.Generator(device="cpu").manual_seed(seed)

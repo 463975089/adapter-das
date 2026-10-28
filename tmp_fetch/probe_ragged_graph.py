@@ -6,8 +6,8 @@ torch.manual_seed(7)
 dev = "cuda:0"
 N, H, D, T = 16, 32, 128, 8192
 
-from sgl_kernel._adapters.mqa_triton import triton_ragged_mqa_logits as tri
-from sgl_kernel._adapters import mqa_logits_emu as emu_mod
+from hcu_adapter.mqa_triton import triton_ragged_mqa_logits as tri
+from hcu_adapter import mqa_logits_emu as emu_mod
 
 q = (torch.randn(N, H, D, device=dev) * 4).to(torch.float8_e4m3fn)
 k = (torch.randn(T, D, device=dev) * 4).to(torch.float8_e4m3fn)

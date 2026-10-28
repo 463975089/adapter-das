@@ -82,7 +82,7 @@ from sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe import (
 )
 from sglang.srt.layers.moe.topk import StandardTopKOutput
 
-from sgl_kernel._adapters.w4a16_moe import deepgemm_w4a16_fused_experts
+from hcu_adapter.w4a16_moe import deepgemm_w4a16_fused_experts
 
 dev = "cuda"
 

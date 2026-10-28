@@ -7,15 +7,15 @@
 > 三类必做事项：**①依赖套件按版本重打 ②tvm-ffi 首次编译手工预热
 > ③adapter tree 整体同步 + PYTHONPATH**。
 
-## 1. adapter tree 同步：git pull 优先（仓库已开源）
+## 1. adapter tree 同步：git pull 优先
 
-仓库已 public 开源：`https://gitee.com/lizhigong/hcu-sglang-adapter`，
-容器内免凭据直拉，**git 为主、tar 仅作隧道断连时的应急**。
+仓库为团队内网私仓（`<团队仓库地址>`，凭据走团队流程），
+有凭据环境直拉；nmz18 等无凭据节点走本地 bundle + scp 中转。**git 为主、tar/bundle 仅作网络受限时的应急**。
 
 ```bash
 # 首次（容器内，免凭据）：
 cd /work
-git clone https://gitee.com/lizhigong/hcu-sglang-adapter.git adapter-tree
+git clone <团队仓库地址> adapter-tree
 export PYTHONPATH=/work/adapter-tree:/work/official-sglang/python
 
 # 日常更新（增量、带版本对账）：
@@ -79,20 +79,20 @@ pip install --no-cache-dir --force-reinstall fastapi==0.115.12
 #   10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048
 # 重建三步：备份 /root 自有状态到挂载区 → stop+rm → run（挂载=原 5 项+公共盘只读）
 docker exec <旧容器> bash -lc 'pip freeze > /root/g53/pip_freeze_$(date +%m%d).txt && cd /root && tar czf /root/g53/container_root_backup.tgz --exclude=./hcu_t2 --exclude=./g53 --exclude=./.cache --exclude=./.triton --exclude=./.local .'
-docker stop lzg-g53-tp8 && docker rm lzg-g53-tp8
-docker run -d --name lzg-g53-tp8 --network host --ipc host --privileged \
+docker stop g53-tp8 && docker rm g53-tp8
+docker run -d --name g53-tp8 --network host --ipc host --privileged \
   --shm-size 64g --security-opt label=disable \
-  -v /public/home/lizhg/models/GLM-5.3-Flash:/models/glm53f:ro \
-  -v /public/home/lizhg/hcu_t2:/root/hcu_t2:rw \
-  -v /public/home/lizhg/g53_tp4:/root/g53 \
+  -v $HOME/models/GLM-5.3-Flash:/models/glm53f:ro \
+  -v $HOME/hcu_t2:/root/hcu_t2:rw \
+  -v $HOME/g53_tp4:/root/g53 \
   -v /opt/hyhal:/opt/hyhal:ro \
-  -v /public/home/lizhg/sglang-v0521:/sglang-v0521:rw \
+  -v $HOME/sglang-v0521:/sglang-v0521:rw \
   -v /public/opandas/DL_DATA/llm-models:/public/opandas/DL_DATA/llm-models:ro \
   10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048 \
   sleep infinity
 ```
 
-要点：①模型一律公共盘只读挂载（用户 2026-10-18 定规：不在 /public/home/lizhg 下拷模型，
+要点：①模型一律公共盘只读挂载（用户 2026-10-18 定规：不在 $HOME 下拷模型，
 运维盘压力；opandas 挂载源恢复后需 docker restart 或重建使 bind 生效）；②重建后必做
 §3 tvm-ffi 预热 + §5 tilelang pin；③备份 tgz/pip freeze 在 g53_tp4（挂载区）可回灌。
 
@@ -124,7 +124,7 @@ env -u PYTHONPATH python3 $(python3 -c \
 Traceback 输出（sitecustomize 静默完成）。
 
 **捷径（2026-10-18 实操）**：从任一健康容器直拷现成 .so（torch 版本一致即兼容，
-nmz26 lzg-g53-tp8 ← nmz18 lzg-nsa-tp8，md5 b1fb7b35 校验一致）：
+nmz26 g53-tp8 ← nmz18 nsa-tp8，md5 b1fb7b35 校验一致）：
 
 ```bash
 # nmz18 侧 b64 出、nmz26 侧解入（或宿主 docker cp 中转），落位后 chmod +x
@@ -242,8 +242,8 @@ bash ci/cache_export.sh /tmp/hcu_cache_seed.tgz
 bash ci/cache_import.sh /tmp/hcu_cache_seed.tgz
 # 2b. 或共享盘通道（NMZ 系已挂 /public/home）：热机直落共享区，
 #     冷容器软链进来——零搬运：
-#   ln -s /public/home/lizhg/hcu_cache/sglang/jit ~/.cache/sglang/jit
-#   ln -s /public/home/lizhg/hcu_cache/triton     ~/.cache/triton
+#   ln -s $HOME/hcu_cache/sglang/jit ~/.cache/sglang/jit
+#   ln -s $HOME/hcu_cache/triton     ~/.cache/triton
 #     （多容器并发写共享区有踩踏风险；稳妥式=只读软链+本地 overlay 写，
 #      或只软链 sglang/jit[build-<hash> 只读命中]、triton 留本地）
 # 3. 慢盒段窗缩放（不改脚本）：

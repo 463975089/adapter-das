@@ -15,7 +15,7 @@ sys.path.insert(0, "/root/hcu_t2")
 sys.path.insert(0, "/sglang-v0521/python")
 import sitecustomize
 import torch
-from sgl_kernel._adapters.conv1d_update_emu import causal_conv1d_update_emu
+from hcu_adapter.conv1d_update_emu import causal_conv1d_update_emu
 
 torch.manual_seed(0)
 D, W, BS = 96, 4, 3

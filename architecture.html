@@ -131,7 +131,7 @@
       <div class="chips">
         <div class="chip"><b>sitecustomize.py</b><small>PYTHONPATH 自动加载 · 顺序化桥编排器</small></div>
         <div class="chip"><b>sgl_kernel 同名影子包</b><small>sglang.kernels 在 HIP 的 AOT 默认路径</small></div>
-        <div class="chip"><b>_adapters 元路径 hook</b><small>LibStubFinder：真包优先 + 缺口填空</small></div>
+        <div class="chip"><b>hcu_adapter 元路径 hook</b><small>LibStubFinder：真包优先 + 缺口填空</small></div>
       </div>
       <div class="seamnote">真包在盘 ⇒ 覆盖加载：<code>extras</code> 只填真包没有的符号 ·
         <code>overrides</code> 强制夺回函数 · <code>post_hooks</code> 加载后 wrap 类方法/判定词 ·
@@ -153,7 +153,7 @@
           </ul>
         </div>
         <div class="panel">
-          <h4>_adapters/（三分类）</h4>
+          <h4>hcu_adapter/（三分类）</h4>
           <ul>
             <li>机制层：<code>_base · hcu_env · hcu_config · kill_switch</code></li>
             <li>域桥：<code>prefill_cp · aiter_moe · slimquant · triton_ar ·
@@ -245,9 +245,9 @@
 <div class="flow">
   <div class="fnode"><b>feat/* 分支</b><small>本地编辑树 = 唯一改码处</small></div>
   <div class="flink">→ push →</div>
-  <div class="fnode"><b>Gitee MR</b><small>master 受保护，只经 MR</small></div>
+  <div class="fnode"><b>MR（托管平台）</b><small>master 受保护，只经 MR</small></div>
   <div class="flink">→ 自动 →</div>
-  <div class="fnode g"><b>L0 结构门禁</b><small>Gitee Go 云端 · 秒级<br/>语法/LF/密钥/注册表交叉一致</small></div>
+  <div class="fnode g"><b>L0 结构门禁</b><small>托管平台云端 · 秒级<br/>语法/LF/密钥/注册表交叉一致</small></div>
   <div class="flink">→ watcher 轮询 →</div>
   <div class="fnode g"><b>L1 GPU 数值门禁</b><small>容器空闲卡 · ~10min<br/>单测+五门禁+vendor 探针 · 评论回帖</small></div>
   <div class="flink">→ 绿 →</div>

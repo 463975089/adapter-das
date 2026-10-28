@@ -37,7 +37,7 @@ def _mk(N, H=16, D=128, T=65536, PS=64, ragged=True):
 
 
 def run(q, kv, w, ctx, bt, T):
-    from sgl_kernel._adapters.dsa_paged_mqa import fp8_paged_mqa_logits
+    from hcu_adapter.dsa_paged_mqa import fp8_paged_mqa_logits
     return fp8_paged_mqa_logits(q, kv, w, ctx, bt, None, T, clean_logits=True)
 
 
@@ -53,7 +53,7 @@ def bench(fn, iters=10):
 
 
 os.environ["HCU_MQA_LOGITS_IMPL"] = "loop"
-from sgl_kernel._adapters.hcu_env import resolve  # noqa: E402
+from hcu_adapter.hcu_env import resolve  # noqa: E402
 
 print("resolved impl:", resolve("HCU_MQA_LOGITS_IMPL"))
 TOPK = 8

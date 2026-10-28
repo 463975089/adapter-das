@@ -13,7 +13,7 @@ sys.path.insert(0, "/adapter")
 
 import torch
 
-from sgl_kernel._adapters.slimquant import fused_experts_w4a8
+from hcu_adapter.slimquant import fused_experts_w4a8
 
 import json
 import struct

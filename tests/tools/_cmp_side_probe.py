@@ -2,7 +2,7 @@
 
 Pairs the verify session replays (g7_r*) with the eager arm's verify call
 groups and reports the first diverging call/tensor; see
-sgl_kernel/_adapters/probe_side.py for the dump format and
+hcu_adapter/probe_side.py for the dump format and
 docs/models.md 2026-10-18 for the battle record.
 
 Usage: python3 _cmp_side_probe.py [graph_dir] [eager_dir]

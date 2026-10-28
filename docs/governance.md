@@ -9,7 +9,7 @@
 > 新后端、新机制）以 **plugin 形态**承载——plugin 是与 adapter **不同的
 > 代码仓**，经上游 seam / 注册机制接入，其代码不进本仓。两条线如果混进
 > glue 单体，就是历史上"同一个算子好几个库都有"的土壤。
-> 配套机制代码：`sgl_kernel/_adapters/registry.py`（运行时注册表 + dump）、
+> 配套机制代码：`hcu_adapter/registry.py`（运行时注册表 + dump）、
 > `ci/l0_gate.py`（三条静态规约）。本文的每条 HARD 规则都应能被 L0 检查。
 
 ## 0. 目标终态（薄入口 + 宿主分发 + 双仓边界）
@@ -19,7 +19,7 @@
   `bootstrap.py` 负责，宿主实现位于 `hcu_adapter/bridges/`。
 - 判据一句话：**改官方代码行为**（换绑、断言放宽、判定词 wrap）是行为
   还原手段，其实现体留在本仓、按宿主放入 `hcu_adapter/bridges/`，按算子/
-  机制放入 `sgl_kernel/_adapters/<域>.py`；`sitecustomize` 里只准保留入口。
+  机制放入 `hcu_adapter/<域>.py`；`sitecustomize` 里只准保留入口。
 - **双仓边界**：为行为一致服务的改动归 adapter 仓；上游没有的新能力归
   plugin 仓——**plugin 的目的同样是性能优化**（算子融合、专项内核、新调度
   路径等官方代码没有的功能），只是它以"新增能力"的形态存在，与 adapter 的
@@ -67,7 +67,7 @@ CUDA 语义的调用面，把每个符号路由到 HCU 侧最合适的实现：
 - 性能在"跑通"之后按 §3 裁决链逐点做：triton 先行产物转 ref 备胎，
   lightop/aiter 等价核就位后路由切 vendor（catalog 状态演进）。
 
-**落地形态（2026-10-12 bw7 首验）**：`sgl_kernel/_adapters/platform_seam.py`
+**落地形态（2026-10-12 bw7 首验）**：`hcu_adapter/platform_seam.py`
 （编排器在 sitecustomize 最先调它——`common.py` import 时就用 is_hip()
 冻结 FP8_E4M3_MAX，判定函数必须抢在所有 sglang import 前换掉）。合成态
 三原则：**模型层 CUDA 语义 + 内核层 HIP 真值 + 硬件层不动**——只翻
@@ -89,7 +89,7 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
 |---|---|---|---|
 | **内核库** `sgl_kernel/*.py` | adapter | 算子的数值实现（triton 首档 / vendor 封装 / torch 兜底） | 依赖 sglang 内部模块（保持 framework-free） |
 | **宿主桥** `hcu_adapter/bridges/<host>.py` | adapter | 宿主级行为还原 glue、ABI 适配和安装顺序；common 只放跨框架守卫 | 数值内核；把一个宿主的补丁装进另一个宿主；上游没有的新能力 |
-| **算子/机制桥** `sgl_kernel/_adapters/<域>.py` | adapter | 函数换绑、断言放宽、判定词 wrap——install() 入口 + 开关 + register 登记 | **任何数值逻辑**（数学放内核库）；上游没有的新能力（那归 plugin 仓） |
+| **算子/机制桥** `hcu_adapter/<域>.py` | adapter | 函数换绑、断言放宽、判定词 wrap——install() 入口 + 开关 + register 登记 | **任何数值逻辑**（数学放内核库）；上游没有的新能力（那归 plugin 仓） |
 | **分发器** `hcu_adapter/bootstrap.py` | adapter | 探测宿主 + 先 common 后唯一宿主桥；失败隔离 | 具体桥实现、宿主 eager import、数值逻辑 |
 | **自动入口** `sitecustomize.py` | adapter | `from hcu_adapter.bootstrap import install; install()` | 探测、分支、桥实现 |
 | **上游 seam** | sglang | 正式插件接入（`--quantization`、attention-backend registry、moe-runner-backend 等） | — |
@@ -123,7 +123,7 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
    无技术债的位置。plugin 仓提供的新后端/新机制也优先为此准备 seam 实现。
 2. **rebind（函数换绑，adapter 仓内）**：上游无 seam 但入口是纯 Python，
    且缺失的行为上游在 AMD/CUDA 上存在。实现体全量放本仓
-   `hcu_adapter/bridges/<host>.py` 或 `sgl_kernel/_adapters/<域>.py`（内核函数
+   `hcu_adapter/bridges/<host>.py` 或 `hcu_adapter/<域>.py`（内核函数
    在 `sgl_kernel/`，桥只做绑定动作），
    `install()` 入口 + env/yaml 开关 + 安装时 `registry.register(...)`
    登记，由宿主桥在原顺序点调用。
@@ -180,7 +180,7 @@ sglang 符号面，shim 妥协不进契约。
 - **退役**：上游官方支持某算子时，对应桥的删除与默认路径切换必须在同一个
   MR；catalog 状态 `production → deprecated → removed`，不许留"注释掉的桥"。
 - **变更面**：改 KERNEL 实现 → 跑该算子 ref 测试 + L1.5；改 sitecustomize/
-  `_base.py`/注册表 → 加 e2e 冒烟（board.md「协作与分支规约」既有规则）。
+  `_base.py`/注册表 → 加 e2e 冒烟（ci.md 门禁节既有规则）。
 
 ### 5.1 plugin 的演进轨迹（接入 → 上游化 → 退役）
 
@@ -244,3 +244,90 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
 | `glue-numerics` | HARD | sitecustomize/bootstrap/宿主 bridges 无 triton import/jit/`tl.`（注释里的提及不触发） |
 | `text-patch` | HARD | 每个 `_is_cuda` 系 `.replace` needle 都在 `TEXT_PATCH_ALLOWLIST` |
 | `registry-ops` | HARD | 每个 `registry.register(...)` 的 op 都是 catalog 条目 |
+
+## 7. 双宿主共建、plugin 接入时序与维护闭环（2026-10-28 定）
+
+> 承接原任务看板中的治理面（看板已移除，任务跟踪归 MR 与团队现用系统）。
+> 本节沉淀 sglang / vLLM 双宿主共建与长期维护的裁决规则，与 §0/§1 的
+> 分仓边界同源。任务看板原有的北极星与硬件备忘迁入 §7.3/§5.1。
+
+### 7.1 进程接入时序（红线）
+
+两个宿主的扩展点按同一时序进入进程，桥/hook 的可实现性由它决定：
+
+**sitecustomize（adapter，解释器启动）→ 宿主框架 import → 宿主 plugin
+机制 → 引擎启动**。
+
+- sglang 侧：`load_plugins()`（entry_points 组 `sglang.srt.plugins`）在
+  `launch_server` / `Engine.__init__` / scheduler **每个进程**启动早期执行，
+  先于 `ServerArgs` 构造，加载后统一 `HookRegistry.apply_hooks()`；
+- vLLM 侧：`vllm.platform_plugins` / `vllm.general_plugins`（entry_points）。
+
+由此三条推论：
+
+1. **必须在宿主框架 import 之前生效的东西**（平台 seam、sys.modules 别名、
+   import 时常量冻结）**永远只能住 adapter**——plugin 机制上够不着（它
+   随宿主 import 而来）；
+2. **adapter 补丁只准在启动期安装**：HookRegistry wrap 的是 apply 时刻的
+   绑定；apply 之后若再 rebind 同一目标会**静默吞掉 plugin hook**（无
+   报错）。新桥禁止"用到才装"的惰性 rebind；
+3. plugin hook 对 adapter 已换绑的路径**用 AROUND 不用 REPLACE**（REPLACE
+   是谁后写谁生效，两仓各自 review 都看不出冲突）；热路径差异化用配置期
+   选择（backend / scheme 替换），不用逐调用 wrapper。
+
+### 7.2 双宿主共建边界
+
+- **共享层 = `hcu_adapter/` 包本体（bridges/common + 机制层/域桥 + `sgl_kernel/`）**，
+  framework-free 是硬契约（§1 表）；共享层变更两个宿主都要回归；共享算子
+  配**宿主中立 parity 契约测试**（`tests/kernels/`，不依赖 sglang/vllm
+  测试套的存在）；
+- **宿主桥保持薄**（平台身份 + 版本门 + install 编排），实现体按 §0 归
+  `hcu_adapter/<域>.py`；`bridges/sglang.py` 长期向薄走是共建验收线
+  （P1-P3 拆分见 architecture.md §9）；
+- **纪律互相吸收 = 下沉到共享层**：vLLM 桥的版本门（不支持在选择 HCU 前
+  raise）、fail-closed 硬件探测（PCI vendor，不初始化 runtime）、失败锁存
+  三项抽入 common 供 sglang 腿复用；sglang 侧 jit_build_log /
+  aiter_jit_cache / 逐补丁命中计数等可观测性反向供 vLLM 用；
+- **分层 import 契约**：`bridges/sglang.py` 禁 import vllm，
+  `bridges/vllm.py` 禁 import sglang（common 与包内机制层禁宿主已由 §1 覆盖）；
+- **vLLM 扩展宿主权责边界（extension API v1）**：Adapter **独占**
+  `vllm.platform_plugins` / `vllm.general_plugins` 两个官方入口；独立 plugin
+  经 `hcu_adapter.extensions` entry-point 组接入，只交付可选优化实现
+  （`ExtensionSpec` + 实现），不得复制版本/平台/DTK 门禁——宿主适配只有
+  一个启动裁决点。激活发生在版本、平台和 DTK runtime guard **之后**；
+  optional 扩展失败降级为进程内报告，仅显式 required 扩展/capability
+  失败才响亮阻断；无 plugin wheel 时保持官方 vLLM 基线路径可启动；
+- **宿主仲裁待改**：argv 无信号且双框架并存时 bootstrap 现静默取 sglang
+  （legacy-default）——应改为 loud fail 要求显式 `HCU_ADAPTER_HOST`，
+  在此之前两框架混装的节点必须显式设该变量。
+
+### 7.3 维护闭环（官方单测 = 行为契约；统计 = 清理输入）
+
+- **契约子集**：宿主官方单测的精选面（ci.md L1.5 段）是 adapter 的
+  验收标准；**skip 数环比与失败数同级**——skip 异常上涨 = 适配在变相降级
+  （"转 skip"类修复必须逐项登记、可审计）；
+- **单测只证正确、不证不慢**：性能面由微基准 + serving 门守（R-15 三级
+  防线节奏，台账归 ci.md / models.md）；
+- **死分支清理以联合覆盖统计为输入、人工分类后执行**：统计负载 = 契约
+  子测 ∪ serving 门（旗舰模型 + bs 扫描 + graph capture + spec decode）；
+  每补丁留命中计数（顺带充当补丁存活检查：没装上 = 零命中）。
+  **反例固化（红线）**：`moe_dualstream_gate` 的 capture-only 分支单跑
+  单测必然零命中——禁止以"单跑覆盖率没用到"为删除依据；删除一律可逆
+  （commit + 证据留档）；
+- **北极星两只表**（评审对照）：① adapter 补丁数随上游版本**单调下降**
+  （清理 + upstream PR 的净效果，见 §5.1 演进轨迹）；② skip 率稳定。
+  两只表持续恶化 = 在长回第二个侵入式分叉。
+
+### 7.4 版本与门（宿主 / 影子包）
+
+- 影子包 `sgl-kernel` 的版本号必须携带上游基线（目标形态 `0.5.22+hcu.N`）；
+  现值 `0.1.0` 待改——不带基线信息时 pip 层与官方 wheel 可互替、静默换内核；
+- vLLM 支持门现钉 v0.32.0 release line（`bridges/vllm.py`）；抽 common 时
+  sglang 线同享"不支持在选择前 fail"；
+- **已知悬案**：vLLM platform plugin 在本栈 import order 下挂死（nmz26
+  实证；sglang 进程内以 `VLLM_PLUGINS=none` 静音规避）——standalone
+  vLLM serve bring-up 销案前不得移除该规避；
+- channel-wise 量化（本硬件 core/tensor core 不重叠 → channel-wise 是
+  主力量化路线，见 §5.1 阶段 2）归 **plugin 仓**：每宿主一个 plugin、
+  kernel 共享 `sgl_kernel`、格式规范与 conformance 单测**单源**——判别
+  仍走 §0 问句，与"动机是性能"无关。

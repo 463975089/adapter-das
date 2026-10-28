@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sgl_kernel._adapters import jit_build_log  # noqa: E402
+from hcu_adapter import jit_build_log  # noqa: E402
 
 
 class _Spec:

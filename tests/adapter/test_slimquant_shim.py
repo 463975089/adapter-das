@@ -18,7 +18,7 @@ import torch
 from safetensors import safe_open as real_safe_open
 from safetensors.torch import save_file
 
-from sgl_kernel._adapters.slimquant import _wrap_safe_open
+from hcu_adapter.slimquant import _wrap_safe_open
 
 Q_KEY = "model.layers.0.self_attn.q_proj.weight"
 S_KEY = Q_KEY + "_scale"

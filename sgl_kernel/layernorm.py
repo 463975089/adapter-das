@@ -33,7 +33,7 @@ def _resolve_rms_impl():
     if _RMS_IMPL is None:
         _RMS_IMPL = "triton"
         try:
-            from ._adapters import hcu_env
+            from .hcu_adapter import hcu_env
 
             impl, _src = hcu_env.resolve("HCU_RMS_NORM_IMPL")
             if impl in ("triton", "aiter", "torch"):

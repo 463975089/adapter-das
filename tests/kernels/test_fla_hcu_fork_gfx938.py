@@ -1,6 +1,6 @@
 """Vendored sglang-das hcu kernels vs adapter emus — green gate (gfx938).
 
-Source: sgl_kernel/_adapters/fla_hcu/* (fork maxiaobetter/sglang-das
+Source: hcu_adapter/fla_hcu/* (fork maxiaobetter/sglang-das
 ``main_glm53_flash_feature_cleanup_tx``, commit 364fabf; pure triton,
 JIT-compiled on this stack). These kernels replace the torch emus that
 papered over the stock v0.5.21 gfx938 breakage (chunk_kda wrong Aqk;
@@ -34,8 +34,8 @@ def _check(name, a, b, cos_min=0.9999, rel_max=0.02):
 
 
 def test_kda_prefill_chunk():
-    from sgl_kernel._adapters.fla_hcu.kda import chunk_kda
-    from sgl_kernel._adapters.kda_prefill_emu import kda_extend_emu
+    from hcu_adapter.fla_hcu.kda import chunk_kda
+    from hcu_adapter.kda_prefill_emu import kda_extend_emu
 
     import os
     _t1 = int(os.environ.get('GATE_T1', '1536')); _t2 = int(os.environ.get('GATE_T2', '512'))
@@ -68,9 +68,9 @@ def test_kda_prefill_chunk():
 
 
 def test_conv1d_pair():
-    from sgl_kernel._adapters.conv1d_fn_emu import conv1d_fn_emu
-    from sgl_kernel._adapters.conv1d_update_emu import causal_conv1d_update_emu
-    from sgl_kernel._adapters.fla_hcu.conv1d_triton import (
+    from hcu_adapter.conv1d_fn_emu import conv1d_fn_emu
+    from hcu_adapter.conv1d_update_emu import causal_conv1d_update_emu
+    from hcu_adapter.fla_hcu.conv1d_triton import (
         causal_conv1d_fn,
         causal_conv1d_update,
     )

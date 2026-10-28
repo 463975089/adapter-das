@@ -24,7 +24,7 @@ _ROOT = os.path.dirname(os.path.dirname(_HERE))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from sgl_kernel._adapters.hcu_env import arch_name, has_fp8  # noqa: E402
+from hcu_adapter.hcu_env import arch_name, has_fp8  # noqa: E402
 
 
 def _pip_version(dist_name):

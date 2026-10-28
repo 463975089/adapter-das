@@ -12,9 +12,9 @@
 |---|---|---|---|
 | `sgl_kernel` | 完整同名包（triton/torch） | `sgl_kernel/` | 生产 |
 | `vllm._custom_ops` | 属性级桥接（rms_norm 等 HIP 形态） | `sitecustomize.py` | 生产 |
-| `aiter` | 真包优先 + 缺口填空 + 高危守卫 | `sgl_kernel/_adapters/aiter/` | 生产 |
-| `flashinfer` | 填空桥 + 响亮 stub | `sgl_kernel/_adapters/flashinfer/` | 生产 |
-| `flash_attn` / `flash_attn_interface` | 响亮 stub；装 HCU flash_attn wheel 后真包自动胜出（零改动切 vendor 档） | `sgl_kernel/_adapters/flash_attn/` | 生产 |
+| `aiter` | 真包优先 + 缺口填空 + 高危守卫 | `hcu_adapter/aiter/` | 生产 |
+| `flashinfer` | 填空桥 + 响亮 stub | `hcu_adapter/flashinfer/` | 生产 |
+| `flash_attn` / `flash_attn_interface` | 响亮 stub；装 HCU flash_attn wheel 后真包自动胜出（零改动切 vendor 档） | `hcu_adapter/flash_attn/` | 生产 |
 | `lightop` | vendor 直调档（不出现在 import 面，按 ops 路由调用；见下盘点） | 系统包直调 | silu/MQA 已入 catalog |
 
 **flash_attn wheel 兼容性现状**（2026-10-10 实测）：共享盘

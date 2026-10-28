@@ -30,7 +30,7 @@ import torch
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from sgl_kernel._adapters import hcu_env, wna16_channel_moe  # noqa: E402
+from hcu_adapter import hcu_env, wna16_channel_moe  # noqa: E402
 
 
 def test_channel_predicate_matches_only_nonpositive_group():

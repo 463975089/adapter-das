@@ -4,7 +4,7 @@ _probe_: same sweep on wide-context / narrow-extend shapes (long-ctx
 shipped defaults (BM64/BN64/W4) are the only fast arm on these shapes
 too (2.8ms vs 200ms+ cliffs); BN>=256 Exhausts shared memory.
 
-Run: docker exec lzg-trt-fa3pf bash -c 'TVM_FFI_DISABLE_TORCH_C_DLPACK=1 \n  PYTHONPATH=/work/hcu_trt_fa3:/work/sglang-v0521/python HIP_VISIBLE_DEVICES=4 \n  python -u /work/hcu_trt_fa3/tests/tools/_probe_fa_varlen_sweep2.py'
+Run: docker exec trt-fa3pf bash -c 'TVM_FFI_DISABLE_TORCH_C_DLPACK=1 \n  PYTHONPATH=/work/hcu_trt_fa3:/work/sglang-v0521/python HIP_VISIBLE_DEVICES=4 \n  python -u /work/hcu_trt_fa3/tests/tools/_probe_fa_varlen_sweep2.py'
 """
 
 import time, torch

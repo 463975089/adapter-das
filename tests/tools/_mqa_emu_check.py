@@ -8,12 +8,12 @@ Run inside the DTK container (or any torch env); CPU is enough.
 import os
 import sys
 
-sys.path.insert(0, "/tmp/lzg_w4a8")  # adapter root
+sys.path.insert(0, "/tmp/w4a8")  # adapter root
 os.environ.setdefault("HCU_SLIMQUANT", "0")
 
 import torch
 
-from sgl_kernel._adapters import mqa_logits_emu as emu
+from hcu_adapter import mqa_logits_emu as emu
 
 torch.manual_seed(0)
 dev = "cpu"

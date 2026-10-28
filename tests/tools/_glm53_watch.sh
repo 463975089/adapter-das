@@ -5,7 +5,7 @@ export LD_LIBRARY_PATH=/opt/dtk/.hyhal/rocm_smi/lib:$LD_LIBRARY_PATH
 PORT=30053
 LOGD=/root/logs/model_suite
 mkdir -p $LOGD
-export PYTHONPATH=/root/hcu_t2:/public/home/lizhg/sglang-v0521/python
+export PYTHONPATH=/root/hcu_t2:$HOME/sglang-v0521/python
 export SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python
 export SGLANG_RUST_BUILD_MODE=never
 export TVM_FFI_DISABLE_TORCH_C_DLPACK=1

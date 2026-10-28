@@ -66,7 +66,7 @@ except TypeError as e:
     print("signature mismatch, trying variants:", e)
 
 # adapter emu fingerprint for comparison (legacy block-1 shapes)
-from sgl_kernel._adapters import mqa_logits_emu as emu
+from hcu_adapter import mqa_logits_emu as emu
 
 cache1 = torch.randint(0, 200, (1 << 16, WITH_SF), dtype=torch.uint8, device=dev)
 bt1 = torch.randint(0, 1 << 16, (Q, MAX_SEQ), dtype=torch.int64, device=dev)

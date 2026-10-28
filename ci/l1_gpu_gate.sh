@@ -80,9 +80,9 @@ export HIP_VISIBLE_DEVICES="$GPU" CUDA_VISIBLE_DEVICES="$GPU"
 # Live observability for long segments (2026-10-20): (a) unbuffered pytest
 # output so `tail -f /tmp/l1_<seg>.log` streams per-test dots instead of a
 # block-buffered void; (b) a per-run JIT progress journal written by the
-# adapter's build reporter (sgl_kernel/_adapters/jit_build_log.py, one line
+# adapter's build reporter (hcu_adapter/jit_build_log.py, one line
 # per real ninja compile) that run_seg's heartbeat tails. Unique per gate
-# run ($$) so a manual gate and an mr_watcher gate on the same container
+# run ($$) so a manual gate and a CI gate on the same container
 # never cross-read each other's compiles.
 export PYTHONUNBUFFERED=1
 JPROG="/tmp/hcu_jit_progress.$$.log"; export HCU_JIT_PROGRESS_LOG="$JPROG"

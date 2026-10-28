@@ -101,7 +101,7 @@ DTYPES = [torch.bfloat16, torch.float16]
 def _ref(x, w, ...):
     return <torch 或 fp32 解晰实现>
 
-# 段3: 断言 —— 容差按精度类型选型（bf16 单舍入 1 ULP 见 board.md 协作规约坑）
+# 段3: 断言 —— 容差按精度类型选型（速查见下方容差选型行）
 @pytest.mark.parametrize(... )
 def test_xxx(...):
     out = sgl_kernel.<op>(...)
@@ -109,7 +109,7 @@ def test_xxx(...):
     torch.testing.assert_close(out, ref, rtol=..., atol=...)
 ```
 
-- **顺序纪律**（board.md「协作与分支规约」§测试先行顺序）：算子类单测先于 e2e；seam 类 "one
+- **顺序纪律**（governance §7.3 维护闭环 / SKILL 法则 9）：算子类单测先于 e2e；seam 类 "one
   pit, one test"（e2e 探明的坑修复时必带离线复现）；
 - 容差选型速查：fp32 数学 rel≤1e-3~5e-3；bf16 kernel cos≥0.999 或
   1-ULP 单舍入差；量化路径按既有同类（int8 rel~0.02 / fp8 逐位或 8e-3）；

@@ -1,21 +1,21 @@
 # CI 分层设计（MR 快速自动测试）
 
 目标：**别人提 MR → 分钟级自动反馈**。约束：数值/内核测试必须跑在真实 HCU
-（gfx938 + DTK 栈）上，而 Gitee Go 云端 runner 只有 CPU；GPU 在共享节点的
+（gfx938 + DTK 栈）上，而 托管平台云端 runner 只有 CPU；GPU 在共享节点的
 容器里（CI 用自己的容器，不影响他人），不能被 CI 无脑抢占。因此分三层，
 层间用不同触发面：
 
 | 层 | 内容 | 环境 | 耗时 | 触发 |
 |---|---|---|---|---|
-| **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性、治理三规则（`glue-numerics`=sitecustomize 无 triton 数学 / `text-patch`=源码补丁必在 TEXT_PATCH_ALLOWLIST / `registry-ops`=register 的 op 必须 catalog）；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（Gitee Go 云端，`.workflow/l0-gate.yml`） |
-| **L1 GPU 数值门禁** | `ci/l1_gpu_gate.sh`：L0 + pytest（test_ops_cpu / kernels / adapter）+ 精选 tools 门禁（config 目录、fa3-emu CP 形状、rope 三路一致、aiter-MoE 分发、deepgemm contiguous triton）+ vendor wheel 探针（WARN 级） | HCU 容器，1 卡，自动挑空闲（VRAM<5%） | 5-15min | MR watcher（`ci/mr_watcher.py` 轮询开放 MR，新 head sha 即测） |
+| **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性、治理三规则（`glue-numerics`=sitecustomize 无 triton 数学 / `text-patch`=源码补丁必在 TEXT_PATCH_ALLOWLIST / `registry-ops`=register 的 op 必须 catalog）；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（托管平台 CI 云端） |
+| **L1 GPU 数值门禁** | `ci/l1_gpu_gate.sh`：L0 + pytest（test_ops_cpu / kernels / adapter）+ 精选 tools 门禁（config 目录、fa3-emu CP 形状、rope 三路一致、aiter-MoE 分发、deepgemm contiguous triton）+ vendor wheel 探针（WARN 级） | HCU 容器，1 卡，自动挑空闲（VRAM<5%） | 5-15min | 容器侧手动/定时执行，结果回帖 MR（自动化触发器随托管平台重接） |
 | **L1.5 上游单测精选（已落地 l15_upstream 段）** | sglang 官方 `test/registered/attention/unittests` 的 dsa+kda+dense+mla 四目录（`-k "not tilelang"`）：**88 绿/2 排除/101 合法 skip（fa4/flashinfer/trtllm 平台性）/208 子用例，暖缓存 ~1min、冷缓存 ~35min**。首役战果（2026-10-17）：五修打通——shfl `__shfl_*_sync`→非 sync（dpsk_v4_topk 编译复活）、`get_mla_metadata` 新 API、`flash_mla_with_kvcache` 输出秩随输入、flashinfer `_grouped_size` ABSENT+deny 组合、`attn_backend_gate`（fa4/flashinfer 构造期 ImportError→kit 优雅 skip）。mla 加餐（2026-10-18）：首跑 8 失败同根——flashmla 后端 unified 模式的 extend 路径整体委托 flashinfer 父类（`forward_extend`→`super()`），flashinfer 桩 `__getattr__` 记 FAIL；修法=桩内 `_hcu_stub_raise`（unittest 栈帧→SkipTest，serving 栈保持 NotImplementedError），8 失败→25 合法 skip、26 绿全保（flash_mla 移植面获正面检验）。**判定：MTP/fp8-KV/DSA 内核面全绿 → serving 层病在 srt 状态机**。**环境铁律**：容器两份 sglang（pip dist-packages vs `/sglang-v0521` 源码树，serving 与 JIT include 均指后者）；pytest 必须显式 `PYTHONPATH=/sglang-v0521/python:$ROOT`（缺一静默测错树/adapter 不加载）+ `-e HCU_DEEPGEMM_BRIDGE=1`；**多线放大版（R-17 三绑定铁律）**：rel/v0.5.22 线的一切门禁须在 `/sglang-v0522` 树+对应容器跑——`ci/l1_gpu_gate.sh` 已支持 `--up-tree <path>`/`HCU_UP_TREE` 显式指树（指定不存在即 loud fail 不静默落回自动探测），错树假绿=双线模型第一杀手；JIT 内核首编 ~5min/颗（ninja 编译非挂死）。tilelang 两用例=DTK 0.1.12+dtk2604 warp 划分 bug（threads=384→6 warp 不整除，编译期 InternalError），平台已知红待 DTK 修 | HCU 容器，1 卡 | 暖 ~2min / 冷 ~35min | 与 L1 同车（`ci/l1_gpu_gate.sh` l15_upstream 段自动发现上游树，无树则 SKIP） |
 | **L1.5b 上游机制目录（l15_mech 段，R-14 批 A）** | unittests 六机制目录 gdn/hybrid_linear/mamba/swa/lightning/dsv4（旧树无目录自动 SKIP），env 契约同 l15_upstream（`PYTHONPATH=/sglang-v0521/python:$ROOT` + `HCU_DEEPGEMM_BRIDGE=1` + `-k "not tilelang"`），另加 `-rs` 列 skip 理由。**known-fail 预算绊线**：段判绿按计数不按 pytest rc=1——`passed≥90 且 failed≤42`（基线 38/99 的 ±10%）才 PASS，越线/超时(124)即红进 FAILS，防"登记失败"膨胀成"回归自由"；账本见下节。首跑 826s（dsv4 JIT 败三连不缓存，每跑重付编译尝试） | HCU 容器，1 卡 | 暖 ~5-14min | 与 L1 同车（`ci/l1_gpu_gate.sh`） |
 | **L2 e2e** | 0.6B 四判定（launch/生成/锚点/长文）+ 多卡项（AR/EP/PD）= `tests/tools/run_model_suite.sh` / cookbook 配方 | HCU 容器，1-2 卡 | ~1h | 夜间 / 发版 / 手动（勿挂 MR，太慢太占卡） |
 
 ### L1.5b KNOWN_FAILURES 账本（l15_mech 六机制目录，2026-10-19 首跑分诊）
 
-基线（容器 lzg-g53-tp8，新镜像 sf_b075-20261018-0048，/tmp/l1_mech_first.log）：
+基线（容器 g53-tp8，新镜像 sf_b075-20261018-0048，/tmp/l1_mech_first.log）：
 `38 failed / 99 passed / 15 skipped / 173 subtests passed in 826.58s`。失败共六族
 逐族登记零静默；族级件数按 `--tb=line` 错误行聚合（与 pytest 总数 38 有 ±1 的
 短汇总/栈重复计差，不影响归因）：
@@ -35,7 +35,7 @@ SM90/SM100 门——与 L1.5 的合法 skip 同类，零非预期。
 
 ### L1.5c 批 D 功能面直跑分诊（2026-10-19，nmz18/BW1101 实测）
 
-环境：nmz18 容器 `lzg-nsa-tp8`（BW1101 8 卡可见，实测用 GPU4；正确性
+环境：nmz18 容器 `nsa-tp8`（BW1101 8 卡可见，实测用 GPU4；正确性
 有效、性能不迁移），adapter 树=快照 `/root/hcu_t2_r14`（=master 40c2808，
 tar 直灌），上游=/sglang-v0521，env 契约同 L1.5b。批 D=「import 即 SKIP
 清查 + 可跑面分级」，原定 nmz26 场地，因占卡转 nmz18。
@@ -181,7 +181,7 @@ cuh` 能找到，但 mocker 的 CUDA 头（`vector_types.h` 等）与 hipcc 隐�
    cudart（`__cudaRegisterFatBinary` 等 fatbin 注册符的提供方，dlopen 时
    进程内必须有它；底层转发 HIP）。
 
-**证据**（nmz26 容器 /tmp/lizhg_rocm22 作坊版，2026-10-19）：
+**证据**（nmz26 容器 /tmp/rocm22-mock 作坊版，2026-10-19）：
 - dpsk_v4_metadata（CUB 依赖）：编译→链接→dlopen→`run` 符号导出全绿
   （`LOAD_OK tvm_ffi.module.Module` / `RUN_FN ffi.Function`）；
 - causal_conv1d bf16 precise_math（uint2 依赖）：同配方 LOAD_OK + **数值
@@ -269,8 +269,8 @@ l0/cpu/gates/vendor PASS，mech **38F/101P 与基线持平**——成分对账�
 
 ### L1.5j nmz18 × v0.5.22 × glm53f serving 首跑四门全绿（2026-10-20，R-17 三绑定首演）
 
-nmz18 新容器 `lzg-g53f-v0522`（模型只读+v0522 树公共盘化
-`/public/home/lizhg/sglang-v0522`+三板斧种子+tilelang 0.1.12），配方=cookbook
+nmz18 新容器 `g53f-v0522`（模型只读+v0522 树公共盘化
+`$HOME/sglang-v0522`+三板斧种子+tilelang 0.1.12），配方=cookbook
 §1.6。三 boot 崩点连修（全部 adapter rel 线 commit，详见 models.md 2026-10-20
 行）：①`_hcu_check` 穿透式签名（.22 `dcp_size` 针脚，4ec080d）；②镜像烤
 508 拓扑 `NCCL_TOPO_FILE` 必须 unset（配方卫生 env，非 adapter 面）；③**R-19③
@@ -289,7 +289,7 @@ nmz 双机满载，按用户指示转 bw7（bw47，gfx936/BW1000 系，8 卡空�
 **配方跨 ISA 直通**：gfx936 的 mocker 同样映射 `__CUDA_ARCH__=750`（E
 探针实证），v3 壳零改动可用；W1 预热跑里 **clang-18/ninja 真实现场**出
 现——cuda-mocker 编译链在第二 ISA 点燃。**首次公开仓 bootstrap 演练**：
-bw47 从 Gitee 匿名克隆 adapter rel@06a4e21（免令牌）+github 独立克隆树钉
+bw47 从主仓远端匿名克隆 adapter rel@06a4e21（免令牌）+github 独立克隆树钉
 baa9bef，双树并置全程零搬运。
 
 **盒级三发现（全数回写 bootstrap §5）**：
@@ -331,7 +331,7 @@ gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非
 冷跑的"一小时静止"从日志可辨（用户报告：编译感觉像卡死/死循环，报错
 也不及时可见）。三层，全部行缓冲实时落盘：
 
-1. **JIT 逐颗进度行**：`sgl_kernel/_adapters/jit_build_log.py` 包上游
+1. **JIT 逐颗进度行**：`hcu_adapter/jit_build_log.py` 包上游
    `ninja.build`（.21/.22 两树同位），每颗**真实**编译（缓存命中不进）
    向 stderr+journal 各出一行：`HCU JIT: compiling|built|FAILED <模块>
    ...`——FAILED 后调用侧 retry 会再记一对，retry 旋死 >2 对/模块即
@@ -351,36 +351,33 @@ gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非
 ## MR 流（怎么"快速自动测试"）
 
 ```
-提 MR ──> Gitee Go 跑 L0（秒级，必跑）
-      └─> 容器内 mr_watcher 轮询到新 head sha
-            ├─ fetch 到独立 clone/worktree（~/hcu_ci，绝不碰在役的 /root/hcu_t2）
-            ├─ ci/l1_gpu_gate.sh：无空闲卡 -> 状态=queued，下轮重试（评论"排队中"）
-            └─ ✅/❌ + 日志尾部评论回 MR
+提 MR ──> 托管平台 CI 跑 L0（秒级，必跑）
+      └─> L1 在 HCU 容器侧执行（CI keeper 触发或定时轮询 MR head sha；
+            fetch 到独立 clone/worktree，绝不碰在役的 /root/hcu_t2；
+            无空闲卡 -> 状态=queued，下轮重试）
+            └─ ✅/❌ + 日志尾部回帖 MR
 ```
 
 ### 启用步骤
 
-1. **L0（云端，无密钥）**：Gitee 仓库设置里开通 Gitee Go，`.workflow/l0-gate.yml`
-   即生效（schema 有出入时以控制台生成模板对齐 stages 块）。
+1. **L0（云端，无密钥）**：托管平台 CI 上挂 `python3 ci/l0_gate.py`
+   （秒级、零依赖；流水线配置随托管平台维护，不入仓强绑定）。
 2. **L1（容器侧）**：
    ```bash
    # 仓库位置是部署配置不是代码（迁仓只改这里）：
-   mkdir -p ~/hcu_ci && echo -n <owner>/<repo> > ~/hcu_ci/repo_slug
-   #   （或 export HCU_CI_REPO=<owner>/<repo>）
+   mkdir -p ~/hcu_ci
    # 令牌只放这里（绝不进仓库/git 配置）：
-   echo -n <gitee-token> > ~/.hcu_ci_token && chmod 600 ~/.hcu_ci_token
-   # 前台试一轮（不回帖）：
-   python3 ci/mr_watcher.py --once --no-comment
-   # 常驻：
-   nohup python3 ci/mr_watcher.py > ~/hcu_ci/watcher.log 2>&1 &
+   echo -n <远端访问令牌> > ~/.hcu_ci_token && chmod 600 ~/.hcu_ci_token
+   # 手动跑一轮全门（自动化触发器随托管平台重接）：
+   bash ci/l1_gpu_gate.sh
    ```
    GPU 礼让：l1 脚本只在有卡 VRAM<5% 时启动，否则排队重试——不会踩同事服务。
 
 ### 状态与排错
 
-- watcher 状态文件 `~/hcu_ci/state.json`（PR# → sha/status/rc）；删掉即全部重测。
+- CI keeper 状态记在 `~/hcu_ci/`（sha/status/rc）；清掉即全部重测。
 - L1 各段日志在容器 `/tmp/l1_<段名>.log`。
-- 无令牌时 watcher 仍可对**公开仓库**匿名拉 MR 列表并测试，只是不能评论。
+- L1 测试本身不写远端——无令牌只影响回帖能力。
 
 ## 测试怎么归层（给提 MR 的人）
 
@@ -399,13 +396,13 @@ gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非
 
 ## 设计取舍备忘
 
-- **L0 刻意零依赖**（不用 pytest/torch）：Gitee Go 免装环境、秒级出结果、
+- **L0 刻意零依赖**（不用 pytest/torch）：云端 runner 免装环境、秒级出结果、
   笔记本也能跑 `python ci/l0_gate.py` 当 pre-push 钩子。
 - **裸读 os.environ 是软警告不是硬门禁**：存量 27 处（多为 debug 旋钮），
   硬门禁会让存量全红；新增行为级读取请走 `hcu_env.resolve`，逐步清零。
 - **vendor wheel 探针 WARN 级**：坏 wheel 是环境事实不是 MR 回归，不应挡合并。
 - **watcher 不用 webhook**：容器无公网入口，轮询 API v5 是唯一通路；90s
   间隔对"分钟级反馈"足够。
-- **令牌纪律**：`GITEE_TOKEN` 环境变量或 `~/.hcu_ci_token`（600），CI 的
+- **令牌纪律**：远端访问令牌环境变量或 `~/.hcu_ci_token`（600），CI 的
   git fetch 用一次性 askpass 传内存，绝不落盘/进 remote 配置（仓库里出现
   32-hex 令牌会被 L0 secrets 检查打红）。

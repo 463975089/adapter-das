@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sgl_kernel._adapters.platform_seam import platform_env_defaults  # noqa: E402
+from hcu_adapter.platform_seam import platform_env_defaults  # noqa: E402
 
 A_TIER = {
     "SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK": "1",

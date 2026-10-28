@@ -116,7 +116,7 @@ def test_a_convention_triton_ref():
 @pytest.mark.parametrize("group", [32, 128])
 def test_b_cpp_masked(group):
     dg = _deepgemm()
-    from sgl_kernel._adapters.w4a16_moe import _grouped_gemm, _prepare
+    from hcu_adapter.w4a16_moe import _grouped_gemm, _prepare
 
     torch.manual_seed(5)
     E, MCap, N, K = 8, 128, 256, 256
@@ -165,7 +165,7 @@ def _hand_pipeline(x, w1, w2, tw, tids, s1, s2, group, rscale=None):
     [(8, 128, 256, 64, 3, 1), (4, 256, 512, 48, 5, 2), (6, 128, 384, 33, 2, 3)],
 )
 def test_c_pipeline(group, E, I, K, M, topk, seed):
-    from sgl_kernel._adapters.w4a16_moe import deepgemm_w4a16_fused_experts
+    from hcu_adapter.w4a16_moe import deepgemm_w4a16_fused_experts
 
     torch.manual_seed(seed)
     N1, N2 = 2 * I, K

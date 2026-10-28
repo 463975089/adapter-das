@@ -85,8 +85,8 @@ def _ref_blockwise(x, w1q, w1s, w2q, w2s, tw, ti, NI, TOPK):
 
 
 def main():
-    from sgl_kernel._adapters import aiter_moe
-    from sgl_kernel._adapters.hcu_env import resolve
+    from hcu_adapter import aiter_moe
+    from hcu_adapter.hcu_env import resolve
 
     dev = "cuda"
     M, TOPK = 512, 8
