@@ -11,6 +11,13 @@ from threading import RLock
 
 from packaging.version import InvalidVersion, Version
 
+from hcu_adapter.extensions import (
+    ExtensionContext,
+    ExtensionReport,
+    RequiredExtensionError,
+    activate_extensions,
+)
+
 
 TARGET_VLLM_RELEASE = (0, 32, 0)
 SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx936", "gfx938"})
@@ -52,6 +59,15 @@ def _installed_vllm_version() -> str | None:
         return metadata.version("vllm")
     except metadata.PackageNotFoundError:
         return None
+
+
+def _installed_adapter_version() -> str:
+    try:
+        return metadata.version("sgl-kernel")
+    except metadata.PackageNotFoundError as exc:
+        raise VllmCompatibilityError(
+            "adapter distribution metadata is unavailable: 'sgl-kernel'"
+        ) from exc
 
 
 def _ensure_vllm_compatible() -> str:
@@ -179,6 +195,7 @@ class ProcessLocalActions:
         self._owner_pid = os.getpid()
         self._lock = RLock()
         self._records: dict[str, str | None] = {}
+        self._extension_reports: tuple[ExtensionReport, ...] = ()
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork_child)
 
@@ -186,6 +203,7 @@ class ProcessLocalActions:
         self._owner_pid = owner_pid
         self._lock = RLock()
         self._records = {}
+        self._extension_reports = ()
 
     def _after_fork_child(self) -> None:
         self._reset(os.getpid())
@@ -211,8 +229,26 @@ class ProcessLocalActions:
                 raise LatchedVllmRuntimeError(failure) from exc
             self._records[action_id] = None
 
+    def record_extension_reports(
+        self,
+        reports: tuple[ExtensionReport, ...],
+    ) -> None:
+        self._ensure_process_local()
+        with self._lock:
+            self._extension_reports = tuple(reports)
+
+    def extension_reports(self) -> tuple[ExtensionReport, ...]:
+        self._ensure_process_local()
+        with self._lock:
+            return self._extension_reports
+
 
 _RUNTIME_ACTIONS = ProcessLocalActions()
+
+
+def extension_reports() -> tuple[ExtensionReport, ...]:
+    """Return the latest process-local optimization activation reports."""
+    return _RUNTIME_ACTIONS.extension_reports()
 
 
 def install() -> None:
@@ -290,9 +326,19 @@ def hcu_runtime_plugin() -> None:
         return None
 
     def initialize() -> None:
-        _ensure_vllm_compatible()
+        vllm_version = _ensure_vllm_compatible()
         _ensure_hcu_platform_selected()
         configure_vllm_hip_runtime_path()
+        context = ExtensionContext(
+            adapter_version=_installed_adapter_version(),
+            vllm_version=vllm_version,
+        )
+        try:
+            reports = activate_extensions(context)
+        except RequiredExtensionError as exc:
+            _RUNTIME_ACTIONS.record_extension_reports(exc.reports)
+            raise
+        _RUNTIME_ACTIONS.record_extension_reports(reports)
 
     _RUNTIME_ACTIONS.run_once("vllm-runtime", initialize)
 
