@@ -57,12 +57,13 @@ from sgl_kernel.flash_mla import (  # noqa: F401
 # Register HCU shims for AMD/NVIDIA-only dependencies that upstream sglang
 # imports on HIP devices (`aiter`, `flashinfer`, `flash_attn`, ...). Must run
 # before any sglang module import; unimplemented symbol *calls* raise loudly.
-# Shims live in the framework-neutral top-level `hcu_adapter` package
-# (shared by the sglang and vLLM host bridges); registration stays here so
-# the timing is unchanged: they install on `import sgl_kernel`.
-import hcu_adapter
+# Shims live in the `hcu_adapter` package (shared with the vLLM host bridge);
+# they bind torch at module level, so they are gated behind THIS import —
+# `import hcu_adapter` / its plugin seam stays torch-free, and the finders
+# still install here, before any sglang module import.
+from hcu_adapter.stubs import register_all as _hcu_register_stubs
 
-hcu_adapter.register_all()
+_hcu_register_stubs()
 from sgl_kernel.kvcacheio import (  # noqa: F401
     copy_all_layer_kv_cache_cpu,
     get_device_accessible_ptr,
