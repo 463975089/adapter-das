@@ -89,7 +89,7 @@ def stage_env():
                    getattr(m, "__version__", getattr(m, "__file__", "?")))
         except Exception as e:
             record("env", lib, "INFO", f"not importable ({e!r:.60})")
-    from sgl_kernel._adapters import kill_switch
+    from hcu_adapter import kill_switch
 
     off = sorted(kill_switch.disabled_ops())
     record("env", "kill-switches", "INFO",

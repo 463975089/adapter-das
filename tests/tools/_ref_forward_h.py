@@ -127,7 +127,7 @@ def silu_mul(x, gw, uw):
     return (F.silu(x.float() @ gw.t()) * (x.float() @ uw.t())).to(torch.bfloat16)
 
 
-from sgl_kernel._adapters.slimquant import fused_experts_w4a8
+from hcu_adapter.slimquant import fused_experts_w4a8
 
 hiddens = []  # last-token hidden state after each block (input of next)
 

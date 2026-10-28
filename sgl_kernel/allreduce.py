@@ -1,7 +1,7 @@
 """Tombstone (2026-10-19): the HCU homegrown custom all-reduce is RETIRED.
 
 This module used to re-export the triton custom AR implementation
-(``_adapters/triton_ar.py`` + ``ar_ext.cu``: host-shm signaling + HIP IPC
+(``hcu_adapter/triton_ar.py`` + ``ar_ext.cu``: host-shm signaling + HIP IPC
 staging). R-01 convicted its cross-block rendezvous (device-scope arrival
 atomics do not order the other blocks' host-shm payload stores; skip-think
 48/80 vs 1/40 on the aiter route, nmz26 tp4 2026-10-15) and R-13 #1 was

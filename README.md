@@ -1,6 +1,6 @@
-# hcu-sglang-adapter
+# adapter-das（HCU 适配层）
 
-> **已 public 开源**（2026-10-14）：`git clone https://gitee.com/lizhigong/hcu-sglang-adapter.git`；
+> 团队仓库：adapter-das（内网私仓；克隆地址与凭据走团队流程）。
 > 从镜像到跑通的手工部署看 [docs/bootstrap.md](docs/bootstrap.md)。
 
 让社区版 sglang 官方代码的 **python 部分零修改**、直接跑在海光 HCU
@@ -37,10 +37,9 @@ triton / vendor / torch 三档策略，见"影子库与适配桥"）。
 **ai/新人上手请先读 [docs/reading-guide.md](docs/reading-guide.md)**（30 秒
 任务路由 + 文档地图 + 不变量速查）。分层架构与组件协调关系总览见
 [docs/architecture.md](docs/architecture.md)（配图
-[architecture.html](architecture.html)，浏览器直开）；协作流程与红线见
-协作流程与红线见 [docs/board.md](docs/board.md)「协作与分支规约」节
-（2026-10-19 起 CONTRIBUTING.md 并入看板维护）；算子治理（实现选位裁决链、active/ref
-角色、运行时注册表与 dump）见 [docs/governance.md](docs/governance.md)。
+[architecture.html](architecture.html)，浏览器直开）；算子治理（实现选位
+裁决链、active/ref 角色、运行时注册表与 dump、接入时序/共建边界/
+维护闭环）见 [docs/governance.md](docs/governance.md)。
 
 ## 安装
 
@@ -55,7 +54,7 @@ pip install -e .
 - 后端与档位（emu/triton/vendor 演进、production/validated/candidate/
   broken 状态机）：仓库 `BACKEND_CATALOG`（机器可读）+
   [docs/config.md](docs/config.md) 状态语义；
-- 功能面与量化路径：`sgl_kernel/_adapters/`（JIT 补丁 / vendor 路由 /
+- 功能面与量化路径：`hcu_adapter/`（JIT 补丁 / vendor 路由 /
   ops 重绑 / 模型级补丁三十余座桥）；
 - 模型×并行实跑战报：[docs/models.md](docs/models.md)。
 
@@ -79,7 +78,7 @@ kv cache io 的 triton·torch 实现，API 逐字对齐官方 sgl-kernel）见
 | `hcu_adapter/bootstrap.py` | 宿主分发器：按 `HCU_ADAPTER_HOST`、启动参数、已加载模块和可用包确定 `sglang` / `vllm` / `none`，先装 common，再只装所选宿主桥 |
 | `hcu_adapter/bridges/` | 宿主专属 glue：`sglang.py` 保持既有桥顺序，`vllm.py` 集中 vLLM `_custom_ops` ABI 绑定，`common.py` 只放跨框架启动守卫；官方已有的行为不在这里重复实现 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径：elementwise / layernorm / rope / moe / kv cache io / fp8·int8 GEMM / flash_mla emu，API 逐字对齐官方 sgl-kernel |
-| `sgl_kernel/_adapters/` | 元路径影子库：`aiter` 真包（DTK vendor wheel）优先 + 缺口填空（`fused_clamp_act_mul` 等）、`flashinfer` / `flash_attn` 桩——import 成功、未实现调用响亮报错；另含 `hcu_env` 环境注册表、`kill_switch` 快关、slimquant / paged-MQA logits（emu/triton 双档）/ dsa_topk / quant·ar-norm 等 vendor 桥模型级补丁 |
+| `hcu_adapter/` | 元路径影子库：`aiter` 真包（DTK vendor wheel）优先 + 缺口填空（`fused_clamp_act_mul` 等）、`flashinfer` / `flash_attn` 桩——import 成功、未实现调用响亮报错；另含 `hcu_env` 环境注册表、`kill_switch` 快关、slimquant / paged-MQA logits（emu/triton 双档）/ dsa_topk / quant·ar-norm 等 vendor 桥模型级补丁 |
 | `sgl_kernel/kvcacheio.py` | PD 分离/分层 KV transfer（transfer_kv_* 契约，上游 mooncake 等 KV 传输路径的调用面）的完整 torch 移植 |
 
 ## 运行要点（HCU 实测）
@@ -128,7 +127,8 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
   `skills/hcu-adapter-dev/references/test-suite.md`）是质量金标准；
   单测绿 ≠ serving 通，模型级验证以 models.md 战报为准。
 - 高危算子均配**快关**：`HCU_DISABLE_OPS=<op>` 一翻开关即绕开疑似算子
-  复跑；快关注册流程见 docs/board.md「协作与分支规约」节。
+  复跑；快关注册流程见
+  [`skills/hcu-adapter-dev/references/kill-switches.md`](skills/hcu-adapter-dev/references/kill-switches.md)。
 - 端到端精度锚点（Berlin/Tokyo 事实检索 + 马拉松 + 长文门）作为 serving
   级守卡，有效性实证：零 env 四门首跑曾连抓两个栈级 bug（详见
   models.md 2026-10-19 行）。
@@ -138,9 +138,9 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
 改本仓库前先读 [`skills/hcu-adapter-dev/SKILL.md`](skills/hcu-adapter-dev/SKILL.md)：
 影子库矩阵与三档实现策略（triton/vendor/torch）、测试四质量维度、
 快关注册流程、精度定位流程、cookbook（NVIDIA 参数）降级矩阵。
-多人协作流程（分支/MR 门禁/三类改动 checklist/共享节点纪律）见
-多人协作流程（双线分支/MR 门禁/三类改动 checklist/共享节点纪律）见
-[docs/board.md](docs/board.md)「协作与分支规约」节；`tests/tools/` 物料命名语法见
+多人协作红线（分仓边界/裁决链/接入时序/共建边界）见
+[docs/governance.md](docs/governance.md)（§0/§3/§7）；`tests/tools/` 物料
+命名语法见 [tests/tools/README.md](tests/tools/README.md)。
 
 ## 已知未覆盖 / 路线图
 
@@ -161,7 +161,9 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
   tilelang 0.1.13+ ThreadSync 回归（已钉 0.1.12）、fp8 内核族符号病理
   （详见 models.md 判例）。
 - plugin 仓：上游没有的新能力（算子融合/专项内核/新调度路径）归独立
-  plugin 仓——分工与判别问句见文首，索引见 docs/governance.md §0。
+  plugin 仓——sglang 侧已立仓 `hcu-sglang-plugin`（挂上游 v0.5.22 官方
+  entry_points + HookRegistry）；分工与判别问句见文首，索引与共建边界见
+  docs/governance.md §0/§7。
 
 ## CI
 

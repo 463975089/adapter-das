@@ -4,7 +4,7 @@ shape (bs8 Lq512 Lk4096 H32 Hk8 D128). Census: BM=64/BN=64/W=4 optimal;
 W=2 and BM<64 are 3-10x cliffs (HCU triton waveform cliff, not a kernel
 choice). Perf numbers BW1101 - not transferable to gfx938.
 
-Run: docker exec lzg-trt-fa3pf bash -c 'TVM_FFI_DISABLE_TORCH_C_DLPACK=1 \n  PYTHONPATH=/work/hcu_trt_fa3:/work/sglang-v0521/python HIP_VISIBLE_DEVICES=4 \n  python -u /work/hcu_trt_fa3/tests/tools/_probe_fa_varlen_sweep.py'
+Run: docker exec trt-fa3pf bash -c 'TVM_FFI_DISABLE_TORCH_C_DLPACK=1 \n  PYTHONPATH=/work/hcu_trt_fa3:/work/sglang-v0521/python HIP_VISIBLE_DEVICES=4 \n  python -u /work/hcu_trt_fa3/tests/tools/_probe_fa_varlen_sweep.py'
 """
 
 import time, torch

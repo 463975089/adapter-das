@@ -11,7 +11,7 @@
 
 from types import SimpleNamespace as NS
 
-from sgl_kernel._adapters import ct_w4a8_moe as cw
+from hcu_adapter import ct_w4a8_moe as cw
 
 
 def _args(type_name, num_bits, **kw):

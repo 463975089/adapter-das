@@ -12,7 +12,7 @@ sys.path.insert(0, "/sglang-v0522/python")
 
 import torch
 
-from sgl_kernel._adapters.dsv4_silu_fused_quant import silu_and_mul_clamp_quant
+from hcu_adapter.dsv4_silu_fused_quant import silu_and_mul_clamp_quant
 
 dev = "cuda"
 M, D = 960, 2304

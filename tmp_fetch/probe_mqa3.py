@@ -14,7 +14,7 @@ fn = deep_gemm.fp8_paged_mqa_logits
 print("deep_gemm file:", getattr(deep_gemm, "__file__", "?"))
 print("fn module:", getattr(fn, "__module__", "?"), "| qualname:", getattr(fn, "__qualname__", "?"))
 
-from sgl_kernel._adapters.hcu_env import resolve
+from hcu_adapter.hcu_env import resolve
 
 impl, src = resolve("HCU_MQA_LOGITS_IMPL")
 print(f"resolve(HCU_MQA_LOGITS_IMPL) = {impl!r} ({src})")

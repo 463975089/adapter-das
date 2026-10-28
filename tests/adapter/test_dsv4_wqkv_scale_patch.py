@@ -10,7 +10,7 @@
 
 import pytest
 
-from sgl_kernel._adapters import dsv4_wqkv_scale_patch as dp
+from hcu_adapter import dsv4_wqkv_scale_patch as dp
 
 
 def _snippet():
@@ -58,7 +58,7 @@ def test_needle_drift_raises():
 
 
 def test_gate_off_returns_before_sglang(monkeypatch):
-    from sgl_kernel._adapters import hcu_env
+    from hcu_adapter import hcu_env
 
     monkeypatch.setattr(hcu_env, "enabled", lambda name: False)
     assert dp.install() is None  # 未触 sglang import（本机无树也不炸）

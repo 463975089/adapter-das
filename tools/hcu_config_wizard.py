@@ -3,7 +3,7 @@
 Prompts op by op, lists each selectable backend with its gate status,
 and writes a minimal hcu_adapter.yaml containing ONLY the non-default
 selections. This is the CLI stepping stone for the planned web UI --
-both render from sgl_kernel._adapters.hcu_config.BACKEND_CATALOG, so a
+both render from hcu_adapter.hcu_config.BACKEND_CATALOG, so a
 new backend wired into the catalog shows up here (and in the UI)
 automatically.
 
@@ -30,7 +30,7 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))
 
-from sgl_kernel._adapters import hcu_config  # noqa: E402
+from hcu_adapter import hcu_config  # noqa: E402
 
 # production-status backends are what a bare Enter keeps
 _ORDER = {"production": 0, "validated": 1, "candidate": 2, "broken": 3,

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sync the container-side adapter tree (/root/hcu_t2) to Gitee master via git.
+# Sync the container-side adapter tree (/root/hcu_t2) to the team main remote via git.
 # Motivation (2026-10-18, r04a lesson): the b64 ad-hoc sync left a stale
 # hcu_env.py in place while platform_seam.py was updated — the arm silently
 # ran the old default. With git, `git log -1` / `git diff` in the container
@@ -34,14 +34,14 @@ unset TOKEN
 # heredoc is UNQUOTED on purpose: $AUTH expands locally (one-shot token into
 # the git -c flag); every other remote $ is escaped below.
 bash "$(dirname "$0")/ssh_nmz26.sh" lizhg@10.16.1.26 \
-  "docker exec -i lzg-g53-tp8 bash -s" <<REMOTE
+  "docker exec -i g53-tp8 bash -s" <<REMOTE
 set -e
 git config --global --add safe.directory /root/hcu_t2 2>/dev/null || true
 cd /root/hcu_t2
 if [ ! -d .git ]; then
     echo "== initializing git repo in /root/hcu_t2 =="
     git init -q
-    git remote add origin https://gitee.com/lizhigong/hcu-sglang-adapter.git
+    git remote add origin <主仓远端URL>
 fi
 git -c http.extraHeader="$AUTH" fetch -q origin master
 git reset -q --hard FETCH_HEAD

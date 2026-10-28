@@ -3,8 +3,8 @@ import os, sys, json
 import torch
 sys.path.insert(0, "/root/hcu_v0522")
 sys.path.insert(0, "/sglang-v0522/python")
-from sgl_kernel._adapters import dsa_paged_mqa
-from sgl_kernel._adapters.hcu_env import resolve
+from hcu_adapter import dsa_paged_mqa
+from hcu_adapter.hcu_env import resolve
 v, src = resolve("HCU_MQA_LOGITS_IMPL")
 print(f"resolve HCU_MQA_LOGITS_IMPL = {v} ({src})")
 

@@ -46,7 +46,7 @@ def install() -> None:
         # Common bootstrap already logged the registry and installed the
         # topology/tvm-ffi guards. Keep the resolver handle used below.
         try:
-            from sgl_kernel._adapters import hcu_env as _he
+            from hcu_adapter import hcu_env as _he
         except Exception:
             _he = None
         # deep_gemm name availability (DSV4 family): sglang.srt.models.deepseek_v4
@@ -61,7 +61,7 @@ def install() -> None:
             import deep_gemm  # noqa: F401
         except ImportError:
             try:
-                from sgl_kernel._adapters import deep_gemm_dtk as _dgd_early
+                from hcu_adapter import deep_gemm_dtk as _dgd_early
 
                 _dgd_early.install()
             except Exception:
@@ -73,7 +73,7 @@ def install() -> None:
         # is_hip() at import time and every module's `from ... import is_hip`
         # binds constants then too. Everything below imports sglang.
         try:
-            from sgl_kernel._adapters import platform_seam
+            from hcu_adapter import platform_seam
 
             platform_seam.install()
         except Exception:
@@ -83,7 +83,7 @@ def install() -> None:
         # TP init-broadcast payload fix (torch2.11 dlpack readonly BufferError);
         # needs sglang.srt.utils.common importable -- after the seam above.
         try:
-            from sgl_kernel._adapters import dist_bc
+            from hcu_adapter import dist_bc
 
             dist_bc.install()
         except Exception:
@@ -95,7 +95,7 @@ def install() -> None:
         # watchdog factory BEFORE scheduler.py from-imports it; explicit
         # --watchdog-timeout always wins (watchdog_cold.py).
         try:
-            from sgl_kernel._adapters import watchdog_cold
+            from hcu_adapter import watchdog_cold
 
             watchdog_cold.install()
         except Exception:
@@ -105,7 +105,7 @@ def install() -> None:
         # KV-pool stride tensor fix (torch2.11 numpy-scalar dtype infer); text
         # patch per governance §3 tier-3, allowlist entry "kv_pool_strides".
         try:
-            from sgl_kernel._adapters import kv_fix
+            from hcu_adapter import kv_fix
 
             kv_fix.install()
         except Exception:
@@ -115,7 +115,7 @@ def install() -> None:
         # JIT rope portability (gfx936 hipcc rejects bare __syncwarp + HIP vector
         # structured bindings); text patch on the .cuh kernel source.
         try:
-            from sgl_kernel._adapters import jit_rope
+            from hcu_adapter import jit_rope
 
             jit_rope.install()
         except Exception:
@@ -125,7 +125,7 @@ def install() -> None:
         # JIT DSA indexer k-cache store (GLM-5.2-DSA unfused path): HIP fp8x2
         # alias has no brace ctor + two HIP-vector binding decomposes.
         try:
-            from sgl_kernel._adapters import jit_store_cache
+            from hcu_adapter import jit_store_cache
 
             jit_store_cache.install()
         except Exception:
@@ -136,7 +136,7 @@ def install() -> None:
         # JIT per-token-group quant (v0.5.22 family): DTK hipcc has no mask-form
         # __all_sync -- glm53f decode graph capture dies on name lookup.
         try:
-            from sgl_kernel._adapters import jit_ptgq
+            from hcu_adapter import jit_ptgq
 
             jit_ptgq.install()
         except Exception:
@@ -148,7 +148,7 @@ def install() -> None:
         # NVIDIA cub for BlockScan; DTK has hipCUB only -> hipcc file-not-found
         # kills decode graph capture (DSV4-Flash nmz16, 2026-10-20).
         try:
-            from sgl_kernel._adapters import jit_dpskmeta
+            from hcu_adapter import jit_dpskmeta
 
             jit_dpskmeta.install()
         except Exception:
@@ -160,7 +160,7 @@ def install() -> None:
         # topk_v2 kernel + the v41 full-topk fused decode arm. Replaces the
         # torch.topk fallbacks behind 57 mbtopk kernels/step (2026-10-22 trace).
         try:
-            from sgl_kernel._adapters import dsa_topk_v2_hip
+            from hcu_adapter import dsa_topk_v2_hip
 
             dsa_topk_v2_hip.install()
         except Exception:
@@ -174,7 +174,7 @@ def install() -> None:
         # platform seam flips sglang's _is_hip to False). DSV4-Flash nmz16
         # 2026-10-21; full fingerprint account in docs/models.md.
         try:
-            from sgl_kernel._adapters import moe_dualstream_gate
+            from hcu_adapter import moe_dualstream_gate
 
             moe_dualstream_gate.install()
         except Exception:
@@ -191,7 +191,7 @@ def install() -> None:
         # --deepep-dispatcher-output-dtype bf16. TP-only servers (env unset)
         # are untouched.
         try:
-            from sgl_kernel._adapters import dsv4_ep_bf16
+            from hcu_adapter import dsv4_ep_bf16
 
             dsv4_ep_bf16.install()
         except Exception:
@@ -206,7 +206,7 @@ def install() -> None:
         # them. View fp8 args as uint8 before module.run (byte-identical; the
         # kernel writes raw fp8 patterns into the same storage).
         try:
-            from sgl_kernel._adapters import jit_fp8_ffi
+            from hcu_adapter import jit_fp8_ffi
 
             jit_fp8_ffi.install()
         except Exception:
@@ -222,7 +222,7 @@ def install() -> None:
         # bs1 vs ~0.4 s GPU, linear in batch). A pinned 8-deep ring makes the
         # copy a true async DMA. Integer metadata only; HCU_SPEC_H2D_PIN=0 off.
         try:
-            from sgl_kernel._adapters import spec_h2d_pin
+            from hcu_adapter import spec_h2d_pin
 
             spec_h2d_pin.install()
         except Exception:
@@ -236,7 +236,7 @@ def install() -> None:
         # journal (ci/l1_gpu_gate.sh run_seg). Observability only -- a missed
         # install costs a log line, never numerics.
         try:
-            from sgl_kernel._adapters import jit_build_log
+            from hcu_adapter import jit_build_log
 
             jit_build_log.install()
         except Exception:
@@ -262,7 +262,7 @@ def install() -> None:
                 except ImportError:
                     # deepseek_v4 imports deep_gemm at module level; the DTK
                     # bridge (section 9) has not run yet at this point.
-                    from sgl_kernel._adapters import deep_gemm_dtk as _dgdb
+                    from hcu_adapter import deep_gemm_dtk as _dgdb
 
                     _dgdb.install()
                 import sglang.srt.models.deepseek_v4 as _dsv4
@@ -286,7 +286,7 @@ def install() -> None:
         # making reduce<T> un-compilable for every non-bf16 T (fp32 warp max in
         # the DSA k-cache store, integer/float reduces elsewhere).
         try:
-            from sgl_kernel._adapters import jit_warp
+            from hcu_adapter import jit_warp
 
             jit_warp.install()
         except Exception:
@@ -300,7 +300,7 @@ def install() -> None:
         # upstream attention-kit tests skip "backend not available" instead of
         # dying mid-construction/mid-forward.
         try:
-            from sgl_kernel._adapters import attn_backend_gate
+            from hcu_adapter import attn_backend_gate
 
             attn_backend_gate.install()
         except Exception:
@@ -309,11 +309,11 @@ def install() -> None:
                 exc_info=True,
             )
         # Debug tooling (default OFF): in-graph side-buffer probe for the
-        # graph-vs-emu corruption hunts — see _adapters/probe_side.py. Only
+        # graph-vs-emu corruption hunts — see hcu_adapter/probe_side.py. Only
         # loads when HCU_SIDE_PROBE is set (replay|eager); never in production.
         if os.environ.get("HCU_SIDE_PROBE"):
             try:
-                from sgl_kernel._adapters import probe_side
+                from hcu_adapter import probe_side
 
                 probe_side.install()
             except Exception:
@@ -322,10 +322,10 @@ def install() -> None:
                 )
         # Debug tooling (default OFF): request-boundary state snapshot probe for
         # the R-01/R-06 cross-request leakage hunt — see
-        # _adapters/state_snapshot.py. Only loads when HCU_STATE_SNAPSHOT is set.
+        # hcu_adapter/state_snapshot.py. Only loads when HCU_STATE_SNAPSHOT is set.
         if os.environ.get("HCU_STATE_SNAPSHOT"):
             try:
-                from sgl_kernel._adapters import state_snapshot
+                from hcu_adapter import state_snapshot
 
                 state_snapshot.install()
             except Exception:
@@ -336,7 +336,7 @@ def install() -> None:
         # DSA models get their two fusion escape hatches, fp16 GDN bottoms get
         # the conv-dtype fix — derived from model_config, setdefault only.
         try:
-            from sgl_kernel._adapters import model_env
+            from hcu_adapter import model_env
 
             model_env.install()
         except Exception:
@@ -347,7 +347,7 @@ def install() -> None:
         # (%laneid register / L1::no_allocate st+ld / prefetch) -> HIP-portable
         # C++ equivalents.
         try:
-            from sgl_kernel._adapters import jit_concat_mla
+            from hcu_adapter import jit_concat_mla
 
             jit_concat_mla.install()
         except Exception:
@@ -358,7 +358,7 @@ def install() -> None:
         # JIT dot_product (tiny_gemm inner): fp32x2 structured binding ->
         # .x/.y member reads (rope.cuh / store_cache.cuh ABI fact, third site).
         try:
-            from sgl_kernel._adapters import jit_dot_product
+            from hcu_adapter import jit_dot_product
 
             jit_dot_product.install()
         except Exception:
@@ -369,7 +369,7 @@ def install() -> None:
         # fused-MoE triton tile guard: HCU 64KB LDS vs the ~72KB NV default
         # config — clamp oversized tiles at the durable resolution seam.
         try:
-            from sgl_kernel._adapters import moe_config_guard
+            from hcu_adapter import moe_config_guard
 
             moe_config_guard.install()
         except Exception:
@@ -380,7 +380,7 @@ def install() -> None:
         # fp8_utils:bmm_fp8 which only exists behind flashinfer import. Supply a
         # torch-native dequant-bmm (scales applied in the epilogue role).
         try:
-            from sgl_kernel._adapters import bmm_fp8_bridge
+            from hcu_adapter import bmm_fp8_bridge
 
             bmm_fp8_bridge.install()
         except Exception:
@@ -391,7 +391,7 @@ def install() -> None:
         # member; patch the cuh onto the DTK conversion family (EP deep_gemm
         # runner's bf16-in/fp8-out activation quant needs this kernel).
         try:
-            from sgl_kernel._adapters import jit_quant_fp8
+            from hcu_adapter import jit_quant_fp8
 
             jit_quant_fp8.install()
         except Exception:
@@ -402,7 +402,7 @@ def install() -> None:
         # scale grid while weight_block_size stays [32,32] -- align the MoE's
         # advertised block shape so the W8A8 block path doesn't assert.
         try:
-            from sgl_kernel._adapters import dsv4_fp4_dequant_blockshape
+            from hcu_adapter import dsv4_fp4_dequant_blockshape
 
             dsv4_fp4_dequant_blockshape.install()
         except Exception:
@@ -415,7 +415,7 @@ def install() -> None:
         # 15.1x, scaled_fp8_quant natives via upstream's own aiter calls, and
         # the whole-row fused silu+quant arm (HCU_QUANT_IMPL, auto default).
         try:
-            from sgl_kernel._adapters import quant_aiter
+            from hcu_adapter import quant_aiter
 
             quant_aiter.install()
         except Exception:
@@ -428,7 +428,7 @@ def install() -> None:
         # GraphSafe fused kernels (HCU_AR_NORM_IMPL, auto default; full-TP-
         # group-only, per-call decline to stock).
         try:
-            from sgl_kernel._adapters import ar_norm_aiter
+            from hcu_adapter import ar_norm_aiter
 
             ar_norm_aiter.install()
         except Exception:
@@ -441,7 +441,7 @@ def install() -> None:
         # version and any runtime-built artifacts so they get harvested or the
         # wheel version pinned (see the module docstring for the harvest rule).
         try:
-            from sgl_kernel._adapters import aiter_jit_cache
+            from hcu_adapter import aiter_jit_cache
 
             aiter_jit_cache.report()
         except Exception:
@@ -451,7 +451,7 @@ def install() -> None:
         # JIT cuda-header forwarders (cuda_bf16.h et al -> hip equivalents) in
         # the DTK include root the JIT toolchain already puts on the compile line.
         try:
-            from sgl_kernel._adapters import jit_compat
+            from hcu_adapter import jit_compat
 
             jit_compat.install()
         except Exception:
@@ -461,7 +461,7 @@ def install() -> None:
         # triton extra.cuda libdevice -> hip/OCML redirect (is_cuda semantics
         # picks the cuda libdevice package; hcu backend rejects __nv_* LLVM).
         try:
-            from sgl_kernel._adapters import triton_libdev
+            from hcu_adapter import triton_libdev
 
             triton_libdev.install()
         except Exception:
@@ -472,7 +472,7 @@ def install() -> None:
         # upstream; gfx936 assembler rejects the instructions, and removing
         # them == PDL-off semantics).
         try:
-            from sgl_kernel._adapters import triton_pdl
+            from hcu_adapter import triton_pdl
 
             triton_pdl.install()
         except Exception:
@@ -480,7 +480,7 @@ def install() -> None:
                 "hcu adapter: triton pdl stripper not installed", exc_info=True
             )
         # KDA prefill + causal_conv1d router (2026-10-16): vendored sglang-das
-        # hcu triton kernels (sgl_kernel/_adapters/fla_hcu/) — parity-gated
+        # hcu triton kernels (hcu_adapter/fla_hcu/) — parity-gated
         # replacements for the gfx938-broken stock kernels (chunk_kda wrong Aqk;
         # conv1d update noise / fn dead initial-state arm). Kernel-level wins:
         # prefill 473-1009x, conv fn 16.4x, update 4.3x, cos >= 0.99999 vs the
@@ -491,7 +491,7 @@ def install() -> None:
         # compare finds the divergence. HCU_KDA_PREFILL_IMPL / HCU_CONV1D_IMPL =
         # emu (default) | fork | stock.
         try:
-            from sgl_kernel._adapters import fla_hcu_router
+            from hcu_adapter import fla_hcu_router
 
             fla_hcu_router.install()
         except Exception:
@@ -501,7 +501,7 @@ def install() -> None:
         # fa3 attention vendor routing (DTK flash_attn wheel; emu fallback).
         # Needs sgl_kernel.flash_attn importable (below pulls it in).
         try:
-            from sgl_kernel._adapters import fa_vendor
+            from hcu_adapter import fa_vendor
 
             fa_vendor.install()
         except Exception:
@@ -512,7 +512,7 @@ def install() -> None:
         # HCU_LINEAR_ATTN_GDN=aiter; default keeps upstream triton fla).
         # Requires sglang importable (imports the fla modules it rebinds).
         try:
-            from sgl_kernel._adapters import gdn_aiter
+            from hcu_adapter import gdn_aiter
 
             gdn_aiter.install()
         except Exception:
@@ -867,7 +867,7 @@ def install() -> None:
         # sgl_kernel.flash_attn; SGLANG_USE_SGL_FA3_KERNEL=1 routes _load_fa3_kernels
         # to it directly (also skipping the kernels-community download attempt).
         try:
-            from sgl_kernel._adapters import hcu_env as _henv
+            from hcu_adapter import hcu_env as _henv
 
             if _henv.enabled("HCU_FA3_EMU"):
                 os.environ.setdefault("SGLANG_USE_SGL_FA3_KERNEL", "1")
@@ -1325,7 +1325,7 @@ def install() -> None:
         # the swiglu-clamp rebind above (the fallback branch depends on it).
         # HCU_SILU_FUSED_QUANT=0 restores the pair.
         try:
-            from sgl_kernel._adapters import dsv4_silu_fused_quant
+            from hcu_adapter import dsv4_silu_fused_quant
 
             dsv4_silu_fused_quant.install()
         except Exception:
@@ -1337,7 +1337,7 @@ def install() -> None:
         # manual tree patches): use_fused_stats flip + mhc_boundary_hip import
         # backfill under the cuda-semantics seam. HCU_MHC_STATS=0 disables.
         try:
-            from sgl_kernel._adapters import dsv4_mhc_stats
+            from hcu_adapter import dsv4_mhc_stats
 
             dsv4_mhc_stats.install()
         except Exception:
@@ -1353,7 +1353,7 @@ def install() -> None:
         # (tmp_fetch/parity_sparse_triton.py). HCU_DSV41_SPARSE_TRITON=0
         # restores the torch fallbacks.
         try:
-            from sgl_kernel._adapters import dsv4_sparse_triton_gates
+            from hcu_adapter import dsv4_sparse_triton_gates
 
             dsv4_sparse_triton_gates.install()
         except Exception:
@@ -1467,7 +1467,7 @@ def install() -> None:
             os.environ.get("HCU_SLIMQUANT", "1") != "0"
         if _sq_on:
             try:
-                from sgl_kernel._adapters import slimquant as _slimquant
+                from hcu_adapter import slimquant as _slimquant
 
                 _slimquant.activate()
             except Exception:
@@ -1476,10 +1476,10 @@ def install() -> None:
                 )
 
         # DSA indexer top-k: the sgl-kernel backend ops have no HIP build; bridge
-        # to torch equivalents (see sgl_kernel._adapters.dsa_topk).
+        # to torch equivalents (see hcu_adapter.dsa_topk).
         try:
             import sgl_kernel as _sk
-            import sgl_kernel._adapters.dsa_topk as _dsa_topk
+            import hcu_adapter.dsa_topk as _dsa_topk
 
             _dsa_topk.install()
             if os.environ.get("HCU_DUMP_TOPK") == "1":
@@ -1598,7 +1598,7 @@ def install() -> None:
         try:
             import sglang.kernels.ops.quantization.hadamard as _had
 
-            from sgl_kernel._adapters.hadamard_ref import hadamard_transform
+            from hcu_adapter.hadamard_ref import hadamard_transform
 
             _had.hadamard_transform = hadamard_transform
             for _nm in ("hadamard_transform_12n", "hadamard_transform_20n",
@@ -1620,7 +1620,7 @@ def install() -> None:
         # (hip=True) while every other judgement keeps the CUDA semantics.
         # Governance §0.5: judgement layers translated, hardware stays truthful.
         try:
-            import sgl_kernel._adapters.registry as _hreg
+            import hcu_adapter.registry as _hreg
             import sglang.srt.arg_groups.overrides as _dsa_ov
 
             def _hcu_dsa_constraint_hook(module):
@@ -1661,7 +1661,7 @@ def install() -> None:
 
         # Custom all-reduce RETIRED (2026-10-19, R-13#1 disposition): the
         # homegrown triton custom AR (sgl_kernel/allreduce shim ->
-        # _adapters/triton_ar.py + ar_ext.cu) was convicted in R-01
+        # hcu_adapter/triton_ar.py + ar_ext.cu) was convicted in R-01
         # (device-scope rendezvous does not order host-shm payload stores;
         # skip-think 48/80) and the planned rendezvous fix is moot — the new
         # aiter.dist GraphSafe AR passed the full stress matrix on the
@@ -1685,7 +1685,7 @@ def install() -> None:
         # aiter.dist GraphSafe class passed the full stress suite 2026-10-10);
         # explicit HCU_AITER_AR=1 overrides the auto-rule only.
         try:
-            from sgl_kernel._adapters import kill_switch as _ks
+            from hcu_adapter import kill_switch as _ks
 
             _ks.log_state()
         except Exception:
@@ -1732,7 +1732,7 @@ def install() -> None:
             os.environ.get("HCU_MQA_EMU") == "1"
         if _mqa_on:
             try:
-                import sgl_kernel._adapters.mqa_logits_emu as _mqa_emu
+                import hcu_adapter.mqa_logits_emu as _mqa_emu
 
                 _mqa_emu.install()
             except ModuleNotFoundError:
@@ -2035,7 +2035,7 @@ def install() -> None:
         #    and the wrapper's platform gate hard-disables DeepGEMM on HIP even
         #    though the DTK deepgemm wheel carries upstream-named grouped GEMMs
         #    (incl. m_grouped_bf16_gemm_nt_masked/_contiguous). Two pieces:
-        #    (a) sgl_kernel._adapters.deep_gemm_dtk aliases DTK `deepgemm` as
+        #    (a) hcu_adapter.deep_gemm_dtk aliases DTK `deepgemm` as
         #        `deep_gemm` in sys.modules;
         #    (b) the overlay finder flips configurer.ENABLE_JIT_DEEPGEMM to True
         #        after its (platform-gated) computation, which routes DeepEP MoE
@@ -2043,11 +2043,11 @@ def install() -> None:
         #        scale-layout transforms raise loudly in the shim until validated.
         try:
             if _he is not None and _he.enabled("HCU_DEEPGEMM_BRIDGE"):
-                from sgl_kernel._adapters import deep_gemm_dtk as _dgd
+                from hcu_adapter import deep_gemm_dtk as _dgd
 
                 _dgd.install()
 
-                from sgl_kernel._adapters._base import (
+                from hcu_adapter._base import (
                     LibStubFinder as _LSF,
                     register_finder as _reg,
                 )
@@ -2171,10 +2171,10 @@ def install() -> None:
         # exactly; HCU_KPOOL_WRITE_EMU=0 keeps the triton path (red gate test
         # kernels/test_kpool_write_gfx938.py stays on watch for the DTK fix).
         try:
-            from sgl_kernel._adapters import hcu_env as _kpw_env
+            from hcu_adapter import hcu_env as _kpw_env
 
             if _kpw_env.enabled("HCU_KPOOL_WRITE_EMU"):
-                from sgl_kernel._adapters import kpool_write_emu
+                from hcu_adapter import kpool_write_emu
 
                 kpool_write_emu.install_patch()
                 logging.getLogger("hcu.adapter").info(
@@ -2191,10 +2191,10 @@ def install() -> None:
         # 16-wide tile map as the writer replaces it. HCU_KPOOL_READ_EMU=0 keeps
         # the aiter kernel.
         try:
-            from sgl_kernel._adapters import hcu_env as _kpr_env
+            from hcu_adapter import hcu_env as _kpr_env
 
             if _kpr_env.enabled("HCU_KPOOL_READ_EMU"):
-                from sgl_kernel._adapters import kpool_write_emu as _kwe
+                from hcu_adapter import kpool_write_emu as _kwe
 
                 _kwe.install_read_patch()
                 print("[HCU kprd] read-emu installed", flush=True)
@@ -2250,7 +2250,7 @@ def install() -> None:
             import os as _os
 
             if _os.environ.get("HCU_DUMP_TOPK") == "1":
-                from sgl_kernel._adapters import mqa_logits_emu as _mle
+                from hcu_adapter import mqa_logits_emu as _mle
 
                 if not getattr(_mle, "_hcu_trap", False):
                     _mle._hcu_trap = True
@@ -2633,9 +2633,9 @@ def install() -> None:
         #     unlisted shapes fall back to the stock triton kernel (log-once).
         #     Knob: HCU_FUSED_MOE_IMPL = auto | aiter | triton (auto default).
         #     Gate: nmz18 BW200/gfx938 rel 0.02-0.04 vs bf16 ref (see
-        #     sgl_kernel/_adapters/aiter_moe.py docstring).
+        #     hcu_adapter/aiter_moe.py docstring).
         try:
-            from sgl_kernel._adapters import aiter_moe as _amo
+            from hcu_adapter import aiter_moe as _amo
 
             _amo.install()
         except ImportError:
@@ -2652,7 +2652,7 @@ def install() -> None:
         #       Explicit opt-in only: HCU_W4A16_MOE_IMPL=deepgemm (auto keeps
         #       the stock triton arm; capture/inplace calls stay on it too).
         try:
-            from sgl_kernel._adapters import w4a16_moe as _w16m
+            from hcu_adapter import w4a16_moe as _w16m
 
             _w16m.install()
         except ImportError:
@@ -2675,7 +2675,7 @@ def install() -> None:
         #      use_int4_w4a16 + group<=0 face is touched.
         #      Knob: HCU_WNA16_CHANNEL_MOE = 1 | 0 (default 1).
         try:
-            from sgl_kernel._adapters import wna16_channel_moe as _wnch
+            from hcu_adapter import wna16_channel_moe as _wnch
 
             _wnch.install()
         except ImportError:
@@ -2699,7 +2699,7 @@ def install() -> None:
         #       through to the 10.6/10.5/10/stock chain on any miss.
         #       Knob: HCU_W4A16_MOE_IMPL = moe_c (explicit; auto keeps triton).
         try:
-            from sgl_kernel._adapters import moe_c_w4a16 as _mcw
+            from hcu_adapter import moe_c_w4a16 as _mcw
 
             _mcw.install()
         except ImportError:
@@ -2719,7 +2719,7 @@ def install() -> None:
         #      heal-only pass-through for future stock-scheme work.
         #      Knob: HCU_W4A8_MOE = w4a16 (default) | heal | 0.
         try:
-            from sgl_kernel._adapters import ct_w4a8_moe as _cw4a8
+            from hcu_adapter import ct_w4a8_moe as _cw4a8
 
             _cw4a8.install()
         except ImportError:
@@ -2740,7 +2740,7 @@ def install() -> None:
         #      name-mapped group targets only match the fused wqkv_a name).
         #      Knob: HCU_DSV4_WQKV_SCALE = 1 (default) | 0.
         try:
-            from sgl_kernel._adapters import dsv4_wqkv_scale_patch as _dwsp
+            from hcu_adapter import dsv4_wqkv_scale_patch as _dwsp
 
             _dwsp.install()
         except ImportError:
@@ -2756,7 +2756,7 @@ def install() -> None:
         #     (opt-in) opens the gate so the upstream CP machinery (zigzag/
         #     interleave, fa3 convention) can run on HCU.
         try:
-            from sgl_kernel._adapters import prefill_cp as _pcp
+            from hcu_adapter import prefill_cp as _pcp
 
             _pcp.install()
         except ImportError:

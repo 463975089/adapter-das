@@ -2,7 +2,7 @@
 
 > 本文回答：**哪些已识别的性能与能力项不能（或不该）进 adapter 零侵入层，
 > 各自的归属、现状与验收标准是什么。** adapter 的边界 = sitecustomize
-> 运行时桥 + `sgl_kernel/_adapters`（vendor 内核 / emu / 路由），**不修改
+> 运行时桥 + `hcu_adapter`（vendor 内核 / emu / 路由），**不修改
 > sglang srt 层代码结构**。凡触及 srt 层注册、预编译产物、上游合并、专门
 > GPU 窗口的项，在此登记，不在 adapter 里强行实现。
 >
@@ -13,6 +13,13 @@
 > （commit 2907b14 / 2dcdac0；对照组 maxiaobetter/sglang-das
 > `main_glm53_flash_feature_cleanup_tx` @ 364fabf，cookbook =
 > inference-cookbook-das）。
+>
+> **2026-10-28 状态注**：plugin 载体已从"规划"落地为独立仓
+> `hcu-sglang-plugin`，挂上游 sglang v0.5.22 官方 entry_points
+> （`sglang.srt.plugins`）+ HookRegistry，首版只有诊断面——P1/P2 不再
+> 依赖"等 plugin 机制"，逐项迁移即可开工；vLLM 侧按对称结构另立 plugin
+> 仓（共建边界、接入时序、维护闭环见 [governance.md](governance.md) §7）。
+> 下表"现状"列仍为 2026-10-16 口径，推进时逐行更新。
 
 ## 0. 判定规则（一项进本清单的门槛）
 
@@ -36,6 +43,8 @@
 | P7 | **DTK triton 编译栈 4 坏内核**（chunk_kda Aqk 全错 / conv1d update 噪声 / conv1d_fn varlen 初态死 / （第 4 点即 fn 臂）） | 上游（DTK） | adapter 已有 emu 止血 + 红绿门常驻；fork triton 内核 standalone 全绿（见 P8） | 按 operator-requests 标准向 DTK 提报；红门转绿即撤 emu | 红门测试（`test_kda_chunk_gfx938.py` / `test_conv1d_fn_varlen.py`）转绿 |
 | P8 | **fork serving 门 RED 对拍**（vendored `fla_hcu` 内核 standalone 6/6 绿，serving 中 Berlin 确定性翻转） | 窗口（adapter 内部） | 默认 emu，fork 留仓 opt-in（`HCU_KDA_PREFILL_IMPL=fork`）；HCU_DUMP_LAYERS + `replay_kda_l0.py` 参考链已备（容器 /root） | 下个 GPU 窗口做 serving dump 对拍；转绿 = prefill 17-28s→~3s | serving 门 Berlin id=19808 等 + standalone 门双绿 |
 | P9 | **DTK 大图发射（hipGraphLaunch ~435ms/步）** | 上游（DTK runtime） | 机制终版（2026-10-16 深夜 microbench 三连 + trace 复核）：launch API 是**纯宿主提交工作**（全同步后首调仍 6.8ms/千节点，GPU 实算仅 ~2ms）；**进程内全局串行**（2 线程分包 0.98×，piecewise 多线程死刑）；**跨进程独立**（两进程各 113/s=单进程原速）；**NUMA 不敏感**（scheduler 按 GPU 亲节点 taskset 绑核，e2e 零变化，`_launch_g53f_tp4_pinned.sh`）；env 全否决（见 env-vars.md）。服务 24k 节点/步 × 实参更重 ≈ 22µs/节点 = 540ms 提交墙；TP0 宿主额外职责致尾段 5.5ms 停顿量子，TP1-3 nccl 各等 2.5s/窗。附带发现：`torch.cuda.graph(g, stream=…)` 捕获路径本栈 segfault。**本地活路①（已落地，2026-10-17）：减图节点**——MQA logits emu vec 化（`HCU_MQA_LOGITS_IMPL=vec` 默认）图节点 23.9k→3.7k、launch API p50 540→21.6ms、单流 +52%（详见 models.md 2026-10-17 行）；**本地活路②（进行中）**：图剩余 3.7k 节点的下一刀（conv1d_update emu/mHC 链）。**新增 DTK 图 replay 崖证据（提报材料）**：图内大张量 fp32 物化与 (N,T,D) 转置物化单核 ~124ms（~0.8GB/s 定长，eager/小图同形状仅 µs 级；宿主窗口零 API 活动、每步 11 拍 151ms 设备侧等待——详析 prof_torch_vec/ V0-V2 三代对照）；根治仍在 DTK 提交/执行路径 | 按 operator-requests 向 DTK 提报（证据链：纯提交开销+串行性+跨进程独立+NUMA 不敏感+env 三连否决+stream 捕获 segfault+图 replay 大核崖） | 0.43s/步显著下降 + 四锚点不劣化 + 贪心确定性保持 |
+
+| P10 | **自研 channel-wise 量化 scheme**（生产主力量化路线；kernel 归 `sgl_kernel` 共享层，scheme/apply 层归 plugin） | plugin | sglang 侧经 HookRegistry REPLACE quant scheme、vLLM 侧对称 plugin；格式规范与 conformance 单测**单源**（governance §7.2/§5.1 阶段 2）；checkpoint 格式先核能否参数化对齐上游 compressed-tensors 族参数化形态，对得上即白拿上游加载/转换工具链 | 每宿主一 plugin + kernel 共享；格式契约第一天固化文档+契约单测 | scheme 单测 + 宿主中立 parity 契约测试 + 两侧 serving gate 各一个 channel-wise checkpoint |
 
 ## 2. 与既有文档的边界
 

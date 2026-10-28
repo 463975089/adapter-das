@@ -39,7 +39,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
    +容差，脚手架见 references/test-suite.md 三段式）；seam/接缝类——e2e 探路
    可以，但 "one pit, one test"：探明的坑修复时必带离线复现单测，否则不予
    合入。实证对照：contig-triton/fa3-emu 单测先行 e2e 首过 vs
-   moe_align/slimquant 反序付 e2e 倒查代价（board.md「协作与分支规约」§测试先行顺序）。
+   moe_align/slimquant 反序付 e2e 倒查代价（governance §7 维护闭环）。
 
 10. **tests/ 下禁止脚本级副作用**：门禁会 pytest 收集 `tests/kernels`
    与 `tests/adapter`——模块级 `sys.exit`/裸执行会让收集期直接
@@ -67,7 +67,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
-| 需求/任务领取 | 看板 `docs/board.md` 按 R-xx 编号领（在仓；认领署名、照验收标准交付，完结即清行沉淀 docs） |
+| 需求/任务领取 | 任务跟踪不走仓内看板（board.md 已移除），归 MR 与团队现用任务系统；协作红线见 `docs/governance.md` §7 |
 
 ## 治理闭环（改代码必走的登记链，L0 机器查）
 
@@ -89,16 +89,21 @@ TEXT_PATCH_ALLOWLIST 白名单，白名单外不合法。
 ## 仓库结构
 
 ```
-sgl_kernel/            同名影子包（sglang 的 AOT 默认内核路径）
-  _adapters/           元路径影子库：aiter / flashinfer / flash_attn 填空+守卫
-                       + vendor 桥（quant/ar-norm/mqa/w4a16）+ fla_hcu 路由
-  _adapters/kill_switch.py   HCU_DISABLE_OPS 快关注册表
-  _adapters/registry.py      运行时实现注册表（register/dump，治理 §4）
-  elementwise/layernorm/rotary/moe/kvcacheio.py   triton/torch 实现
-sgl_kernel/fa_varlen_triton.py 等顶层内核文件    自研 triton 内核（R-11 产线）
-sitecustomize.py       总装编排器（~2800 行）：hcu_env → platform_seam →
-                       三十余座桥 install()；整链 hip 门控（非 HIP 零副作用）；
-                       安装序列有专属回归钉 tests/adapter/test_sitecustomize_sequence.py
+hcu_adapter/           唯一适配包：bootstrap.py 宿主探测 + common→host 分发
+                       （sglang/vllm/none）；bridges/ = common 跨框架守卫 +
+                       sglang 宿主桥顺序链（按 architecture.md §9 P1-P3 向包内
+                       域桥拆分中）+ vllm 平台身份/版本门/ABI 桥，安装序列有
+                       专属回归钉 tests/adapter/test_sitecustomize_sequence.py；
+                       包内其余为双宿主共享的机制层与域桥（sglang/vllm 通用）：
+                       aiter / flashinfer / flash_attn 填空+守卫 + vendor 桥
+                       （quant/ar-norm/mqa/w4a16）+ fla_hcu 路由；
+                       hcu_env.py REGISTRY + hcu_config.py BACKEND_CATALOG；
+                       kill_switch.py HCU_DISABLE_OPS 快关注册表；
+                       registry.py 运行时实现注册表（register/dump，治理 §4）
+sgl_kernel/            同名影子包（sglang 的 AOT 默认内核路径；宿主 import 契约，
+                       包名不可改）——elementwise/layernorm/rotary/moe/kvcacheio.py
+                       triton/torch 实现；fa_varlen_triton.py 等顶层自研 triton 内核
+sitecustomize.py       三行自动加载入口（governance §0 终态）；整链 hip 门控
 tests/
   test_ops_cpu.py        CPU 契约面（任何机器）
   tests/kernels/         自有算子+vendor 桥契约（GPU；pytest 收集面）
@@ -110,8 +115,8 @@ tests/
   tests/bench/           性能/并发评测（gsm8k_eval，非门禁）
 ci/l1_gpu_gate.sh      一键 L1 全门（l0/cpu/kernels/adapter/l15 上游单测/
                        gates/vendor 分段；上游单测零拷贝——收集列表在此维护）
-docs/governance.md     算子治理：双仓边界/裁决链/角色/注册表/catalog 状态机
-docs/board.md          任务看板（在仓，已脱敏）：在办任务与遗留跟踪，按 R-xx 领任务
+docs/governance.md     算子治理：双仓边界/裁决链/角色/注册表/catalog 状态机/
+                       接入时序/共建边界/维护闭环（§7）
 skills/hcu-adapter-dev/  本 skill
 ```
 
@@ -124,8 +129,8 @@ skills/hcu-adapter-dev/  本 skill
 - 改 kernel 必须附带或更新对应契约测试；涉及 vendor 高危面的同时更新压测
   与快关注册表，三件一起提交。
 - 桥/plugin 选位与登记（先分仓、裁决链、registry.register、L0 三规则、
-  四处登记同 commit）见上文治理闭环与 `docs/governance.md`、docs/board.md 协作规约节
-  §3b——sitecustomize 不新增实现体。
+  四处登记同 commit）见上文治理闭环与 `docs/governance.md`（§0/§3/§7）
+  ——sitecustomize 不新增实现体。
 - push 前最低标准：`pytest tests/test_ops_cpu.py`（任何机器）+
   节点上 `pytest tests/kernels tests/adapter tests/vendor -k "not stress"` +
   `python tests/tools/run_triage.py --stage ops`（或直接 `bash

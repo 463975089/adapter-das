@@ -9,8 +9,8 @@
 > §2 判据。
 >
 > 配套：治理边界 [governance.md](governance.md)、后端目录
-> `sgl_kernel/_adapters/hcu_config.py`（BACKEND_CATALOG）、运行时注册表
-> `sgl_kernel/_adapters/registry.py`（`HCU_ADAPTER_DUMP`）。
+> `hcu_adapter/hcu_config.py`（BACKEND_CATALOG）、运行时注册表
+> `hcu_adapter/registry.py`（`HCU_ADAPTER_DUMP`）。
 
 ## 0. 一条需求的最小合格线（缺一不予受理）
 

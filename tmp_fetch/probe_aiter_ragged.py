@@ -31,7 +31,7 @@ w = torch.rand(N, H, dtype=torch.float32, device=dev)
 ks = torch.zeros(N, dtype=torch.int32, device=dev)
 ke = torch.randint(1000, 8000, (N,), dtype=torch.int32, device=dev)
 
-from sgl_kernel._adapters import mqa_logits_emu as emu
+from hcu_adapter import mqa_logits_emu as emu
 
 golden = emu._ragged_fp8_mqa_logits(q, k, sc, w, ks.to(torch.int64), ke.to(torch.int64))
 

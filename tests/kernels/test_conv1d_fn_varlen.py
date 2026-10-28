@@ -8,7 +8,7 @@ dead-initial-state witness documented it without asserting.
 
 2026-10-19 (R-01 转正, 8849dc6): ``HCU_CONV1D_IMPL`` default emu→fork, so
 ``sglang.kernels.ops.mamba.causal_conv1d_triton`` now routes to the 收编
-fork kernel (``sgl_kernel/_adapters/fla_hcu/conv1d_triton.py``). The
+fork kernel (``hcu_adapter/fla_hcu/conv1d_triton.py``). The
 watchpoint fired as designed (fork rejects the witness' CPU tensors at
 launch → collection-visible failure). Follow-ups landed the same day:
   * channel-major inputs normalized at the fn seam (kernel channel-major
@@ -159,7 +159,7 @@ def test_triton_parity():
 
 def test_emu_parity():
     """GREEN GATE: conv1d_fn_emu == step reference across shapes/branches."""
-    from sgl_kernel._adapters.conv1d_fn_emu import conv1d_fn_emu
+    from hcu_adapter.conv1d_fn_emu import conv1d_fn_emu
 
     for tag, (D, W, lens, init) in {
         "short-seq-init": (16, 4, [2, 5], True),

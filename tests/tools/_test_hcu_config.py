@@ -17,7 +17,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sgl_kernel._adapters import hcu_config, hcu_env  # noqa: E402
+from hcu_adapter import hcu_config, hcu_env  # noqa: E402
 
 FAILS = []
 

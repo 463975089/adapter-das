@@ -170,6 +170,6 @@ def measured_ops():
 
 
 def hcu_catalog_ops():
-    from sgl_kernel._adapters import hcu_config
+    from hcu_adapter import hcu_config
 
     return list(hcu_config.BACKEND_CATALOG.keys())

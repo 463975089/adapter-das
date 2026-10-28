@@ -8,9 +8,9 @@
 
 | # | 改动 | 文件 | 单测判决 | serving 效果 |
 |---|---|---|---|---|
-| 1 | DSV4.1 sparse rope/norm torch fallback → triton 门（`_fused_dsv41_kernels` needle） | `sgl_kernel/_adapters/dsv4_sparse_triton_gates.py`（7508c7d） | bitwise 10/10 + probe 3/3 | B 臂组成 |
-| 2 | silu_and_mul_clamp × per-token-group-quant 融合为一核（`silu_and_mul_clamp_quant`，GPB=2 重铺修复大 M 断崖）+ **针 v3 挂点修正**（routed arm 锚 `act_and_mul_triton` else 臂，非 `silu_and_mul_clamp`；MISS/ENGAGED 一次性诊断） | `sgl_kernel/_adapters/dsv4_silu_fused_quant.py`（54d45d0 → 6ef8b3e） | fp8 ulp 门（pair-bytes 逐值 + rtol 0.08）；大 M 0.42×→1×+ | B trace act_and_mul 104ms/步段收回（wall 21.65→19.62s）；B-v2 ENGAGED 四门绿，p50 975ms |
-| 3 | MHC `_HC_MIX_DOT_PRECISION`/`_HC_MIX_NUM_STAGES` import-frozen 常量针（tf32x3 崩→ieee fp32 MFMA 路） | `sgl_kernel/_adapters/dsv4_mhc_stats.py`（f74faec） | B 臂 boot 绿（原 tf32x3 compile 崩） | B 臂可跑的前置 |
+| 1 | DSV4.1 sparse rope/norm torch fallback → triton 门（`_fused_dsv41_kernels` needle） | `hcu_adapter/dsv4_sparse_triton_gates.py`（7508c7d） | bitwise 10/10 + probe 3/3 | B 臂组成 |
+| 2 | silu_and_mul_clamp × per-token-group-quant 融合为一核（`silu_and_mul_clamp_quant`，GPB=2 重铺修复大 M 断崖）+ **针 v3 挂点修正**（routed arm 锚 `act_and_mul_triton` else 臂，非 `silu_and_mul_clamp`；MISS/ENGAGED 一次性诊断） | `hcu_adapter/dsv4_silu_fused_quant.py`（54d45d0 → 6ef8b3e） | fp8 ulp 门（pair-bytes 逐值 + rtol 0.08）；大 M 0.42×→1×+ | B trace act_and_mul 104ms/步段收回（wall 21.65→19.62s）；B-v2 ENGAGED 四门绿，p50 975ms |
+| 3 | MHC `_HC_MIX_DOT_PRECISION`/`_HC_MIX_NUM_STAGES` import-frozen 常量针（tf32x3 崩→ieee fp32 MFMA 路） | `hcu_adapter/dsv4_mhc_stats.py`（f74faec） | B 臂 boot 绿（原 tf32x3 compile 崩） | B 臂可跑的前置 |
 | 4 | **MoE combine emu 内置 triton 化**：`moe_sum(_reduce)` 原为 aten 三连 `sum→mul→copy`（=trace in-graph `reduce_kernel<128,4>` 467µs×40 层/prefill 步 + 8×116ms 巨怪 + 每层多两趟 elementwise）；换 `_moe_sum_scale_kernel`（fp32 acc ×rsf 单次舍入，一核零中转，BLOCK_D=512/w4） | `sgl_kernel/moe.py`（6ef8b3e） | rsf=0 bitwise；rsf≠0 ≤1ulp（=上游 stock `moe_sum_reduce_triton` 语义）；M=1024 422→74µs（5.7×,848GB/s）、M=8192 3257→563µs（5.8×,895GB/s）；decode 形状（16/80）持平 | p50 975→925ms（四门绿，silu ENGAGED 复验） |
 
 ## 归因方法论（可复用）
@@ -68,7 +68,7 @@
 ## 2026-10-23(夜) host 路 VMFault 三层根因全破 + 修复实证（nmz26 卡2 TP1 cut8）
 - **此前"多表注册失效"复现是我自己的脚本 bug**：multi 单测 mmap 对象是函数局部，返回即 GC → 悬空注册 → 必崩；unit 版模块级存活所以过。机制本身无罪。
 - **Bug B（剪层容量不变式）**：`EngramEmbedding.forward` shared 分支 gather **不带 row_lo/row_hi**（默认 2^62 不设界，生产全表覆盖全 id 空间故安全）；id=hash%prime+前缀 offset，上限=每层 24 素数之和。cut8 缩表 6M 但 vocab=4M → id 上限 96M → 越界读 base+idx×256，fault VA 散布表上方 ~20G（与 dmesg 吻合；device 路不崩=越界落相邻 VRAM 读垃圾）。**修复**：engram_vocab_size=250000 + num_embeddings=[Σprimes]=[6003388, 6013872]（容器脚本精确计算），修后 fault VA 全部落回表内。
-- **Bug C（host 路真凶）**：本仓 `sgl_kernel/_adapters/platform_seam.py` 把 sglang `is_hip()` 强制 False（HCU 伪装 CUDA 的平台决策）→ engram.py `_registered_device_ptr` 走 `return host_ptr` 短路——**hipHostGetDevicePointer 从未被调用**，内核拿裸 host VA，GPU 页表无此段 → VMFault。铁证：canary S 组（自己 ctypes 直连 libamdhip64）dev 全部重定位且通过；真表 dev==host 且崩；seam 环境实测 `is_hip()=False from platform_seam.py`。**修复**：指针翻译以 **libamdhip64 是否可加载**为准（find_loaded_library 失败→CDLL("libamdhip64.so") dlopen 兜底；真 CUDA 无此库 OSError→恒等不变），且翻译结果==host 即 raise 拒绝启动。
+- **Bug C（host 路真凶）**：本仓 `hcu_adapter/platform_seam.py` 把 sglang `is_hip()` 强制 False（HCU 伪装 CUDA 的平台决策）→ engram.py `_registered_device_ptr` 走 `return host_ptr` 短路——**hipHostGetDevicePointer 从未被调用**，内核拿裸 host VA，GPU 页表无此段 → VMFault。铁证：canary S 组（自己 ctypes 直连 libamdhip64）dev 全部重定位且通过；真表 dev==host 且崩；seam 环境实测 `is_hip()=False from platform_seam.py`。**修复**：指针翻译以 **libamdhip64 是否可加载**为准（find_loaded_library 失败→CDLL("libamdhip64.so") dlopen 兜底；真 CUDA 无此库 OSError→恒等不变），且翻译结果==host 即 raise 拒绝启动。
 - **Bug D（潜在，一并修）**：shared 布局注册前零预触（未跟踪风险）+ per_rank 注册后 finish_load MADV_COLLAPSE 重排 PTE（cut8h 首请求崩的另一解释）。**修复**：注册前整段写脏 0xAB（memfd/anon 脏页无写回目标永不回收，免疫加载期页缓存churn 回收）；注册后的表永不 collapse。
 - **修复后实证**：boot→load→dummy forward→prefill→DSPARK decode 全通 0 fault；`dev≠host` 重定位日志在案。**cut8 TPOT 对照：host=21.2-21.9s/256tok vs device=21.4-21.8s/256tok——持平**（TP1 无图小剂量代理，绝对值无意义；生产剂量性能与消拍待 8 卡）。
 - **补丁位置**：容器 /sglang-v0522/python/sglang/srt/layers/engram.py（4 处：预触写脏/指针翻译 seam 旁路+校验/禁 collapse/地址日志）；seam 本身不动（is_hip=False 是全平台决策，翻转会动 FP8 常量与内核选路）。
@@ -92,7 +92,7 @@
 - **wheel 缺陷清单（本轮累计，待集中反馈给 wheel 主/自家仓库）**：deepgemm `paged_mqa_logits` 本 gfx metadata 全拒（fp8/int8 各臂）；lightop fp8 读核 fn 偏置 vs 生产写 fnuz=恰 2×；aiter `utility/fp4_utils` python 面缺 f32_to_e8m0/e8m0_to_f32/f32_to_mxfp4（per_1x32_f4_quant 不可用）；aiter moe_c wfp4a8 无配置表（17 json 全非 wfp4）+MODE 契约不明。
 
 ## 2026-10-25(晚) nmz18 复活役：wfp4a16 直连 kernel 全契约破译（deepgemm 路通、布局定性）
-- **nmz18 环境恢复**：同居方修了驱动（renderD128-135 回归，8×BW1101 全空）；lzg-dsv41f-dspark 容器重启正常。新坑：本机 aiter `moe_align_block_size` 绑定=**出参式 ABI**（`(..., sorted_out, experts_ids_out, ntp_out)`），树内 fused_moe_c 老 wrapper 传参错位→段错误假象（非驱动问题）；直接 torch.ops 调用带预分配出参即通。
+- **nmz18 环境恢复**：同居方修了驱动（renderD128-135 回归，8×BW1101 全空）；dsv41f-dspark 容器重启正常。新坑：本机 aiter `moe_align_block_size` 绑定=**出参式 ABI**（`(..., sorted_out, experts_ids_out, ntp_out)`），树内 fused_moe_c 老 wrapper 传参错位→段错误假象（非驱动问题）；直接 torch.ops 调用带预分配出参即通。
 - **aiter moe_c wfp4a8 定性=需 wheel 主**：同 commit ga76f3d 两台机器 dispatch 表不同（nmz26 过门 11001101 / nmz18 全拒）——**MODE 表是 build 级编译产物**，与台账"wheel 分叉"风险互证；gfx938/fp4_w4a8_groupwise32 配置目录真实存在（MODE 9525/9523）但本 build 不认。本条挂起，转 deepgemm 路。
 - **deepgemm `m_grouped_wfp4a16_gemm_nt_contiguous` 全契约破译（真 checkpoint 权重，E384/K5120/N2304）**：
   ①权重布局=plain `[E,N,K/2]` uint8 但**每 4 字节单元内 nibble 需逆置换**：kernel K 序读 `[0,2,4,6,1,3,5,7]`（lo 全前 hi 全后）→ repack=`[lo0|lo2<<4, hi0|hi2<<4, lo1|lo3<<4, hi1|hi3<<4]`（one-hot 全 K 提取 5120 行解码矩阵，perm 拟合 conf=1.000、逐位 maxabs=0）；
@@ -106,7 +106,7 @@
 ## 2026-10-26 wave6 nmz18：softmax adapter 洞补齐（生产采样解码解锁）+ 新鲜 decode trace 基线（P1.5 验收/1.6 基线）
 
 - **生产阻塞根因：非 greedy 采样解码必崩**。DSPARK verify accept 链 `SoftmaxTemp.execute → softmax_temp_flashinfer → flashinfer.sampling.softmax`，该入口在我们 hcu-adapter 只有 loud stub——import 成功（Missing 句柄不抛 ImportError）→ dispatch 判 flashinfer 可用 → 调用即 `NotImplementedError` 打死全部 8 scheduler。greedy 走 `AcceptGreedy` 臂不炸，warmup 掩盖了洞；上一轮"16 并发负载完成"实为 server 半路崩（prof 空盘、日志无 throughput 的真因）。
-- **修法（零上游改动，纯 adapter 补洞）**：`sgl_kernel/sampling.py` 新增 triton port `_softmax_rows_kernel`（online 两遍行 softmax：pass1 online max/sum、pass2 归一写回；逐行温度，BLOCK_V=8192/num_warps=8；temp≤0 当 1.0 防除零；标量温度广播/奇 vocab/-inf 列/bf16/非连续行全兼容），绑进 `_adapters/flashinfer` allowlist + registry（MECH_SEAM）。部署前 md5 校验本地=共享盘 `hcu_v0522_nmz18`（NFS）两文件同源后才推。
+- **修法（零上游改动，纯 adapter 补洞）**：`sgl_kernel/sampling.py` 新增 triton port `_softmax_rows_kernel`（online 两遍行 softmax：pass1 online max/sum、pass2 归一写回；逐行温度，BLOCK_V=8192/num_warps=8；temp≤0 当 1.0 防除零；标量温度广播/奇 vocab/-inf 列/bf16/非连续行全兼容），绑进 `hcu_adapter/flashinfer` allowlist + registry（MECH_SEAM）。部署前 md5 校验本地=共享盘 `hcu_v0522_nmz18`（NFS）两文件同源后才推。
 - **单测 11 项全绿**（容器 GPU）：maxabs ≤1.6e-6、行和 1±1e-6、CUDA-graph 捕获安全；serving 形状 N112×V151936 **167.9µs**（torch 链 312.7µs 的 0.54×）；生产 trace 实测 78 次（draft+verify 各一/步）×76.9µs。生产验证：temp=0.7 采样解码 48 token 正常返回、0 异常。
 - **新鲜 decode trace 基线**（TP0，39 步×2 图=78 graph launch，bs2/rank，16 并发×600tok @temp0.7；`prof_dsv41f_dec20/dsv41f_tp0_wave6.trace.json.gz`）：
   - 步长 ~950ms（profiler 开销内口径），GPU busy 81%（30.0s/37.05s），>5ms 空泡 121 个共 6.9s——其中 ~60.4ms×39 = **步间 host 泡 ~60ms/步（6%）**，116ms×2 为 warmup 段。
@@ -146,7 +146,7 @@
   ③冷容器 tvm-ffi 自锁复现一次：`TVM_FFI_DISABLE_TORCH_C_DLPACK=1` 免疫有效（CI 波结论再证）；
   ④**邻居 vllm 三容器突发抢卡**（pzm/laibao/duyl，~107G/卡 短跑型）：00:52-01:5x 每轮 boot 都在赌窗口，OOM 与"spawn 静默挂"（master+spawner 活、8 scheduler 无声消失）皆此因。**生产 server 已停**，待静默窗口用 `/root/launch_rt07.sh`（mem-frac 0.70 版）重起。
 - **下一步判决实验（静默窗口优先做，零模型依赖）**：纯 torch 探针加"重负载条件"——每卡先 allocate ~100G 再跑图回放循环；若 117ms 停摆复现=exporter×重负载交互实锤；若仍零=真凶在 sglang 栈内（nccl 逐层屏障 × 某 rank 周期性宿主延迟），再走 das 同形臂对照。
-- 遗产：`tmp_fetch/stall_probe.py`（轻负载探针，已验）、`tmp_fetch/nccl_mini.py`（8 卡 allreduce 判具）、`tmp_fetch/launch_qwen_adapter_1026.sh`（das 对比容器配方：tvm-ffi 盾+topo 清空+AR 禁用全套）、nmz18 容器 `lzg-das-qwen`（idle sleep infinity，含仓库挂载 /models_qua，停摆实验复用；不需要时可 docker rm）。
+- 遗产：`tmp_fetch/stall_probe.py`（轻负载探针，已验）、`tmp_fetch/nccl_mini.py`（8 卡 allreduce 判具）、`tmp_fetch/launch_qwen_adapter_1026.sh`（das 对比容器配方：tvm-ffi 盾+topo 清空+AR 禁用全套）、nmz18 容器 `das-qwen`（idle sleep infinity，含仓库挂载 /models_qua，停摆实验复用；不需要时可 docker rm）。
 
 ## 2026-10-24(凌晨续) wave7b: 三连探针排除法 + 分配风暴主嫌疑 + 共存不可能定量
 
@@ -273,12 +273,12 @@
 
 **踩坑两枚（入经验）**：① 容器预置 NCCL_TOPO_FILE 为 8 卡拓扑，4 卡进程组必须置空（原配方有 unset 我漏抄，报 `Add XGMI error: could not find GPU 5000`）；② pkill -f 自匹配第三次（bash -c 命令行含目标名→杀己 shell→后续命令静默未执行；铁律=pkill 单独一条 ssh，launch 另起）。
 
-**预置终局脚本**：nmz18 lzg-dsv41f-dspark /root/w13_postreboot.sh（一键：probe_cards 体检→launch_rt07→grab_q4 40 步→trace_census→gap/launch-tick 直方图→VERDICT 行）。复位后 `bash /root/w13_postreboot.sh w13` 一条命令出判决：gaps/tick 归零→KFD 根因结案；仍在→驱动版本病，上 GPU_MAX_HW_QUEUES=16/32、GPU_USE_SYNC_OBJECTS 臂。
+**预置终局脚本**：nmz18 dsv41f-dspark /root/w13_postreboot.sh（一键：probe_cards 体检→launch_rt07→grab_q4 40 步→trace_census→gap/launch-tick 直方图→VERDICT 行）。复位后 `bash /root/w13_postreboot.sh w13` 一条命令出判决：gaps/tick 归零→KFD 根因结案；仍在→驱动版本病，上 GPU_MAX_HW_QUEUES=16/32、GPU_USE_SYNC_OBJECTS 臂。
 - 遗产：tmp_fetch/repro_tick.py（全配方复现器，--nccl/--graph/--pinned/--xdst 四刀二分）、bench_pressure.py（灌压基准）、w12_more.py/w12_which_graph.py；nmz26 /root/ 留 repro_tick.py+bench_pressure.py。
 
 ## W13: box16 第三盒复现 + 图发射 tick 机制破解 (10-25 08:30-11:10)
 
-**平台就绪**（box16 card0-7 空 8 卡，BW1200=gfx938 同架构、每卡 144G）：装 ssh 公钥免密（askpass 在后台化执行下不可用的根治）；自有容器 lzg-stall-repro（团队 sglang:0.5.18-dtk26041-dpskv4 镜像 + /data_add2:/models ro + hyhal 挂载，抄邻居 sby 配方）；模型用本地盘 DeepSeek-V4.1-Flash-Channel-FP8（基础版踩镜像 triton MoE hidden-size 断言 + deepep 踩 forward_deepgemm_masked deprecated，Channel-FP8+a2a none+triton runner 可跑）。
+**平台就绪**（box16 card0-7 空 8 卡，BW1200=gfx938 同架构、每卡 144G）：装 ssh 公钥免密（askpass 在后台化执行下不可用的根治）；自有容器 stall-repro（团队 sglang:0.5.18-dtk26041-dpskv4 镜像 + /data_add2:/models ro + hyhal 挂载，抄邻居 sby 配方）；模型用本地盘 DeepSeek-V4.1-Flash-Channel-FP8（基础版踩镜像 triton MoE hidden-size 断言 + deepep 踩 forward_deepgemm_masked deprecated，Channel-FP8+a2a none+triton runner 可跑）。
 
 **bring-up 三坑入账**：① JIT 冷编 cuda_fp8.h 缺失→装 `__nv_*→__hip_*` 记号别名垫片（/opt/dtk/include/cuda_fp8.h，注意 AMD 类型带 _fnuz 后缀；nmz26 靠 43 模块种子 cache 从未现场编过、我们 v0522 树源码已移植 __hip_ 记号——镜像 0.5.18 源码还是 __nv_）；② 16 并发首请求触发全 rank 冷 Triton 编译 >300s 被 watchdog 杀→--watchdog-timeout 1500 + 先单请求预热；③ 杀服务要 `pkill -f "sglang::"`（scheduler 子进程改名，单杀 launch_server 留孤儿占端口）。
 
@@ -302,7 +302,7 @@ box16（健康盒）+ DSPARK（同生产配方 block5）：图发射 36 次中 1
 - **116/60ms 停摆家族（GPU 不执行已入队活，步时主损 61%）** = **nmz18 KFD 实例病态专属**——健康盒同拓扑同 DSPARK 不复现。宿主复位即应消失（w13_postreboot.sh 一键判决，预期修正：复位后 tick 仍在（族级正常）、A/B 家族应归零）。
 - eager 20.3ms = 每层 host python（W11），正交。
 
-box16 清场：sglang 服务进程已杀（卡 0-7 释放），容器 lzg-stall-repro 保留（复现器/判决脚本在 /root，供厂商报告复演）。
+box16 清场：sglang 服务进程已杀（卡 0-7 释放），容器 stall-repro 保留（复现器/判决脚本在 /root，供厂商报告复演）。
 
 ## 2026-10-25/26(box16 钟) W14 box16 DSV4.1-Flash-INT4 役：停摆判决（无）+ 45x 缺口二分钉死（地板=每层计算/host，非通信非拍）+ channel-int4/draft-MoE 配套
 - **停摆判决（本役主问）**：adapter(f74faec+本役推针)+树(32 文件 parity)+DSV4.1-Flash-INT4 dp8ep8+DSPARK——三次干净 run（无 profiler）零 watchdog/零调度死/吞吐稳态无间歇塌陷（每 rank 每区间 2.41 tok/s 恒定）⇒ **box16 无 nmz18 式 116/60ms 停摆家族**（与 W13 续"KFD 专属"互证）；驱动族 tick（p50 10.43ms，W13 已定罪=图内 NCCL 集合节点逐节点提交 ~100µs×~200 节点）在但不闸步。
@@ -312,7 +312,7 @@ box16 清场：sglang 服务进程已杀（卡 0-7 释放），容器 lzg-stall-
 - **最终数（adapter 栈）**：P1 bs16 in64k out1k @accept2.93：wall 1339s/系统 11.9 tok/s/含 prefill TPOT 1339ms（decode 相位步时 1.86s→单 token ~635ms）；P2 短上下文 8×200 spec 126.4s vs 无 spec 89.2s vs tp8 61.0s；warm 64k prefill 203-266s（attention 主导，预期内）。
 - **roctracer 双重毒（box16 dtk26041 实锤，方法学）**：①/start_profile+stop 后 ~90s 调度器段错误（RoctracerActivityApi teardown）；②小核时长膨胀 ~160x（silu_and_mul_clamp 0.054ms standalone vs 8.5ms traced）⇒ 本 DTK 栈一切 trace 绝对值作废，真值=客户端墙钟+Decode-batch 节奏。
 - **杂项坑**：box16 /models 挂载**间歇 ENOENT**（重载偶发，python open 报 No such file 而 bash 可读；listdir 拼路径即过）；box16 adapter 部署快照缺 nccl_topo_guard/watchdog_cold（f74faec 早于 9b21831，本役脚本手动 unset NCCL_TOPO_FILE 等价兜住，下次部署应刷 HEAD）；容器内 141 个 sglang:: defunct 僵尸（PID1 收养，零资源，不可 kill 只能容器重启清，不影响他用）。
-- **遗产**：box16 /root：bench16ns.sh（无 spec 臂）/bench16tp.sh（tp8 臂）/bench16coll.py+sh（集合微基准）/tuned16d.py（draft MoE 探针+调优）/probe_dflt16.py（默认配置成本）；本地 tmp_fetch 同名镜像。box16 已清场：sglang 活体 0，卡 0-7 全空（140/144G），容器 lzg-stall-repro 保留。
+- **遗产**：box16 /root：bench16ns.sh（无 spec 臂）/bench16tp.sh（tp8 臂）/bench16coll.py+sh（集合微基准）/tuned16d.py（draft MoE 探针+调优）/probe_dflt16.py（默认配置成本）；本地 tmp_fetch 同名镜像。box16 已清场：sglang 活体 0，卡 0-7 全空（140/144G），容器 stall-repro 保留。
 
 ## 2026-10-26 W14补 trace 异常归因改正（用户历史口供）+ int4 GEMM decode 地板实证
 - **归因改正**：W14 的"roctracer 双重毒/小核时长膨胀 160x"改判为**驱动侧空泡吸收**——该问题历史上 prof 表现为 kernel 间空泡（提前下发/graphlaunch 也在），runtime 一度归驱动、一度归编译器，后驱动侧"解了"：trace 里空泡消失但 kernel 耗时变长=空泡时间被折算进 kernel 窗（用户口供，2026-10-26）。本 trace 实证自洽：gptq 核记录 p50 仅 7µs（真值 ms 级）+后继核窗口吸收（act 5056µs≈UP 真值、reduce 2009µs≈DOWN 真值）+主流 94.8% "覆盖"（泡被折进核窗后覆盖虚高）。**nmz18/nmz26 的拍与本问题疑同源**（上层可绕：das 用整 MoE 单核 vendor kernel 后很少复现）。

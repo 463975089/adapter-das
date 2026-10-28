@@ -9,7 +9,7 @@ ggml_dequantize (block-format tables) + the GEMMs as dequantize+matmul torch
 reference, then follow the three-tier routing for optimization.
 """
 
-import sgl_kernel._adapters.registry as _reg
+import hcu_adapter.registry as _reg
 
 
 def _stub(name):

@@ -54,7 +54,7 @@ python tools/hcu_config_wizard.py --autotune -o /etc/hcu/hcu_adapter.yaml \
 
 ## 设计边界（首版非目标）
 
-- serving 级端到端评估不做（catalog 正式晋级仍走人工同窗 A/B 流程，见 board 晋级案例）；工具产出是**建议配置**，不是 production 判定。
+- serving 级端到端评估不做（catalog 正式晋级仍走人工同窗 A/B 流程，判据见 governance §5.2 / models.md 台账）；工具产出是**建议配置**，不是 production 判定。
 - 多机通信档（allreduce/网卡/RDMA/EP）不做——v2 列表；首版 allreduce 沿用 auto 规则（aiter 布局嗅探）。
 - 性能数字**仅本机有效**（仓内共识：数字不跨机迁移）；同 op 跨机对比请各自跑 autotune 后对报告。
 - bench 工厂首版注册 mock 类（harness/门禁可跑无卡机）；真算子工厂随 on-card 验证逐个落 `bench.py::SHAPES`（键 `kind:tier`），未注册=报告标 unbenched，不编造数字。

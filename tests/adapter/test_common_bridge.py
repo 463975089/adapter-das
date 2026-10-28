@@ -6,25 +6,25 @@ Run: python3 -m pytest -q tests/adapter/test_common_bridge.py
 from types import SimpleNamespace
 
 from hcu_adapter.bridges import common
-from sgl_kernel import _adapters
+import hcu_adapter
 
 
 def test_common_guards_run_in_pre_import_order(monkeypatch):
     events = []
     monkeypatch.setattr(
-        _adapters,
+        hcu_adapter,
         "hcu_env",
         SimpleNamespace(log_summary=lambda: events.append("environment")),
         raising=False,
     )
     monkeypatch.setattr(
-        _adapters,
+        hcu_adapter,
         "nccl_topo_guard",
         SimpleNamespace(install=lambda: events.append("nccl")),
         raising=False,
     )
     monkeypatch.setattr(
-        _adapters,
+        hcu_adapter,
         "tvmffi_warmup",
         SimpleNamespace(install=lambda: events.append("tvmffi")),
         raising=False,
@@ -43,19 +43,19 @@ def test_one_common_guard_failure_does_not_block_later_guards(monkeypatch):
         raise RuntimeError("summary failed")
 
     monkeypatch.setattr(
-        _adapters,
+        hcu_adapter,
         "hcu_env",
         SimpleNamespace(log_summary=fail_environment),
         raising=False,
     )
     monkeypatch.setattr(
-        _adapters,
+        hcu_adapter,
         "nccl_topo_guard",
         SimpleNamespace(install=lambda: events.append("nccl")),
         raising=False,
     )
     monkeypatch.setattr(
-        _adapters,
+        hcu_adapter,
         "tvmffi_warmup",
         SimpleNamespace(install=lambda: events.append("tvmffi")),
         raising=False,

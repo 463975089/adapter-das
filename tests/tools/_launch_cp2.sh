@@ -1,5 +1,5 @@
 #!/bin/bash
-# prefill CP (attn-cp-size 2, zigzag) validated recipe -- nmz26 lzg_pr418_test
+# prefill CP (attn-cp-size 2, zigzag) validated recipe -- nmz26 pr418_test
 # model: Qwen3-30B-A3B on GPU6,7; baseline = same model TP2 without CP.
 # 排查时可加: export HCU_PREFILL_CP_DEBUG=1 HCU_FA_EMU_DEBUG=1
 export HIP_VISIBLE_DEVICES=6,7 CUDA_VISIBLE_DEVICES=6,7

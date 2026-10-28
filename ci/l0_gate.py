@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """L0 structural gate -- the no-GPU, no-deps, seconds-fast CI tier.
 
-Runs on any machine (Gitee Go cloud runner, laptop, container). Verifies
+Runs on any machine (cloud runner, laptop, container). Verifies
 the invariants that historically broke us (see docs/ci.md):
 
   HARD (exit 1 on violation)
     1. every .py parses (ast)                      -- catches half-edited MRs
     2. every .sh is LF-only                        -- CRLF kills bash silently
                                                      ( bitten 2026-10-11 )
-    3. no secrets in tracked files                 -- gitee/tokens
+    3. no secrets in tracked files                 -- remote tokens
     4. every HCU_* var in hcu_env REGISTRY has a docs/env-vars.md row
     5. every var referenced by BACKEND_CATALOG exists in REGISTRY
     6. every sgl_kernel module routing glue imports resolves to a file
@@ -98,7 +98,7 @@ SECRET_PATTERNS = [
 ]
 # precise, cheap: the two real tokens ever in play + generic 32hex-with-context
 SECRET_RULES = [
-    (re.compile(rb"https://[^\s/@:\"]+:[0-9a-f]{32}@"), "gitee-token-in-url"),
+    (re.compile(rb"https://[^\s/@:\"]+:[0-9a-f]{32}@"), "remote-token-in-url"),
     (re.compile(rb"(?i)(token|secret|password)\s*[=:]\s*['\"][0-9a-zA-Z]{20,}['\"]"), "literal-secret"),
 ]
 
@@ -117,13 +117,13 @@ def check_secrets(r):
 
 
 def registry_names():
-    src = open(os.path.join(ROOT, "sgl_kernel/_adapters/hcu_env.py"), encoding="utf-8").read()
+    src = open(os.path.join(ROOT, "hcu_adapter/hcu_env.py"), encoding="utf-8").read()
     # registry keys look like    "HCU_XXX": {   at dict depth 1
     return set(re.findall(r'^\s{4}"(HCU_[A-Z0-9_]+)":\s*\{', src, re.M))
 
 
 def catalog_var_refs():
-    src = open(os.path.join(ROOT, "sgl_kernel/_adapters/hcu_config.py"), encoding="utf-8").read()
+    src = open(os.path.join(ROOT, "hcu_adapter/hcu_config.py"), encoding="utf-8").read()
     refs = set(re.findall(r'"var":\s*"(HCU_[A-Z0-9_]+)"', src))
     for m in re.findall(r'"vars":\s*\{(.*?)\}', src, re.S):
         refs |= set(re.findall(r'"(HCU_[A-Z0-9_]+)"', m))
@@ -161,7 +161,7 @@ def check_routing_glue_imports(r):
     for rp in routing_glue_files():
         src = open(os.path.join(ROOT, rp), encoding="utf-8").read()
         for m in re.finditer(
-            r"from (sgl_kernel(?:\._adapters)?(?:\.[\w.]+)?) import ([\w, ]+)",
+            r"from ((?:hcu_adapter|sgl_kernel)(?:\.[\w.]+)?) import ([\w, ]+)",
             src,
         ):
             base = m.group(1)
@@ -194,7 +194,7 @@ def check_routing_glue_imports(r):
 
 
 def check_example_yaml(r):
-    cat = open(os.path.join(ROOT, "sgl_kernel/_adapters/hcu_config.py"), encoding="utf-8").read()
+    cat = open(os.path.join(ROOT, "hcu_adapter/hcu_config.py"), encoding="utf-8").read()
     ops = set(re.findall(r'^\s{4}"([a-z0-9_]+)":\s*\{', cat, re.M))
     ex = open(os.path.join(ROOT, "hcu_adapter.example.yaml"), encoding="utf-8").read()
     in_ops = False
@@ -214,7 +214,7 @@ def check_example_yaml(r):
 def check_bare_environ(r, reg):
     """SOFT: registered vars read via os.environ outside the registry."""
     allowed_files = {
-        "sgl_kernel/_adapters/hcu_env.py",  # the registry itself
+        "hcu_adapter/hcu_env.py",  # the registry itself
         "ci/l0_gate.py",
     }
     pat = re.compile(r"os\.environ(?:\.get)?\(?[\"'](HCU_[A-Z0-9_]+)")
@@ -274,7 +274,7 @@ def check_glue_has_no_numerics(r):
 def _parse_allowlist():
     """Text-patch needles allowed, parsed from registry.py (no import)."""
     src = open(os.path.join(
-        ROOT, "sgl_kernel/_adapters/registry.py"), encoding="utf-8").read()
+        ROOT, "hcu_adapter/registry.py"), encoding="utf-8").read()
     body = re.search(
         r"TEXT_PATCH_ALLOWLIST\s*=\s*\{(.*?)\n\}", src, re.S)
     if not body:
@@ -298,7 +298,7 @@ def check_text_patch_allowlist(r):
     needles, ok = _parse_allowlist()
     if not ok:
         r.fail("text-patch", "cannot parse TEXT_PATCH_ALLOWLIST from "
-               "sgl_kernel/_adapters/registry.py")
+               "hcu_adapter/registry.py")
         return
     allowed_needles = {n for _, n in needles}
     sources = []
@@ -330,14 +330,16 @@ def check_text_patch_allowlist(r):
 
 def check_registry_ops_in_catalog(r):
     """HARD: every registry.register(op=...) names a BACKEND_CATALOG op."""
-    cat = open(os.path.join(ROOT, "sgl_kernel/_adapters/hcu_config.py"),
+    cat = open(os.path.join(ROOT, "hcu_adapter/hcu_config.py"),
                encoding="utf-8").read()
     ops = set(re.findall(r'^\s{4}"([a-z0-9_]+)":\s*\{', cat, re.M))
     pat = re.compile(
         r"registry\.register\(\s*\n?\s*(?:op\s*=\s*)?\"([a-z0-9_]+)\"")
     for p in iter_files(".py"):
         rp = rel(p)
-        if ("/_adapters/" not in rp and "/bridges/" not in rp
+        if (not (rp == "hcu_adapter" or rp.startswith("hcu_adapter/")
+                 or "/hcu_adapter/" in rp)
+                and "/bridges/" not in rp
                 and rp != "sitecustomize.py"):
             continue
         try:

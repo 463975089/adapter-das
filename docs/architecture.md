@@ -25,7 +25,7 @@
 其余 import 面由三行 `sitecustomize.py` 引导
 `hcu_adapter.bootstrap`，再按宿主只安装 `bridges/sglang.py` 或
 `bridges/vllm.py`；跨框架启动守卫在 `bridges/common.py`，vendor 库桩仍由
-`sgl_kernel/_adapters/` 接管。
+`hcu_adapter/` 接管。
 
 宿主入口严格保持以下骨架，不为单一框架另建旁路模块：
 
@@ -69,8 +69,8 @@ sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端�
 
 | 层 | 内容 | 备注 |
 |---|---|---|
-| 应用层 | **sglang 官方代码**（python 零修改）＋ **plugin**（规划） | plugin：算子融合 / 调度逻辑优化 / 硬件平台无关的优化 |
-| 适配层 | **adapter 影子库替换层**（本仓库）：`sitecustomize.py` 薄入口 ＋ `hcu_adapter` 宿主分发/桥 ＋ `sgl_kernel` 同名影子包 ＋ `_adapters` 元路径影子库 | 三档实现路由；配合 skill（`hcu-adapter-dev`）快速排查定位精度问题 |
+| 应用层 | **sglang 官方代码**（python 零修改）＋ **plugin**（独立仓 hcu-sglang-plugin） | plugin：算子融合 / 调度逻辑优化 / 自研 channel-wise 量化 scheme 等差异化能力 |
+| 适配层 | **adapter 影子库替换层**（本仓库）：`sitecustomize.py` 薄入口 ＋ `hcu_adapter` 包（宿主分发 / bridges 宿主桥 / 机制层与域桥 / vendor 桩）＋ `sgl_kernel` 同名影子包 | 三档实现路由；配合 skill（`hcu-adapter-dev`）快速排查定位精度问题 |
 | 算子库层 | triton（自研首档）· lightop · aiter · flash_mla / flash_attn · deepgemm（待适配）· mooncake / deepep（待适配） | 见 §4 逐项说明 |
 | 运行时层 | **PyTorch（HIP 版）** | 张量计算 · 显存管理 · kernel launch；三档中的 torch 兜底也在这层 |
 | 驱动 · 工具链层 | **DTK（DCU Toolkit）** | HIP/ROCm 软件栈：驱动 · 编译器 · 运行时 |
@@ -86,7 +86,7 @@ flowchart TB
         SC["sitecustomize.py → hcu_adapter.bootstrap"]
         HOST["bridges/common + sglang / vllm"]
         SK["sgl_kernel 同名影子包（AOT 默认内核）"]
-        STUB["_adapters 元路径影子库 + hcu_env + kill_switch"]
+        STUB["hcu_adapter 元路径影子库 + hcu_env + kill_switch"]
     end
     SC --> HOST
     subgraph OPS["算子库层"]
@@ -113,9 +113,9 @@ flowchart TB
 |---|---|---|
 | `sitecustomize.py` | PYTHONPATH 自动加载的薄入口 | 只导入并调用 `hcu_adapter.bootstrap.install()`；任何宿主逻辑进入这里都视为回归 |
 | `hcu_adapter/bootstrap.py` | 宿主探测和分发 | 显式 `HCU_ADAPTER_HOST` 优先；否则按继承标记、argv、已加载模块、包可用性选唯一宿主；common 先于宿主桥安装 |
-| `hcu_adapter/bridges/` | 跨框架与宿主专属 glue | `common.py` 放启动守卫；`sglang.py` 保持既有桥顺序；`vllm.py` 提供 `_custom_ops` ABI 桥，vLLM 0.32 platform/plugin 接入由后续独立 MR 承担 |
+| `hcu_adapter/bridges/` | 跨框架与宿主专属 glue | `common.py` 放启动守卫；`sglang.py` 保持既有桥顺序；`vllm.py` 提供 `_custom_ops` ABI 桥与 vLLM 0.32 platform/plugin 接入（官方 `vllm.platform_plugins` / `vllm.general_plugins`，MR 已提交评审）；共建边界与版本门见 governance.md §7.2 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径 | elementwise / layernorm / rope / moe / `gemm_fp8`·`gemm_int8` / `flash_mla` emu / `kvcacheio`；API 逐字对齐官方 sgl-kernel；内部按三档路由取 triton / vendor / torch |
-| `sgl_kernel/_adapters/` | 元路径影子库（import hook） | `aiter` 真包优先 + 缺口填空；`flashinfer` / `flash_attn` 桩（import 成功、调用响亮报错）；`hcu_env` 环境注册表、`kill_switch` 快关；slimquant / mqa_logits_emu / dsa_topk 等模型级补丁 |
+| `hcu_adapter/` 其余模块（机制层 + 域桥 + vendor 桩，双宿主共享） | 元路径影子库（import hook）与桥体 | `aiter` 真包优先 + 缺口填空；`flashinfer` / `flash_attn` 桩（import 成功、调用响亮报错）；`hcu_env` 环境注册表、`kill_switch` 快关；slimquant / mqa_logits_emu / dsa_topk 等模型级补丁 |
 
 ### 算子库层
 
@@ -129,15 +129,21 @@ flowchart TB
 | mooncake | 待适配 | PD 分离/分层 KV transfer 的 `transfer_kv_*` 契约由 `sgl_kernel/kvcacheio.py` torch 移植顶住调用面，mooncake 本体待接 |
 | deepep | 待适配 | MoE EP 通信库，仓库内尚无落点（TP1 单机绕过），多卡 EP 时再评估 |
 
-### plugin（独立仓，规划中）
+### plugin（独立仓，sglang 侧已落地：hcu-sglang-plugin）
 
 与 adapter 分工（判别问句与裁决链见 [governance.md](governance.md) §0/§3）：
 adapter 只做**行为还原**（上游在 AMD/CUDA 上有的行为，HCU 补齐到一致）；
 **上游没有的能力**归独立 plugin 仓，其目的同样是**性能优化**——算子融合、
-专项内核、新调度路径等官方代码没有的功能，只是以"新增能力"形态承载：
-经上游 seam 接入 adapter 的注册表与归因设施，**或直接调用 lightop / aiter
-等底层库**（不强制穿过 adapter 路由）。plugin 仓的接入同样登记运行时
-注册表，保证 `HCU_ADAPTER_DUMP` 看到完整图景。
+专项内核、新调度路径、自研 channel-wise 量化 scheme 等官方代码没有的功能，
+只是以"新增能力"形态承载：经上游 seam 接入 adapter 的注册表与归因设施，
+**或直接调用 lightop / aiter 等底层库**（不强制穿过 adapter 路由）。plugin 仓
+的接入同样登记运行时注册表，保证 `HCU_ADAPTER_DUMP` 看到完整图景。
+
+**接入时序（governance §7.1）**：adapter（sitecustomize）→ sglang import →
+`load_plugins()`（entry_points `sglang.srt.plugins`，每进程）→
+`HookRegistry.apply_hooks()` → 引擎启动。plugin hook wrap 在 adapter 已换绑
+的函数之上；故 pre-import 级接管只能在 adapter，plugin hook 对 adapter 路径
+用 AROUND 不用 REPLACE。
 
 ## 5. 横切机制
 
@@ -145,7 +151,7 @@ adapter 只做**行为还原**（上游在 AMD/CUDA 上有的行为，HCU 补齐
   > 自动规则（arch/wheel 探测）> 默认值；启动日志打印每个生效值及来源，
   正确部署零环境变量。手册见 [env-vars.md](env-vars.md)、配置层见
   [config.md](config.md)。
-- **运行时注册表**（`_adapters/registry.py`）：每算子活跃实现+安装机制登记，
+- **运行时注册表**（`hcu_adapter/registry.py`）：每算子活跃实现+安装机制登记，
   启动日志 `HCU adapter runtime:` 逐项打印；`HCU_ADAPTER_DUMP=路径` 出 JSON
   供归因与配置级二分。规约见 [governance.md](governance.md) §4。
 - **快关**（`kill_switch.py`）：`HCU_DISABLE_OPS=aiter_ar,aiter_fa` 一翻开关绕开
@@ -167,7 +173,7 @@ python -m sglang.launch_server
                  ├─ triton 自研核（首档）
                  ├─ vendor 封装（lightop / aiter / flash_mla …，hcu_env + 快关门控）
                  └─ torch 兜底
-            └─ 其余 import 面：_adapters 元路径桩接管 aiter / flashinfer / flash_attn
+            └─ 其余 import 面：hcu_adapter 元路径桩接管 aiter / flashinfer / flash_attn
                  └─ PyTorch（HIP）→ DTK（驱动·编译·运行时）→ 海光 HCU（DCU）
 ```
 
@@ -181,16 +187,16 @@ python -m sglang.launch_server
 ## 7. 目录导览
 
 ```
-hcu-sglang-adapter/
+adapter-das/
 ├─ sitecustomize.py            # 三行自动加载入口
-├─ hcu_adapter/
-│   ├─ bootstrap.py            # 宿主探测 + common/host 分发
-│   └─ bridges/                # common / sglang / vllm / deepinfer
-├─ sgl_kernel/                 # 同名影子包 = sglang 的 AOT 默认内核路径
+├─ hcu_adapter/                # 唯一适配包：包内三层见下——
+│   ├─ bootstrap.py            #   宿主探测 + common/host 分发
+│   ├─ bridges/                #   common 跨框架守卫 + sglang/vllm 宿主桥
+│   └─ 其余模块 + aiter/ 等 subpkg   #   机制层 + 域桥 + vendor 桩（双宿主共享）
+├─ sgl_kernel/                 # 同名影子包 = sglang 的 AOT 默认内核路径（宿主 import 契约，名字钉死）
 │   ├─ elementwise/layernorm/rope/allreduce/flash_attn.py …   # op 模块（三档路由）
-│   ├─ gemm_fp8.py / gemm_int8.py / flash_mla.py / kvcacheio.py
-│   └─ _adapters/              # 元路径影子库 + 机制层 + 模型级桥（见下三分类）
-├─ ci/                         # L0 结构门禁 / L1 GPU 门禁 / MR watcher
+│   └─ gemm_fp8.py / gemm_int8.py / flash_mla.py / kvcacheio.py
+├─ ci/                         # L0 结构门禁 / L1 GPU 门禁
 ├─ tests/
 │   ├─ test_ops_cpu.py         # torch 兜底路径（任何机器）
 │   ├─ kernels/                # GPU 单测 + parity + graph capture 回归
@@ -198,14 +204,13 @@ hcu-sglang-adapter/
 │   ├─ adapter/                # 接管机制本身（裁决链/桩行为）
 │   ├─ bench/                  # 性能
 │   └─ tools/                  # 门禁/探针/物料/调试（命名语法见其 README）
-├─ docs/                       # architecture / env-vars / models / cookbook / config / ci
+├─ docs/                       # architecture / governance / env-vars / models / cookbook / config / ci
 ├─ skills/hcu-adapter-dev/     # 开发规约 skill（AI 协作与人的排查手册）
 ├─ hcu_adapter.yaml            # 部署层配置示例（BACKEND_CATALOG 的使用面）
-+ docs/board.md               # 看板+协作规约（原 CONTRIBUTING 并入）
 └─ architecture.html           # 本文档配图（自包含，浏览器直开）
 ```
 
-`_adapters/` 内部三分类（新文件按此归位）：
+`hcu_adapter/` 内部三分类（新文件按此归位）：
 
 | 类 | 文件 | 说明 |
 |---|---|---|
@@ -240,8 +245,8 @@ hcu-sglang-adapter/
 |---|---|---|---|
 | 1 | `bridges/sglang.py` 仍是 3000+ 行顺序化遗留链 | 薄入口与宿主隔离已完成，但 sglang 域内桥仍共享命名空间 | **分阶段拆分**（见下），每阶段容器 e2e 复验后合入 |
 | 2 | `tests/tools/` 90+ 文件 | 已用 `_test_/_probe_/_launch_/_dbg_` 前缀语法事实上分层；`_dbg_` 用完即删（2026-10 已清 12 个结案取证脚本） | 语法固化为 README 规约（不搬迁：路径被 CI/文档/记忆引用，搬迁成本>收益） |
-| 3 | `_adapters/` 混三类文件 | 语义分类未显式 | §7 三分类表归位约定：新桥一律独立文件，不再长入 sitecustomize |
-| 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（board.md「协作与分支规约」共享节点节）+ CI worktree 作为唯一第二执行面 |
+| 3 | `hcu_adapter/` 混三类文件 | 语义分类未显式 | §7 三分类表归位约定：新桥一律独立文件，不再长入 sitecustomize |
+| 4 | 双树漂移（本地编辑树 vs 容器执行树） | elementwise API 漂移实 bug 一次 | 纪律（reading-guide「不变量」§5-6 共享节点节）+ CI worktree 作为唯一第二执行面 |
 
 **宿主桥后续拆分计划**（薄 `sitecustomize` 与宿主分发已落地；目标终态见
 governance.md §0——adapter 职能 = 影子库/算子路由/质量检测的**行为还原**，
@@ -253,21 +258,22 @@ governance.md §0——adapter 职能 = 影子库/算子路由/质量检测的**
   registry.register）；RMSNorm ABI 桥已归位 `bridges/vllm.py`。行为等价，
   import 顺序不变。
 - **P2（需 e2e）**：判定词类桥（model_overrides wrap、CP gate 等）迁到
-  `_adapters` post_hooks，缩短 `bridges/sglang.py`。
+  `hcu_adapter` post_hooks，缩短 `bridges/sglang.py`。
 - **P3**：P2 全量 e2e（cookbook 冒烟套件）通过后，宿主桥只保留顺序编排，
-  新实现体禁入——这已从计划升格为规约（governance §0 / board.md 协作规约
-  §3b），**现在起新需求先过双仓判别：行为还原才进本仓，功能扩展落
-  plugin 仓**；本仓的新域桥也直接落 `_adapters/<域>.py`，不等 P1-P3 完成。
+  新实现体禁入——这已从计划升格为规约（governance §0），**现在起新需求先过
+  双仓判别：行为还原才进本仓，功能扩展落 plugin 仓**；本仓的新域桥也直接落
+  `hcu_adapter/<域>.py`，不等 P1-P3 完成。
 
 ## 10. 协作流程与门禁
 
-分支模型、checklist、节点纪律见 [board.md](board.md)「协作与分支规约」节；
-CI 细节见 [ci.md](ci.md)。一张图看 MR 全程：
+协作红线（分仓边界/接入时序/共建边界/维护闭环）、裁决链与登记规则见
+[governance.md](governance.md)（§0/§3/§7）；CI 细节与双线三绑定铁律
+（分支↔上游树↔容器）见 [ci.md](ci.md)。一张图看 MR 全程：
 
 ```mermaid
 flowchart LR
-    DEV["本地分支 feat/*<br/>编辑树唯一改码处"] -->|"push"| MR["Gitee MR"]
-    MR -->|"自动"| L0["L0 结构门禁<br/>Gitee Go 云端·秒级"]
+    DEV["本地分支 feat/*<br/>编辑树唯一改码处"] -->|"push"| MR["MR（托管平台）"]
+    MR -->|"自动"| L0["L0 结构门禁<br/>托管平台云端·秒级"]
     MR -->|"watcher 轮询"| L1["L1 GPU 数值门禁<br/>容器空闲卡·~10min<br/>结果评论回帖"]
     L0 -->|"绿"| GATE{"L1 绿?<br/>改 import 接管则加 e2e 冒烟"}
     L1 --> GATE
@@ -281,7 +287,7 @@ flowchart LR
 flowchart TB
     subgraph OWN["职责归属（评审对照）"]
         O1["op 模块作者：sgl_kernel/*.py + tests 三层"]
-        O2["桥作者：_adapters/<域>.py + 根因注释 + 开关"]
+        O2["桥作者：hcu_adapter/<域>.py + 根因注释 + 开关"]
         O3["机制 owner：_base/hcu_env/hcu_config/kill_switch<br/>（少数人守护，MR 强制 e2e）"]
         O4["CI owner：ci/ + watcher 运维 + 卡池协调"]
     end

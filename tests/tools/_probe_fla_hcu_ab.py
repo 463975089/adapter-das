@@ -4,7 +4,7 @@
 - KDA prefill: kda_prefill_emu（顺序 torch，绿门）
 - conv1d fn/update: conv1d emus（绿门）
 - KDA decode: 官方 v0.5.21 fused_sigmoid_gating_recurrent（健康）
-挑战侧：sgl_kernel._adapters.fla_hcu.*（vendored fork 内核，纯 triton）。
+挑战侧：hcu_adapter.fla_hcu.*（vendored fork 内核，纯 triton）。
 
 2026-10-16 实测：chunk_kda out/final-state cos≥0.9999 快 473-1009×；
 conv fn 16.4×、update 4.3×（状态位精确相等）；decode 与 stock 同速不换。
@@ -48,8 +48,8 @@ def bench(fn, iters=20, warmup=5):
 
 
 print("=== 1) KDA prefill chunk: fork triton vs emu ===")
-from sgl_kernel._adapters.fla_hcu.kda import chunk_kda
-from sgl_kernel._adapters.kda_prefill_emu import kda_extend_emu
+from hcu_adapter.fla_hcu.kda import chunk_kda
+from hcu_adapter.kda_prefill_emu import kda_extend_emu
 
 for (T1, T2) in [(1536, 512), (2048, 0), (8192, 0)]:
     B = 2 if T2 else 1
@@ -90,8 +90,8 @@ for (T1, T2) in [(1536, 512), (2048, 0), (8192, 0)]:
         print(f"  time: emu={t_e:.1f}ms fork={t_f:.2f}ms  speedup={t_e/t_f:.0f}x")
 
 print("=== 2) causal_conv1d_fn varlen: fork vs emu ===")
-from sgl_kernel._adapters.conv1d_fn_emu import conv1d_fn_emu
-from sgl_kernel._adapters.fla_hcu.conv1d_triton import causal_conv1d_fn
+from hcu_adapter.conv1d_fn_emu import conv1d_fn_emu
+from hcu_adapter.fla_hcu.conv1d_triton import causal_conv1d_fn
 
 DIM, W = 2048, 4
 T1, T2 = 1536, 512
@@ -119,8 +119,8 @@ t_f = bench(lambda: causal_conv1d_fn(x, wt, bias, conv_states=cs_f, query_start_
 print(f"  time: emu={t_e:.2f}ms fork={t_f:.2f}ms speedup={t_e/t_f:.1f}x")
 
 print("=== 3) causal_conv1d_update: fork vs emu ===")
-from sgl_kernel._adapters.conv1d_update_emu import causal_conv1d_update_emu
-from sgl_kernel._adapters.fla_hcu.conv1d_triton import causal_conv1d_update
+from hcu_adapter.conv1d_update_emu import causal_conv1d_update_emu
+from hcu_adapter.fla_hcu.conv1d_triton import causal_conv1d_update
 
 BS = 16
 xu = torch.randn(BS, DIM, device=dev, dtype=torch.bfloat16)
@@ -142,7 +142,7 @@ try:
     from sglang.kernels.ops.attention.fla.fused_sigmoid_gating_recurrent import (
         fused_sigmoid_gating_delta_rule_update as stock_dec,
     )
-    from sgl_kernel._adapters.fla_hcu.fused_sigmoid_gating_recurrent import (
+    from hcu_adapter.fla_hcu.fused_sigmoid_gating_recurrent import (
         fused_sigmoid_gating_delta_rule_update as fork_dec,
     )
     qd = torch.randn(1, BS, H, K, device=dev, dtype=torch.bfloat16)

@@ -119,7 +119,7 @@ def _rank_worker(rank, world):
     not (torch.cuda.is_available() and torch_version_hip is not None),
     reason="needs HIP GPU (aiter tier)")
 def test_bridge_installed():
-    from sgl_kernel._adapters import hcu_env
+    from hcu_adapter import hcu_env
 
     if hcu_env.resolve("HCU_AR_NORM_IMPL")[0] != "aiter":
         pytest.skip("HCU_AR_NORM_IMPL did not resolve to aiter")

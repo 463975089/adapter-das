@@ -24,7 +24,7 @@
 |---|---|---|---|
 | 1 | 拿量化模型与启动命令（六项信息） | 权重格式对照 `docs/env-vars.md`；精度验证方式对照 `references/precision-triage.md` | kb:de8fc0 |
 | 2 | 最简并行跑通（单机 TP 起步，勿先叠 CP/EP/PP/PD） | 容器先按黄金法则 8 灭镜像包 | kb:de8fc0 |
-| 3 | 出开箱性能（PD 分离模拟要求按团队表格） | 基线记录进 `docs/board.md` 对应 R-xx 条目 | kb:4182a4, kb:f9261a |
+| 3 | 出开箱性能（PD 分离模拟要求按团队表格） | 基线记录进 `docs/models.md` 对应模型行（含环境戳） | kb:4182a4, kb:f9261a |
 | 4 | 补各并行方式数据（TP/EP/CP 各影响什么） | 快关 A/B 用 `HCU_DISABLE_OPS`（kill_switch 注册表） | kb:a860f2 |
 | 5 | 抓 profiler（避开 warmup，prefill/decode 分开抓） | 下方 curl；trace 与启动/bench 参数同存 | kb:dd1d00 |
 | 6 | 分析：算子八字段表→**先对齐端到端**→竞品同口径 | 与 `tests/bench`（gsm8k_eval）结果互证 | kb:ff528d |

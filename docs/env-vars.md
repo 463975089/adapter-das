@@ -17,7 +17,7 @@
 
 裁决顺序：**显式 env > 配置文件（hcu_adapter.yaml）> 自动规则 > 默认值**
 （hcu_env.resolve 实现；配置文件机制见 [config.md](config.md)）。注册表在
-`sgl_kernel/_adapters/hcu_env.py`（新增变量必须同时登记本手册）。算子后端的
+`hcu_adapter/hcu_env.py`（新增变量必须同时登记本手册）。算子后端的
 正式选择走配置文件；运行时每算子实际谁在跑，看启动日志 `HCU adapter runtime:`
 行或 `HCU_ADAPTER_DUMP`（规约见 [governance.md](governance.md) §4）。
 
@@ -29,7 +29,7 @@
 | `HCU_DISABLE_OPS` | 空 | —（快关只应显式） | 快关总闸，逗号分隔：`aiter_ar`（拒用→NCCL 回退）、`aiter_fa`（调用时报错）。精度排查用，见 skills/…/kill-switches.md |
 | `HCU_PLATFORM_SEMANTICS` | cuda | —（§0.5 拍板路线，platform_seam.py 桥） | sglang 平台判定语义：cuda=上游 `is_cuda/is_hip/is_cuda_alike/platforms` 统一回 CUDA（新模型天然走 CUDA 分支），外加 is_flashinfer_available=False、external-event 关、CUDA 版本特性门 False、FP8_E4M3_MAX 重算 fn(448)；硬件层（torch.version/triton/vllm/kernels 选核）保持 HIP 真值。hip=legacy 适配路线（降级调试 / A-B 对照） |
 | `HCU_ADAPTER_DUMP` | 空 | —（排查只应显式） | 启动时落 runtime dump：每个 catalog 算子的活跃实现、安装来源（seam/rebind/text-patch）、env 生效值+来源。`=路径` 写 JSON 文件（归因脚本与配置级二分消费），`=1` 打进启动日志。规约见 docs/governance.md |
-| `HCU_JIT_PROGRESS_LOG` | `/tmp/hcu_jit_progress.log` | l1_gpu_gate.sh 每轮自动设 `/tmp/hcu_jit_progress.<pid>.log`（并发 gate 不互串） | JIT 逐颗编译进度期刊（`=""` 关闭）：`sgl_kernel/_adapters/jit_build_log.py` 包上游 `ninja.build`，每颗**真实**编译（缓存命中不进此路径）向 stderr+journal 各出 `compiling/built/FAILED` 一行（FAILED 后调用侧重试会再记一对）；gate 心跳每 60s tail 此文件——journal 持续推进=在编译、冻结=楔死，日志可辨（2026-10-20） |
+| `HCU_JIT_PROGRESS_LOG` | `/tmp/hcu_jit_progress.log` | l1_gpu_gate.sh 每轮自动设 `/tmp/hcu_jit_progress.<pid>.log`（并发 gate 不互串） | JIT 逐颗编译进度期刊（`=""` 关闭）：`hcu_adapter/jit_build_log.py` 包上游 `ninja.build`，每颗**真实**编译（缓存命中不进此路径）向 stderr+journal 各出 `compiling/built/FAILED` 一行（FAILED 后调用侧重试会再记一对）；gate 心跳每 60s tail 此文件——journal 持续推进=在编译、冻结=楔死，日志可辨（2026-10-20） |
 | `HCU_NCCL_TOPO_GUARD` | **1（默认）** | 失配才动（box16 2026-10-25） | NCCL_TOPO_FILE 卡数失配守卫（`nccl_topo_guard.py`）：镜像预设全卡拓扑 XML 而可见卡为子集（`HIP_VISIBLE_DEVICES=0-3` 等）时，NCCL 首个集合通信即致命 XGMI 错（could not find GPU 5000，box16 4-proc 实锤）。守卫数 XML `<gpu>` 节点 vs torch 可见卡数：**失配→清空该 env**（NCCL 回退 sysfs 自侦，任意子集皆正确）+一行日志；匹配→保留；判不了→保留。=0 关闭 |
 | `HCU_JIT_WATCHDOG` | **1（默认）** | 冷缓存才动（box16 2026-10-25） | 冷 JIT watchdog 地板（`watchdog_cold.py`）：冷容器首捕获 8 rank 全量 JIT 编译风暴超 sglang 默认 watchdog 300s→SIGQUIT 杀树（box16 冷启 16 并发首请求实锤）。TRITON_CACHE_DIR/TORCH_EXTENSIONS_DIR 文件数均 <200 判冷；冷且用户未显式给 `--watchdog-timeout`（值=300 默认）时抬地板到 **1500s**（box16 实证装得下编译风暴）；**显式值恒赢**；种子 warm 盒不受影响。=0 关闭 |
 | `HCU_TVMFFI_WARMUP` | **1（默认）** | 冷缓存才动（nmz26 2026-10-26） | tvm-ffi dlpack 首编自递归 breaker（`tvmffi_warmup.py`）：冷缓存下 tvm_ffi 首次 import 派构建子进程，子进程继承 PYTHONPATH 重进 sitecustomize → 桥 eager import 链（dsa_topk_v2→xgrammar→tvm_ffi）再派子进程 → 自递归堆积（bootstrap §3 的 122 进程/50 分钟案；nmz26 dsv41f 冷容器 2026-10-26 复现，签名=每 ~30s 孵一个新 python3、各烧 ~30s import 后阻塞）。sitecustomize 前部（先于 dsa_topk_v2 等重桥）探温 `~/.cache/tvm-ffi/**.so`，冷则 flock 排他（TP spawn 风暴单构建者）+ 剥 PYTHONPATH 亲跑 tvm_ffi 自带构建脚本（bootstrap §3 自动化）；加载器仍要自派子进程时窗口内 Popen 包装注入干净 env 物理断路。=0 关闭（调试层） |
@@ -52,7 +52,7 @@
 | `HCU_DEEPGEMM_BRIDGE` | 0 | —（EP 启动显式 =1） | DTK `deepgemm`（连写包名）别名成 `deep_gemm` + wrapper `ENABLE_JIT_DEEPGEMM` 翻转（HIP 平台门原样恒 False），解锁 deepep_ll/normal MoE runner——bf16 grouped GEMM（masked/contiguous）上游同名已验；fp8 的 scale 布局转换在 shim 里响亮 NotImplementedError（未验不瞎算）。EP 服务启动脚本必带 `=1` + `SGLANG_DEEPEP_BF16_DISPATCH=1` |
 | `HCU_TRITON_CONTIG` | 1 | —（随 DEEPGEMM 桥生效） | DeepEP normal/auto prefill 的 contiguous grouped GEMM 用 adapter triton 内核（`deep_gemm_contig_triton.py`，原生 [E,N,K] 权重 + mk-alignment get/set API），替代坏掉的 DTK w16a16 contiguous 内核（2D VMFault/3D 数字错）；=0 退回 DTK 原核仅作对照（会崩）。门禁 `tests/tools/_test_contig_triton.py` |
 | `HCU_FUSED_MOE_IMPL` | auto | auto / aiter / triton | fused MoE（standard dispatch，triton runner 入口 `fused_experts`）先试 DTK aiter `aiter_moe`：块量化(block_shape=[128,128])走 ASM 调优表 `tuned_fmoe_asm_w8a8_group.csv`，通道量化(block_shape=None)走 moe_c 配置；形状不在调优表 → 自动回 stock triton 内核（每形状 log 一次）。`aiter`=回退时告警；`triton`=关闭。仅 w8a8 + bf16 激活 + 无 bias/no_combine；deepep runner 不受影响。门禁 `tests/tools/_test_aiter_moe_gate.py`（nmz18 gfx938 rel 0.02-0.04 PASS） |
-| `HCU_W4A16_MOE_IMPL` | auto | auto / triton / moe_c / deepgemm | W4A16 MoE（moe_wna16，AWQ/GPTQ-int4 线）专家 GEMM 档：auto=现答 triton（stock MoeWNA16 臂不变）；**moe_c**=aiter 轮 moe_c w4a16 marlin 厂商 GEMM 桥（`sgl_kernel/_adapters/moe_c_w4a16.py`，box16 dsv41f-INT4 2026-10-26：aiter 对齐→厂商 GEMM1→dsv4 精确 clamp-silu（非 aiter 的 situ softcap）→厂商 GEMM2→sum；探针 parity med 0.0055、M16 全层 1161µs vs triton 8100µs（7×，40 层 ≈ −280ms/步）、capture 安全（无宿主同步、prep 落在 warmup）；守卫=g32 网格（channel 按值复制展开）、gemm1 (K/32)%16==0、N%256、I≥256；轮 gemm2 有 K 律 (K/32)%16==0——I 非 512 倍数时 K 补零 nibble 8 到 512 倍数（2304→2560，数学等价））；**deepgemm**=R-05 桥（`sgl_kernel/_adapters/w4a16_moe.py`，DTK 轮 masked w4a16 grouped C++ gemm 作专家 GEMM，自管 dispatch/silu/combine 小管线；eager-only v1=捕获/inplace 恒回 triton；接手守卫=无零点对称臂 (q−8)·s、g∈{32,64,128}（载入期一次性扩 32 格）、K%128/I%128/2I%16、qweight=轮 b 格式零转换（marlin repack+scale 展开缓存于权重张量））——链在同一 fused_experts 钩面（moe_c 最外 10.7 → channel 改写 10.6 → deepgemm 10.5 → aiter 10 → stock）；deepgemm 探针 recon rel=0.0022 |
+| `HCU_W4A16_MOE_IMPL` | auto | auto / triton / moe_c / deepgemm | W4A16 MoE（moe_wna16，AWQ/GPTQ-int4 线）专家 GEMM 档：auto=现答 triton（stock MoeWNA16 臂不变）；**moe_c**=aiter 轮 moe_c w4a16 marlin 厂商 GEMM 桥（`hcu_adapter/moe_c_w4a16.py`，box16 dsv41f-INT4 2026-10-26：aiter 对齐→厂商 GEMM1→dsv4 精确 clamp-silu（非 aiter 的 situ softcap）→厂商 GEMM2→sum；探针 parity med 0.0055、M16 全层 1161µs vs triton 8100µs（7×，40 层 ≈ −280ms/步）、capture 安全（无宿主同步、prep 落在 warmup）；守卫=g32 网格（channel 按值复制展开）、gemm1 (K/32)%16==0、N%256、I≥256；轮 gemm2 有 K 律 (K/32)%16==0——I 非 512 倍数时 K 补零 nibble 8 到 512 倍数（2304→2560，数学等价））；**deepgemm**=R-05 桥（`hcu_adapter/w4a16_moe.py`，DTK 轮 masked w4a16 grouped C++ gemm 作专家 GEMM，自管 dispatch/silu/combine 小管线；eager-only v1=捕获/inplace 恒回 triton；接手守卫=无零点对称臂 (q−8)·s、g∈{32,64,128}（载入期一次性扩 32 格）、K%128/I%128/2I%16、qweight=轮 b 格式零转换（marlin repack+scale 展开缓存于权重张量））——链在同一 fused_experts 钩面（moe_c 最外 10.7 → channel 改写 10.6 → deepgemm 10.5 → aiter 10 → stock）；deepgemm 探针 recon rel=0.0022 |
 | `HCU_PREFILL_CP` | 0 | —（显式 =1 开启） | prefill 上下文并行（`--enable-prefill-cp --attn-cp-size N --cp-strategy zigzag`）HIP 平台门 + 两处语义补丁：①rope 融合守卫——CP 分块 extend 时本地 token 数 < 全序列 slot 数，HIP 专属融合 rope+KV 写核断言 t==t_slot，slot 数≠token 数即自动降级纯 rope（decode 不受影响）；②`enable_fused_set_kv_buffer` 判定词 HIP 臂补 `not is_cp_active`（上游漏了，CUDA 臂有）——否则模型以为融合 rope 会写 KV 而传 save_kv_cache=False，结果没人写池（输出乱码）。nmz26 Qwen3-30B-A3B attn-cp=2 zigzag 已验（输出与 TP2 基线对齐） |
 | `HCU_PREFILL_CP_DEBUG` | 空 | 1 | CP 排查插桩：zigzag 策略各阶段（shard/gather/materialize）校验和日志，定位首个数值坏环节 |
 | `HCU_FA_EMU_DEBUG` | 空 | 1 | fa3 emu 每次调用打 q 形状/cu_seqlens/cache_seqlens/校验和（graph capture 期间自动静默） |
@@ -155,7 +155,7 @@ PM 预分类（2026-10-17 扫 cookbook + `_launch_`/`_test_` 脚本，18 变量�
 
 语义钉：`tests/adapter/test_platform_env.py`（填充/显式覆盖赢/幂等三断言）。
 
-### B 类：模型感知 auto（已落地 2026-10-18，`sgl_kernel/_adapters/model_env.py`）
+### B 类：模型感知 auto（已落地 2026-10-18，`hcu_adapter/model_env.py`）
 
 | 变量 | 去向 | 理由 |
 |---|---|---|
