@@ -390,6 +390,22 @@ def register(op, impl, target, mechanism, role=ROLE_ACTIVE, source=None,
                 " TEXT_PATCH_ALLOWLIST -- new patches need a governance"
                 " review (docs/governance.md §3)"
             )
+    if mechanism not in (MECH_SEAM, MECH_REBIND, MECH_TEXT):
+        raise ValueError("Unknown installation mechanism: " + mechanism)
+    if role not in (ROLE_ACTIVE, ROLE_REF):
+        raise ValueError("Unknown implementation role: " + role)
+    if op in hcu_config._DEEPINFER_CATALOG:
+        from .ops.selector import guard
+        guard(op)
+        candidates = hcu_config._DEEPINFER_CATALOG[op]
+        if impl not in {item["implementation"] for item in candidates.values()}:
+            raise ValueError("Implementation is absent from catalog: " + str(impl))
+        configured = hcu_config.load()["ops"].get(op)
+        if configured is not None and candidates[configured]["implementation"] != impl:
+            raise ValueError("Selected backend differs from installed provider for " + op)
+        previous = _RECORDS.get(op)
+        if previous is not None and (previous["implementation"], previous["target"], previous["mechanism"]) != (impl, target, mechanism):
+            raise ValueError("Conflicting active binding: " + op)
     src = source or _caller()
     prev = _BOUND.get(target)
     if prev is not None and prev != op:
@@ -401,6 +417,7 @@ def register(op, impl, target, mechanism, role=ROLE_ACTIVE, source=None,
     _RECORDS[op] = {
         "op": op,
         "impl": getattr(impl, "__qualname__", repr(impl)) if impl is not None else repr(impl),
+        "implementation": impl if isinstance(impl, str) else getattr(impl, "__qualname__", repr(impl)),
         "target": target,
         "mechanism": mechanism,
         "role": role,
@@ -435,11 +452,13 @@ def dump(path=None):
     hcu_env.log_summary's data)}. CI and the config-level bisection
     scripts consume this; humans read log_summary().
     """
-    from . import hcu_config, hcu_env
+    from . import hcu_config
+    from . import hcu_env
 
-    unbound = [op for op in hcu_config.BACKEND_CATALOG if op not in _RECORDS]
+    unbound = [op for op in hcu_config.BACKEND_CATALOG if op not in _RECORDS and op not in {r["op"] for r in _OVERRIDES.values()}]
     doc = {
         "ops": _RECORDS,
+        "overrides": overrides(),
         "unbound": unbound,
         "env": {
             name: dict(zip(("value", "source"), hcu_env.resolve(name)))
@@ -468,9 +487,68 @@ def log_summary(logger=None):
         )
     from . import hcu_config
 
-    unbound = [op for op in hcu_config.BACKEND_CATALOG if op not in _RECORDS]
+    unbound = [op for op in hcu_config.BACKEND_CATALOG if op not in _RECORDS and op not in {r["op"] for r in _OVERRIDES.values()}]
     if unbound:
         lg.warning(
             "HCU adapter runtime: catalog ops on upstream path (no patch):"
             " %s", ", ".join(sorted(unbound)),
         )
+
+
+def snapshot():
+    from . import hcu_config as config
+    return {
+        "overrides": overrides(),
+        "bindings": {op: {"implementation": record["implementation"],
+                          "target": record["target"], "mechanism": record["mechanism"]}
+                     for op, record in _RECORDS.items()},
+        "unbound": sorted(set(config.BACKEND_CATALOG) - _RECORDS.keys() - {r["op"] for r in _OVERRIDES.values()}),
+    }
+
+
+_OVERRIDES = {}
+
+
+def replace(owner, name, implementation, *, namespace, expected):
+    from . import hcu_config as config
+    from .ops.selector import guard
+    module_name = getattr(owner, "__name__", type(owner).__name__)
+    if not hasattr(owner, "__path__") and hasattr(owner, "__module__"):
+        module_name = owner.__module__ + "." + getattr(owner, "__qualname__", module_name)
+    target = module_name + "." + name
+    if getattr(owner, name, None) is not expected:
+        raise RuntimeError("Binding changed before replacement: " + target)
+    previous = _OVERRIDES.get(target)
+    if previous is not None:
+        if previous["namespace"] != namespace or previous["object"] is not expected:
+            raise RuntimeError("Conflicting overlay owner: " + target)
+        if implementation is expected:
+            return expected
+
+    guard(target)
+    parent = _BOUND.get(target)
+    if parent is not None:
+        guard(parent)
+    op = namespace + ":" + target
+    provider = getattr(implementation, "__module__", "") + "." + getattr(implementation, "__qualname__", type(implementation).__name__)
+    if op in config.BACKEND_CATALOG and previous is None:
+        raise RuntimeError("Duplicate plugin catalog entry: " + op)
+    setattr(owner, name, implementation)
+    config.BACKEND_CATALOG[op] = {
+        "var": None, "summary": target,
+        "backends": {"plugin": {"status": "candidate", "note": "Explicit overlay of the effective adapter baseline", "implementation": provider}},
+    }
+    baseline = (previous["baseline"] if previous is not None else
+                getattr(expected, "__module__", "") + "." + getattr(expected, "__qualname__", type(expected).__name__))
+    _OVERRIDES[target] = {
+        "namespace": namespace, "op": op, "implementation": provider,
+        "baseline_op": parent, "baseline": baseline,
+        "history": ([] if previous is None else previous["history"] + [previous["implementation"]]),
+        "object": getattr(owner, name),
+    }
+    return expected
+
+
+def overrides():
+    return {target: {key: value for key, value in record.items() if key != "object"}
+            for target, record in _OVERRIDES.items()}

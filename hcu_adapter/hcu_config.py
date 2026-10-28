@@ -472,17 +472,32 @@ BACKEND_CATALOG = {
     },
 }
 
+from .ops.deepinfer_catalog import BACKEND_CATALOG as _DEEPINFER_CATALOG
+
+for _op, _providers in _DEEPINFER_CATALOG.items():
+    if _op in BACKEND_CATALOG:
+        raise RuntimeError("Duplicate catalog operator: " + _op)
+    BACKEND_CATALOG[_op] = {
+        "var": None,
+        "summary": _op,
+        "backends": {name: {"status": item["status"], "note": item["limitations"],
+                            "implementation": item["implementation"]}
+                     for name, item in _providers.items()},
+    }
+
 CONFIG_NAME = "hcu_adapter"
-_STATE = {"loaded": False, "path": None, "ops": {}, "overrides": {}}
+_STATE = {"loaded": False, "path": None, "ops": {}, "overrides": {}, "hosts": {}}
 
 
 def _candidate_paths():
     out = []
-    env = os.environ.get("HCU_CONFIG", "")
+    from . import hcu_env
+
+    env, _ = hcu_env.resolve("HCU_CONFIG")
     if env:
         out.append(env)
     for base in (os.getcwd(), os.path.dirname(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))):
+            os.path.dirname(os.path.abspath(__file__)))):
         for ext in ("yaml", "yml", "json"):
             out.append(os.path.join(base, f"{CONFIG_NAME}.{ext}"))
     return out
@@ -505,6 +520,25 @@ def _validate(doc, path):
         raise HcuConfigError(
             f"{path}: unsupported version {ver!r} (expected 1)"
         )
+    if "runtime" in doc:
+        raise HcuConfigError("Move DeepInfer runtime settings into hosts.deepinfer")
+    hosts = doc.get("hosts", {})
+    if not isinstance(hosts, dict) or set(hosts) - {"deepinfer"}:
+        raise HcuConfigError("Only hosts.deepinfer runtime settings are currently supported")
+    if "deepinfer" in hosts:
+        options = hosts["deepinfer"]
+        allowed = {"artifacts", "physical_device_count", "allow_cuda_graph", "tilelang_backend", "grouped_gemm_backend"}
+        if not isinstance(options, dict) or set(options) - allowed:
+            raise HcuConfigError("Unknown DeepInfer host setting")
+        for key, value in options.items():
+            if key == "artifacts" and (not isinstance(value, str) or not value):
+                raise HcuConfigError("hosts.deepinfer.artifacts must be a nonempty path")
+            if key == "physical_device_count" and (type(value) is not int or value <= 0):
+                raise HcuConfigError("hosts.deepinfer.physical_device_count must be a positive integer")
+            if key == "allow_cuda_graph" and type(value) is not bool:
+                raise HcuConfigError("hosts.deepinfer.allow_cuda_graph must be a boolean")
+            if key.endswith("_backend") and value not in ("triton", "torch"):
+                raise HcuConfigError("hosts.deepinfer backends must be triton or torch")
     ops = doc.get("ops", {})
     if not isinstance(ops, dict):
         raise HcuConfigError(f"{path}: 'ops' must be a mapping")
@@ -574,12 +608,13 @@ def load(force=False):
         if os.path.isfile(cand):
             path = cand
             break
-    _STATE.update(loaded=True, path=path, ops={}, overrides={})
+    _STATE.update(loaded=False, path=path, ops={}, overrides={}, hosts={})
     if path is None:
+        _STATE["loaded"] = True
         return _STATE
     doc = _parse_file(path)
     chosen, overrides = _validate(doc, path)
-    _STATE.update(ops=chosen, overrides=overrides)
+    _STATE.update(loaded=True, ops=chosen, overrides=overrides, hosts=doc.get("hosts", {}))
     return _STATE
 
 

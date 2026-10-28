@@ -13,7 +13,7 @@ from pathlib import PurePath
 HOST_ENV = "HCU_ADAPTER_HOST"
 ACTIVE_HOST_ENV = "_HCU_ADAPTER_ACTIVE_HOST"
 
-_HOSTS = frozenset({"sglang", "vllm"})
+_HOSTS = frozenset({"sglang", "vllm", "deepinfer"})
 _PUBLIC_CHOICES = _HOSTS | {"auto", "none"}
 _PROPAGATED_CHOICES = _HOSTS | {"none"}
 _installed_pid: int | None = None
@@ -56,7 +56,7 @@ def _host_from_loaded(loaded_modules: Iterable[str]) -> str | None:
     present = roots & _HOSTS
     if len(present) == 1:
         return next(iter(present))
-    if present == _HOSTS:
+    if {"sglang", "vllm"}.issubset(present):
         return "sglang"
     return None
 
@@ -95,7 +95,7 @@ def _detect_host(
     present = set(available) & _HOSTS
     if len(present) == 1:
         return next(iter(present)), "availability"
-    if present == _HOSTS:
+    if {"sglang", "vllm"}.issubset(present):
         return "sglang", "legacy-default"
     return None, "unavailable"
 
@@ -177,7 +177,8 @@ def install() -> None:
     LOG.warning("HCU adapter bootstrap: host=%s source=%s", host, source)
 
     try:
-        importlib.import_module("hcu_adapter.bridges.common").install()
+        if host != "deepinfer":
+            importlib.import_module("hcu_adapter.bridges.common").install()
     except Exception:
         LOG.warning("HCU adapter: common bridge not installed", exc_info=True)
 

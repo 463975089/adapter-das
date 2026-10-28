@@ -225,4 +225,16 @@ diff 存 tmp_fetch/MHC_PATCHES.md 待 needle 化。
 下一步：拍机制取证需换工具（DTK rocprof/带内计时器/图内 hipEvent），
 trace 族在拍存在时不可用于功量归因。
 
+## DeepInfer 宿主参数
+
+下列参数用于固定版本的 DeepInfer 接入，未配置时不启用模型 plugin。
+
+| 变量 | 默认值 | 作用 |
+|---|---|---|
+| `HCU_CONFIG` | 空 | 共用部署配置文件路径；此引导变量直接解析环境/default，避免配置发现递归 |
+| `HCU_WORKER_CONTEXT` | 空 | 内部继承的 DeepInfer worker 安装参数，由 bootstrap 写入；不建议手写 |
+| `HCU_BF16_TFLOPS` | `0` | DeepInfer MFU 标定输入；不改变算子数学 |
+| `HCU_LIGHTOP_OPS` | `0` | DeepInfer LightOp 默认路径开关；具体 `ops` 配置仍需匹配实际 provider |
+| `HCU_NATIVE_FLASHMLA` | `0` | DeepInfer native FlashMLA 路径开关 |
+
 `HCU_MOE_ALIGN_FUSED`：默认 `2048`，上游已有的 MoE 对齐融合阈值；`0` 关闭，小于等于阈值的 top-k lanes 使用融合实现。此处补齐原有变量的文档登记，不改变默认值。

@@ -1,5 +1,8 @@
-"""Reserved DeepInfer host seam."""
+def install():
+    from ._deepinfer.bootstrap import register_worker_import_hook
+    register_worker_import_hook()
 
 
-def install() -> None:
-    raise NotImplementedError("DeepInfer HCU bridge is not implemented yet")
+def install_runtime(**options):
+    from ._deepinfer.bootstrap import install
+    install(**options)

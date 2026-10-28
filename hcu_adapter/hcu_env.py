@@ -117,11 +117,17 @@ def _auto_mqa_emu():
 
 
 REGISTRY = {
+    "HCU_CONFIG": {"env": "HCU_CONFIG", "default": "", "about": "Deployment configuration path; shared across hosts"},
+    "HCU_WORKER_CONTEXT": {"env": "HCU_WORKER_CONTEXT", "default": "", "about": "DeepInfer inherited worker context; internal", "hosts": ("deepinfer",)},
+    "HCU_BF16_TFLOPS": {"env": "HCU_BF16_TFLOPS", "default": "0", "about": "DeepInfer optional MFU calibration", "hosts": ("deepinfer",)},
+    "HCU_LIGHTOP_OPS": {"env": "HCU_LIGHTOP_OPS", "default": "0", "about": "DeepInfer LightOp paths; 0 or 1", "hosts": ("deepinfer",)},
+    "HCU_NATIVE_FLASHMLA": {"env": "HCU_NATIVE_FLASHMLA", "default": "0", "about": "DeepInfer native FlashMLA path; 0 or 1", "hosts": ("deepinfer",)},
+
     # bootstrap host selection: auto needs no operator configuration; the
     # dispatcher propagates its result to spawn children through a private key.
     "HCU_ADAPTER_HOST": {
         "env": "HCU_ADAPTER_HOST", "default": "auto",
-        "about": "宿主分发：auto 自动识别；sglang/vllm 显式固定；none 禁用。"
+        "about": "宿主分发：auto 自动识别；sglang/vllm/deepinfer 显式固定；none 禁用。"
                  "自动结果由 adapter 私有键传给 spawn 子进程，部署无需手设。",
     },
     # kill switches (triage; see kill_switch.py) — explicit-only by nature
@@ -229,7 +235,7 @@ REGISTRY = {
     # custom all-reduce
     "HCU_AITER_AR": {
         "env": "HCU_AITER_AR", "default": "0",
-        "auto": _auto_aiter_ar,
+        "auto": _auto_aiter_ar, "auto_hosts": ("sglang", "vllm"),
         "about": "gfx93* 旧 aiter AR 自动拒用（图重放损坏）；=1 显式夺回",
     },
     "HCU_QUANT_IMPL": {
@@ -245,7 +251,7 @@ REGISTRY = {
     },
     "HCU_AR_NORM_IMPL": {
         "env": "HCU_AR_NORM_IMPL", "default": "auto",
-        "auto": _auto_ar_norm_impl,
+        "auto": _auto_ar_norm_impl, "auto_hosts": ("sglang", "vllm"),
         "about": "融合 AR+RMSNorm vendor 档（R-09①，ar_norm_aiter 桥）："
                  "auto=hip+aiter GraphSafe 类可导入且 HCU_AITER_AR auto 规"
                  "则未拒（旧布局图重放损坏史连带拒融合）则 aiter——对 "
@@ -517,6 +523,8 @@ def resolve(name):
     env = spec["env"]
     if os.environ.get(env, "") != "":
         return os.environ[env], "explicit"
+    if name == "HCU_CONFIG":
+        return str(spec["default"]), "default"
     # config file (deployment tier): below debug env, above auto rules.
     # Invalid files raise here on first touch -- loud and early.
     from . import hcu_config as _cfg
@@ -524,7 +532,9 @@ def resolve(name):
     cv = _cfg.lookup(env)
     if cv is not None:
         return str(cv), "config"
-    if "auto" in spec:
+    auto_hosts = spec.get("auto_hosts")
+    active_host = os.environ.get("_HCU_ADAPTER_ACTIVE_HOST")
+    if "auto" in spec and (auto_hosts is None or active_host in (None, "none") or active_host in auto_hosts):
         try:
             v = spec["auto"]()
             if v is not None:
