@@ -359,3 +359,10 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
   主力量化路线，见 §5.1 阶段 2）归 **plugin 仓**：每宿主一个 plugin、
   kernel 共享 `sgl_kernel`、格式规范与 conformance 单测**单源**——判别
   仍走 §0 问句，与"动机是性能"无关。
+
+
+## DeepInfer 契约内核命名空间
+
+`hcu_adapter/kernels/` 存放无宿主模型依赖的 DeepInfer 上游契约实现，适用内核层
+的计算、档位命名和接口登记规则。使用独立命名空间避免导入 `sgl_kernel.__init__`
+时提前启动 AOT/stub 注册。兼容文件仅转接；新模型/量化方案仍属于独立 plugin。
