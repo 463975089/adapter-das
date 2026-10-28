@@ -44,6 +44,13 @@ hcu_adapter/
 `vllm.general_plugins` 入口进入 `bridges/vllm.py`；`HcuPlatform` 也在该文件
 内按需构造，普通 adapter 启动不提前 import vLLM。官方 ROCm/Triton 已有的
 实现直接复用，plugin 独有优化继续留在独立 plugin 仓。
+Adapter 是这两组 vLLM 宿主入口的唯一所有者；独立 plugin 不重复注册平台或
+general plugin，而是通过 `hcu_adapter.extensions` 入口组提供可选优化。运行时
+顺序固定为 **vLLM 版本门禁 → HCU 平台确认 → DTK runtime guard →
+扩展发现/激活**。扩展 API 版本当前为 `1`，按 `priority` 和名称确定性排序；
+未显式要求的缺失、畸形或不兼容扩展只生成进程内报告，不阻断官方基线路径，
+显式要求的扩展或 capability 失败才中止启动。fork 子进程会清空报告和一次性
+激活状态，避免继承父进程的结论。
 sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端模型）
 在 HIP 平台默认 AOT 后端（`forward_aot` → `import sgl_kernel`），同名影
 子包即零修改插入点；CUDA 语义模式下算子层照常经 catalog/三档路由取实现。
@@ -113,7 +120,8 @@ flowchart TB
 |---|---|---|
 | `sitecustomize.py` | PYTHONPATH 自动加载的薄入口 | 只导入并调用 `hcu_adapter.bootstrap.install()`；任何宿主逻辑进入这里都视为回归 |
 | `hcu_adapter/bootstrap.py` | 宿主探测和分发 | 显式 `HCU_ADAPTER_HOST` 优先；否则按继承标记、argv、已加载模块、包可用性选唯一宿主；common 先于宿主桥安装 |
-| `hcu_adapter/bridges/` | 跨框架与宿主专属 glue | `common.py` 放启动守卫；`sglang.py` 保持既有桥顺序；`vllm.py` 提供 `_custom_ops` ABI 桥，vLLM 0.32 platform/plugin 接入由后续独立 MR 承担 |
+| `hcu_adapter/bridges/` | 跨框架与宿主专属 glue | `common.py` 放启动守卫；`sglang.py` 保持既有桥顺序；`vllm.py` 提供 `_custom_ops` ABI 桥并独占 vLLM 0.32 platform/general plugin 入口，在基线门禁后激活可选扩展 |
+| `hcu_adapter/extensions.py` | vLLM 优化扩展 API v1 | 从 `hcu_adapter.extensions` entry-point 组发现独立 plugin；负责契约校验、确定性排序、必选 capability 判定和进程内报告，不 import vLLM/Torch/优化包 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径 | elementwise / layernorm / rope / moe / `gemm_fp8`·`gemm_int8` / `flash_mla` emu / `kvcacheio`；API 逐字对齐官方 sgl-kernel；内部按三档路由取 triton / vendor / torch |
 | `sgl_kernel/_adapters/` | 元路径影子库（import hook） | `aiter` 真包优先 + 缺口填空；`flashinfer` / `flash_attn` 桩（import 成功、调用响亮报错）；`hcu_env` 环境注册表、`kill_switch` 快关；slimquant / mqa_logits_emu / dsa_topk 等模型级补丁 |
 
@@ -129,7 +137,7 @@ flowchart TB
 | mooncake | 待适配 | PD 分离/分层 KV transfer 的 `transfer_kv_*` 契约由 `sgl_kernel/kvcacheio.py` torch 移植顶住调用面，mooncake 本体待接 |
 | deepep | 待适配 | MoE EP 通信库，仓库内尚无落点（TP1 单机绕过），多卡 EP 时再评估 |
 
-### plugin（独立仓，规划中）
+### plugin（独立仓）
 
 与 adapter 分工（判别问句与裁决链见 [governance.md](governance.md) §0/§3）：
 adapter 只做**行为还原**（上游在 AMD/CUDA 上有的行为，HCU 补齐到一致）；
@@ -138,6 +146,12 @@ adapter 只做**行为还原**（上游在 AMD/CUDA 上有的行为，HCU 补齐
 经上游 seam 接入 adapter 的注册表与归因设施，**或直接调用 lightop / aiter
 等底层库**（不强制穿过 adapter 路由）。plugin 仓的接入同样登记运行时
 注册表，保证 `HCU_ADAPTER_DUMP` 看到完整图景。
+
+vLLM v0.32 的接入 seam 是 Adapter 提供的 `hcu_adapter.extensions` entry-point
+组。Plugin 只发布 `ExtensionSpec` 和优化实现，不能再声明
+`vllm.platform_plugins` / `vllm.general_plugins`，也不能复制版本、平台或 DTK
+门禁。这样宿主适配只有一个启动裁决点，plugin wheel 可独立安装/卸载，且无
+plugin 时仍保持官方 vLLM 基线路径可启动。
 
 ## 5. 横切机制
 

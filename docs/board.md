@@ -23,7 +23,7 @@
 | R-17 | 上游 release 分支策略（rel/v0.5.x 双向同步）+ 主仓分支拓扑治理（仅 main+rel，个人调试 fork）+ **v0.5.22 升级适配役（已 release，首演）** | P1 | 分支策略/拓扑/文档面已落地；**v0.5.22 首跑普查已完成（同日，nmz26/baa9bef）**：单测矩阵全量对账落 ci.md L1.5e——**零例绿变红**，机制老族同构、模型族面全绿；**破损桥名单四条定案**（P0=memory_pool kv_fix needle 失配[boot 级炸点]+add_norm ar_norm seam 符号漂移；P1=dsv4 JIT 家族编不过 3→18 扩面；P2=dspark server -9 归因）；适配 commit 落 rel 待开工；**P0 两根适配完成（同日，rel/v0.5.22@2ad90aa）**：kv_fix 检测 .22 伤口愈合（上游重写 strides 为纯 int）转 no-op、ar_norm ARM 候选门消失（.22 aiter 融合原生化）转优雅降级 dispatch-only——**双树兼容**（.21 回归 patch/ARM 照装、.22 import 干净+canary 六件 22P 全绿）；**双向同步首演达成**：rel 修复 cherry-pick 回 main（1340a42，L0 绿）+**第二轮全量同步（2026-10-21）**：rel@9e5ce08 的 74 颗 rel-only 中 64 颗代码修复/feat/docs 落 main（dsv4.1 全战役：V41 注册表别名与自愈、DSV4 JIT 针脚族 [dpskmeta HIPcub/c_plan uint2/main_norm_rope syncwarp/批2批3 float2 绑定/批4/quant v2 HIP fp8]、flashmla-emu sparse 语义修正[token loc token 级]+页池 as_strided+原子写全家装、dsv4_ep_bf16+triton masked fp8 双核[DeepEP 免 pack]、moe_dualstream_gate[graph replay 乱码根因]、spec_h2d_pin[MTP 步墙]、jit_fp8_ffi 重绑+jit_build_log[冷跑可观测]、fp4→fp8 解包 block_shape 族），7 颗 patch-id 已在 main 自动跳过；**有意截留 10 颗**=2 docs（其内容已随 dac7de1 在 main）+8 dbg(dsv4) 会话探针（插桩用后即弃性质，按 §1.9 纪律不入主干）；同步后 main 与 rel 代码面（sitecustomize/sgl_kernel/ci/tests）零差异——唯一残留=flash_mla.py 91 行 dbg 探针（rel 有 main 无，同截留性质）；L0 GREEN(54 warn)+adapter 单测 47 过 2 skip 本机实证；=R-17 验收 3 之半巩固；余项全收口（同日，L1.5f）：**rel 线 L1 全门 GREEN**（gpu=4，--up-tree /sglang-v0522，mech 预算判 38F/99P 比普查还少 3 败=适配后装配走得更远）；**JIT 三根定性→两根同配方实测治愈（同日 L1.5g）**：CUB 头缺失与 hipcc uint2 分解缺口均被 cuda-mocker 配方收口（用户定性 /opt/dtk/cuda/cuda-12=DTK cuda-mocker，CUDA 语义虚拟层底层 HIP 与 adapter 哲学同构；配方三件套=合成 ROCM_HOME 根[hipcc 壳剥 USE_ROCM/HIP_PLATFORM+注入 SGL_CUDA_ARCH=750]+LD_PRELOAD mock libcudart；零装库零 sglang 改；metadata+conv1d 双 LOAD_OK、conv1d 数值对拍 PASS 9.4e-3；cutedsl=K1 仍账）；dspark -9=boot 资源类登记批 E；**R-09① 终态定案**：.22 上游原生接手（消费链直通 ca_comm 同一 aiter GraphSafe 面），桥降级即终态、ar_norm 晋级动作变「上游默认开+验证 HCU 通」。余=serving 级四门（production 宣布前置）+**锚定轮已跑（2026-10-20 nmz18 复活轮，ci.md L1.5h 全账）**：mech 38F/101P 持平=32F 拆账被推翻——成分=topk_v2 构建败（cuda.cu 引 transform_packed 而 v0522 头已名 transform_paged，针脚失配）连坐 17 败行+c_plan 装上但运行期炸（:562 PrefillPlan）×2+gdn cutedsl K1×3+数值不 close×11；三模块隔离实证未被推翻，全链翻绿压 **topk/c_plan/quant 三模块移植**（topk/c_plan=adapter needle patch 可治；per_token_group_quant=HIP 针脚+arch750 vec16B 静态断言，归 R-19）；同轮附得=**配方揭盖效应**（kernels 5F/160P、l15 39F/87P 均为配方把回退/skip 翻成真跑撞同批缺口，跨机对账必须同配方形态）+**nmz18 复活**（镜像配对铁律推翻：真根因=冷 tvm-ffi 构建自锁+缺 hyhal 挂载双因素，"镜像×挂载面×cache 温度"三件套铁律改写入 bootstrap §4b）+CI 种子扩包 tvm-ffi/torch_extensions（cache_export/import，234K 免疫冷容器死锁）+镜像固化合成根与 hcu_env 收编 ROCM_HOME/LD_PRELOAD 两 env+deep_gemm_dtk 改读 DTKROOT（配方已用 .info 兜住，消除后更净） | 进行中→**第一段落地（2026-10-19）**：①主干定名+调试分支清点双关账（本地/远端清单均只剩 main）；②CONTRIBUTING.md 弃用收编 board「协作与分支规约」节（双线模型三绑定+主仓拓扑+fork-MR+cherry-pick 节拍成文；全仓 6 文档外链改指；弃用与收编同由用户 2026-10-19 拍板执行）；③l1_gpu_gate.sh 树参数化（--up-tree/HCU_UP_TREE，显式树不存在即 GPU 探测前 loud fail 防错树假绿；全局 PYTHONPATH 跟随所选树；防错树三证据干跑在案：坏树拒/坏参拒/树校验先于 GPU 探测）；④rel/v0.5.22 分支从 main(691d080) 建立并推 Gitee（远端清单=main+rel 双分支入拓扑）；⑤主仓拓扑治理事实达成（ls-remote 仅 main↔rel）。余=v0.5.22 树并置/适配普查/全门+双向同步演武+fork-MR 演练（见明细） | 2026-10-19 | 2026-10-19 |
 | R-18 | tvm-ffi dlpack 冷缓存导入期自递归——adapter 预热桥（方案3：sitecustomize 代码化预热） | P2 | — | **根因实证+双缓解落地（2026-10-20 nmz18 锚定轮）**：构建器 fork 子进程再 import torch/HSA→父子互 poll pipe 永挂（/proc/syscall+fd 全指纹取证；同型死锁曾误诊为"镜像↔宿主配对"，已改写 bootstrap §4b）；缓解①=cache 种子收 tvm-ffi/torch_extensions（cache_export/import 扩包，234K 播种即免构建）②官方开关 `TVM_FFI_DISABLE_TORCH_C_DLPACK=1` 兜底已入文档；方案3 预热桥本体仍未做（评审原案），优先级待定（CI 面已被①②免疫） | 2026-10-19 | 2026-10-20 |
 | R-19 | JIT kernel vendor 化——sgl_kernel JIT 需求清单化提给 aiter/DTK 维护方（预编译随 wheel 发货，我们只管调用） | P1 | — | 待启动（2026-10-20 用户拍板战略方向；现状账：sglang JIT 35 模块自编，38F 中 32F=编译失败（CUB/uint2 两根=DTK 工具链，需 cuda-mocker 配方自救）；而 aiter wheel 已证明满预编译回零编译是可达态）；配套（同日落）：冷跑可观测性=JIT 逐颗进度行+gate 段心跳+pytest 行缓冲（ci.md「慢段可观测性」），编译风暴与楔死日志可辨，见明细 | 2026-10-20 | — |
-| R-20 | adapter 多宿主 bootstrap（sglang/vLLM 双 MR） | P1 | alexanderbin123 | **MR1 已提交（HYGON-AI/adapter-das#1）**：薄 `sitecustomize`、确定性宿主分发、common/sglang/vllm 桥隔离及完整 wheel 已完成；CPU/adapter 134P+3S，HCU RMSNorm kernel 10P、真实 vLLM ABI/parity PASS；L0 无新增失败（仅基线两项既有债务）。当前节点无 sglang 包/可复用容器，cookbook e2e 留作 MR 合并门；**MR2 已提交（HYGON-AI/adapter-das#2）**：提交图从 MR1 头叠加，只修改 `bridges/vllm.py`、入口元数据、测试和文档，平台类仍内聚在 `vllm.py`，未改薄入口/bootstrap/sglang 链；聚焦 31P、CPU/adapter 160P+3S、官方源码和独立 wheel 安装态契约均通过。官方已有能力不重复建设，plugin 独有优化仍留在独立 plugin 仓 | 2026-10-27 | 2026-10-27 |
+| R-20 | adapter 多宿主 bootstrap（sglang/vLLM 双 MR） | P1 | alexanderbin123 | **MR1 已提交（HYGON-AI/adapter-das#1）**：薄 `sitecustomize`、确定性宿主分发、common/sglang/vllm 桥隔离及完整 wheel 已完成；CPU/adapter 134P+3S，HCU RMSNorm kernel 10P、真实 vLLM ABI/parity PASS；L0 无新增失败（仅基线两项既有债务）。当前节点无 sglang 包/可复用容器，cookbook e2e 留作 MR 合并门；**MR2 已提交（HYGON-AI/adapter-das#2）**：提交图从 MR1 头叠加，只修改 `bridges/vllm.py`、入口元数据、测试和文档，平台类仍内聚在 `vllm.py`，未改薄入口/bootstrap/sglang 链；聚焦 31P、CPU/adapter 160P+3S、官方源码和独立 wheel 安装态契约均通过。官方已有能力不重复建设，plugin 独有优化仍留在独立 plugin 仓；**扩展宿主追加完成（2026-10-28）**：Adapter 独占 vLLM platform/general 入口，新增 `hcu_adapter.extensions` API v1，按版本/平台/DTK 门禁后激活独立 plugin，optional 失败只留报告、required 失败响亮阻断，fork 状态隔离；聚焦 46P，官方源码与独立安装 `vllm-0.32.0+rocm723`/Adapter wheel 契约均通过 | 2026-10-27 | 2026-10-28 |
 
 ## 需求明细
 
@@ -41,6 +41,10 @@
    独有优化仍留在独立 plugin 仓，遵守“官方已支持就不重复建设”。平台入口
    返回 `hcu_adapter.bridges.vllm.HcuPlatform`，类在 `vllm.py` 内懒构造，不增加
    `vllm_platform.py` 等规范外的宿主旁路文件。
+3. 独立 plugin 通过 Adapter 的 `hcu_adapter.extensions` API v1 接入，只交付
+   可选优化实现；Adapter 继续独占 `vllm.platform_plugins` 和
+   `vllm.general_plugins`。激活发生在版本、平台和 DTK runtime guard 之后，
+   optional 失败降级为报告，只有显式 required 扩展/capability 失败才阻断。
 
 **MR1 验证证据（2026-10-27）**
 
@@ -66,6 +70,20 @@
 - L0 与 MR1 基线相同：仅 `HCU_MOE_ALIGN_FUSED` 未登记、`moe` 未进 catalog
   两项既有失败；MR2 无新增失败。尚未据此声明任一模型生产支持，服务精度/
   HumanEval 和稳定性仍按安装态 HCU 门禁执行。
+
+**扩展宿主验证证据（2026-10-28）**
+
+- extension/bridge/packaging 聚焦契约 46 passed，覆盖确定性发现、API 版本、
+  optional/required 策略、capability、重复名、fork reset、激活顺序和 wheel
+  成员；`sitecustomize.py`、`bootstrap.py`、`bridges/sglang.py` 相对 MR1 零差异。
+- 完整 `tests/test_ops_cpu.py tests/adapter` 为 175 passed、3 skipped。L0 仅保留
+  两项既有 RED：`HCU_MOE_ALIGN_FUSED` 未登记到 env 文档，以及
+  `wna16_channel_moe.py` 的 `moe` 未进 `BACKEND_CATALOG`；本次无新增失败。
+- 官方 vLLM `v0.32.0` 源码可解析懒加载 `HcuPlatform`；独立 venv 中安装
+  `vllm-0.32.0+rocm723` 与新建 Adapter wheel 后，确认实际导入 0.32 wheel、
+  Adapter distribution `sgl-kernel==0.1.0` 和 extension API v1。共享节点的系统
+  级旧 vLLM 0.28 插件会抢占 venv 路径，契约脚本已固定 wheel 路径优先并以
+  `VLLM_PLUGINS=hcu_adapter` 限定官方插件发现，避免假测旧包。
 
 ### R-07 MTP 红配置（快配置）heisenbug 攻坚——下阶段
 
