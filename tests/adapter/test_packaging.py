@@ -46,6 +46,8 @@ def test_wheel_contains_bootstrap_and_nested_adapter_packages(tmp_path):
     with zipfile.ZipFile(wheel) as archive:
         members = set(archive.namelist())
 
+    assert "hcu_adapter/extensions.py" in members
+
     expected = {"sitecustomize.py"}
     for package in ("hcu_adapter", "sgl_kernel"):
         expected.update(

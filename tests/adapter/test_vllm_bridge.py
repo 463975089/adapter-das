@@ -17,6 +17,11 @@ import pytest
 import torch
 
 from hcu_adapter.bridges import vllm as bridge
+from hcu_adapter.extensions import (
+    ExtensionReport,
+    ExtensionStatus,
+    RequiredExtensionError,
+)
 
 
 @pytest.mark.parametrize(
@@ -139,6 +144,26 @@ def test_process_actions_run_once_per_pid_and_reset_after_fork_like_change(
     assert calls == [101, 202]
 
 
+def test_process_actions_drop_extension_reports_after_fork_like_change(
+    monkeypatch,
+):
+    pid = 101
+    monkeypatch.setattr(bridge.os, "getpid", lambda: pid)
+    actions = bridge.ProcessLocalActions()
+    report = ExtensionReport(
+        "das_hcu",
+        "das-hcu",
+        ExtensionStatus.ACTIVE,
+        frozenset({"rms-norm"}),
+        "",
+    )
+    actions.record_extension_reports((report,))
+
+    assert actions.extension_reports() == (report,)
+    pid = 202
+    assert actions.extension_reports() == ()
+
+
 def test_failed_process_action_is_latched_but_not_inherited(monkeypatch):
     pid = 101
     monkeypatch.setattr(bridge.os, "getpid", lambda: pid)
@@ -195,15 +220,26 @@ def test_platform_plugin_gates_once_and_returns_the_lazy_class_path(monkeypatch)
     assert calls == ["version"]
 
 
-def test_runtime_plugin_runs_the_required_vllm_sequence_once(monkeypatch):
+def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
+    monkeypatch,
+):
     calls = []
+    report = ExtensionReport(
+        "das_hcu",
+        "das-hcu",
+        ExtensionStatus.ACTIVE,
+        frozenset({"rms-norm"}),
+        "",
+    )
     monkeypatch.setattr(
         bridge,
         "detect_hcu",
         lambda: bridge.HcuDetection(True, "gfx938", ""),
     )
     monkeypatch.setattr(
-        bridge, "_ensure_vllm_compatible", lambda: calls.append("version")
+        bridge,
+        "_ensure_vllm_compatible",
+        lambda: (calls.append("version"), "0.32.0+rocm723")[1],
     )
     monkeypatch.setattr(
         bridge,
@@ -215,12 +251,80 @@ def test_runtime_plugin_runs_the_required_vllm_sequence_once(monkeypatch):
         "configure_vllm_hip_runtime_path",
         lambda: calls.append("dtk"),
     )
+    monkeypatch.setattr(
+        bridge,
+        "_installed_adapter_version",
+        lambda: (calls.append("adapter-version"), "0.1.0")[1],
+    )
+
+    def activate(context):
+        calls.append(
+            ("extensions", context.adapter_version, context.vllm_version)
+        )
+        return (report,)
+
+    monkeypatch.setattr(bridge, "activate_extensions", activate)
     monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
 
     assert bridge.hcu_runtime_plugin() is None
     assert bridge.hcu_runtime_plugin() is None
 
-    assert calls == ["version", "platform", "dtk"]
+    assert calls == [
+        "version",
+        "platform",
+        "dtk",
+        "adapter-version",
+        ("extensions", "0.1.0", "0.32.0+rocm723"),
+    ]
+    assert bridge.extension_reports() == (report,)
+
+
+def test_runtime_plugin_records_required_reports_before_latching(monkeypatch):
+    report = ExtensionReport(
+        "required",
+        "required",
+        ExtensionStatus.FAILED,
+        frozenset({"attention"}),
+        "activation failed: RuntimeError: unavailable",
+    )
+    calls = []
+    monkeypatch.setattr(
+        bridge,
+        "detect_hcu",
+        lambda: bridge.HcuDetection(True, "gfx938", ""),
+    )
+    monkeypatch.setattr(bridge, "_ensure_vllm_compatible", lambda: "0.32.0")
+    monkeypatch.setattr(bridge, "_ensure_hcu_platform_selected", lambda: None)
+    monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: None)
+    monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "0.1.0")
+
+    def fail(_context):
+        calls.append("activate")
+        raise RequiredExtensionError("required extension failed", (report,))
+
+    monkeypatch.setattr(bridge, "activate_extensions", fail)
+    monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
+
+    with pytest.raises(bridge.LatchedVllmRuntimeError, match="required"):
+        bridge.hcu_runtime_plugin()
+    with pytest.raises(bridge.LatchedVllmRuntimeError, match="required"):
+        bridge.hcu_runtime_plugin()
+
+    assert calls == ["activate"]
+    assert bridge.extension_reports() == (report,)
+
+
+def test_adapter_version_comes_from_the_shipping_distribution(monkeypatch):
+    calls = []
+
+    def version(name):
+        calls.append(name)
+        return "0.1.0"
+
+    monkeypatch.setattr(bridge.metadata, "version", version)
+
+    assert bridge._installed_adapter_version() == "0.1.0"
+    assert calls == ["sgl-kernel"]
 
 
 def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(

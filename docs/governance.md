@@ -290,6 +290,13 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
   aiter_jit_cache / 逐补丁命中计数等可观测性反向供 vLLM 用；
 - **分层 import 契约**：`bridges/sglang.py` 禁 import vllm，
   `bridges/vllm.py` 禁 import sglang（common 与包内机制层禁宿主已由 §1 覆盖）；
+- **vLLM 扩展宿主权责边界（extension API v1）**：Adapter **独占**
+  `vllm.platform_plugins` / `vllm.general_plugins` 两个官方入口；独立 plugin
+  经 `hcu_adapter.extensions` entry-point 组接入，只交付可选优化实现
+  （`ExtensionSpec` + 实现），不得复制版本/平台/DTK 门禁——宿主适配只有
+  一个启动裁决点。激活发生在版本、平台和 DTK runtime guard **之后**；
+  optional 扩展失败降级为进程内报告，仅显式 required 扩展/capability
+  失败才响亮阻断；无 plugin wheel 时保持官方 vLLM 基线路径可启动；
 - **宿主仲裁待改**：argv 无信号且双框架并存时 bootstrap 现静默取 sglang
   （legacy-default）——应改为 loud fail 要求显式 `HCU_ADAPTER_HOST`，
   在此之前两框架混装的节点必须显式设该变量。
