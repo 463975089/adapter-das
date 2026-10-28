@@ -168,3 +168,7 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
 ## CI
 
 MR 快速自动测试分层（L0 结构门禁云端秒级 / L1 GPU 数值门禁容器侧 / L2 e2e 夜间）：见 [docs/ci.md](docs/ci.md)。
+
+## DeepInfer 接入
+
+固定上游接口的 HCU 适配候选见[DeepInfer 手册](docs/frameworks/deepinfer.md)与[首版范围](docs/frameworks/deepinfer-scope.md)。模型扩展保留在独立 plugin；新组合尚待节点验收。
