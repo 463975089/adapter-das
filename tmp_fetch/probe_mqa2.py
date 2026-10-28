@@ -66,7 +66,7 @@ kern_fingerprint(emu._ragged_fp8_mqa_logits, "emu_ragged",
 
 print("== adapter triton paged (R-13 #4 default for DSA path)")
 try:
-    from hcu_adapter.mqa_triton import triton_paged_mqa_logits
+    from hcu_adapter.mqa_logits_triton import triton_paged_mqa_logits
     kern_fingerprint(triton_paged_mqa_logits, "triton_paged",
                      q.reshape(Q, H, D), cache, weights.reshape(Q, H),
                      sl32, pt32, None, MAX_SEQ, False)

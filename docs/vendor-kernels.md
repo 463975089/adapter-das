@@ -72,7 +72,7 @@ adapter 侧：AR GraphSafe（HCU_AITER_AR auto）、fused AR+RMSNorm
 | **MoE gate/topk** | `moe_fused_gate` `moe_fused_gate_sqrtsoftplus` **`moe_fused_gate_sqrtsoftplus_v41_hcu`** `moe_fuse_gate_per_gourp_topk` `topk` `fast_topk_transform_fused` `fast_topk_transform_sparse_mask_fused` `fast_topk_transform_ragged_fused` `topk_transform_512/1024` `topk_transform_ragged_v2` `fast_kpool_topk_transform_fused` | **v41_hcu 变体点名 V4.1**；topk_transform 族对应 DSA indexer topk/select |
 | **silu 族** | `fuse_silu_and_mul(_ep)` `fuse_silu_mul_quant(_ep)` `fuse_silu_mul_fp8_quant(_ep)` `fuse_silu_mul_per_token_quant` **`fuse_silu_mul_clamp_quant(_ep)`** **`fuse_situ_mul_quant_contiguous/_ep`** | clamp/situ 变体≈我们 silu_mul_clamp 的 fused-quant 版 |
 | **KV cache 族** | `reshape_and_cache_cuda` `gather_and_maybe_dequant_cache` `dequantize_k_cache_paged_hcu` **`combine_topk_swa_indices_hcu`** `hcu_alloc_extend_kernel` | swa indices 组合是我们 SWA 模型正需 |
-| **dsv41 族** | **`dsv41_gather_index_k_fp4`** **`dsv41_mqa_prefill_metadata`** **`dsv41_mqa_query_lens`** **`fp8_fp4_mqa_logits`** `page_mqa_logits_sparse_mask` `mqa_logits` | V4.1-Flash indexer/MQA 的厂商原生路（现走我们 mqa_triton 自研档） |
+| **dsv41 族** | **`dsv41_gather_index_k_fp4`** **`dsv41_mqa_prefill_metadata`** **`dsv41_mqa_query_lens`** **`fp8_fp4_mqa_logits`** `page_mqa_logits_sparse_mask` `mqa_logits` | V4.1-Flash indexer/MQA 的厂商原生路（现走我们 mqa_logits_triton 自研档） |
 | 杂项 | `apply_rotary_pos_emb_index_fused` `rotary_embedding_fuse` `ds_cat` `fill_zeros` `batch_linear_assignment` `grid_sample_forward/backward` `bilinear_upsample(_backward)` `destindex_copy/dequantize_int8_cuda` `sum/mean/topk` + 大量 nn.Module 类（RMSNorm/RotaryEmbedding/FuseBiasSwiGLU/FusedScaleMaskSoftmax…） | vision/训练侧为主 |
 
 **集成现状**：sglang 树 0 处；adapter 仅 `HCU_SILU_MUL_IMPL=lightop`（candidate
@@ -83,7 +83,7 @@ adapter 侧：AR GraphSafe（HCU_AITER_AR auto）、fused AR+RMSNorm
 1. `fused_rms_norm_rope_contiguous` / `split_qkv_rms_rotary_embedding_fuse_with_kv_store_quant`——对第一大核族 `fused_k_norm_rope_flashmla`（1165ms/490 次）与 `apply_rotary_emb_triton`（211ms）的深度融合位；
 2. `fuse_silu_mul_clamp_quant_ep`——合并 silu_mul_clamp（636ms）+per_token_group_quant（245ms）两段；
 3. `moe_fused_gate_sqrtsoftplus_v41_hcu`——router（`_router_triton_kernel` 80ms + reduce 族 561ms 里的 topk 部分）厂商原生 V4.1 位；
-4. `dsv41_gather_index_k_fp4`+`fp8_fp4_mqa_logits`——fp4 indexer 不经 dequant 的原生路（对照我们 mqa_triton 档与 deepgemm vendor 档的负值钳 0 缺陷）；
+4. `dsv41_gather_index_k_fp4`+`fp8_fp4_mqa_logits`——fp4 indexer 不经 dequant 的原生路（对照我们 mqa_logits_triton 档与 deepgemm vendor 档的负值钳 0 缺陷）；
 5. `moe_gemm_marlin_w8a8_blockwise_fp8` / `m_grouped_w8a8_gemm_nt_masked`——fp8 块量化 MoE GEMM 的 marlin 备胎。
 
 ## 3. boltops（0.1.0+dtk2604.g1f36f1，14 子包）——全未接入的增量库

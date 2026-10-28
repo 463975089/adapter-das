@@ -188,7 +188,7 @@ def fp8_paged_mqa_logits(
         # interleave + tail scales) that this emu's flat (T,132) unpack
         # misreads — correctness fix + single-launch decode graph. Parity
         # gate tests/kernels/test_mqa_triton_gfx938.py.
-        from .mqa_triton import triton_paged_mqa_logits as _tri
+        from .mqa_logits_triton import triton_paged_mqa_logits as _tri
 
         return _tri(
             q_fp8,

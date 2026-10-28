@@ -149,6 +149,34 @@ sglang 符号面，shim 妥协不进契约。
 导入路径，且砍断依赖 `is_hip()=True` 的正常分支（fnuz 表、gfx workaround）。
 逐条放宽 + 已验证实现背书，是一个个来的。
 
+### 3b. 模块命名与档位标识规范（2026-10-28 定）
+
+> 目标：**不看内容、只看文件名**，就能回答"这个算子有哪些档、缺哪档"。
+> L0 `impl-naming` 执法；档位全景的司法事实源是 BACKEND_CATALOG，
+> 渲染表 `docs/tier-matrix.md`（`tools/gen_tier_matrix.py` 生成，L0
+> freshness 钉同步）。
+
+1. **具体实现文件 = `<op>[_<变体>]_<tier>`**，tier 词表封闭：
+   `emu`（torch 直算/仿真臂）· `triton`（自研 triton）· `cpp`（C++ JIT）·
+   `fork`（vendor 源码 fork 承接）· `ref`（诊断参照，位置约束见 §2）；
+   vendor 库绑定安装器用**库名**：`aiter` / `lightop` / `dtk`。
+   例：`conv1d_update_emu` · `mqa_logits_triton` · `paged_attn_cpp` ·
+   `quant_aiter` · `deep_gemm_dtk`。**平台词（hip/cuda/rocm）不算档位**，
+   禁作实现后缀。
+2. **路由器 / 机制 / 门禁文件禁用档位后缀**（裸 op 名或机制名：
+   `watchdog_cold`、`kv_fix`、`spec_h2d_pin`）；路由目标需体现时用泛词
+   `_vendor`（`fa_vendor`、`mqa_vendor`）。前缀为主题而非档位的机制
+   补丁不受限（`triton_libdev` / `triton_pdl` = 补 triton 编译栈本身，
+   非 triton 档实现）。
+3. **同族实现共享 op 词根**：`paged_mqa_logits` 家族 =
+   `dsa_mqa_logits_emu` / `mqa_logits_emu` / `mqa_logits_triton` /
+   `mqa_vendor`——一眼可辨全家族档位覆盖与缺口。
+4. **`_ref` 红线**：ref 文件只准被 `tests/` 引用（§2）；生产路径出现
+   `_ref` import 即违规。
+5. **sgl_kernel 影子契约文件豁免**：文件名 = 上游符号面
+   （elementwise / moe / gemm_fp8 …）；包内自研 helper 同样适用本规范
+   （`paged_attn_triton` / `paged_attn_cpp` / `fa_varlen_triton`）。
+
 ## 4. 运行时注册表与 dump（"现在谁在跑"必须一行可答）
 
 - 每个成功安装的绑定调用 `registry.register(op, impl, target, mechanism)`。

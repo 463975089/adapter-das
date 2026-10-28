@@ -353,6 +353,63 @@ def check_registry_ops_in_catalog(r):
                        f"'{m.group(1)}' not in BACKEND_CATALOG")
 
 
+def check_impl_naming(r):
+    """HARD: module-naming rules from governance §3b.
+
+    a) `_ref` modules (diagnostic references, governance §2) must never be
+       imported from production code (hcu_adapter / sgl_kernel / bridges /
+       sitecustomize);
+    b) platform words (hip/cuda/rocm) are not tiers -- banned as filename
+       tier suffixes for implementation modules;
+    c) docs/tier-matrix.md must be freshly rendered from BACKEND_CATALOG.
+    """
+    import subprocess
+
+    for p in iter_files(".py"):
+        rp = rel(p)
+        in_prod = (rp.startswith(("hcu_adapter/", "sgl_kernel/"))
+                   or rp == "sitecustomize.py")
+        try:
+            src = open(p, encoding="utf-8").read()
+        except Exception:
+            continue
+        for m in re.finditer(
+                r"^\s*(?:from|import)\s+[\w.]*?(\w*_ref)\b", src, re.M):
+            if m.group(1) == "weak_ref":
+                continue  # torch weak-tensor helper, not a diagnostic reference
+            if in_prod:
+                line = src[: m.start()].count("\n") + 1
+                r.fail("impl-naming", f"{rp}:{line} production code imports "
+                       f"diagnostic reference module '{m.group(1)}' "
+                       f"(governance §2/§3b: _ref stays under tests/)")
+            elif not rp.startswith("tests/"):
+                r.warn("impl-naming", f"{rp} imports a _ref module outside "
+                       f"tests/ ({m.group(1)}) -- verify intent")
+        if in_prod:
+            base = os.path.basename(rp)
+            if re.search(r"_(hip|cuda|rocm)\.py$", base) and base != "__init__.py":
+                r.fail("impl-naming", f"{rp}: platform word used as tier "
+                       f"suffix (governance §3b: tiers are "
+                       f"emu/triton/cpp/fork/ref or a vendor lib name)")
+
+    gen = os.path.join(ROOT, "tools", "gen_tier_matrix.py")
+    doc = os.path.join(ROOT, "docs", "tier-matrix.md")
+    if not (os.path.isfile(gen) and os.path.isfile(doc)):
+        r.fail("impl-naming", "tools/gen_tier_matrix.py or "
+               "docs/tier-matrix.md missing")
+        return
+    try:
+        proc = subprocess.run(
+            [sys.executable, gen, "--check"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if proc.returncode != 0:
+            r.fail("impl-naming", proc.stderr.strip().splitlines()[-1]
+                   if proc.stderr.strip() else "tier-matrix stale")
+    except Exception as exc:  # generator crash is still a gate failure
+        r.fail("impl-naming", f"tier-matrix check crashed: {exc}")
+
+
 # ---------------------------------------------------------------------------
 
 def main():
@@ -376,6 +433,7 @@ def main():
     check_glue_has_no_numerics(r)
     check_text_patch_allowlist(r)
     check_registry_ops_in_catalog(r)
+    check_impl_naming(r)
 
     print(f"l0 gate: scanned {n_py} py / {n_sh} sh / {n_sec} text files")
     for w in r.warns:

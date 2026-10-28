@@ -196,7 +196,7 @@ def install():
         or getattr(deepgemm, "get_num_sms", None) is None
     )
     if _missing_paged_mqa:
-        from . import dsa_paged_mqa as _dpm
+        from . import dsa_mqa_logits_emu as _dpm
 
         if getattr(shim, "get_num_sms", None) is None:
             shim.get_num_sms = _dpm.get_num_sms
@@ -239,7 +239,7 @@ def install():
             except Exception:
                 pass
             if impl == "triton":
-                from .mqa_triton import triton_ragged_mqa_logits as _tri_r
+                from .mqa_logits_triton import triton_ragged_mqa_logits as _tri_r
 
                 return _tri_r(
                     q_fp8, kv, kv_scales, weights, cu_starts, cu_ends

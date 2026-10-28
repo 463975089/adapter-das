@@ -5,7 +5,7 @@ deep_gemm.fp8_mqa_logits) hits the ragged entry 44x per decode step on
 DSV4.1F; the torch emu is ~58 aten kernels per call (fingerprinted
 2026-10-24 nmz18: 38 manual_unroll + 31 vectorized + 6 Cijk bmm + 6 reduce
 + arange) — the dominant elementwise family in the wave6 decode trace.
-The triton sibling (mqa_triton.triton_ragged_mqa_logits) must match the
+The triton sibling (mqa_logits_triton.triton_ragged_mqa_logits) must match the
 emu golden exactly in window/-inf semantics and tightly in values, and
 keep top-k stable on realistic score spreads.
 
@@ -30,7 +30,7 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from hcu_adapter import mqa_logits_emu as emu_mod  # noqa: E402
-from hcu_adapter.mqa_triton import triton_ragged_mqa_logits as tri  # noqa: E402
+from hcu_adapter.mqa_logits_triton import triton_ragged_mqa_logits as tri  # noqa: E402
 
 FAILS = []
 

@@ -13,7 +13,7 @@ gather (``_kpool_cache_k_offsets``) reads the same order, so prefill is
 consistent. Only the decode paged-MQA reader was wrong: the torch emu's
 row-level 132-byte split misread the page-level layout entirely (k
 shifted, scales read off k bytes) — decode DSA top-k ran
-deterministically wrong in production; fixed in dsa_paged_mqa.py
+deterministically wrong in production; fixed in dsa_mqa_logits_emu.py
 (interleave-aware page-level unpack) the same day.
 
 This kernel reads the real layout directly, fusing fp8-e4m3fn decode +
@@ -135,7 +135,7 @@ def triton_paged_mqa_logits(
     **_ignored,
 ):
     """Adapter entry for HCU_MQA_LOGITS_IMPL=triton (homegrown kernel)."""
-    from .dsa_paged_mqa import _as_view, _fp8_view_dtype
+    from .dsa_mqa_logits_emu import _as_view, _fp8_view_dtype
 
     q_flat = (
         q_fp8.reshape(-1, q_fp8.shape[-2], q_fp8.shape[-1])
@@ -170,7 +170,7 @@ def triton_paged_mqa_logits(
         # pool geometry outside {1, 64, 256, ...}: not reachable via the
         # writer contract; refuse rather than guess.
         raise NotImplementedError(
-            f"mqa_triton: page_size {PS} not a power-of-2 multiple of its "
+            f"mqa_logits_triton: page_size {PS} not a power-of-2 multiple of its "
             "slot tile"
         )
     # arm follows the ecosystem switch: interleave under the forced
@@ -267,7 +267,7 @@ def triton_ragged_mqa_logits(q_fp8, kv, kv_scales, weights, cu_starts, cu_ends):
     """deep_gemm.fp8_mqa_logits face (ragged): out [N,T] fp32, -inf outside
     each row's [ks, ke). Same contract as mqa_logits_emu._ragged_fp8_mqa_logits
     (which stays the golden + the HCU_MQA_LOGITS_IMPL!=triton path)."""
-    from .dsa_paged_mqa import _as_view, _fp8_view_dtype
+    from .dsa_mqa_logits_emu import _as_view, _fp8_view_dtype
 
     k_fp8, scale = kv, kv_scales
     if k_fp8.dtype in (torch.uint8, torch.int8):

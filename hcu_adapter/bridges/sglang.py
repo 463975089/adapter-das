@@ -160,9 +160,9 @@ def install() -> None:
         # topk_v2 kernel + the v41 full-topk fused decode arm. Replaces the
         # torch.topk fallbacks behind 57 mbtopk kernels/step (2026-10-22 trace).
         try:
-            from hcu_adapter import dsa_topk_v2_hip
+            from hcu_adapter import dsa_topk_v2
 
-            dsa_topk_v2_hip.install()
+            dsa_topk_v2.install()
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: dsa topk v2 fusion not installed", exc_info=True
@@ -1593,19 +1593,19 @@ def install() -> None:
         # DSA indexer rotate_activation: the upstream hadamard op is CUDA-only JIT
         # (warp-shuffle intrinsics the DTK toolchain rejects); the HIP arm of the
         # caller imports fast_hadamard_transform, which this wheel set lacks. Route
-        # the ops/quantization entry to the torch reference (rounding-neutral on
+        # the ops/quantization entry to the torch emu (rounding-neutral on
         # the 128/256-wide indexer heads; capture-safe fixed shapes).
         try:
             import sglang.kernels.ops.quantization.hadamard as _had
 
-            from hcu_adapter.hadamard_ref import hadamard_transform
+            from hcu_adapter.hadamard_emu import hadamard_transform
 
             _had.hadamard_transform = hadamard_transform
             for _nm in ("hadamard_transform_12n", "hadamard_transform_20n",
                         "hadamard_transform_28n", "hadamard_transform_40n"):
                 setattr(_had, _nm, hadamard_transform)
             logging.getLogger("hcu.adapter").info(
-                "HCU adapter: hadamard_transform -> torch reference"
+                "HCU adapter: hadamard_transform -> torch emu"
             )
         except Exception:
             logging.getLogger("hcu.adapter").warning(

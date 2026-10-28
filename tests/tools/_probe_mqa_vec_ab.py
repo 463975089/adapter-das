@@ -37,7 +37,7 @@ def _mk(N, H=16, D=128, T=65536, PS=64, ragged=True):
 
 
 def run(q, kv, w, ctx, bt, T):
-    from hcu_adapter.dsa_paged_mqa import fp8_paged_mqa_logits
+    from hcu_adapter.dsa_mqa_logits_emu import fp8_paged_mqa_logits
     return fp8_paged_mqa_logits(q, kv, w, ctx, bt, None, T, clean_logits=True)
 
 

@@ -25,7 +25,7 @@
 | K1 | gdn test_gdn_cutedsl_ring_verify ×2（test_wide_vec_batch / test_ilp4_small_batch） | cuteDSL 编译错：`llvm.call op operand type mismatch: 'ptr<1>' != 'ptr'`（cutedsl_gdn_mtp_ring.py:2474，确定性、非数值） | **平台工具链**：cuteDSL→LLVM lowering 给 operand 0 加地址空间限定与被调签名失配（DTK cute-dsl 面，与 conv1d-flake 同类 codegen 嫌疑） | 随 cute-dsl/DTK 升级重跑；不修上游 |
 | K2 | dsv4 JIT ×3 | `Failed to build JIT module sgl_kernel_jit_dpsk_v4_metadata`（ninja + `retry() exceed` ×3） | **平台**：DPSK v4 metadata JIT 源对 gfx938 编译栈不兼容 | 随 DTK/上游 JIT 源更新重跑 |
 | K3 | dsv4 subtest ×1 | `ValueError: Memory attributes {'l1c_evict_priority'} not supported for generic -> rmem copies` | **平台**：本机 triton/ROCm 无该拷贝专用 op | 随 triton 轮更新重跑 |
-| K4 | dsv4 页表形态 ×10 | `AttributeError: 'NoneType' has no attribute 'shape'` @ adapter `flash_mla.py:125`（`block_table=None` 未覆盖） | **桥失配**：emu flash_mla 只收页表形态，None 表（连续 KV）路径缺 | 候补 R-11 flash_mla/dsa_paged_mqa 面承接清单 |
+| K4 | dsv4 页表形态 ×10 | `AttributeError: 'NoneType' has no attribute 'shape'` @ adapter `flash_mla.py:125`（`block_table=None` 未覆盖） | **桥失配**：emu flash_mla 只收页表形态，None 表（连续 KV）路径缺 | 候补 R-11 flash_mla/dsa_mqa_logits_emu 面承接清单 |
 | K5 | dsv4 数值 ~20 | `Tensor-likes are not close!`（dsv4_attention.py:910 ×9 / :1689 ×1） | **数值面待深查**：dsv4 native backend 或受 K2 连带走兜底后数值可疑 | 深查另立；不设晋级门 |
 | K6 | mamba2 triton ×3 | decode 页界/bsz1-prefix 数值失配（backend='triton'：mamba2_decode_page_boundary / bsz1_nonzero_prefix / runner_cuda_graph 页界） | **自研 triton 档已知面**：页界形状敏感性，与 conv1d-flake 同族嫌疑未证 | R-11 / conv1d-flake 桩跟踪面 |
 

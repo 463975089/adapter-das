@@ -25,7 +25,7 @@ LAYOUT CONTRACT RECOVERED + WHEEL BUG CONVICTED (probe campaign
   _is_cuda store arm). GLM-5.3 (IndexerKPool, kpool=4) never reaches
   that store — its pool is written by the kpool writer family + SetKAndS
   under the adapter-forced preshuffle gate, i.e. k in the 16-tile
-  INTERLEAVE order + tail scales (see mqa_triton.py / dsa_paged_mqa.py).
+  INTERLEAVE order + tail scales (see mqa_logits_triton.py / dsa_mqa_logits_emu.py).
   So even with a fixed wheel, wiring the vendor tier for kpool models
   needs a pool relayout or a writer switch; for kpool=1 models the
   bridge is layout-correct as-is. The wheel bug below blocks either way.

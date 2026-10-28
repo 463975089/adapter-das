@@ -3,7 +3,7 @@
 tvm_ffi 首次 import 时若缓存缺失会派一个 python 构建子进程
 （``_optional_torch_c_dlpack.load_torch_c_dlpack_extension`` →
 ``subprocess.run``）。子进程继承 PYTHONPATH → 重跑本 adapter 的
-sitecustomize → 桥的 eager import 链（dsa_topk_v2_hip 的 _SCORING_MOD 一路
+sitecustomize → 桥的 eager import 链（dsa_topk_v2 的 _SCORING_MOD 一路
 拖进 xgrammar → tvm_ffi）→ 缓存仍缺 → 再派构建子进程……形成父子自递归：
 bootstrap.md §3 记录的 122 进程/50 分钟案；nmz26 dsv41f 冷容器 2026-10-26
 复现（9+ python3 堆积，签名 = 每 ~30s 孵一个新进程、各烧 ~30s import 后

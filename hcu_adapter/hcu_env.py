@@ -298,7 +298,7 @@ REGISTRY = {
                  "k 每 slot 错位+scale 读到 k 字节——**生产解码 DSA top-k 一直"
                  "确定性错误**，锚点对 topk 不敏感未暴露；`HCU_DSA_PRESHUFFLE="
                  "0` 时切行主序臂=kpool=1/fused_store 世界，PS=1 字节不变）**；"
-                 "triton=自研 triton 档（mqa_triton.py，臂随 HCU_DSA_PRESHUFFLE"
+                 "triton=自研 triton 档（mqa_logits_triton.py，臂随 HCU_DSA_PRESHUFFLE"
                  " 同一开关：默认交错=生产布局、=0 行主序）；对金标准精确 "
                  "rel=0.0、解码形状 13.2× 快于 emu-vec（0.19 vs 2.52ms），"
                  "**production 默认档**（2026-10-18 R-02 validated → R-13 #4 "

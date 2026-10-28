@@ -174,7 +174,7 @@ BACKEND_CATALOG = {
                     "note": "torch emulation — correct opt-out "
                             "(HCU_MQA_LOGITS_IMPL=vec; pre-R-13#4 default)"},
             "triton": {"status": "production",
-                       "note": "homegrown triton kernel (mqa_triton.py, "
+                       "note": "homegrown triton kernel (mqa_logits_triton.py, "
                                "R-02 2026-10-18) — DEFAULT since R-13 #4 "
                                "promotion 2026-10-18 (HCU_MQA_LOGITS_IMPL, "
                                "was emu-vec). Reads the production "
@@ -188,7 +188,7 @@ BACKEND_CATALOG = {
                                "misread that page-level layout — decode "
                                "DSA top-k was deterministically wrong in "
                                "production (anchors top-k-insensitive); "
-                               "fixed in dsa_paged_mqa.py (interleave-aware "
+                               "fixed in dsa_mqa_logits_emu.py (interleave-aware "
                                "page-level unpack; row-major arm behind "
                                "HCU_DSA_PRESHUFFLE=0 for the kpool=1/"
                                "fused_store world). Parity: exact vs direct "

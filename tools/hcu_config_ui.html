@@ -222,7 +222,7 @@ const CATALOG = {
               nccl:{s:"production",n:"兜底（HCU_AITER_AR=0）；graph-correct"}}},
   paged_mqa_logits: {summary:"DSA paged MQA logits",
     backends:{emu:{s:"production",n:"torch 仿真（gfx93* 默认开）；2026-10-18 R-02：池解包修正为页级+交错感知（GLM-5.3 kpool=4 池=kpool 写族+SetKAndS 交错+页尾 scale；旧行级 132 字节分裂使生产解码 DSA top-k 一直确定性错误，已修复；=0 时切行主序臂）"},
-              triton:{s:"validated",n:"自研 triton 档（mqa_triton.py）：臂随 HCU_DSA_PRESHUFFLE（默认交错=生产布局）；fp8 位级解码+fp32 累加+页早退；对金标准精确 rel=0.0、topk 全对；解码形状 13.2× 快于 emu-vec（0.19 vs 2.52ms）；哨兵 test_mqa_triton_gfx938.py（含修复后 emu 交叉验证）；serving A/B 已过（2026-10-18 零 env tp4：四门绿+马拉松 0/20+Tokyo+长文 4972 对；解码短 +9%/长 +4%）——连续稳定后晋 production"},
+              triton:{s:"validated",n:"自研 triton 档（mqa_logits_triton.py）：臂随 HCU_DSA_PRESHUFFLE（默认交错=生产布局）；fp8 位级解码+fp32 累加+页早退；对金标准精确 rel=0.0、topk 全对；解码形状 13.2× 快于 emu-vec（0.19 vs 2.52ms）；哨兵 test_mqa_triton_gfx938.py（含修复后 emu 交叉验证）；serving A/B 已过（2026-10-18 零 env tp4：四门绿+马拉松 0/20+Tokyo+长文 4972 对；解码短 +9%/长 +4%）——连续稳定后晋 production"},
               aiter:{s:"planned",n:"落空——on-box aiter 轮无此 API（2026-10-18 探测）；轮子补 API 再启"},
               lightop:{s:"planned",n:"lightop.attention.paged_mqa_logits；门禁未做"},
               deepgemm:{s:"broken",n:"deepgemm 轮直调（mqa_vendor.py 桥）：布局=行主序 k+页尾 fp32 scale=kpool=1 世界同构（kpool 模型需池重排）；但轮子 bug 定罪——q/k 负值 fp8 字节被钳为 0（真实数据 rel~3 垃圾），待 DTK 修复；env override =vendor 留取证；双事实哨兵钉住"}}},

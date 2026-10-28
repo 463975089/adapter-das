@@ -9,7 +9,7 @@
 |---|---|
 | **第一次接触本仓** | 本文 → README → docs/architecture.md（§1-§3 机制图）→ docs/governance.md |
 | 提 MR / 改代码 | docs/governance.md（§1 分工授权 / §7 协作红线与共建边界）→ docs/ci.md |
-| 加/改一个算子 | skills/…/SKILL.md → references/shadow-matrix.md → references/test-suite.md |
+| 加/改一个算子 | skills/…/SKILL.md → references/shadow-matrix.md → references/test-suite.md（命名与档位归档见 governance §3b，改完跑 gen_tier_matrix） |
 | 加一座桥 / 新功能选位 | docs/governance.md（§0 双仓判别 → §3 裁决链 → §4 登记/dump → §7 接入时序/共建） |
 | 向算子组/供应商提需求 | docs/operator-requests.md（锚定 sglang 契约面，机器数据先行） |
 | 追上游新版本 / 日常 compatibility 巡检 | docs/upstream-watch.md（规则版：报告优先+自主修复边界+工具清单） |
@@ -35,6 +35,7 @@
 | docs/cookbook.md | 已验证启动配方（按模型/特性），§4 平台约束必读 | 配方与最新 master 行为不符 |
 | docs/bootstrap.md | 新容器 Bootstrap 手册：依赖套件版本钉、tvm-ffi 手工预热、镜像差异表、四条自检 | 镜像换代后版本钉失效（快照与镜像不符） |
 | docs/models.md | 模型验证记录表（一天一行，判定四门）+ 组合特性清单 | 新模型跑完未加行 |
+| docs/tier-matrix.md | 算子档位矩阵（自动生成）：每算子有哪些档、缺哪档、什么状态——实现排期的直接输入 | 与 BACKEND_CATALOG 不一致（L0 `impl-naming` freshness 会抓） |
 | docs/vendor-kernels.md | DTK vendor 算子库 API 梳理（aiter/lightop/boltops/flash_mla/flash_attn/deepgemm/kda/tokenspeed，实机内省+热点映射机会表） | wheel 换代后 API 面/版本后缀失效 |
 | skills/hcu-adapter-dev/SKILL.md | 开发规约入口 + 任务路由（references/ 下五份专篇） | 黄金法则与代码内守卫不符 |
 | tests/tools/README.md | 物料命名语法（_test_/_probe_/_launch_/_dbg_） | 新物料未按前缀归位 |

@@ -27,7 +27,7 @@ w = torch.rand(N, H, device=DEV).float()
 ctx = torch.randint(1, T, (N, 1), device=DEV, dtype=torch.int32)
 bt = torch.stack([torch.randperm(POOL_TOKENS // PS)[: T // PS] for _ in range(N)]).to(torch.int32).to(DEV)
 
-from hcu_adapter.dsa_paged_mqa import fp8_paged_mqa_logits  # noqa: E402
+from hcu_adapter.dsa_mqa_logits_emu import fp8_paged_mqa_logits  # noqa: E402
 
 
 def vec_body():

@@ -6,7 +6,7 @@ Same contract/tests as _test_paged_attn_triton.py decode rows:
 - lse consistency
 - perf: same fixture wall-time, C++ vs triton (skip if only numerics requested)
 
-Run: python3 tests/tools/_test_paged_attn_hip.py   (GPU node, adapter root)
+Run: python3 tests/tools/_test_paged_attn_cpp.py   (GPU node, adapter root)
 """
 import sys
 import time
@@ -14,7 +14,7 @@ import time
 import torch
 
 sys.path.insert(0, ".")
-from sgl_kernel.paged_attn_hip import paged_attention_decode_hip  # noqa: E402
+from sgl_kernel.paged_attn_cpp import paged_attention_decode_hip  # noqa: E402
 from sgl_kernel.paged_attn_triton import (  # noqa: E402
     paged_attention_decode_triton,
 )

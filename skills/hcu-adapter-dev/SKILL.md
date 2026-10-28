@@ -52,6 +52,14 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
     tok/s——绝对值锚在别人的机器上。性能判别与晋级依据 catalog 档位
     证据门，不做无档案的"感觉变快了"。
 
+12. **模块命名随档位走**（governance §3b，L0 `impl-naming` 执法）：具体
+    实现文件 = `<op>[_<变体>]_<tier>`——tier ∈ emu/triton/cpp/fork/ref
+    或 vendor 库名（aiter/lightop/dtk）；路由器/机制/门禁裸名；平台词
+    （hip/cuda/rocm）不是档位；`_ref` 只准被 tests/ 引用；同族实现共享
+    op 词根（mqa_logits_{emu,triton}/mqa_vendor 一眼看全家族）。加档位
+    后跑 `python tools/gen_tier_matrix.py`，`docs/tier-matrix.md` 一眼
+    看全"谁有哪些档、缺哪档"（L0 freshness 钉同步）。
+
 ## 任务路由（做某类事之前先读对应参考文档）
 
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
@@ -67,6 +75,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
+| 加/改算子档位实现文件（命名/归档） | `docs/governance.md` §3b + `python tools/gen_tier_matrix.py`（档位矩阵随 catalog 同 commit） |
 | 需求/任务领取 | 任务跟踪不走仓内看板（board.md 已移除），归 MR 与团队现用任务系统；协作红线见 `docs/governance.md` §7 |
 
 ## 治理闭环（改代码必走的登记链，L0 机器查）
