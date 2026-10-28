@@ -9,9 +9,16 @@ description = "Triton-backed drop-in replacement of sgl_kernel for HCU (Hygon DC
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "packaging>=23",
     "torch>=2.0",
     "triton>=2.1",
 ]
+
+[project.entry-points."vllm.platform_plugins"]
+hcu_adapter = "hcu_adapter.bridges.vllm:hcu_platform_plugin"
+
+[project.entry-points."vllm.general_plugins"]
+hcu_adapter = "hcu_adapter.bridges.vllm:hcu_runtime_plugin"
 
 [tool.setuptools]
 py-modules = ["sitecustomize"]

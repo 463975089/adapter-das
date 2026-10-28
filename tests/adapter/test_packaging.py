@@ -3,6 +3,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tomllib
 import zipfile
 
 
@@ -53,3 +54,17 @@ def test_wheel_contains_bootstrap_and_nested_adapter_packages(tmp_path):
         )
 
     assert not (expected - members), f"wheel is missing: {sorted(expected - members)}"
+
+
+def test_vllm_official_entry_points_share_one_atomic_allowlist_name():
+    project = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]
+
+    entry_points = project["entry-points"]
+    assert entry_points["vllm.platform_plugins"] == {
+        "hcu_adapter": "hcu_adapter.bridges.vllm:hcu_platform_plugin"
+    }
+    assert entry_points["vllm.general_plugins"] == {
+        "hcu_adapter": "hcu_adapter.bridges.vllm:hcu_runtime_plugin"
+    }

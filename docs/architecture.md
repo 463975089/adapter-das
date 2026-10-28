@@ -26,6 +26,24 @@
 `hcu_adapter.bootstrap`，再按宿主只安装 `bridges/sglang.py` 或
 `bridges/vllm.py`；跨框架启动守卫在 `bridges/common.py`，vendor 库桩仍由
 `sgl_kernel/_adapters/` 接管。
+
+宿主入口严格保持以下骨架，不为单一框架另建旁路模块：
+
+```text
+sitecustomize.py
+hcu_adapter/
+  bootstrap.py
+  bridges/
+    common.py
+    sglang.py
+    vllm.py
+    deepinfer.py
+```
+
+其中 vLLM v0.32 通过官方 `vllm.platform_plugins` 与
+`vllm.general_plugins` 入口进入 `bridges/vllm.py`；`HcuPlatform` 也在该文件
+内按需构造，普通 adapter 启动不提前 import vLLM。官方 ROCm/Triton 已有的
+实现直接复用，plugin 独有优化继续留在独立 plugin 仓。
 sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端模型）
 在 HIP 平台默认 AOT 后端（`forward_aot` → `import sgl_kernel`），同名影
 子包即零修改插入点；CUDA 语义模式下算子层照常经 catalog/三档路由取实现。
