@@ -89,7 +89,8 @@ Python 启动
 
 - **未安装 Plugin**：`vLLM + Adapter` 必须可以启动并使用官方基线路径；
 - **可选 Plugin 失败**：Adapter 记录失败报告，基线继续启动；
-- **显式 required Extension/capability 失败**：响亮阻断启动；
+- **Extension API 调用方显式传入 required Extension/capability**：缺失时响亮
+  阻断；默认 vLLM runtime context 当前不请求任何必选项；
 - **不支持的 vLLM 版本或 HCU 架构**：不得选择 `HcuPlatform`；
 - **进程内必需动作失败**：失败被锁存，必须使用新进程重试，避免继续使用半安装状态。
 
