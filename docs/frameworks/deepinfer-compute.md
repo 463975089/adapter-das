@@ -15,6 +15,6 @@
 接口与 provider 清单在 `hcu_adapter/ops/deepinfer_compute_catalog.py`，详细
 shape/dtype/scale 条件以实现为准。后续 DeepInfer bridge 负责将该目录并入共同
 catalog 和注册具体 provider；本批没有自动替换任何模型或启用后端。
-旧模块名是兼容转接，指向同一份实现。这里不包括新增 channel-FP8 模型方案。
+导入直接指向按算子族与档位命名的实现；旧转发模块已移除。这里不包括新增 channel-FP8 模型方案。
 
 本分支做静态检查；尚未进行迁移后的节点数值、Graph 或性能验收。

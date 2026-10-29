@@ -19,6 +19,15 @@
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
 | 改 CI / 加门禁 | docs/ci.md → ci/l0_gate.py（治理三规则在此实现） |
 
+## 算子目录入口
+
+目录分工见 [governance 算子三居地图](governance.md#算子三居地图与宿主绑定层)：
+`sgl_kernel/` 是 SGLang ABI 影子层，`hcu_adapter/` 顶层保留历史桥接和公共机制，
+`hcu_adapter/kernels/` 放上游契约计算实现，宿主安装与契约分发位于 `bridges/`。
+DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md)，
+[计算覆盖](frameworks/deepinfer-compute.md)、[辅助功能](frameworks/deepinfer-auxiliary.md)
+和[宿主接入](frameworks/deepinfer-bridge.md)统一收在 `docs/frameworks/`。
+
 ## 文档地图（谁管什么，一句话一份）
 
 | 文档 | 一句话定位 | 失效信号 |

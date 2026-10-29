@@ -42,4 +42,43 @@ bridge 负责上游接口接线，catalog 记录实际绑定入口；模型策�
 
 本地执行项目 L0、Python 语法检查及 `git diff --check`；没有新增单测或运行 GPU 作业。
 目录和引用变更后的 adapter/plugin 组合仍需整模型验收。
-本页仅覆盖此次整理的算子族，不表示 `mtp.py`、`index_ops.py` 等其他历史模块已完成归类。
+
+
+## 本轮更名与分类
+
+下表列出在已整理版本基础上补齐的项目。旧名仅作为迁移说明，不是兼容入口。
+
+| 旧文件或分组 | 当前位置 | 分类与理由 |
+|---|---|---|
+| environment、ops config/registry/kill_switch、桥内 config/registry 壳 | 公共 `hcu_env`、`hcu_config`、`registry`、`kill_switch`；DeepInfer 清单直接引用 `ops.deepinfer_catalog` | 机制：删除跨层别名，两个 catalog 保持原有不同职责 |
+| 桥内 deep_select | `bridges/_deepinfer/deepselect.py` | 绑定：内部拼写统一；上游 `deep_select` 包与算子键保留 |
+| bucket | `bucket_rccl.py` | 单档位实现：RCCL CP 集合通信 |
+| deepep_compat | `deepep_dtk.py` | DTK DeepEP 适配实现：保留事件、布局与 Graph 协议 |
+| native_flashmla | `mla_attention_dtk.py` | DTK 原生 MLA 实现：与 `mla_attention_emu.py` 共用词根 |
+| verification | `verification_emu.py` | 单档位实现：Torch 验证与采样后处理 |
+| mtp | `mtp_emu.py`、`mtp_triton.py` | 按原函数拆分 Torch 运算与提案写入 Triton 内核；未引入新融合 |
+| state_and_constraints | `state_and_constraints_emu.py`、`state_and_constraints_triton.py` | Torch 状态搬运/诊断与 Triton mask 分开 |
+| vision | `vision_emu.py`、`vision_triton.py` | Torch embedding/downsample 与带 Triton 归一化的图像打包分开 |
+| index_ops 内计算 | `index_ops_emu.py`、`index_ops_triton.py` | 单档位实现；`index_ops.py` 仅保留实际后端选择 |
+| fused_transform 内单档位 helper | `kv_cache_emu.py`、`rope_emu.py`、`rope_lightop.py` | KV 数值实现及 RoPE 计算归档；组合执行和 plugin 接点留在原门面 |
+| gemm、gather、norm、fused_transform | 原文件保留 | 门面：实际校验、分发或按原阶段组织执行，不是旧路径薄转发 |
+| runtime_config、lightop_usage | 原文件保留 | 机制豁免：配置状态与共享计数；登记在 governance §3b 和 L0 |
+| 先前 lightop_mqa 整理结果 | `mqa_logits_lightop.py` | 已符合算子＋档位规则，不再重复更名为 mqa_lightop |
+
+已发布的 `torch` 后端选择值保持不变；它与 `_emu` 文件档位是两个概念。
+更改配置默认值、算子键或删除旧配置值不属于本次结构规范化。
+
+## 桥层归属核验
+
+| 文件 | 留在 bridges / 移入 kernels | 理由 |
+|---|---|---|
+| `tile_kernels.py` | 留在 bridges | 创建上游包和符号、选择并登记 provider；当前没有独立计算函数 |
+| `tilelang_backend/factories.py` | 留在 bridges | 契约 factory 导出、未实现项的报错闭包；没有数值实现 |
+| `tilelang_ops.py` | 留在 bridges | factory 参数校验、布局契约检查和调用闭包；计算已引用 kernels |
+| `deepselect.py`、`deep_ep.py`、`vendor_imports.py`、`vision_attention.py` | 留在 bridges | 分别安装 top-k、通信、DeepGEMM/MLA、视觉的上游接口绑定 |
+| `lightop_gemm.py`（桥层） | 留在 bridges | 安装 DeepInfer Linear 接口；不是已删除的 kernels 旧名壳 |
+| `bootstrap.py`、`worker_runtime.py`、`native_extension.py`、`platform_guard.py` | 留在 bridges | 安装顺序、worker 生命周期、扩展加载与平台契约 |
+| `configuration.py`、`hcu_env.py`、`runtime_dump.py` | 留在 bridges | 宿主配置翻译、宿主环境规则和记录；公共 registry/config 直接引用 |
+
+Plugin 还须同步公共 registry 引用、MLA 计数模块名，以及稀疏索引覆盖目标
+`index_ops_emu`；其余模型逻辑不随目录调整改变。
