@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hosts": {
+    "deepinfer": {
+      "artifacts": "./native-artifacts",
+      "allow_cuda_graph": true,
+      "tilelang_backend": "triton",
+      "grouped_gemm_backend": "triton"
+    }
+  }
+}
