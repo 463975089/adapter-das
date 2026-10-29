@@ -82,3 +82,7 @@ bridge 负责上游接口接线，catalog 记录实际绑定入口；模型策�
 
 Plugin 还须同步公共 registry 引用、MLA 计数模块名，以及稀疏索引覆盖目标
 `index_ops_emu`；其余模型逻辑不随目录调整改变。
+
+融合变换门面的 LightOp 量化及 UE8M0 scale 解码由 `quant_lightop.quantize_transform` 承担；
+门面只保留后端条件、阶段顺序和输出写回。该抽取保留原有运算及转换顺序，
+最终提交只通过本地静态检查，不能把此前冻结组合的 GPU 验收直接视为新提交的验收。

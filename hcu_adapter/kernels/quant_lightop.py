@@ -52,3 +52,13 @@ def per_token_cast(x, fmt, num_per_channels, x_block_size=None,
             sf.view(torch.uint8)[:, :groups].copy_(exponent)
         _count('quant.native')
     return q, sf
+
+
+def quantize_transform(work, num_per_channels):
+    quant, packed = per_token_cast(work.reshape(-1, work.shape[-1]), 'e4m3',
+                                  num_per_channels, round_sf=True, use_packed_ue8m0=True)
+    quant = quant.view_as(work)
+    groups = work.shape[-1] // num_per_channels
+    sf = packed.contiguous().view(torch.uint8)[:, :groups].reshape(*work.shape[:-1], groups)
+    sf_float = (sf.to(torch.int32) << 23).view(torch.float32)
+    return quant, sf, sf_float

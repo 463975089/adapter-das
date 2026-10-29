@@ -33,8 +33,6 @@ def _rope(x, positions, cos, sin, rotary_dim, offset, is_neox, conjugate, backen
     return apply_rotary_rows(x, positions, cos, sin, rotary_dim, offset, is_neox, conjugate)
 
 
-
-
 def fused_transform(x, weight, positions, cos, sin, out_bf16, out_quant, out_sf,
                     cache_quant, cache_sf, slot_mapping, *, backend, do_norm, norm_eps, do_rope,
                     rotary_dim, rope_offset, is_neox, conjugate, cast_fmt, num_per_channels,
@@ -52,14 +50,9 @@ def fused_transform(x, weight, positions, cos, sin, out_bf16, out_quant, out_sf,
         return
     if (backend == 'lightop' and cast_fmt == 'e4m3' and sf_format == 'ue8m0'
             and num_per_channels in (32, 128) and work.shape[-1] % 128 == 0):
-        from .quant_lightop import per_token_cast
+        from .quant_lightop import quantize_transform
 
-        quant, packed = per_token_cast(work.reshape(-1, work.shape[-1]), 'e4m3',
-                                      num_per_channels, round_sf=True, use_packed_ue8m0=True)
-        quant = quant.view_as(work)
-        groups = work.shape[-1] // num_per_channels
-        sf = packed.contiguous().view(torch.uint8)[:, :groups].reshape(*work.shape[:-1], groups)
-        sf_float = (sf.to(torch.int32) << 23).view(torch.float32)
+        quant, sf, sf_float = quantize_transform(work, num_per_channels)
     else:
         quant, sf, sf_float = quantize_groups(work, cast_fmt, num_per_channels, sf_format)
     if return_bf16 and bf16_stage == "cast_back":
