@@ -26,7 +26,7 @@ def _missing(symbol):
     return unavailable
 
 
-_GROUPED_GEMM = {"torch": "hcu_adapter.kernels.gemm", "triton": "hcu_adapter.kernels.grouped_gemm_triton"}
+_GROUPED_GEMM = {"torch": "hcu_adapter.kernels.grouped_gemm_emu", "triton": "hcu_adapter.kernels.grouped_gemm_triton"}
 
 
 def install(grouped_gemm_backend="torch"):
@@ -37,7 +37,7 @@ def install(grouped_gemm_backend="torch"):
     import flash_mla
 
     from hcu_adapter.kernels.weight_scale_emu import transform_sf_into_required_layout
-    from hcu_adapter.kernels.mhc import tf32_hc_prenorm_gemm
+    from hcu_adapter.kernels.mhc_emu import tf32_hc_prenorm_gemm
     from hcu_adapter.kernels.gemm import cublaslt_gemm_nt
 
     current = getattr(deep_gemm, "cublaslt_gemm_nt", None)
@@ -76,7 +76,7 @@ def install(grouped_gemm_backend="torch"):
     deep_gemm.mega_mhc = mega_mhc
     registry.register("deep_gemm.mega_mhc", mega_mhc.__module__ + '.mega_mhc', "deep_gemm.mega_mhc", "seam")
     registry.register("deep_gemm.tf32_hc_prenorm_gemm",
-                      "hcu_adapter.kernels.mhc.tf32_hc_prenorm_gemm",
+                      "hcu_adapter.kernels.mhc_emu.tf32_hc_prenorm_gemm",
                       "deep_gemm.tf32_hc_prenorm_gemm", "seam")
     from hcu_adapter.kernels import runtime_config
 
@@ -89,7 +89,7 @@ def install(grouped_gemm_backend="torch"):
         registry.register("deep_gemm." + name, "hcu_adapter.kernels.runtime_config." + impl,
                           "deep_gemm." + name, "seam")
     for name in ("fp8_fp4_gemm_nt", "fp8_einsum", "m_grouped_fp8_fp4_gemm_nt_contiguous"):
-        module = _GROUPED_GEMM[grouped_gemm_backend] if name.startswith("m_grouped") else "hcu_adapter.kernels.gemm"
+        module = _GROUPED_GEMM[grouped_gemm_backend] if name.startswith("m_grouped") else "hcu_adapter.kernels.gemm_emu"
         provider = getattr(importlib.import_module(module), name)
         current = getattr(deep_gemm, name, None)
         if current is not None and current is not provider:

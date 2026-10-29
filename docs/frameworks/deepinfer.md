@@ -4,6 +4,8 @@
 
 本入口使用共用 adapter 的 bootstrap、环境注册表、catalog 和运行时 registry。DeepInfer 的导入别名、factory、metadata 和 worker 生命周期位于 `hcu_adapter/bridges/_deepinfer/`；张量实现位于 `hcu_adapter/kernels/`。新增代码遵循本仓 [治理](../governance.md) 与开发 skill。
 
+算子分组、档位文件及 plugin 兼容入口见[算子文件导航](deepinfer-kernels.md)。
+
 ## 源码接入
 
 本次迁移基于 DeepInfer `774ce244b87cc0eb8d4b94ab9f5de2ab22049f01`。需要兼容的 HIP Torch、Triton、LightOp、DeepEP/DeepGEMM 等外部库和配套 `deepinfer._C`；仓库不包含权重或二进制。迁移后的整模型与 Graph 回归尚待节点验证，不把历史结果当作本版本验收。

@@ -6,6 +6,10 @@
 库名，本仓库都要让 `import` 成功。不锚定任何库的内部实现（内部实现随上游
 版本漂移，import 面稳定得多）。
 
+DeepInfer 契约实现按算子族和档位放入 `hcu_adapter/kernels/`，文件位置及保留的
+旧入口见[算子文件导航](../../../docs/frameworks/deepinfer-kernels.md)。
+拆分实现时同步 bridge/catalog；兼容转发不重复计算，也不重复维护调用计数。
+
 当前覆盖的 import 面（发现新的就加进矩阵）：
 
 | 社区 import 的包 | 我们的形态 | 位置 | 状态 |

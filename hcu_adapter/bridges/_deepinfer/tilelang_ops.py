@@ -65,7 +65,7 @@ def install(backend="triton"):
 
 def gather_tl(D, dtype, index_dtype, x_stride, threads=256):
     _backend = _selected['gather_tl']
-    from hcu_adapter.kernels.elementwise import gather
+    from hcu_adapter.kernels.gather import gather
 
     def launch(x, index, out):
         if (x.shape[1] != D or x.dtype != dtype or index.dtype != index_dtype or
@@ -84,7 +84,7 @@ def norm_tl(d, dtype, return_dtype, reduce_dtype, has_residual, eps, out_scale,
     _backend = _selected['norm_tl']
     _norm_backend = _backend
     import torch
-    from hcu_adapter.kernels.elementwise import norm
+    from hcu_adapter.kernels.norm import norm
 
     if not 0 < d <= 8192 or dtype not in ("float", "bfloat16") or reduce_dtype != "float":
         raise ValueError("Unsupported norm dimension or dtype specialization")

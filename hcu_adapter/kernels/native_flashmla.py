@@ -8,7 +8,8 @@ cache as FlashMLA's different MODEL1 packed format.
 import torch
 
 from .mla_attention_emu import _dequant_main_cache_rows, _unpermute_q
-from .lightop_ops import apply_rotary, per_token_cast
+from .rope_lightop import apply_rotary
+from .quant_lightop import per_token_cast
 
 _COUNTS = {'prefill': 0, 'decode': 0}
 

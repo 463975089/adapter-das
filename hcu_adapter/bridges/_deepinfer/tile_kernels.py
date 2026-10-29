@@ -75,10 +75,10 @@ def install():
     sys.modules["tile_kernels.config"].is_ascend = _is_ascend
     from hcu_adapter.kernels.engram_init_emu import fused_weight, make_offsets
     from hcu_adapter.kernels.engram_runtime_emu import engram_gate_fwd, engram_hash
-    from hcu_adapter.kernels import mhc as mhc_providers
+    from hcu_adapter.kernels import mhc_emu as mhc_providers
     from hcu_adapter.kernels.quant_emu import per_token_cast
     if native:
-        from hcu_adapter.kernels.lightop_ops import per_token_cast
+        from hcu_adapter.kernels.quant_lightop import per_token_cast
     from hcu_adapter.kernels.weight_scale_emu import batched_transpose_weight_sf
 
     for suffix, symbol, provider in (
@@ -101,7 +101,7 @@ def install():
                       "tile_kernels.quant.per_token_cast", "seam")
     from hcu_adapter.kernels.quant_emu import per_token_cast_and_cast_back, swiglu_forward, swiglu_forward_and_per_token_cast
     if native:
-        from hcu_adapter.kernels.lightop_ops import swiglu_forward, swiglu_forward_and_per_token_cast
+        from hcu_adapter.kernels.swiglu_lightop import swiglu_forward, swiglu_forward_and_per_token_cast
 
     sys.modules["tile_kernels.quant"].swiglu_forward = swiglu_forward
     registry.register("tile_kernels.quant.swiglu_forward", swiglu_forward.__module__ + '.swiglu_forward',
@@ -119,7 +119,7 @@ def install():
     from deepinfer import envs
     from hcu_adapter.kernels.moe_gate_emu import moe_topk_gate
     if native:
-        from hcu_adapter.kernels.lightop_ops import moe_topk_gate
+        from hcu_adapter.kernels.moe_gate_lightop import moe_topk_gate
 
     if envs.DEEPINFER_FORCE_LOAD_BALANCE:
         raise NotImplementedError("HCU moe_topk_gate does not implement force_random (DEEPINFER_FORCE_LOAD_BALANCE)")
@@ -128,7 +128,7 @@ def install():
                       "tile_kernels.moe.moe_topk_gate", "seam")
     from hcu_adapter.kernels.rope_triton import apply_rotary
     if native:
-        from hcu_adapter.kernels.lightop_ops import apply_rotary
+        from hcu_adapter.kernels.rope_lightop import apply_rotary
 
     sys.modules["tile_kernels.transform"].apply_rotary = apply_rotary
     registry.register("tile_kernels.transform.apply_rotary", apply_rotary.__module__ + '.apply_rotary',
@@ -165,7 +165,7 @@ def install():
             provider = getattr(mhc_providers, symbol)
             setattr(module, symbol, provider)
             op = "tile_kernels." + suffix + "." + symbol
-            registry.register(op, "hcu_adapter.kernels.mhc." + symbol, op, "seam")
+            registry.register(op, "hcu_adapter.kernels.mhc_emu." + symbol, op, "seam")
     _installed = True
     registry.register("tile_kernels.import_surface", "hcu_adapter.bridges._deepinfer.tile_kernels.install", "tile_kernels", "seam")
     print("HCU adapter runtime: native weight-scale packing/Engram/mHC; remaining numerical APIs are stubs")

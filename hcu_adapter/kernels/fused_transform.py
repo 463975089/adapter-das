@@ -26,7 +26,7 @@ def _norm(x, weight, eps, backend):
 
 def _rope(x, positions, cos, sin, rotary_dim, offset, is_neox, conjugate, backend):
     if backend == 'lightop':
-        from .lightop_ops import apply_rotary
+        from .rope_lightop import apply_rotary
 
         out = x.clone(memory_format=torch.contiguous_format)
         apply_rotary(out[..., offset:offset + rotary_dim], torch.cat((cos, sin), -1),
@@ -92,7 +92,7 @@ def fused_transform(x, weight, positions, cos, sin, out_bf16, out_quant, out_sf,
         return
     if (backend == 'lightop' and cast_fmt == 'e4m3' and sf_format == 'ue8m0'
             and num_per_channels in (32, 128) and work.shape[-1] % 128 == 0):
-        from .lightop_ops import per_token_cast
+        from .quant_lightop import per_token_cast
 
         quant, packed = per_token_cast(work.reshape(-1, work.shape[-1]), 'e4m3',
                                       num_per_channels, round_sf=True, use_packed_ue8m0=True)

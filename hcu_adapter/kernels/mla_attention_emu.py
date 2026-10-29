@@ -105,7 +105,7 @@ _LOGITS_CHUNK_ELEMENTS = 1 << 27  # bound the per-chunk [q, heads, kv] FP32 scor
 
 def _dequant_mqa_operand(x, sf):
     """FP8 E4M3 or packed E2M1 [..., d(/2)] with per-row packed UE8M0 sf -> BF16 [..., d]."""
-    from .gemm import dequantize_mxfp4, dequantize_fp8
+    from .gemm_emu import dequantize_mxfp4, dequantize_fp8
 
     if x.dtype == torch.int8:
         d = x.shape[-1] * 2
