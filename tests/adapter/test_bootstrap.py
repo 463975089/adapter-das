@@ -34,7 +34,7 @@ def _detect(
     )
 
 
-@pytest.mark.parametrize("host", ["sglang", "vllm"])
+@pytest.mark.parametrize("host", ["sglang", "vllm", "deepinfer"])
 def test_explicit_host_overrides_inherited_selection(host):
     other = "vllm" if host == "sglang" else "sglang"
 
@@ -47,10 +47,10 @@ def test_explicit_none_disables_an_inherited_host():
 
 def test_invalid_explicit_host_is_rejected():
     with pytest.raises(ValueError, match="HCU_ADAPTER_HOST"):
-        _detect(public="deepinfer")
+        _detect(public="invalid-host")
 
 
-@pytest.mark.parametrize("host", ["sglang", "vllm"])
+@pytest.mark.parametrize("host", ["sglang", "vllm", "deepinfer"])
 def test_inherited_automatic_host_survives_generic_child_argv(host):
     assert _detect(
         argv=("python", "-c", "from multiprocessing.spawn import spawn_main"),
@@ -64,8 +64,10 @@ def test_inherited_automatic_host_survives_generic_child_argv(host):
     [
         (("python", "-m", "sglang.launch_server"), "sglang"),
         (("python", "-m", "vllm.entrypoints.openai.api_server"), "vllm"),
+        (("python", "-m", "deepinfer.entrypoints.openai.api_server"), "deepinfer"),
         (("sglang", "serve", "/model"), "sglang"),
         (("/usr/local/bin/vllm", "serve", "/model"), "vllm"),
+        (("/usr/local/bin/deepinfer", "serve", "/model"), "deepinfer"),
     ],
 )
 def test_launch_intent_selects_exactly_one_host(argv, expected):
@@ -89,7 +91,14 @@ def test_loaded_vllm_module_selects_vllm(module_name):
     assert _detect(loaded=(module_name,), available=("sglang", "vllm")) == "vllm"
 
 
-@pytest.mark.parametrize("host", ["sglang", "vllm"])
+@pytest.mark.parametrize("module_name", ["deepinfer", "deepinfer.engine.llm_engine"])
+def test_loaded_deepinfer_module_selects_deepinfer(module_name):
+    assert _detect(
+        loaded=(module_name,), available=("sglang", "vllm", "deepinfer")
+    ) == "deepinfer"
+
+
+@pytest.mark.parametrize("host", ["sglang", "vllm", "deepinfer"])
 def test_single_available_host_is_selected(host):
     assert _detect(available=(host,)) == host
 
@@ -134,6 +143,7 @@ def _arm_install(monkeypatch, *, hip=True, available=("sglang",), common_failure
         ),
         "hcu_adapter.bridges.sglang": _Bridge("sglang", events),
         "hcu_adapter.bridges.vllm": _Bridge("vllm", events),
+        "hcu_adapter.bridges.deepinfer": _Bridge("deepinfer", events),
     }
     monkeypatch.setattr(bootstrap, "_is_hip", lambda: hip)
     monkeypatch.setattr(bootstrap, "_available_hosts", lambda: set(available))
@@ -156,6 +166,15 @@ def test_install_runs_common_before_the_selected_host(monkeypatch, caplog):
 
     assert events == ["common", "sglang"]
     assert "host=sglang source=availability" in caplog.text
+
+
+def test_deepinfer_installs_without_the_early_common_bridge(monkeypatch, caplog):
+    events = _arm_install(monkeypatch, available=("deepinfer",))
+
+    bootstrap.install()
+
+    assert events == ["deepinfer"]
+    assert "host=deepinfer source=availability" in caplog.text
 
 
 def test_install_is_process_idempotent(monkeypatch):

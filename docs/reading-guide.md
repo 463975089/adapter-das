@@ -14,6 +14,7 @@
 | 向算子组/供应商提需求 | docs/operator-requests.md（锚定 sglang 契约面，机器数据先行） |
 | 追上游新版本 / 日常 compatibility 巡检 | docs/upstream-watch.md（规则版：报告优先+自主修复边界+工具清单） |
 | 配置后端 / 部署 | docs/config.md → hcu_adapter.example.yaml → docs/env-vars.md（调试覆盖） |
+| 部署 vLLM 0.32 | docs/frameworks/vllm032.md（组件职责、启动时序、wheel 锁定与验证） |
 | 跑一个模型 | docs/cookbook.md（找配方）→ docs/models.md（看先例与坑）→ cookbook.md §4 平台约束 |
 | **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
@@ -37,6 +38,7 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | **docs/governance.md** | **治理宪法**：双仓边界（adapter=行为还原 / plugin 独立仓=性能新能力）、seam→rebind→text-patch 裁决链、active-ref 角色、运行时注册表与 dump、plugin 接入时序 / 双宿主共建 / 维护闭环（§7） | 与 ci/l0_gate.py 三规则或 `hcu_adapter/registry.py` 行为不符 |
 | docs/ci.md | CI 分层：L0 秒级 → L1 GPU ~10min → L2 夜间（含双线三绑定铁律） | GATES 列表与 l1_gpu_gate.sh 不符 |
 | docs/config.md | hcu_adapter.yaml 部署配置 + BACKEND_CATALOG 状态语义 | catalog 键集与 hcu_config.py 不符 |
+| docs/frameworks/vllm032.md | vLLM 0.32、Adapter 与可选 Plugin 的职责、部署和组合验证口径 | entry-point 所有权或版本门与代码不符 |
 | docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
 | docs/plugins.md | 须走 plugin/上游/镜像/专门窗口的需求登记表（P1-P9，判定规则+验收锚点） | 完成项未更新现状列 / 未过 §0 判定就收录 |
 | docs/upstream-watch.md | 上游追新巡检规约（对账工具+日流程+自主修复授权边界，可交接版） | 工具清单状态与 #349/#350 实际落地不符 |
