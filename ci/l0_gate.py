@@ -40,7 +40,8 @@ SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", "build", "d
 
 def iter_files(*exts):
     for dirpath, dirnames, filenames in os.walk(ROOT):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames
+                       if d not in SKIP_DIRS and not d.startswith("tmp")]
         for fn in filenames:
             if fn.endswith(exts):
                 yield os.path.join(dirpath, fn)
