@@ -19,7 +19,7 @@ from hcu_adapter.extensions import (
 )
 
 
-TARGET_VLLM_RELEASE = (0, 32, 0)
+SUPPORTED_VLLM_RELEASE_PREFIX = (0, 32)
 SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx936", "gfx938"})
 HYGON_PCI_VENDOR_ID = "0x1d94"
 _PCI_DEVICES_ROOT = Path("/sys/bus/pci/devices")
@@ -44,14 +44,17 @@ class HcuDetection:
 
 
 def is_supported_vllm_version(raw_version: str | None) -> bool:
-    """Accept build suffixes on the exact vLLM 0.32.0 release line."""
+    """Accept prerelease, patch, post, and local builds on vLLM 0.32.x."""
     if raw_version is None:
         return False
     try:
         parsed = Version(raw_version)
     except (InvalidVersion, TypeError):
         return False
-    return parsed.epoch == 0 and parsed.release == TARGET_VLLM_RELEASE
+    return (
+        parsed.epoch == 0
+        and parsed.release[:2] == SUPPORTED_VLLM_RELEASE_PREFIX
+    )
 
 
 def _installed_vllm_version() -> str | None:
@@ -73,9 +76,10 @@ def _installed_adapter_version() -> str:
 def _ensure_vllm_compatible() -> str:
     version = _installed_vllm_version()
     if not is_supported_vllm_version(version):
-        expected = ".".join(map(str, TARGET_VLLM_RELEASE))
+        expected = ".".join(map(str, SUPPORTED_VLLM_RELEASE_PREFIX)) + ".x"
         raise VllmCompatibilityError(
-            f"unsupported vLLM release {version!r}; expected release {expected}"
+            f"unsupported vLLM release {version!r}; expected release line "
+            f"{expected} (>=0.32.0,<0.33.0)"
         )
     return version
 

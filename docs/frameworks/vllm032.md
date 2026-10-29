@@ -2,9 +2,11 @@
 
 ## 1. 支持范围
 
-本仓通过官方 vLLM Plugin seam 为 vLLM `0.32.0` release line 提供 HCU
-平台与运行时适配。版本门接受 `0.32.0` 的 prerelease、dev、post 和 local build
-后缀，但拒绝 `0.31.x`、`0.32.1` 和 `0.33.x`。
+本仓通过官方 vLLM Plugin seam 为 vLLM `0.32.x` release line 提供 HCU
+平台与运行时适配。版本门接受 epoch 为 0 的整个 0.32 patch line，包括
+prerelease、dev、post 和 local build 后缀，但拒绝 `0.31.x`、`0.33.x`、非零
+epoch 和无效版本。版本门通过后仍由 `RocmPlatform`、平台选择与 runtime 接口
+检查能力；缺少必需 seam 时响亮失败。
 
 已登记的 HCU 架构为 `gfx928`、`gfx936` 和 `gfx938`。平台选择前先通过 Hygon
 PCI vendor、Torch HIP runtime、设备可用性和架构检查；非 HCU 主机不选择本平台。
@@ -30,8 +32,9 @@ optional vllm-plugin-das
 
 ### vLLM 0.32
 
-vLLM 负责引擎、调度、Worker、模型执行以及正式扩展接口。HCU vLLM wheel 应以
-官方 `v0.32.0` 为基线，只保留无法经公开 seam 完成的构建或底层兼容修改。
+vLLM 负责引擎、调度、Worker、模型执行以及正式扩展接口。当前验证基线仍是官方
+`v0.32.0`；HCU vLLM wheel 只保留无法经公开 seam 完成的构建或底层兼容修改。
+Adapter 接受 0.32.x 不代表任意 patch wheel 已验证，交付仍须锁定并记录实际 commit。
 
 ### Adapter
 
@@ -141,7 +144,7 @@ HCU_ADAPTER_HOST=none pytest -q \
   tests/adapter/test_packaging.py
 ```
 
-这些测试覆盖精确版本门、HCU 探测、平台与 runtime Plugin 顺序、进程失败锁存、
+这些测试覆盖 0.32 patch-line 版本门、HCU 探测、平台与 runtime Plugin 顺序、进程失败锁存、
 Extension API v1、可选/必需失败语义和 wheel entry-point 所有权。
 
 ### 6.2 HCU 节点

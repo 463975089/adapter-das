@@ -4,7 +4,7 @@
 
 **Goal:** Restore the portable Adapter gate after DeepInfer host integration and document the deployable vLLM 0.32/Adapter/Plugin ownership model.
 
-**Architecture:** Keep the already-merged vLLM bridge unchanged. Extend the existing bootstrap contract matrix to cover DeepInfer and correct the stale invalid-host assertion, then add a deployment guide and update the shadow-matrix fact source.
+**Architecture:** Preserve the already-merged vLLM platform/runtime bridge. Extend the bootstrap contract matrix for DeepInfer, document the component boundary, and accept the maintained vLLM 0.32 patch line while retaining the bridge's lazy capability gates.
 
 **Tech Stack:** Python 3.12, pytest, setuptools entry points, Markdown, GitHub fork pull-request workflow
 
@@ -16,6 +16,7 @@
 - Adapter exclusively owns `vllm.platform_plugins` and `vllm.general_plugins`.
 - Plugin optimizations enter only through `hcu_adapter.extensions` API v1.
 - Do not change kernels, catalog, environment variables, kill switches, or runtime host arbitration.
+- Accept `>=0.32.0,<0.33.0`; do not claim an unbounded `>=0.3.0` compatibility range.
 - Keep all new tests pytest-collectable with no module-level side effects.
 
 ## Review Focus
@@ -25,6 +26,7 @@
 - A DeepInfer selection must not run the early common bridge because its runtime installs common after device-mask alignment.
 - vLLM platform/general entry-point ownership must remain Adapter-only.
 - Optional Plugin absence must remain a supported baseline documented by the deployment guide.
+- Patch versions such as `0.32.1` and `0.32.99+vendor` must pass the version gate, while `0.31.x`, epoch-shifted builds, and `0.33.0` must fail.
 
 ---
 
@@ -103,6 +105,49 @@ Expected: L0 GREEN with only known soft warnings and CPU contracts pass.
 ```bash
 git add docs/frameworks/vllm032.md skills/hcu-adapter-dev/references/shadow-matrix.md skills/hcu-adapter-dev/SKILL.md docs/superpowers/specs/2026-10-29-vllm032-adapter-delivery-gates-design.md docs/superpowers/plans/2026-10-29-vllm032-adapter-delivery-gates.md
 git commit -m "docs: define the vLLM 0.32 adapter delivery boundary"
+```
+
+### Task 3: Broaden the vLLM 0.32 patch compatibility window
+
+**Files:**
+- Modify: `tests/adapter/test_vllm_bridge.py`
+- Modify: `hcu_adapter/bridges/vllm.py`
+- Modify: `docs/frameworks/vllm032.md`
+
+**Interfaces:**
+- Consumes: `is_supported_vllm_version(raw_version: str | None) -> bool`
+- Produces: a fail-closed `>=0.32.0,<0.33.0` release gate followed by the existing lazy vLLM capability checks
+
+- [ ] **Step 1: Write the failing patch-line contract**
+
+Move `0.32.1` into the accepted matrix, add a high patch/local-build case, and
+keep malformed, epoch-shifted, pre-0.32, and 0.33+ inputs in the rejected matrix.
+
+- [ ] **Step 2: Run the focused test and verify RED**
+
+Run: `HCU_ADAPTER_HOST=none pytest -q tests/adapter/test_vllm_bridge.py -k release_gate`
+
+Expected: the new 0.32 patch cases fail because the implementation still
+requires the exact `(0, 32, 0)` release tuple.
+
+- [ ] **Step 3: Implement the minor-line gate**
+
+Update `is_supported_vllm_version()` to accept epoch-zero versions whose release
+tuple is at least `0.32.0` and lower than `0.33.0`. Update the compatibility
+error to report the range rather than one exact release.
+
+- [ ] **Step 4: Verify GREEN and update the operator guide**
+
+Run: `HCU_ADAPTER_HOST=none pytest -q tests/adapter/test_vllm_bridge.py`
+
+Expected: all vLLM bridge contracts pass. The guide must distinguish accepted
+0.32.x versions from the exact commit/wheel pinned in a validated deployment.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/adapter/test_vllm_bridge.py hcu_adapter/bridges/vllm.py docs/frameworks/vllm032.md docs/superpowers/specs/2026-10-29-vllm032-adapter-delivery-gates-design.md docs/superpowers/plans/2026-10-29-vllm032-adapter-delivery-gates.md
+git commit -m "fix(vllm): accept the 0.32 patch line"
 ```
 
 ## Final verification

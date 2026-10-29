@@ -32,15 +32,26 @@ from hcu_adapter.extensions import (
         "0.32.0.dev7",
         "0.32.0.post1",
         "0.32.0+rocm723",
+        "0.32.1",
+        "0.32.1rc1",
+        "0.32.99+vendor.7",
     ),
 )
-def test_vllm_release_gate_accepts_only_the_032_release_line(version):
+def test_vllm_release_gate_accepts_the_032_patch_line(version):
     assert bridge.is_supported_vllm_version(version) is True
 
 
 @pytest.mark.parametrize(
     "version",
-    (None, "not-a-version", "1!0.32.0", "0.31.0", "0.32.1", "0.33.0"),
+    (
+        None,
+        "not-a-version",
+        "1!0.32.0",
+        "0.3.0",
+        "0.31.99",
+        "0.33.0rc1",
+        "0.33.0",
+    ),
 )
 def test_vllm_release_gate_rejects_missing_malformed_or_other_releases(version):
     assert bridge.is_supported_vllm_version(version) is False

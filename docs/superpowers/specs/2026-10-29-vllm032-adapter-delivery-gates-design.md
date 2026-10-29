@@ -16,14 +16,17 @@ platform ownership back into `vllm-plugin-das` or `sitecustomize.py`.
 - Preserve Plugin ownership of optional optimizations through the
   `hcu_adapter.extensions` entry-point group.
 - Add one operator-facing vLLM 0.32 deployment and responsibility guide.
+- Accept the maintained vLLM 0.32 patch line (`>=0.32.0,<0.33.0`) while
+  retaining the existing lazy platform/interface capability gates.
 - Correct stale documentation that still places the vLLM custom-op ABI bridge
   in `sitecustomize.py`.
 
 ## Non-goals
 
 - No kernel, catalog, environment-variable, or kill-switch changes.
-- No changes to the exact vLLM 0.32 release gate or validated HCU architecture
-  list.
+- No support claim for vLLM 0.31, 0.33, or an unbounded `>=0.3.0` range; those
+  lines require their own compatibility evidence. No change to the validated
+  HCU architecture list.
 - No Plugin repository changes and no compatibility-lock update.
 - No DeepInfer operator validation; that requires a separate four-quality-
   dimension workstream.
@@ -45,8 +48,22 @@ platform ownership back into `vllm-plugin-das` or `sitecustomize.py`.
 
 Update the stale bootstrap contracts, add DeepInfer cases to the existing host
 matrix, and add a vLLM 0.32 deployment guide grounded in the already-merged
-runtime bridge. This is the smallest reviewable change and restores the main
-adapter gate without perturbing validated runtime code.
+runtime bridge. Accept patch releases throughout the 0.32 line, then let the
+existing lazy `RocmPlatform`, platform-selection, and runtime interfaces fail
+closed when a required capability is absent. This avoids a patch-level lock
+without claiming compatibility across unvalidated minor lines.
+
+### Rejected: exact `0.32.0` only
+
+Patch releases are the upstream channel for compatible fixes. Rejecting
+`0.32.1` before capability inspection needlessly freezes deployments to one
+artifact and forces Adapter releases for version text alone.
+
+### Rejected: unbounded `>=0.3.0`
+
+That range spans many incompatible vLLM platform, Worker, operator-registration,
+and Plugin API generations. Capability gates remain necessary, but an unbounded
+version claim would still misrepresent the validated compatibility surface.
 
 ### Rejected: rewrite the vLLM bridge
 
@@ -81,3 +98,5 @@ runtime guards.
 - Focused vLLM bridge, Extension API, and packaging contracts pass.
 - CPU contracts pass.
 - Documentation identifies the exact entry-point ownership and startup order.
+- Version contracts accept `0.32.0` through `0.32.x` build variants and reject
+  pre-0.32, epoch-shifted, malformed, and `0.33.0+` versions.
