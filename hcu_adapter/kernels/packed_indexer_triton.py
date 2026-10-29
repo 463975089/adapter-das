@@ -10,8 +10,9 @@ import triton
 import triton.language as tl
 
 
-@triton.jit
-def _pack_shifted_pages(K, SF, OUT, N: tl.constexpr, NP: tl.constexpr,
+# Token/page counts vary at runtime; do not specialize the packing kernel on them.
+@triton.jit(do_not_specialize=["N", "NP"])
+def _pack_shifted_pages(K, SF, OUT, N, NP,
                         KS: tl.constexpr, SS: tl.constexpr,
                         PAGE: tl.constexpr, B: tl.constexpr):
     page = tl.program_id(0)
