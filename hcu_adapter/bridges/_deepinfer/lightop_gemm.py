@@ -4,7 +4,7 @@ import importlib
 import sys
 import types
 
-from . import registry
+from hcu_adapter import registry
 
 
 def install():

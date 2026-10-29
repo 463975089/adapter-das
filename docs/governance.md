@@ -159,7 +159,7 @@ sglang 符号面，shim 妥协不进契约。
 1. **具体实现文件 = `<op>[_<变体>]_<tier>`**，tier 词表封闭：
    `emu`（torch 直算/仿真臂）· `triton`（自研 triton）· `cpp`（C++ JIT）·
    `fork`（vendor 源码 fork 承接）· `ref`（诊断参照，位置约束见 §2）；
-   vendor 库绑定安装器用**库名**：`aiter` / `lightop` / `dtk`。
+   vendor 库绑定安装器用**库名**：`aiter` / `lightop` / `dtk` / `rccl`（通信库）。
    例：`conv1d_update_emu` · `mqa_logits_triton` · `paged_attn_cpp` ·
    `quant_aiter` · `deep_gemm_dtk`。**平台词（hip/cuda/rocm）不算档位**，
    禁作实现后缀。
@@ -176,6 +176,17 @@ sglang 符号面，shim 妥协不进契约。
 5. **sgl_kernel 影子契约文件豁免**：文件名 = 上游符号面
    （elementwise / moe / gemm_fp8 …）；包内自研 helper 同样适用本规范
    （`paged_attn_triton` / `paged_attn_cpp` / `fa_varlen_triton`）。
+
+6. **DeepInfer 内核门面与机制豁免清单**（与 L0 同步）：
+   - `gemm.py`、`gather.py`、`norm.py`、`index_ops.py`：校验或选择后端的门面。
+   - `fused_transform.py`：按原有顺序组织 norm/RoPE/量化、输出写回和缓存写入的复合执行门面；
+     单档位 RoPE 与 KV 计算分别位于 `rope_{emu,lightop}`、`kv_cache_emu`。
+   - `runtime_config.py`：宿主侧配置、对齐规则及运行参数状态，无张量数值实现。
+   - `lightop_usage.py`：共享调用计数机制，无张量数值实现。
+   L0 对 `hcu_adapter/kernels/` 按此清单或档位后缀检查；新增豁免需同步说明职责。
+7. **实现文件档位与配置值分开管理**：`_emu` 是 Torch/仿真实现的文件后缀；
+   已发布的后端选择值 `torch` 仍是合法配置值，不是文件命名档位。
+   结构整理不修改 catalog 算子键、配置默认或已接受的配置值；此类接口迁移须单独评审。
 
 ## 4. 运行时注册表与 dump（"现在谁在跑"必须一行可答）
 
@@ -361,8 +372,26 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
   仍走 §0 问句，与"动机是性能"无关。
 
 
-## DeepInfer 契约内核命名空间
+## 算子三居地图与宿主绑定层
 
-`hcu_adapter/kernels/` 存放无宿主模型依赖的 DeepInfer 上游契约实现，适用内核层
-的计算、档位命名和接口登记规则。使用独立命名空间避免导入 `sgl_kernel.__init__`
-时提前启动 AOT/stub 注册。兼容文件仅转接；新模型/量化方案仍属于独立 plugin。
+| 目录 | 当前职责 | 新代码归属规则 |
+|---|---|---|
+| `sgl_kernel/` | SGLang 宿主 ABI 契约层；影子包名称由上游锁定 | 契约文件按 §3b 豁免；不为本次 DeepInfer 整理改动此目录 |
+| `hcu_adapter/` 顶层 | 历史 SGLang 侧桥接实现，以及多宿主共用的配置、registry、引导等机制 | 现有实现按任务逐步整理，新计算实现不再增加顶层平铺文件 |
+| `hcu_adapter/kernels/` | 当前由 DeepInfer 桥消费的上游契约实现；不依赖宿主模型类 | 新计算实现进入此目录，使用算子族＋档位命名；门面须有真实校验、选位或组合职责 |
+| `hcu_adapter/bridges/_deepinfer/` | DeepInfer 宿主绑定、安装和契约分发 | `tilelang_ops.py`、`tile_kernels.py` 对接上游符号面；不放纯计算实现 |
+
+`kernels/` 独立命名空间避免导入 `sgl_kernel.__init__` 时提前启动 SGLang 的
+AOT/stub 注册。当前消费方是 DeepInfer；未来其他宿主复用时，仍需各自 bridge
+明确张量布局与签名，不能按同名算子自动互换。模型新量化方案与执行策略仍归 plugin。
+
+新算子计算代码只进入 `kernels/`，`bridges/` 只保留绑定、安装和契约分发。
+L0 检查档位命名与绑定层数值代码；代码评审还需检查职责，L0 GREEN 不代表目录归属免审。
+不符合分层的变更应在 L0/评审阶段打回。跨层别名壳与无职责的旧路径转发不再保留；
+迁移模块时须同步 bridge、catalog、plugin 导入及 provider 身份检查。
+
+本轮逐文件核验：`tile_kernels.py` 创建上游模块并登记实际 provider，
+`tilelang_backend/factories.py` 导出契约 factory 并为未实现项生成报错闭包，
+`tilelang_ops.py` 校验 factory 参数、选择 provider 并生成调用闭包；三者留在桥层。
+它们当前没有需要移走的独立数值实现，不能把报错闭包或绑定表误当成计算算子。
+详细更名和归属表见[DeepInfer 算子导航](frameworks/deepinfer-kernels.md)。

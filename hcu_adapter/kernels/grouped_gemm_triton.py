@@ -149,8 +149,8 @@ def m_grouped_fp8_fp4_gemm_nt_contiguous(a, b, d, grouped_layout, recipe=None, r
                                          compiled_dims="nk", disable_ue8m0_cast=False, use_psum_layout=False,
                                          ensure_zero_padding=True, expected_m_for_psum_layout=None, epilogue=None):
     """Pinned DeepGEMM signature; variants outside the V4.1 per-32 packed-UE8M0 recipe use the torch reference."""
-    from .gemm import _recipes
-    from .gemm import m_grouped_fp8_fp4_gemm_nt_contiguous as reference
+    from .gemm_emu import _recipes
+    from .grouped_gemm_emu import m_grouped_fp8_fp4_gemm_nt_contiguous as reference
     from .runtime_config import get_mk_alignment_for_contiguous_layout
 
     if epilogue is not None or disable_ue8m0_cast:

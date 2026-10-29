@@ -351,6 +351,12 @@ def check_registry_ops_in_catalog(r):
 
 # ---------------------------------------------------------------------------
 
+# governance §3b: operator implementations, actual dispatch facades and mechanisms.
+_KERNEL_TIERS = {"emu", "triton", "cpp", "fork", "ref", "aiter", "lightop", "dtk", "rccl"}
+_KERNEL_FACADES = {"gemm", "gather", "norm", "index_ops", "fused_transform"}
+_KERNEL_MECHANISMS = {"runtime_config", "lightop_usage"}
+
+
 def check_impl_naming(r):
     """HARD: module-naming rules from governance §3b.
 
@@ -383,6 +389,13 @@ def check_impl_naming(r):
             elif not rp.startswith("tests/"):
                 r.warn("impl-naming", f"{rp} imports a _ref module outside "
                        f"tests/ ({m.group(1)}) -- verify intent")
+        if rp.startswith("hcu_adapter/kernels/"):
+            stem = os.path.splitext(os.path.basename(rp))[0]
+            if (stem != "__init__" and stem not in _KERNEL_FACADES
+                    and stem not in _KERNEL_MECHANISMS
+                    and stem.rsplit("_", 1)[-1] not in _KERNEL_TIERS):
+                r.fail("impl-naming", f"{rp}: expected an operator tier suffix or "
+                       "a documented facade/mechanism exemption (governance §3b)")
         if in_prod:
             base = os.path.basename(rp)
             if re.search(r"_(hip|cuda|rocm)\.py$", base) and base != "__init__.py":

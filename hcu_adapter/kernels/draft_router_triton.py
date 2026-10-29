@@ -4,7 +4,7 @@ Reference: sglang 7b91060ae3ef5e112048988da6f4f673cf4b6a89,
 python/sglang/kernels/ops/moe/moe_fused_gate.py::_router_triton_kernel.
 LightOp v41 only supports 256/384 experts. Keep the 128/top3 draft on
 SGLang's log1p, NaN-first, lowest-id-tie path; DeepInfer metadata is applied
-by lightop_ops after this score-only kernel. No framework dependency.
+by moe_gate_lightop after this score-only kernel. No framework dependency.
 """
 
 import torch

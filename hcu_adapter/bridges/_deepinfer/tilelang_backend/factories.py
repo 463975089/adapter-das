@@ -14,7 +14,7 @@ from hcu_adapter.bridges._deepinfer.tilelang_ops import (
 from hcu_adapter.bridges._deepinfer.tilelang_ops import (
     batch_downsample_tl, prepare_cp_mirror_tl, replace_input_embeds_tl, rgb_pad_to_patches_tl, yoco_cp_boundary_fused_tl
 )
-from hcu_adapter.bridges._deepinfer.hcu_config import PLANNED_TILELANG_FACTORIES
+from hcu_adapter.ops.deepinfer_catalog import PLANNED_TILELANG_FACTORIES
 
 
 def _unsupported(name):

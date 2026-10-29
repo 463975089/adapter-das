@@ -4,7 +4,8 @@ from functools import partial
 import os
 import sys
 
-from . import hcu_env, registry
+from . import hcu_env
+from hcu_adapter import registry
 
 
 def _configure_worker_kernels(allow_cuda_graph=False):
@@ -45,7 +46,7 @@ def _prepare_collective_engram_driver():
     policy without qualifying its peer-memory requirements.
     """
     import deep_ep
-    from hcu_adapter.kernels.deepep_compat import EngramBuffer, GraphEngramBuffer
+    from hcu_adapter.kernels.deepep_dtk import EngramBuffer, GraphEngramBuffer
 
     if deep_ep.EngramBuffer not in (EngramBuffer, GraphEngramBuffer):
         raise RuntimeError("HCU driver policy requires the qualified RCCL Engram provider")

@@ -13,7 +13,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                 'provider; clamp counting unsupported; model '
                                                                 'qualification pending'},
                                        'lightop': {'status': 'candidate',
-                                                   'implementation': 'hcu_adapter.kernels.lightop_ops.swiglu_forward',
+                                                   'implementation': 'hcu_adapter.kernels.swiglu_lightop.swiglu_forward',
                                                    'limitations': 'Explicit LightOp b2f8c9d; preserve '
                                                                   'residual/clamp/FP32 intermediate and SF '
                                                                   'ABI; quant native only rounded '
@@ -30,29 +30,29 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                 'limitations': 'Pinned GPU top-k, native stable sort; no e2e/throughput '
                                                'qualification'},
                       'lightop': {'status': 'candidate',
-                                  'implementation': 'hcu_adapter.kernels.lightop_ops.topk',
+                                  'implementation': 'hcu_adapter.kernels.deepselect_lightop.topk',
                                   'limitations': 'Explicit LightOp b2f8c9d; preserve residual/clamp/FP32 '
                                                  'intermediate and SF ABI; quant native only rounded '
                                                  'block32/128 FP8, other formats counted as compatibility; '
                                                  'mega-MoE shared SF unsupported; finite and model '
                                                  'qualification recorded separately'}},
  'tilelang_ops.gather_tl': {'triton': {'status': 'candidate',
-                                       'implementation': 'hcu_adapter.kernels.elementwise_triton.gather',
+                                       'implementation': 'hcu_adapter.kernels.gather_triton.gather',
                                        'limitations': 'Pinned int8 factory contract; no model/e2e '
                                                       'qualification'},
                             'torch': {'status': 'candidate',
-                                      'implementation': 'hcu_adapter.kernels.elementwise._torch_gather',
+                                      'implementation': 'hcu_adapter.kernels.gather_emu.gather',
                                       'limitations': 'Pinned int8 factory contract; no model/e2e '
                                                      'qualification'}},
  'tilelang_ops.norm_tl': {'triton': {'status': 'candidate',
-                                     'implementation': 'hcu_adapter.kernels.elementwise_triton.norm',
+                                     'implementation': 'hcu_adapter.kernels.norm_triton.norm',
                                      'limitations': 'BF16/FP32, FP8 per32/per128; no model/e2e '
                                                     'qualification'},
                           'torch': {'status': 'candidate',
-                                    'implementation': 'hcu_adapter.kernels.elementwise._torch_norm',
+                                    'implementation': 'hcu_adapter.kernels.norm_emu.norm',
                                     'limitations': 'BF16/FP32, FP8 per32/per128; no model/e2e qualification'},
                           'lightop': {'status': 'candidate',
-                                      'implementation': 'hcu_adapter.kernels.lightop_ops.norm',
+                                      'implementation': 'hcu_adapter.kernels.norm_lightop.norm',
                                       'limitations': 'Explicit LightOp b2f8c9d; preserve residual/clamp/FP32 '
                                                      'intermediate and SF ABI; quant native only rounded '
                                                      'block32/128 FP8, other formats counted as '
@@ -64,7 +64,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                 'wraparound/clipping; no model/e2e '
                                                                 'qualification'},
                                       'torch': {'status': 'candidate',
-                                                'implementation': 'hcu_adapter.kernels.index_ops._torch_expand_swa_index',
+                                                'implementation': 'hcu_adapter.kernels.index_ops_emu._torch_expand_swa_index',
                                                 'limitations': 'Exact int32 contract incl. '
                                                                'wraparound/clipping; no model/e2e '
                                                                'qualification'}},
@@ -122,7 +122,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                    'needs mergeable batch/seq strides; no '
                                                                    'model/performance qualification'},
                                          'lightop': {'status': 'candidate',
-                                                     'implementation': 'hcu_adapter.kernels.lightop_ops.apply_rotary',
+                                                     'implementation': 'hcu_adapter.kernels.rope_lightop.apply_rotary',
                                                      'limitations': 'Explicit LightOp b2f8c9d; preserve '
                                                                     'residual/clamp/FP32 intermediate and SF '
                                                                     'ABI; quant native only rounded '
@@ -137,24 +137,24 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                               'no E4M3 scales or model '
                                                                               'qualification'}},
  'tilelang_ops.load_paged_kv_cache_tl': {'triton': {'status': 'candidate',
-                                                    'implementation': 'hcu_adapter.kernels.fused_transform.load_paged',
+                                                    'implementation': 'hcu_adapter.kernels.kv_cache_emu.load_paged',
                                                     'limitations': 'Torch gather/scatter of compact '
                                                                    'segments; cast layouts dequantize as '
                                                                    'bf16(float(q)*sf); no model/performance '
                                                                    'qualification'},
                                          'torch': {'status': 'candidate',
-                                                   'implementation': 'hcu_adapter.kernels.fused_transform.load_paged',
+                                                   'implementation': 'hcu_adapter.kernels.kv_cache_emu.load_paged',
                                                    'limitations': 'Torch gather/scatter of compact segments; '
                                                                   'cast layouts dequantize as '
                                                                   'bf16(float(q)*sf); no model/performance '
                                                                   'qualification'}},
  'tilelang_ops.store_kv_cache_tl': {'triton': {'status': 'candidate',
-                                               'implementation': 'hcu_adapter.kernels.fused_transform.store_paged',
+                                               'implementation': 'hcu_adapter.kernels.kv_cache_emu.store_paged',
                                                'limitations': 'Torch quantize+scatter mirroring the pinned '
                                                               'CUDA store rounding (division-based UE8M0); '
                                                               'no model/performance qualification'},
                                     'torch': {'status': 'candidate',
-                                              'implementation': 'hcu_adapter.kernels.fused_transform.store_paged',
+                                              'implementation': 'hcu_adapter.kernels.kv_cache_emu.store_paged',
                                               'limitations': 'Torch quantize+scatter mirroring the pinned '
                                                              'CUDA store rounding (division-based UE8M0); no '
                                                              'model/performance qualification'}},
@@ -170,7 +170,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                               'candidate precision '
                                                                               'correction'},
                                                      'native': {'status': 'candidate',
-                                                                'implementation': 'hcu_adapter.kernels.native_flashmla.fused_decode',
+                                                                'implementation': 'hcu_adapter.kernels.mla_attention_dtk.fused_decode',
                                                                 'limitations': 'Explicit code-object-v4 '
                                                                                '1287a01 plus optional FP32 '
                                                                                'API, gfx938 H64/H128 D512; '
@@ -188,7 +188,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                'correctness tier, no '
                                                                                'performance qualification'},
                                                       'native': {'status': 'candidate',
-                                                                 'implementation': 'hcu_adapter.kernels.native_flashmla.fused_prefill',
+                                                                 'implementation': 'hcu_adapter.kernels.mla_attention_dtk.fused_prefill',
                                                                  'limitations': 'Explicit code-object-v4 '
                                                                                 '1287a01 plus optional FP32 '
                                                                                 'API, gfx938 H64/H128 D512; '
@@ -206,7 +206,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                    'gap rows (vendor leaves '
                                                                                    'them unspecified)'},
                                                           'lightop': {'status': 'candidate',
-                                                                      'implementation': 'hcu_adapter.kernels.lightop_ops.swiglu_forward_and_per_token_cast',
+                                                                      'implementation': 'hcu_adapter.kernels.swiglu_lightop.swiglu_forward_and_per_token_cast',
                                                                       'limitations': 'Explicit LightOp '
                                                                                      'b2f8c9d; preserve '
                                                                                      'residual/clamp/FP32 '
@@ -253,59 +253,59 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                'model/performance '
                                                                                'qualification'}},
  'tilelang_ops.load_kv_index_tl': {'triton': {'status': 'candidate',
-                                              'implementation': 'hcu_adapter.kernels.index_ops.load_kv_index',
+                                              'implementation': 'hcu_adapter.kernels.index_ops_emu.load_kv_index',
                                               'limitations': 'Torch index op mirroring the upstream *_ref '
                                                              '(device-only); no performance qualification'},
                                    'torch': {'status': 'candidate',
-                                             'implementation': 'hcu_adapter.kernels.index_ops.load_kv_index',
+                                             'implementation': 'hcu_adapter.kernels.index_ops_emu.load_kv_index',
                                              'limitations': 'Torch index op mirroring the upstream *_ref '
                                                             '(device-only); no performance qualification'}},
  'tilelang_ops.kv_index_cat_tl': {'triton': {'status': 'candidate',
-                                             'implementation': 'hcu_adapter.kernels.index_ops.kv_index_cat',
+                                             'implementation': 'hcu_adapter.kernels.index_ops_emu.kv_index_cat',
                                              'limitations': 'Torch index op mirroring the upstream *_ref '
                                                             '(device-only); no performance qualification'},
                                   'torch': {'status': 'candidate',
-                                            'implementation': 'hcu_adapter.kernels.index_ops.kv_index_cat',
+                                            'implementation': 'hcu_adapter.kernels.index_ops_emu.kv_index_cat',
                                             'limitations': 'Torch index op mirroring the upstream *_ref '
                                                            '(device-only); no performance qualification'}},
  'tilelang_ops.convert_kv_index_tl': {'triton': {'status': 'candidate',
-                                                 'implementation': 'hcu_adapter.kernels.index_ops.convert_kv_index',
+                                                 'implementation': 'hcu_adapter.kernels.index_ops_emu.convert_kv_index',
                                                  'limitations': 'Torch index op mirroring the upstream *_ref '
                                                                 '(device-only); no performance '
                                                                 'qualification'},
                                       'torch': {'status': 'candidate',
-                                                'implementation': 'hcu_adapter.kernels.index_ops.convert_kv_index',
+                                                'implementation': 'hcu_adapter.kernels.index_ops_emu.convert_kv_index',
                                                 'limitations': 'Torch index op mirroring the upstream *_ref '
                                                                '(device-only); no performance '
                                                                'qualification'}},
  'tilelang_ops.candidate_block_max_tl': {'triton': {'status': 'candidate',
-                                                    'implementation': 'hcu_adapter.kernels.index_ops.candidate_block_max',
+                                                    'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_block_max',
                                                     'limitations': 'Torch index op mirroring the upstream '
                                                                    '*_ref (device-only); no performance '
                                                                    'qualification'},
                                          'torch': {'status': 'candidate',
-                                                   'implementation': 'hcu_adapter.kernels.index_ops.candidate_block_max',
+                                                   'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_block_max',
                                                    'limitations': 'Torch index op mirroring the upstream '
                                                                   '*_ref (device-only); no performance '
                                                                   'qualification'}},
  'tilelang_ops.get_candidate_compact_lens_tl': {'triton': {'status': 'candidate',
-                                                           'implementation': 'hcu_adapter.kernels.index_ops.candidate_compact_lens',
+                                                           'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_compact_lens',
                                                            'limitations': 'Torch index op mirroring the '
                                                                           'upstream *_ref (device-only); no '
                                                                           'performance qualification'},
                                                 'torch': {'status': 'candidate',
-                                                          'implementation': 'hcu_adapter.kernels.index_ops.candidate_compact_lens',
+                                                          'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_compact_lens',
                                                           'limitations': 'Torch index op mirroring the '
                                                                          'upstream *_ref (device-only); no '
                                                                          'performance qualification'}},
  'tilelang_ops.restore_candidate_indices_inplace_tl': {'triton': {'status': 'candidate',
-                                                                  'implementation': 'hcu_adapter.kernels.index_ops.restore_candidate_indices',
+                                                                  'implementation': 'hcu_adapter.kernels.index_ops_emu.restore_candidate_indices',
                                                                   'limitations': 'Torch index op mirroring '
                                                                                  'the upstream *_ref '
                                                                                  '(device-only); no '
                                                                                  'performance qualification'},
                                                        'torch': {'status': 'candidate',
-                                                                 'implementation': 'hcu_adapter.kernels.index_ops.restore_candidate_indices',
+                                                                 'implementation': 'hcu_adapter.kernels.index_ops_emu.restore_candidate_indices',
                                                                  'limitations': 'Torch index op mirroring '
                                                                                 'the upstream *_ref '
                                                                                 '(device-only); no '
@@ -323,7 +323,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                 'prequantized input, E4M3 scales, stochastic '
                                                                 'cast or model qualification'},
                                        'lightop': {'status': 'candidate',
-                                                   'implementation': 'hcu_adapter.kernels.lightop_ops.per_token_cast',
+                                                   'implementation': 'hcu_adapter.kernels.quant_lightop.per_token_cast',
                                                    'limitations': 'Explicit LightOp b2f8c9d; preserve '
                                                                   'residual/clamp/FP32 intermediate and SF '
                                                                   'ABI; quant native only rounded '
@@ -396,29 +396,29 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                               'TileKernels 2.1.0 config.py; num_sms = HIP CU '
                                                               'count'}},
  'deep_gemm.fp8_fp4_gemm_nt': {'torch': {'status': 'candidate',
-                                         'implementation': 'hcu_adapter.kernels.gemm.fp8_fp4_gemm_nt',
+                                         'implementation': 'hcu_adapter.kernels.gemm_emu.fp8_fp4_gemm_nt',
                                          'limitations': 'FP8 E4M3 operands only; exact BF16/FP32 dequant + '
                                                         'torch GEMM (FP32 accumulate); no alpha/epilogue; '
                                                         'correctness tier, not performance'}},
  'deep_gemm.fp8_einsum': {'torch': {'status': 'candidate',
-                                    'implementation': 'hcu_adapter.kernels.gemm.fp8_einsum',
+                                    'implementation': 'hcu_adapter.kernels.gemm_emu.fp8_einsum',
                                     'limitations': "'bhr,hdr->bhd' only; exact dequant + torch bmm; FP8-pair "
                                                    'output via per-32 UE8M0 cast of the BF16 result; '
                                                    'correctness tier'}},
  'deep_gemm.mega_mhc': {'torch': {'status': 'candidate',
-                                  'implementation': 'hcu_adapter.kernels.mhc.mega_mhc',
+                                  'implementation': 'hcu_adapter.kernels.mhc_emu.mega_mhc',
                                   'limitations': 'Composed torch mHC post+mixes+pre+RMSNorm(+per-32 FP8, '
                                                  'gemm/routed SF); no Mega MoE shared-SF layout; correctness '
                                                  'tier'},
                         'lightop': {'status': 'candidate',
-                                    'implementation': 'hcu_adapter.kernels.lightop_ops.mega_mhc',
+                                    'implementation': 'hcu_adapter.kernels.mhc_lightop.mega_mhc',
                                     'limitations': 'Explicit LightOp b2f8c9d; preserve residual/clamp/FP32 '
                                                    'intermediate and SF ABI; quant native only rounded '
                                                    'block32/128 FP8, other formats counted as compatibility; '
                                                    'mega-MoE shared SF unsupported; finite and model '
                                                    'qualification recorded separately'}},
  'deep_gemm.m_grouped_fp8_fp4_gemm_nt_contiguous': {'torch': {'status': 'candidate',
-                                                              'implementation': 'hcu_adapter.kernels.gemm.m_grouped_fp8_fp4_gemm_nt_contiguous',
+                                                              'implementation': 'hcu_adapter.kernels.grouped_gemm_emu.m_grouped_fp8_fp4_gemm_nt_contiguous',
                                                               'limitations': 'Route A correctness tier: '
                                                                              'exact BF16 dequant of FP8 acts '
                                                                              'x MXFP4/FP8 experts + dense '
@@ -445,7 +445,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                            'BF16, tail zeroed); FP8/FP4 with per-row MX '
                                                            'scales; KV-chunked torch; correctness tier'},
                                   'lightop': {'status': 'candidate',
-                                              'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_mqa_logits',
+                                              'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_mqa_logits',
                                               'limitations': 'D128 H8/16/32 MXFP4 uses packed LightOp '
                                                              'sparse/paged math; unpaged sparse K is '
                                                              'byte-repaged for unaligned request starts, not '
@@ -461,7 +461,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                   'per vendor test contract; metadata is an '
                                                                   'HCU-private dict; correctness tier'},
                                          'lightop': {'status': 'candidate',
-                                                     'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_sparse_mqa_logits',
+                                                     'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_sparse_mqa_logits',
                                                      'limitations': 'D128 H8/16/32 MXFP4 uses packed LightOp '
                                                                     'sparse/paged math; unpaged sparse K is '
                                                                     'byte-repaged for unaligned request '
@@ -485,7 +485,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                  'per vendor test contract; metadata is an '
                                                                  'HCU-private dict; correctness tier'},
                                         'lightop': {'status': 'candidate',
-                                                    'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_paged_mqa_logits',
+                                                    'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_paged_mqa_logits',
                                                     'limitations': 'D128 H8/16/32 MXFP4 uses packed LightOp '
                                                                    'sparse/paged math; unpaged sparse K is '
                                                                    'byte-repaged for unaligned request '
@@ -509,7 +509,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                         'metadata is an HCU-private dict; '
                                                                         'correctness tier'},
                                                'lightop': {'status': 'candidate',
-                                                           'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_paged_sparse_mqa_logits',
+                                                           'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_paged_sparse_mqa_logits',
                                                            'limitations': 'D128 H8/16/32 MXFP4 uses packed '
                                                                           'LightOp sparse/paged math; '
                                                                           'unpaged sparse K is byte-repaged '
@@ -536,7 +536,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                        'top-k (tile_kernels reference); no force_random; '
                                                        'correctness tier'},
                               'lightop': {'status': 'candidate',
-                                          'implementation': 'hcu_adapter.kernels.lightop_ops.bf16_mega_gate',
+                                          'implementation': 'hcu_adapter.kernels.moe_gate_lightop.bf16_mega_gate',
                                           'limitations': 'Explicit LightOp b2f8c9d; preserve '
                                                          'residual/clamp/FP32 intermediate and SF ABI; quant '
                                                          'native only rounded block32/128 FP8, other formats '
@@ -553,7 +553,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                              'reference; no force_random or training scores '
                                                              'output'},
                                     'lightop': {'status': 'candidate',
-                                                'implementation': 'hcu_adapter.kernels.lightop_ops.moe_topk_gate',
+                                                'implementation': 'hcu_adapter.kernels.moe_gate_lightop.moe_topk_gate',
                                                 'limitations': 'Explicit LightOp b2f8c9d; preserve '
                                                                'residual/clamp/FP32 intermediate and SF ABI; '
                                                                'quant native only rounded block32/128 FP8, '
@@ -567,17 +567,17 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                'routing; forced-balance benchmark remains '
                                                                'guarded'}},
  'deep_gemm.tf32_hc_prenorm_gemm': {'torch': {'status': 'candidate',
-                                              'implementation': 'hcu_adapter.kernels.mhc.tf32_hc_prenorm_gemm',
+                                              'implementation': 'hcu_adapter.kernels.mhc_emu.tf32_hc_prenorm_gemm',
                                               'limitations': 'BF16 x FP32 prenorm GEMM, contiguous K-major '
                                                              'contract, K tiled in 64-element blocks; no '
                                                              'model or performance qualification'}},
  'tile_kernels.mhc.expand_kernel.expand_to_mhc_fwd': {'torch': {'status': 'candidate',
-                                                                'implementation': 'hcu_adapter.kernels.mhc.expand_to_mhc_fwd',
+                                                                'implementation': 'hcu_adapter.kernels.mhc_emu.expand_to_mhc_fwd',
                                                                 'limitations': 'Pinned mHC forward contract; '
                                                                                'eager candidate, no model or '
                                                                                'performance qualification'}},
  'tile_kernels.mhc.pre_apply_mix_kernel.mhc_pre_apply_mix_fwd': {'torch': {'status': 'candidate',
-                                                                           'implementation': 'hcu_adapter.kernels.mhc.mhc_pre_apply_mix_fwd',
+                                                                           'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_pre_apply_mix_fwd',
                                                                            'limitations': 'Pinned mHC '
                                                                                           'forward contract; '
                                                                                           'eager candidate, '
@@ -585,7 +585,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                           'performance '
                                                                                           'qualification'}},
  'tile_kernels.mhc.head_compute_mix_kernel.mhc_head_compute_mix_fwd': {'torch': {'status': 'candidate',
-                                                                                 'implementation': 'hcu_adapter.kernels.mhc.mhc_head_compute_mix_fwd',
+                                                                                 'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_head_compute_mix_fwd',
                                                                                  'limitations': 'Pinned mHC '
                                                                                                 'forward '
                                                                                                 'contract; '
@@ -595,7 +595,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                                 'performance '
                                                                                                 'qualification'}},
  'tile_kernels.mhc.pre_split_mixes_kernel.mhc_pre_split_mixes_fwd': {'torch': {'status': 'candidate',
-                                                                               'implementation': 'hcu_adapter.kernels.mhc.mhc_pre_split_mixes_fwd',
+                                                                               'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_pre_split_mixes_fwd',
                                                                                'limitations': 'Pinned mHC '
                                                                                               'forward '
                                                                                               'contract; '
@@ -605,25 +605,25 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                               'performance '
                                                                                               'qualification'}},
  'tile_kernels.mhc.sinkhorn_kernel.mhc_sinkhorn_fwd': {'torch': {'status': 'candidate',
-                                                                 'implementation': 'hcu_adapter.kernels.mhc.mhc_sinkhorn_fwd',
+                                                                 'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_sinkhorn_fwd',
                                                                  'limitations': 'Pinned mHC forward '
                                                                                 'contract; eager candidate, '
                                                                                 'no model or performance '
                                                                                 'qualification'}},
  'tile_kernels.mhc.post_kernel.mhc_post_fwd': {'torch': {'status': 'candidate',
-                                                         'implementation': 'hcu_adapter.kernels.mhc.mhc_post_fwd',
+                                                         'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_post_fwd',
                                                          'limitations': 'Pinned mHC forward contract; eager '
                                                                         'candidate, no model or performance '
                                                                         'qualification'}},
  'tile_kernels.mhc.norm_fn_kernel.mhc_fn_normw_merge_fwd': {'torch': {'status': 'candidate',
-                                                                      'implementation': 'hcu_adapter.kernels.mhc.mhc_fn_normw_merge_fwd',
+                                                                      'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_fn_normw_merge_fwd',
                                                                       'limitations': 'Pinned mHC forward '
                                                                                      'contract; eager '
                                                                                      'candidate, no model or '
                                                                                      'performance '
                                                                                      'qualification'}},
  'tile_kernels.mhc.norm_fn_kernel.mhc_reduce_partials_and_rmsnorm_fwd': {'torch': {'status': 'candidate',
-                                                                                   'implementation': 'hcu_adapter.kernels.mhc.mhc_reduce_partials_and_rmsnorm_fwd',
+                                                                                   'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_reduce_partials_and_rmsnorm_fwd',
                                                                                    'limitations': 'Pinned '
                                                                                                   'mHC '
                                                                                                   'forward '
@@ -635,7 +635,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                                   'performance '
                                                                                                   'qualification'}},
  'tile_kernels.mhc.pre_big_fuse_kernel.mhc_pre_big_fuse_fwd': {'torch': {'status': 'candidate',
-                                                                         'implementation': 'hcu_adapter.kernels.mhc.mhc_pre_big_fuse_fwd',
+                                                                         'implementation': 'hcu_adapter.kernels.mhc_emu.mhc_pre_big_fuse_fwd',
                                                                          'limitations': 'Pinned mHC forward '
                                                                                         'contract; eager '
                                                                                         'candidate, no model '

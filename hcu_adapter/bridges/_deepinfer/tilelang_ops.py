@@ -8,8 +8,9 @@ import importlib.util
 from pathlib import Path
 import sys
 
-from . import hcu_env, registry
-from .hcu_config import BACKEND_CATALOG
+from . import hcu_env
+from hcu_adapter import registry
+from hcu_adapter.ops.deepinfer_catalog import BACKEND_CATALOG
 from hcu_adapter.ops import selector
 
 _BACKEND_PACKAGE = "deepinfer.model_executor.layers.tilelang_ops.cuda"
@@ -65,7 +66,7 @@ def install(backend="triton"):
 
 def gather_tl(D, dtype, index_dtype, x_stride, threads=256):
     _backend = _selected['gather_tl']
-    from hcu_adapter.kernels.elementwise import gather
+    from hcu_adapter.kernels.gather import gather
 
     def launch(x, index, out):
         if (x.shape[1] != D or x.dtype != dtype or index.dtype != index_dtype or
@@ -84,7 +85,7 @@ def norm_tl(d, dtype, return_dtype, reduce_dtype, has_residual, eps, out_scale,
     _backend = _selected['norm_tl']
     _norm_backend = _backend
     import torch
-    from hcu_adapter.kernels.elementwise import norm
+    from hcu_adapter.kernels.norm import norm
 
     if not 0 < d <= 8192 or dtype not in ("float", "bfloat16") or reduce_dtype != "float":
         raise ValueError("Unsupported norm dimension or dtype specialization")
@@ -185,7 +186,7 @@ def fused_norm_rope_hadamard_cast_store_kvcache_tl(
 def load_paged_kv_cache_tl(layout, block_size, fp4_value_block_stride=0, fp4_value_stride=0,
                            fp4_scale_stride=0):
     _backend = _selected['load_paged_kv_cache_tl']
-    from hcu_adapter.kernels.fused_transform import load_paged
+    from hcu_adapter.kernels.kv_cache_emu import load_paged
 
     is_quantized = layout.quantized_dtype is not None
     if block_size <= 0 or (is_quantized and layout.bf16_elements):
@@ -207,7 +208,7 @@ def load_paged_kv_cache_tl(layout, block_size, fp4_value_block_stride=0, fp4_val
 def store_kv_cache_tl(layout, block_size, fp4_value_block_stride=0, fp4_value_stride=0,
                       fp4_scale_stride=0):
     _backend = _selected['store_kv_cache_tl']
-    from hcu_adapter.kernels.fused_transform import store_paged
+    from hcu_adapter.kernels.kv_cache_emu import store_paged
 
     is_fp4 = layout.quantized_dtype == "e2m1"
     if block_size <= 0 or is_fp4 != (fp4_value_stride > 0):
@@ -263,7 +264,7 @@ compress_and_update_state_decode_tl.pass_configs = {}
 
 def kv_index_cat_tl(dtype, window_size, topk_tokens, out_stride):
     _backend = _selected['kv_index_cat_tl']
-    from hcu_adapter.kernels.index_ops import kv_index_cat
+    from hcu_adapter.kernels.index_ops_emu import kv_index_cat
 
     def launch(kv_index, kv_ca_index, out_swa, out_ca, total_k_swa, total_k):
         if kv_index.shape[1] != window_size or kv_ca_index.shape[1] != topk_tokens:
@@ -275,7 +276,7 @@ def kv_index_cat_tl(dtype, window_size, topk_tokens, out_stride):
 
 def convert_kv_index_tl(seqlen_q, topk_tokens, max_blocks, block_size):
     _backend = _selected['convert_kv_index_tl']
-    from hcu_adapter.kernels.index_ops import convert_kv_index
+    from hcu_adapter.kernels.index_ops_emu import convert_kv_index
 
     def launch(topk_idxs, context_lens, block_tables):
         if topk_idxs.shape[1:] != (seqlen_q, topk_tokens) or block_tables.shape[1] != max_blocks:
@@ -287,7 +288,7 @@ def convert_kv_index_tl(seqlen_q, topk_tokens, max_blocks, block_size):
 
 def candidate_block_max_tl(max_model_len, block_size):
     _backend = _selected['candidate_block_max_tl']
-    from hcu_adapter.kernels.index_ops import candidate_block_max
+    from hcu_adapter.kernels.index_ops_emu import candidate_block_max
 
     def launch(logits, valid_lens, block_scores, valid_blocks):
         if logits.shape[1] != max_model_len:
@@ -299,7 +300,7 @@ def candidate_block_max_tl(max_model_len, block_size):
 
 def get_candidate_compact_lens_tl(topk_blocks, block_size):
     _backend = _selected['get_candidate_compact_lens_tl']
-    from hcu_adapter.kernels.index_ops import candidate_compact_lens
+    from hcu_adapter.kernels.index_ops_emu import candidate_compact_lens
 
     def launch(candidate_blocks, valid_lens, compact_lens):
         candidate_compact_lens(candidate_blocks, valid_lens, compact_lens, block_size=block_size)
@@ -309,7 +310,7 @@ def get_candidate_compact_lens_tl(topk_blocks, block_size):
 
 def restore_candidate_indices_inplace_tl(topk_tokens, topk_blocks, block_size, has_offset):
     _backend = _selected['restore_candidate_indices_inplace_tl']
-    from hcu_adapter.kernels.index_ops import restore_candidate_indices
+    from hcu_adapter.kernels.index_ops_emu import restore_candidate_indices
 
     def launch(compact_indices, candidate_blocks, output_idx_offset):
         restore_candidate_indices(compact_indices, candidate_blocks, output_idx_offset,
@@ -425,7 +426,7 @@ def compute_seqlens_k_zos_tl(nextn):
 
 def load_kv_index_tl(index_length, block_size, has_block_tables):
     _backend = _selected['load_kv_index_tl']
-    from hcu_adapter.kernels.index_ops import load_kv_index
+    from hcu_adapter.kernels.index_ops_emu import load_kv_index
 
     def launch(kv_index_offset_len, kv_index, flatten_block_tables):
         if kv_index.shape[1] != index_length:
@@ -438,7 +439,7 @@ def load_kv_index_tl(index_length, block_size, has_block_tables):
 
 def prepare_verification_metadata_tl(num_steps):
     _backend = _selected['prepare_verification_metadata_tl']
-    from hcu_adapter.kernels.verification import prepare_verification_metadata
+    from hcu_adapter.kernels.verification_emu import prepare_verification_metadata
 
     del num_steps  # the upstream kernel ignores it too
 
@@ -450,7 +451,7 @@ def prepare_verification_metadata_tl(num_steps):
 
 def expand_sampling_params_tl():
     _backend = _selected['expand_sampling_params_tl']
-    from hcu_adapter.kernels.verification import expand_sampling_params
+    from hcu_adapter.kernels.verification_emu import expand_sampling_params
 
     return expand_sampling_params
 
@@ -459,7 +460,7 @@ def map_lookup_tl(force_topk, mode="by_key", value_dtype=None):
     _backend = _selected['map_lookup_tl']
     import torch
 
-    from hcu_adapter.kernels.verification import map_lookup
+    from hcu_adapter.kernels.verification_emu import map_lookup
 
     if mode not in ("by_key", "by_index"):
         raise ValueError("map_lookup mode must be by_key or by_index")
@@ -477,7 +478,7 @@ def map_lookup_tl(force_topk, mode="by_key", value_dtype=None):
 
 def remap_draft_topk_tl(force_topk, vocab_size):
     _backend = _selected['remap_draft_topk_tl']
-    from hcu_adapter.kernels.verification import remap_draft_topk
+    from hcu_adapter.kernels.verification_emu import remap_draft_topk
 
     def launch(draft_topk_index, draft_topk_logprobs, draft_token_ids_pool, target_topk_index, read_rows,
                aligned_logprobs, draft_local_ids, identity_rows):
@@ -491,7 +492,7 @@ def remap_draft_topk_tl(force_topk, vocab_size):
 
 def get_accept_result_tl(has_golden):
     _backend = _selected['get_accept_result_tl']
-    from hcu_adapter.kernels.verification import get_accept_result
+    from hcu_adapter.kernels.verification_emu import get_accept_result
 
     def launch(*args):
         get_accept_result(*args, has_golden=has_golden)
@@ -501,7 +502,7 @@ def get_accept_result_tl(has_golden):
 
 def finalize_verification_tl(has_sum_smaller_probs, has_confidence, num_steps, num_stop_tokens):
     _backend = _selected['finalize_verification_tl']
-    from hcu_adapter.kernels.verification import finalize_verification
+    from hcu_adapter.kernels.verification_emu import finalize_verification
 
     def launch(*args):
         if args[14].shape[1] != num_stop_tokens:
@@ -514,7 +515,7 @@ def finalize_verification_tl(has_sum_smaller_probs, has_confidence, num_steps, n
 
 def sum_smaller_probs_tl(vocab_size):
     _backend = _selected['sum_smaller_probs_tl']
-    from hcu_adapter.kernels.verification import sum_smaller_probs
+    from hcu_adapter.kernels.verification_emu import sum_smaller_probs
 
     def launch(logprobs, sample_results, output):
         if logprobs.shape[1] != vocab_size:
@@ -526,7 +527,7 @@ def sum_smaller_probs_tl(vocab_size):
 
 def confidence_head_fused_tl(n_embed, markov_rank, has_markov_emb):
     _backend = _selected['confidence_head_fused_tl']
-    from hcu_adapter.kernels.mtp import confidence_head
+    from hcu_adapter.kernels.mtp_emu import confidence_head
 
     def launch(hidden, markov, weight, out, temperature):
         if hidden.shape[1] != n_embed or (markov is not None) != has_markov_emb:
@@ -540,7 +541,7 @@ def confidence_head_fused_tl(n_embed, markov_rank, has_markov_emb):
 
 def dflash_input_store_tl(n_embed, hc_mult):
     _backend = _selected['dflash_input_store_tl']
-    from hcu_adapter.kernels.mtp import dflash_input_store
+    from hcu_adapter.kernels.mtp_emu import dflash_input_store
 
     def launch(hidden, out):
         if hidden.shape[1:] != (hc_mult, n_embed):
@@ -552,7 +553,7 @@ def dflash_input_store_tl(n_embed, hc_mult):
 
 def copy_dflash_decode_input_tl(has_driver_inputs):
     _backend = _selected['copy_dflash_decode_input_tl']
-    from hcu_adapter.kernels.mtp import copy_decode_input
+    from hcu_adapter.kernels.mtp_emu import copy_decode_input
 
     def launch(*args):
         copy_decode_input(*args, has_driver_inputs=has_driver_inputs)
@@ -562,7 +563,7 @@ def copy_dflash_decode_input_tl(has_driver_inputs):
 
 def store_mtp_info_tl(nextn, vocab_size, has_index, has_confidence):
     _backend = _selected['store_mtp_info_tl']
-    from hcu_adapter.kernels.mtp import store_proposals
+    from hcu_adapter.kernels.mtp_triton import store_proposals
 
     def launch(slots, tokens, probs, index, confidence, token_pool, prob_pool, index_pool, confidence_pool):
         if tokens.shape[1] != nextn or probs.shape[-1] != vocab_size:
@@ -576,7 +577,7 @@ def store_mtp_info_tl(nextn, vocab_size, has_index, has_confidence):
 
 def compute_seqlens_q_by_confidence_rates_tl(nextn):
     _backend = _selected['compute_seqlens_q_by_confidence_rates_tl']
-    from hcu_adapter.kernels.mtp import schedule_by_confidence
+    from hcu_adapter.kernels.mtp_emu import schedule_by_confidence
 
     def launch(remap, previous, cumulative, seqlens_q, total_q):
         if previous.shape[1] != nextn or cumulative.shape[1] != nextn:
@@ -588,7 +589,7 @@ def compute_seqlens_q_by_confidence_rates_tl(nextn):
 
 def get_fused_dflash_get_input_tl(swa_block_size, padded_kv_len, has_valid_token_mask, has_gate_force_random):
     _backend = _selected['get_fused_dflash_get_input_tl']
-    from hcu_adapter.kernels.mtp import dflash_get_input
+    from hcu_adapter.kernels.mtp_emu import dflash_get_input
 
     def launch(*args):
         if args[9].shape[1] != padded_kv_len:
@@ -601,7 +602,7 @@ def get_fused_dflash_get_input_tl(swa_block_size, padded_kv_len, has_valid_token
 
 def select_state_slice_tl(block_size_kvstore, block_size_inference, num_layers, feature_dim):
     _backend = _selected['select_state_slice_tl']
-    from hcu_adapter.kernels.state_and_constraints import select_state_slice
+    from hcu_adapter.kernels.state_and_constraints_emu import select_state_slice
 
     def launch(state, cache, last_hit_position):
         if state.shape != (num_layers, block_size_inference, feature_dim) or cache.shape != (num_layers, block_size_kvstore, feature_dim):
@@ -613,7 +614,7 @@ def select_state_slice_tl(block_size_kvstore, block_size_inference, num_layers, 
 
 def load_state_to_cache_tl(block_size_kvstore, block_size_inference, num_layers, feature_dim, vec=None, threads=256):
     _backend = _selected['load_state_to_cache_tl']
-    from hcu_adapter.kernels.state_and_constraints import load_state_to_cache
+    from hcu_adapter.kernels.state_and_constraints_emu import load_state_to_cache
 
     def launch(state, cache, last_hit_position):
         if state.shape != (num_layers, block_size_inference, feature_dim) or cache.shape != (num_layers, block_size_kvstore, feature_dim):
@@ -625,7 +626,7 @@ def load_state_to_cache_tl(block_size_kvstore, block_size_inference, num_layers,
 
 def apply_token_bitmask_by_step_inplace_tl(vocab_size, has_ftp):
     _backend = _selected['apply_token_bitmask_by_step_inplace_tl']
-    from hcu_adapter.kernels.state_and_constraints import mask_logits
+    from hcu_adapter.kernels.state_and_constraints_triton import mask_logits
 
     def launch(logits, bitmask, indices, first, step):
         if logits.shape[1] != vocab_size or (first is not None) != has_ftp:
@@ -637,7 +638,7 @@ def apply_token_bitmask_by_step_inplace_tl(vocab_size, has_ftp):
 
 def detect_outlier_and_abort_tl(dtype, max_abs):
     _backend = _selected['detect_outlier_and_abort_tl']
-    from hcu_adapter.kernels.state_and_constraints import detect_outlier
+    from hcu_adapter.kernels.state_and_constraints_emu import detect_outlier
 
     def launch(data, identifier):
         if data.dtype != dtype:
@@ -649,7 +650,7 @@ def detect_outlier_and_abort_tl(dtype, max_abs):
 
 def replace_input_embeds_tl(hidden):
     _backend = _selected['replace_input_embeds_tl']
-    from hcu_adapter.kernels.vision import replace_input_embeds
+    from hcu_adapter.kernels.vision_emu import replace_input_embeds
 
     def launch(*args):
         if args[0].shape[1] != hidden:
@@ -661,7 +662,7 @@ def replace_input_embeds_tl(hidden):
 
 def rgb_pad_to_patches_tl(patch_size):
     _backend = _selected['rgb_pad_to_patches_tl']
-    from hcu_adapter.kernels.vision import rgb_pad_to_patches
+    from hcu_adapter.kernels.vision_triton import rgb_pad_to_patches
 
     def launch(*args):
         if args[-1].shape[1:] != (3, patch_size, patch_size):
@@ -673,7 +674,7 @@ def rgb_pad_to_patches_tl(patch_size):
 
 def batch_downsample_tl(downsample_ratio, dim, do_downsample, dtype):
     _backend = _selected['batch_downsample_tl']
-    from hcu_adapter.kernels.vision import batch_downsample
+    from hcu_adapter.kernels.vision_emu import batch_downsample
 
     def launch(*args):
         if args[0].shape[1] != dim or args[0].dtype != dtype:

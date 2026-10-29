@@ -1,6 +1,7 @@
 """Explicit provider for the FlashAttention entry used by upstream ViT."""
 
-from . import hcu_env, registry
+from . import hcu_env
+from hcu_adapter import registry
 
 
 def install():

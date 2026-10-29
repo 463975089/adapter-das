@@ -4,7 +4,8 @@ import importlib
 import sys
 import types
 
-from . import hcu_env, registry
+from . import hcu_env
+from hcu_adapter import registry
 from hcu_adapter.ops import selector
 
 _DEEP_GEMM_RUNTIME = (
@@ -26,7 +27,7 @@ def _missing(symbol):
     return unavailable
 
 
-_GROUPED_GEMM = {"torch": "hcu_adapter.kernels.gemm", "triton": "hcu_adapter.kernels.grouped_gemm_triton"}
+_GROUPED_GEMM = {"torch": "hcu_adapter.kernels.grouped_gemm_emu", "triton": "hcu_adapter.kernels.grouped_gemm_triton"}
 
 
 def install(grouped_gemm_backend="torch"):
@@ -37,7 +38,7 @@ def install(grouped_gemm_backend="torch"):
     import flash_mla
 
     from hcu_adapter.kernels.weight_scale_emu import transform_sf_into_required_layout
-    from hcu_adapter.kernels.mhc import tf32_hc_prenorm_gemm
+    from hcu_adapter.kernels.mhc_emu import tf32_hc_prenorm_gemm
     from hcu_adapter.kernels.gemm import cublaslt_gemm_nt
 
     current = getattr(deep_gemm, "cublaslt_gemm_nt", None)
@@ -76,7 +77,7 @@ def install(grouped_gemm_backend="torch"):
     deep_gemm.mega_mhc = mega_mhc
     registry.register("deep_gemm.mega_mhc", mega_mhc.__module__ + '.mega_mhc', "deep_gemm.mega_mhc", "seam")
     registry.register("deep_gemm.tf32_hc_prenorm_gemm",
-                      "hcu_adapter.kernels.mhc.tf32_hc_prenorm_gemm",
+                      "hcu_adapter.kernels.mhc_emu.tf32_hc_prenorm_gemm",
                       "deep_gemm.tf32_hc_prenorm_gemm", "seam")
     from hcu_adapter.kernels import runtime_config
 
@@ -89,7 +90,7 @@ def install(grouped_gemm_backend="torch"):
         registry.register("deep_gemm." + name, "hcu_adapter.kernels.runtime_config." + impl,
                           "deep_gemm." + name, "seam")
     for name in ("fp8_fp4_gemm_nt", "fp8_einsum", "m_grouped_fp8_fp4_gemm_nt_contiguous"):
-        module = _GROUPED_GEMM[grouped_gemm_backend] if name.startswith("m_grouped") else "hcu_adapter.kernels.gemm"
+        module = _GROUPED_GEMM[grouped_gemm_backend] if name.startswith("m_grouped") else "hcu_adapter.kernels.gemm_emu"
         provider = getattr(importlib.import_module(module), name)
         current = getattr(deep_gemm, name, None)
         if current is not None and current is not provider:
@@ -141,9 +142,9 @@ def install(grouped_gemm_backend="torch"):
         if (hcu_env.lightop_ops_enabled() and name in (
                 'fp8_fp4_mqa_logits', 'fp8_fp4_sparse_mqa_logits',
                 'fp8_fp4_paged_mqa_logits', 'fp8_fp4_paged_sparse_mqa_logits')):
-            from hcu_adapter.kernels import lightop_mqa
+            from hcu_adapter.kernels import mqa_logits_lightop
 
-            provider = getattr(lightop_mqa, name)
+            provider = getattr(mqa_logits_lightop, name)
         current = getattr(deep_gemm, name, None)
         if current is not None and current is not provider:
             raise RuntimeError("An existing DeepGEMM MQA logits provider is already installed: " + name)
@@ -159,7 +160,7 @@ def install(grouped_gemm_backend="torch"):
         if (lightop_commit != 'b2f8c9d' or flash_commit != '1287a01'
                 or not hasattr(native_mla, 'sparse_prefill_fwd_fp32')):
             raise RuntimeError('Native FlashMLA requires the pinned LightOp and optional FP32 API')
-        from hcu_adapter.kernels.native_flashmla import fused_prefill, fused_decode
+        from hcu_adapter.kernels.mla_attention_dtk import fused_prefill, fused_decode
 
     fused = flash_mla.fused_norm_rope_attn_rope_cast
     for name, provider in (("prefill", fused_prefill), ("decode", fused_decode)):

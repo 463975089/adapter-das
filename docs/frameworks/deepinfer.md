@@ -4,6 +4,8 @@
 
 本入口使用共用 adapter 的 bootstrap、环境注册表、catalog 和运行时 registry。DeepInfer 的导入别名、factory、metadata 和 worker 生命周期位于 `hcu_adapter/bridges/_deepinfer/`；张量实现位于 `hcu_adapter/kernels/`。新增代码遵循本仓 [治理](../governance.md) 与开发 skill。
 
+算子分组、档位文件及 plugin 同步迁移要求见[算子文件导航](deepinfer-kernels.md)。
+
 ## 源码接入
 
 本次迁移基于 DeepInfer `774ce244b87cc0eb8d4b94ab9f5de2ab22049f01`。需要兼容的 HIP Torch、Triton、LightOp、DeepEP/DeepGEMM 等外部库和配套 `deepinfer._C`；仓库不包含权重或二进制。迁移后的整模型与 Graph 回归尚待节点验证，不把历史结果当作本版本验收。
@@ -60,7 +62,7 @@ python3 tools/build_deepinfer_extension.py --upstream "$OFFICIAL" \
   --workdir "$BUILD_DIR" --output "$NATIVE_ARTIFACTS" --toolchain "$TOOLCHAIN_ROOT"
 ```
 
-`TOOLCHAIN_ROOT` 需要包含 `usr/bin/gcc-13`、`usr/bin/g++-13` 和对应运行库；还需当前 DTK/PyTorch 的编译依赖。工具在隔离 staging 中构建固定上游 `_C`，不修改上游工作树。`HCU_ADAPTER_DUMP` 支持 `1` 输出 stdout 或带 `{pid}` 的文件路径。无 `{pid}` 的 DeepInfer 路径自动添加 PID。初始 dump 是 adapter 安装时快照；plugin 安装后需再读取 `hcu_adapter.ops.registry.dump()` 或 plugin 报告中的覆盖记录。
+`TOOLCHAIN_ROOT` 需要包含 `usr/bin/gcc-13`、`usr/bin/g++-13` 和对应运行库；还需当前 DTK/PyTorch 的编译依赖。工具在隔离 staging 中构建固定上游 `_C`，不修改上游工作树。`HCU_ADAPTER_DUMP` 支持 `1` 输出 stdout 或带 `{pid}` 的文件路径。无 `{pid}` 的 DeepInfer 路径自动添加 PID。初始 dump 是 adapter 安装时快照；plugin 安装后需再读取 `hcu_adapter.registry.dump()` 或 plugin 报告中的覆盖记录。
 
 `HCU_DISABLE_OPS` 支持具体算子或 `deep_gemm`、`deep_ep`、`worker.runtime` 前缀组；DeepInfer 必需路径被禁用时会拒绝安装，不会静默换成语义不明的实现。
 

@@ -24,7 +24,7 @@ aiter_ar because CUDA-graph replay corrupts data) > per-op opt-in envs
 
 import logging
 
-from hcu_adapter import environment as hcu_environment
+from hcu_adapter import hcu_env as hcu_environment
 
 LOG = logging.getLogger("hcu.adapter")
 
