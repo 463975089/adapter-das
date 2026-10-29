@@ -224,3 +224,5 @@ num_steps 自动停+导出后必崩，系统性问题确认；
 diff 存 tmp_fetch/MHC_PATCHES.md 待 needle 化。
 下一步：拍机制取证需换工具（DTK rocprof/带内计时器/图内 hipEvent），
 trace 族在拍存在时不可用于功量归因。
+
+`HCU_MOE_ALIGN_FUSED`：默认 `2048`，上游已有的 MoE 对齐融合阈值；`0` 关闭，小于等于阈值的 top-k lanes 使用融合实现。此处补齐原有变量的文档登记，不改变默认值。

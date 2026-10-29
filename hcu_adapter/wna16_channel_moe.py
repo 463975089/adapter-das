@@ -122,9 +122,10 @@ def install():
         from . import registry
 
         registry.register(
-            "moe",
-            "wna16-channel-int4",
-            "channel int4 -> whole-row group rewrite (stock triton gptq branch)",
+            "w4a16_moe",
+            __name__ + ".install.<locals>.fused_experts_channel",
+            "sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe.fused_experts",
+            "rebind",
         )
     except Exception:
         pass
