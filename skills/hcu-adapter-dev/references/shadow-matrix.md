@@ -11,7 +11,7 @@
 | 社区 import 的包 | 我们的形态 | 位置 | 状态 |
 |---|---|---|---|
 | `sgl_kernel` | 完整同名包（triton/torch） | `sgl_kernel/` | 生产 |
-| `vllm._custom_ops` | 属性级桥接（rms_norm 等 HIP 形态） | `sitecustomize.py` | 生产 |
+| `vllm._custom_ops` | 属性级桥接（rms_norm 等 HIP 形态） | `hcu_adapter/bridges/vllm.py` | 生产 |
 | `aiter` | 真包优先 + 缺口填空 + 高危守卫 | `hcu_adapter/aiter/` | 生产 |
 | `flashinfer` | 填空桥 + 响亮 stub | `hcu_adapter/flashinfer/` | 生产 |
 | `flash_attn` / `flash_attn_interface` | 响亮 stub；装 HCU flash_attn wheel 后真包自动胜出（零改动切 vendor 档） | `hcu_adapter/flash_attn/` | 生产 |

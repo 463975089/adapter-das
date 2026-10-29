@@ -99,7 +99,7 @@ TEXT_PATCH_ALLOWLIST 白名单，白名单外不合法。
 
 ```
 hcu_adapter/           唯一适配包：bootstrap.py 宿主探测 + common→host 分发
-                       （sglang/vllm/none）；bridges/ = common 跨框架守卫 +
+                       （sglang/vllm/deepinfer/none）；bridges/ = common 跨框架守卫 +
                        sglang 宿主桥顺序链（按 architecture.md §9 P1-P3 向包内
                        域桥拆分中）+ vllm 平台身份/版本门/ABI 桥，安装序列有
                        专属回归钉 tests/adapter/test_sitecustomize_sequence.py；
