@@ -1,4 +1,4 @@
-"""Validation and backend selection for norm; no numerical implementation."""
+"""Backend facade（门面）: Validation and backend selection for norm; no numerical implementation."""
 
 from .norm_emu import norm as _torch_norm
 

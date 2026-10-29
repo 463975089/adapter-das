@@ -64,7 +64,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                 'wraparound/clipping; no model/e2e '
                                                                 'qualification'},
                                       'torch': {'status': 'candidate',
-                                                'implementation': 'hcu_adapter.kernels.index_ops._torch_expand_swa_index',
+                                                'implementation': 'hcu_adapter.kernels.index_ops_emu._torch_expand_swa_index',
                                                 'limitations': 'Exact int32 contract incl. '
                                                                'wraparound/clipping; no model/e2e '
                                                                'qualification'}},
@@ -137,24 +137,24 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                               'no E4M3 scales or model '
                                                                               'qualification'}},
  'tilelang_ops.load_paged_kv_cache_tl': {'triton': {'status': 'candidate',
-                                                    'implementation': 'hcu_adapter.kernels.fused_transform.load_paged',
+                                                    'implementation': 'hcu_adapter.kernels.kv_cache_emu.load_paged',
                                                     'limitations': 'Torch gather/scatter of compact '
                                                                    'segments; cast layouts dequantize as '
                                                                    'bf16(float(q)*sf); no model/performance '
                                                                    'qualification'},
                                          'torch': {'status': 'candidate',
-                                                   'implementation': 'hcu_adapter.kernels.fused_transform.load_paged',
+                                                   'implementation': 'hcu_adapter.kernels.kv_cache_emu.load_paged',
                                                    'limitations': 'Torch gather/scatter of compact segments; '
                                                                   'cast layouts dequantize as '
                                                                   'bf16(float(q)*sf); no model/performance '
                                                                   'qualification'}},
  'tilelang_ops.store_kv_cache_tl': {'triton': {'status': 'candidate',
-                                               'implementation': 'hcu_adapter.kernels.fused_transform.store_paged',
+                                               'implementation': 'hcu_adapter.kernels.kv_cache_emu.store_paged',
                                                'limitations': 'Torch quantize+scatter mirroring the pinned '
                                                               'CUDA store rounding (division-based UE8M0); '
                                                               'no model/performance qualification'},
                                     'torch': {'status': 'candidate',
-                                              'implementation': 'hcu_adapter.kernels.fused_transform.store_paged',
+                                              'implementation': 'hcu_adapter.kernels.kv_cache_emu.store_paged',
                                               'limitations': 'Torch quantize+scatter mirroring the pinned '
                                                              'CUDA store rounding (division-based UE8M0); no '
                                                              'model/performance qualification'}},
@@ -170,7 +170,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                               'candidate precision '
                                                                               'correction'},
                                                      'native': {'status': 'candidate',
-                                                                'implementation': 'hcu_adapter.kernels.native_flashmla.fused_decode',
+                                                                'implementation': 'hcu_adapter.kernels.mla_attention_dtk.fused_decode',
                                                                 'limitations': 'Explicit code-object-v4 '
                                                                                '1287a01 plus optional FP32 '
                                                                                'API, gfx938 H64/H128 D512; '
@@ -188,7 +188,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                'correctness tier, no '
                                                                                'performance qualification'},
                                                       'native': {'status': 'candidate',
-                                                                 'implementation': 'hcu_adapter.kernels.native_flashmla.fused_prefill',
+                                                                 'implementation': 'hcu_adapter.kernels.mla_attention_dtk.fused_prefill',
                                                                  'limitations': 'Explicit code-object-v4 '
                                                                                 '1287a01 plus optional FP32 '
                                                                                 'API, gfx938 H64/H128 D512; '
@@ -253,59 +253,59 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                'model/performance '
                                                                                'qualification'}},
  'tilelang_ops.load_kv_index_tl': {'triton': {'status': 'candidate',
-                                              'implementation': 'hcu_adapter.kernels.index_ops.load_kv_index',
+                                              'implementation': 'hcu_adapter.kernels.index_ops_emu.load_kv_index',
                                               'limitations': 'Torch index op mirroring the upstream *_ref '
                                                              '(device-only); no performance qualification'},
                                    'torch': {'status': 'candidate',
-                                             'implementation': 'hcu_adapter.kernels.index_ops.load_kv_index',
+                                             'implementation': 'hcu_adapter.kernels.index_ops_emu.load_kv_index',
                                              'limitations': 'Torch index op mirroring the upstream *_ref '
                                                             '(device-only); no performance qualification'}},
  'tilelang_ops.kv_index_cat_tl': {'triton': {'status': 'candidate',
-                                             'implementation': 'hcu_adapter.kernels.index_ops.kv_index_cat',
+                                             'implementation': 'hcu_adapter.kernels.index_ops_emu.kv_index_cat',
                                              'limitations': 'Torch index op mirroring the upstream *_ref '
                                                             '(device-only); no performance qualification'},
                                   'torch': {'status': 'candidate',
-                                            'implementation': 'hcu_adapter.kernels.index_ops.kv_index_cat',
+                                            'implementation': 'hcu_adapter.kernels.index_ops_emu.kv_index_cat',
                                             'limitations': 'Torch index op mirroring the upstream *_ref '
                                                            '(device-only); no performance qualification'}},
  'tilelang_ops.convert_kv_index_tl': {'triton': {'status': 'candidate',
-                                                 'implementation': 'hcu_adapter.kernels.index_ops.convert_kv_index',
+                                                 'implementation': 'hcu_adapter.kernels.index_ops_emu.convert_kv_index',
                                                  'limitations': 'Torch index op mirroring the upstream *_ref '
                                                                 '(device-only); no performance '
                                                                 'qualification'},
                                       'torch': {'status': 'candidate',
-                                                'implementation': 'hcu_adapter.kernels.index_ops.convert_kv_index',
+                                                'implementation': 'hcu_adapter.kernels.index_ops_emu.convert_kv_index',
                                                 'limitations': 'Torch index op mirroring the upstream *_ref '
                                                                '(device-only); no performance '
                                                                'qualification'}},
  'tilelang_ops.candidate_block_max_tl': {'triton': {'status': 'candidate',
-                                                    'implementation': 'hcu_adapter.kernels.index_ops.candidate_block_max',
+                                                    'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_block_max',
                                                     'limitations': 'Torch index op mirroring the upstream '
                                                                    '*_ref (device-only); no performance '
                                                                    'qualification'},
                                          'torch': {'status': 'candidate',
-                                                   'implementation': 'hcu_adapter.kernels.index_ops.candidate_block_max',
+                                                   'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_block_max',
                                                    'limitations': 'Torch index op mirroring the upstream '
                                                                   '*_ref (device-only); no performance '
                                                                   'qualification'}},
  'tilelang_ops.get_candidate_compact_lens_tl': {'triton': {'status': 'candidate',
-                                                           'implementation': 'hcu_adapter.kernels.index_ops.candidate_compact_lens',
+                                                           'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_compact_lens',
                                                            'limitations': 'Torch index op mirroring the '
                                                                           'upstream *_ref (device-only); no '
                                                                           'performance qualification'},
                                                 'torch': {'status': 'candidate',
-                                                          'implementation': 'hcu_adapter.kernels.index_ops.candidate_compact_lens',
+                                                          'implementation': 'hcu_adapter.kernels.index_ops_emu.candidate_compact_lens',
                                                           'limitations': 'Torch index op mirroring the '
                                                                          'upstream *_ref (device-only); no '
                                                                          'performance qualification'}},
  'tilelang_ops.restore_candidate_indices_inplace_tl': {'triton': {'status': 'candidate',
-                                                                  'implementation': 'hcu_adapter.kernels.index_ops.restore_candidate_indices',
+                                                                  'implementation': 'hcu_adapter.kernels.index_ops_emu.restore_candidate_indices',
                                                                   'limitations': 'Torch index op mirroring '
                                                                                  'the upstream *_ref '
                                                                                  '(device-only); no '
                                                                                  'performance qualification'},
                                                        'torch': {'status': 'candidate',
-                                                                 'implementation': 'hcu_adapter.kernels.index_ops.restore_candidate_indices',
+                                                                 'implementation': 'hcu_adapter.kernels.index_ops_emu.restore_candidate_indices',
                                                                  'limitations': 'Torch index op mirroring '
                                                                                 'the upstream *_ref '
                                                                                 '(device-only); no '

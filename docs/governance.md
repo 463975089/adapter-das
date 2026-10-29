@@ -159,7 +159,7 @@ sglang 符号面，shim 妥协不进契约。
 1. **具体实现文件 = `<op>[_<变体>]_<tier>`**，tier 词表封闭：
    `emu`（torch 直算/仿真臂）· `triton`（自研 triton）· `cpp`（C++ JIT）·
    `fork`（vendor 源码 fork 承接）· `ref`（诊断参照，位置约束见 §2）；
-   vendor 库绑定安装器用**库名**：`aiter` / `lightop` / `dtk`。
+   vendor 库绑定安装器用**库名**：`aiter` / `lightop` / `dtk` / `rccl`（通信库）。
    例：`conv1d_update_emu` · `mqa_logits_triton` · `paged_attn_cpp` ·
    `quant_aiter` · `deep_gemm_dtk`。**平台词（hip/cuda/rocm）不算档位**，
    禁作实现后缀。
@@ -176,6 +176,17 @@ sglang 符号面，shim 妥协不进契约。
 5. **sgl_kernel 影子契约文件豁免**：文件名 = 上游符号面
    （elementwise / moe / gemm_fp8 …）；包内自研 helper 同样适用本规范
    （`paged_attn_triton` / `paged_attn_cpp` / `fa_varlen_triton`）。
+
+6. **DeepInfer 内核门面与机制豁免清单**（与 L0 同步）：
+   - `gemm.py`、`gather.py`、`norm.py`、`index_ops.py`：校验或选择后端的门面。
+   - `fused_transform.py`：按原有顺序组织 norm/RoPE/量化、输出写回和缓存写入的复合执行门面；
+     单档位 RoPE 与 KV 计算分别位于 `rope_{emu,lightop}`、`kv_cache_emu`。
+   - `runtime_config.py`：宿主侧配置、对齐规则及运行参数状态，无张量数值实现。
+   - `lightop_usage.py`：共享调用计数机制，无张量数值实现。
+   L0 对 `hcu_adapter/kernels/` 按此清单或档位后缀检查；新增豁免需同步说明职责。
+7. **实现文件档位与配置值分开管理**：`_emu` 是 Torch/仿真实现的文件后缀；
+   已发布的后端选择值 `torch` 仍是合法配置值，不是文件命名档位。
+   结构整理不修改 catalog 算子键、配置默认或已接受的配置值；此类接口迁移须单独评审。
 
 ## 4. 运行时注册表与 dump（"现在谁在跑"必须一行可答）
 

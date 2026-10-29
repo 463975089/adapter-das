@@ -9,7 +9,7 @@ import math
 import torch
 import torch.distributed as dist
 
-from .deepep_compat import EventOverlap
+from .deepep_dtk import EventOverlap
 
 
 def get_num_allocation_alignment():

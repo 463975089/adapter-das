@@ -1,4 +1,4 @@
-"""Dense GEMM backend selection; implementations carry tier suffixes."""
+"""Backend facade（门面）: Dense GEMM backend selection; implementations carry tier suffixes."""
 
 import torch
 

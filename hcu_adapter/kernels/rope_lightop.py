@@ -28,3 +28,10 @@ def apply_rotary(query, cos_sin_cache, key=None, positions=None, interleaved=Fal
                                       x.shape[-1], cache, not interleaved)
         x.copy_(work.view_as(x))
         _count('rope.native')
+
+
+def apply_rotary_rows(x, positions, cos, sin, rotary_dim, offset, is_neox, conjugate):
+    out = x.clone(memory_format=torch.contiguous_format)
+    apply_rotary(out[..., offset:offset + rotary_dim], torch.cat((cos, sin), -1),
+                 positions=positions, interleaved=not is_neox, conjugate=conjugate)
+    return out

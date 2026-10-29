@@ -41,7 +41,7 @@ def _install(artifacts=None, physical_device_count=None, tilelang_backend=None,
     if hcu_env.resolve('HCU_PLATFORM_SEMANTICS') != 'gpu':
         raise ValueError('Only GPU platform semantics are supported by the HCU installer')
     upstream_defaults = hcu_env.apply_upstream_defaults(allow_cuda_graph)
-    from . import (deep_ep, deep_select, lightop_gemm, native_extension, platform_guard,
+    from . import (deep_ep, deepselect, lightop_gemm, native_extension, platform_guard,
                    tile_kernels, tilelang_ops, vendor_imports, worker_runtime)
 
     if artifacts is None:
@@ -65,7 +65,7 @@ def _install(artifacts=None, physical_device_count=None, tilelang_backend=None,
     tilelang_ops.install(tilelang_backend)
     tile_kernels.install()
     deep_ep.install(allow_cuda_graph=allow_cuda_graph)
-    deep_select.install()
+    deepselect.install()
     vendor_imports.install(grouped_gemm_backend=grouped_gemm_backend)
     worker_runtime.install(physical_device_count, allow_cuda_graph=allow_cuda_graph)
     platform_guard.install()

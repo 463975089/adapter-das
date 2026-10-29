@@ -1,4 +1,4 @@
-"""Validation and backend selection for gather; no numerical implementation."""
+"""Backend facade（门面）: Validation and backend selection for gather; no numerical implementation."""
 
 from .gather_emu import gather as _torch_gather
 

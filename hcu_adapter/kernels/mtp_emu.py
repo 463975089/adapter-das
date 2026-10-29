@@ -1,9 +1,6 @@
-"""Device-only MTP/DSpark operations matching deepinfer 774ce24 contracts."""
+"""Torch/emu implementations of the pinned mtp contracts."""
 
 import torch
-import triton
-import triton.language as tl
-
 
 def dflash_input_store(hidden, out):
     if hidden.shape[1] == 1:
@@ -52,37 +49,6 @@ def schedule_by_confidence(remap, previous, cumulative, seqlens_q, total_q):
     ranks = torch.empty(n * steps, dtype=torch.int32, device=remap.device)
     ranks.scatter_(0, order, torch.arange(n * steps, dtype=torch.int32, device=remap.device))
     seqlens_q.copy_(1 + (ranks.view(n, steps) < total_q - n).sum(dim=1))
-
-
-@triton.jit
-def _store_proposals(SLOTS, TOKENS, PROBS, INDEX, CONF, TOKEN_POOL, PROB_POOL, INDEX_POOL, CONF_POOL,
-                     STEPS: tl.constexpr, WIDTH: tl.constexpr, HAS_INDEX: tl.constexpr,
-                     HAS_CONF: tl.constexpr, BLOCK: tl.constexpr):
-    row = tl.program_id(0)
-    req, step = row // STEPS, row % STEPS
-    slot = tl.load(SLOTS + req)
-    if slot != 0:
-        target = slot * STEPS + step
-        if tl.program_id(1) == 0:
-            tl.store(TOKEN_POOL + target, tl.load(TOKENS + row))
-            if HAS_CONF:
-                tl.store(CONF_POOL + target, tl.load(CONF + row))
-        col = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
-        tl.store(PROB_POOL + target * WIDTH + col,
-                 tl.load(PROBS + row * WIDTH + col, col < WIDTH, other=0), col < WIDTH)
-        if HAS_INDEX:
-            tl.store(INDEX_POOL + target * WIDTH + col,
-                     tl.load(INDEX + row * WIDTH + col, col < WIDTH, other=0), col < WIDTH)
-
-
-def store_proposals(slots, tokens, probs, index, confidence, token_pool, prob_pool, index_pool, confidence_pool):
-    requests, steps = tokens.shape
-    if not requests:
-        return
-    width = probs.shape[-1]
-    _store_proposals[(requests * steps, triton.cdiv(width, 512))](
-        slots, tokens, probs, index, confidence, token_pool, prob_pool, index_pool, confidence_pool,
-        steps, width, index is not None, confidence is not None, 512)
 
 
 def dflash_get_input(slots, positions, first, last, new_slots, new_positions, input_ids,

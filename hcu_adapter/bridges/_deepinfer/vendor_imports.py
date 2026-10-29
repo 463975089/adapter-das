@@ -160,7 +160,7 @@ def install(grouped_gemm_backend="torch"):
         if (lightop_commit != 'b2f8c9d' or flash_commit != '1287a01'
                 or not hasattr(native_mla, 'sparse_prefill_fwd_fp32')):
             raise RuntimeError('Native FlashMLA requires the pinned LightOp and optional FP32 API')
-        from hcu_adapter.kernels.native_flashmla import fused_prefill, fused_decode
+        from hcu_adapter.kernels.mla_attention_dtk import fused_prefill, fused_decode
 
     fused = flash_mla.fused_norm_rope_attn_rope_cast
     for name, provider in (("prefill", fused_prefill), ("decode", fused_decode)):
