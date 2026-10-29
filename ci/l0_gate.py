@@ -148,11 +148,8 @@ def routing_glue_files():
     """Return the thin loader, dispatcher, and framework bridge sources."""
     files = ["sitecustomize.py", "hcu_adapter/bootstrap.py"]
     bridge_dir = os.path.join(ROOT, "hcu_adapter", "bridges")
-    files.extend(
-        f"hcu_adapter/bridges/{name}"
-        for name in sorted(os.listdir(bridge_dir))
-        if name.endswith(".py")
-    )
+    for base, _, names in os.walk(bridge_dir):
+        files.extend(rel(os.path.join(base, name)) for name in sorted(names) if name.endswith(".py"))
     return files
 
 
@@ -330,28 +327,29 @@ def check_text_patch_allowlist(r):
 
 def check_registry_ops_in_catalog(r):
     """HARD: every registry.register(op=...) names a BACKEND_CATALOG op."""
-    cat = open(os.path.join(ROOT, "hcu_adapter/hcu_config.py"),
-               encoding="utf-8").read()
-    ops = set(re.findall(r'^\s{4}"([a-z0-9_]+)":\s*\{', cat, re.M))
-    pat = re.compile(
-        r"registry\.register\(\s*\n?\s*(?:op\s*=\s*)?\"([a-z0-9_]+)\"")
+    from hcu_adapter.hcu_config import BACKEND_CATALOG
+    ops = set(BACKEND_CATALOG)
     for p in iter_files(".py"):
         rp = rel(p)
-        if (not (rp == "hcu_adapter" or rp.startswith("hcu_adapter/")
-                 or "/hcu_adapter/" in rp)
-                and "/bridges/" not in rp
+        if (not rp.startswith("hcu_adapter/") and "/bridges/" not in rp
                 and rp != "sitecustomize.py"):
             continue
         try:
             src = open(p, encoding="utf-8").read()
         except Exception:
             continue
-        for m in pat.finditer(src):
-            if m.group(1) not in ops:
-                line = src[: m.start()].count("\n") + 1
-                r.fail("registry-ops", f"{rp}:{line} registers op "
-                       f"'{m.group(1)}' not in BACKEND_CATALOG")
+        for node in ast.walk(ast.parse(src)):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if not isinstance(node.func.value, ast.Name) or node.func.value.id != "registry" or node.func.attr != "register":
+                continue
+            value = node.args[0] if node.args else next((x.value for x in node.keywords if x.arg == "op"), None)
+            if isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value not in ops:
+                r.fail("registry-ops", f"{rp}:{node.lineno} registers unknown op {value.value!r}")
 
+
+
+# ---------------------------------------------------------------------------
 
 def check_impl_naming(r):
     """HARD: module-naming rules from governance §3b.
@@ -418,6 +416,7 @@ def main():
                     help="treat warnings as failures")
     args = ap.parse_args()
 
+    sys.path.insert(0, ROOT)
     r = Report()
     n_py = check_py_syntax(r)
     n_sh = check_shell_lf(r)

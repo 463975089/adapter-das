@@ -231,3 +231,1245 @@ per-token fp8/int8 quant (dynamic)
 
 路由变量：`HCU_QUANT_IMPL`
 
+## deep_gemm.cublaslt_gemm_nt
+
+deep_gemm.cublaslt_gemm_nt
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate BF16 contiguous aligned-K uses quali |
+
+路由变量：（auto）
+
+## tile_kernels.quant.swiglu_forward
+
+tile_kernels.quant.swiglu_forward
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate Standalone BF16/FP32 V4.1 ViT activa |
+
+路由变量：（auto）
+
+## tile_kernels.utils.dtype_to_str
+
+tile_kernels.utils.dtype_to_str
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Pinned host map: FP32/BF16/E4M3/int8 |
+
+路由变量：（auto）
+
+## deep_select.topk
+
+deep_select.topk
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate Pinned GPU top-k, native stable sort |
+
+路由变量：（auto）
+
+## tilelang_ops.gather_tl
+
+tilelang_ops.gather_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Pinned int8 factory contract; no mod |
+| torch | candidate Pinned int8 factory contract; no mod |
+
+路由变量：（auto）
+
+## tilelang_ops.norm_tl
+
+tilelang_ops.norm_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate BF16/FP32, FP8 per32/per128; no mode |
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate BF16/FP32, FP8 per32/per128; no mode |
+
+路由变量：（auto）
+
+## tilelang_ops.expand_swa_index_tl
+
+tilelang_ops.expand_swa_index_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Exact int32 contract incl. wraparoun |
+| torch | candidate Exact int32 contract incl. wraparoun |
+
+路由变量：（auto）
+
+## tilelang_ops.fused_norm_rope_hadamard_cast_store_kvcache_tl
+
+tilelang_ops.fused_norm_rope_hadamard_cast_store_kvcache_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Norm via norm_tl provider, torch RoP |
+| lightop | candidate Native norm/RoPE and block32/128 FP8 |
+| torch | candidate Norm via norm_tl provider, torch RoP |
+
+路由变量：（auto）
+
+## tile_kernels.transform.apply_rotary
+
+tile_kernels.transform.apply_rotary
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate In-place FP32 fma rotation, NeoX/int |
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+
+路由变量：（auto）
+
+## tile_kernels.quant.per_token_cast_and_cast_back
+
+tile_kernels.quant.per_token_cast_and_cast_back
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate In-place E4M3/E2M1 round trip with F |
+
+路由变量：（auto）
+
+## tilelang_ops.load_paged_kv_cache_tl
+
+tilelang_ops.load_paged_kv_cache_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch gather/scatter of compact segm |
+| torch | candidate Torch gather/scatter of compact segm |
+
+路由变量：（auto）
+
+## tilelang_ops.store_kv_cache_tl
+
+tilelang_ops.store_kv_cache_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch quantize+scatter mirroring the |
+| torch | candidate Torch quantize+scatter mirroring the |
+
+路由变量：（auto）
+
+## flash_mla.fused_norm_rope_attn_rope_cast.decode
+
+flash_mla.fused_norm_rope_attn_rope_cast.decode
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Torch sparse MLA decode on V4.1 FP8  |
+| native | candidate Explicit code-object-v4 1287a01 plus |
+
+路由变量：（auto）
+
+## flash_mla.fused_norm_rope_attn_rope_cast.prefill
+
+flash_mla.fused_norm_rope_attn_rope_cast.prefill
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Torch sparse MLA prefill mirroring v |
+| native | candidate Explicit code-object-v4 1287a01 plus |
+
+路由变量：（auto）
+
+## tile_kernels.quant.swiglu_forward_and_per_token_cast
+
+tile_kernels.quant.swiglu_forward_and_per_token_cast
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate FP32 SwiGLU (+clamp, topk weight) th |
+
+路由变量：（auto）
+
+## tilelang_ops.compress_and_update_state_prefill_tl
+
+tilelang_ops.compress_and_update_state_prefill_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch gather/softmax/scatter on devi |
+| torch | candidate Torch gather/softmax/scatter on devi |
+
+路由变量：（auto）
+
+## tilelang_ops.compress_and_update_state_decode_tl
+
+tilelang_ops.compress_and_update_state_decode_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch gather/softmax/scatter on devi |
+| torch | candidate Torch gather/softmax/scatter on devi |
+
+路由变量：（auto）
+
+## tilelang_ops.load_kv_index_tl
+
+tilelang_ops.load_kv_index_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch index op mirroring the upstrea |
+| torch | candidate Torch index op mirroring the upstrea |
+
+路由变量：（auto）
+
+## tilelang_ops.kv_index_cat_tl
+
+tilelang_ops.kv_index_cat_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch index op mirroring the upstrea |
+| torch | candidate Torch index op mirroring the upstrea |
+
+路由变量：（auto）
+
+## tilelang_ops.convert_kv_index_tl
+
+tilelang_ops.convert_kv_index_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch index op mirroring the upstrea |
+| torch | candidate Torch index op mirroring the upstrea |
+
+路由变量：（auto）
+
+## tilelang_ops.candidate_block_max_tl
+
+tilelang_ops.candidate_block_max_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch index op mirroring the upstrea |
+| torch | candidate Torch index op mirroring the upstrea |
+
+路由变量：（auto）
+
+## tilelang_ops.get_candidate_compact_lens_tl
+
+tilelang_ops.get_candidate_compact_lens_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch index op mirroring the upstrea |
+| torch | candidate Torch index op mirroring the upstrea |
+
+路由变量：（auto）
+
+## tilelang_ops.restore_candidate_indices_inplace_tl
+
+tilelang_ops.restore_candidate_indices_inplace_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Torch index op mirroring the upstrea |
+| torch | candidate Torch index op mirroring the upstrea |
+
+路由变量：（auto）
+
+## tile_kernels.quant.batched_transpose_weight_sf
+
+tile_kernels.quant.batched_transpose_weight_sf
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate GPU UE8M0 int32, block32/block128, g |
+
+路由变量：（auto）
+
+## tile_kernels.quant.per_token_cast
+
+tile_kernels.quant.per_token_cast
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate Deterministic BF16/FP32 to E4M3 or p |
+
+路由变量：（auto）
+
+## deep_gemm.bf16_gemm_nt
+
+deep_gemm.bf16_gemm_nt
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Contiguous BF16 inputs, K divisible  |
+
+路由变量：（auto）
+
+## deep_gemm.transform_sf_into_required_layout
+
+deep_gemm.transform_sf_into_required_layout
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate SM100 packed UE8M0 ABI; no PSUM gaps |
+
+路由变量：（auto）
+
+## deep_gemm.set_num_sms
+
+deep_gemm.set_num_sms
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## deep_gemm.get_num_sms
+
+deep_gemm.get_num_sms
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## deep_gemm.set_mk_alignment_for_contiguous_layout
+
+deep_gemm.set_mk_alignment_for_contiguous_layout
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## deep_gemm.get_mk_alignment_for_contiguous_layout
+
+deep_gemm.get_mk_alignment_for_contiguous_layout
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## deep_gemm.get_theoretical_mk_alignment_for_contiguous_layout
+
+deep_gemm.get_theoretical_mk_alignment_for_contiguous_layout
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## deep_gemm.get_tma_aligned_size
+
+deep_gemm.get_tma_aligned_size
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## tile_kernels.set_num_sms
+
+tile_kernels.set_num_sms
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## tile_kernels.get_num_sms
+
+tile_kernels.get_num_sms
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## tile_kernels.set_token_alignment
+
+tile_kernels.set_token_alignment
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## tile_kernels.get_token_alignment
+
+tile_kernels.get_token_alignment
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| host | candidate Host-side vendor knob mirrored from  |
+
+路由变量：（auto）
+
+## deep_gemm.fp8_fp4_gemm_nt
+
+deep_gemm.fp8_fp4_gemm_nt
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate FP8 E4M3 operands only; exact BF16/F |
+
+路由变量：（auto）
+
+## deep_gemm.fp8_einsum
+
+deep_gemm.fp8_einsum
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate 'bhr,hdr->bhd' only; exact dequant + |
+
+路由变量：（auto）
+
+## deep_gemm.mega_mhc
+
+deep_gemm.mega_mhc
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate Composed torch mHC post+mixes+pre+RM |
+
+路由变量：（auto）
+
+## deep_gemm.m_grouped_fp8_fp4_gemm_nt_contiguous
+
+deep_gemm.m_grouped_fp8_fp4_gemm_nt_contiguous
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Route A fast tier: per-BLOCK_M group |
+| torch | candidate Route A correctness tier: exact BF16 |
+
+路由变量：（auto）
+
+## deep_gemm.fp8_fp4_mqa_logits
+
+deep_gemm.fp8_fp4_mqa_logits
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate D128 H8/16/32 MXFP4 uses packed Ligh |
+| torch | candidate Dense prefill indexer logits (compre |
+
+路由变量：（auto）
+
+## deep_gemm.fp8_fp4_sparse_mqa_logits
+
+deep_gemm.fp8_fp4_sparse_mqa_logits
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate D128 H8/16/32 MXFP4 uses packed Ligh |
+| torch | candidate Sparse (candidate-block) indexer log |
+
+路由变量：（auto）
+
+## deep_gemm.get_sparse_mqa_logits_metadata
+
+deep_gemm.get_sparse_mqa_logits_metadata
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Sparse (candidate-block) indexer log |
+
+路由变量：（auto）
+
+## deep_gemm.fp8_fp4_paged_mqa_logits
+
+deep_gemm.fp8_fp4_paged_mqa_logits
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate D128 H8/16/32 MXFP4 uses packed Ligh |
+| torch | candidate Sparse (candidate-block) indexer log |
+
+路由变量：（auto）
+
+## deep_gemm.get_paged_mqa_logits_metadata
+
+deep_gemm.get_paged_mqa_logits_metadata
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Sparse (candidate-block) indexer log |
+
+路由变量：（auto）
+
+## deep_gemm.fp8_fp4_paged_sparse_mqa_logits
+
+deep_gemm.fp8_fp4_paged_sparse_mqa_logits
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate D128 H8/16/32 MXFP4 uses packed Ligh |
+| torch | candidate Sparse (candidate-block) indexer log |
+
+路由变量：（auto）
+
+## deep_gemm.get_paged_sparse_mqa_logits_metadata
+
+deep_gemm.get_paged_sparse_mqa_logits_metadata
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Sparse (candidate-block) indexer log |
+
+路由变量：（auto）
+
+## deep_gemm.bf16_mega_gate
+
+deep_gemm.bf16_mega_gate
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate FP32 gate GEMM + graph-safe sqrtsoft |
+
+路由变量：（auto）
+
+## tile_kernels.moe.moe_topk_gate
+
+tile_kernels.moe.moe_topk_gate
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lightop | candidate Explicit LightOp b2f8c9d; preserve r |
+| torch | candidate Graph-safe rewrite of tile_kernels t |
+
+路由变量：（auto）
+
+## deep_gemm.tf32_hc_prenorm_gemm
+
+deep_gemm.tf32_hc_prenorm_gemm
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate BF16 x FP32 prenorm GEMM, contiguous |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.expand_kernel.expand_to_mhc_fwd
+
+tile_kernels.mhc.expand_kernel.expand_to_mhc_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.pre_apply_mix_kernel.mhc_pre_apply_mix_fwd
+
+tile_kernels.mhc.pre_apply_mix_kernel.mhc_pre_apply_mix_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.head_compute_mix_kernel.mhc_head_compute_mix_fwd
+
+tile_kernels.mhc.head_compute_mix_kernel.mhc_head_compute_mix_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.pre_split_mixes_kernel.mhc_pre_split_mixes_fwd
+
+tile_kernels.mhc.pre_split_mixes_kernel.mhc_pre_split_mixes_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.sinkhorn_kernel.mhc_sinkhorn_fwd
+
+tile_kernels.mhc.sinkhorn_kernel.mhc_sinkhorn_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.post_kernel.mhc_post_fwd
+
+tile_kernels.mhc.post_kernel.mhc_post_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.norm_fn_kernel.mhc_fn_normw_merge_fwd
+
+tile_kernels.mhc.norm_fn_kernel.mhc_fn_normw_merge_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.norm_fn_kernel.mhc_reduce_partials_and_rmsnorm_fwd
+
+tile_kernels.mhc.norm_fn_kernel.mhc_reduce_partials_and_rmsnorm_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## tile_kernels.mhc.pre_big_fuse_kernel.mhc_pre_big_fuse_fwd
+
+tile_kernels.mhc.pre_big_fuse_kernel.mhc_pre_big_fuse_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned mHC forward contract; eager c |
+
+路由变量：（auto）
+
+## flash_mla.fused_norm_rope_attn_rope_cast.permute_q_b_proj
+
+flash_mla.fused_norm_rope_attn_rope_cast.permute_q_b_proj
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Byte-preserving initialization permu |
+
+路由变量：（auto）
+
+## flash_mla.fused_norm_rope_attn_rope_cast.permute_wv_proj
+
+flash_mla.fused_norm_rope_attn_rope_cast.permute_wv_proj
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Byte-preserving initialization permu |
+
+路由变量：（auto）
+
+## deep_ep.BucketBuffer
+
+deep_ep.BucketBuffer
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| rccl | candidate RCCL session storage with pinned 2Mi |
+
+路由变量：（auto）
+
+## deep_ep.BucketSession
+
+deep_ep.BucketSession
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| rccl | candidate RCCL session storage with pinned 2Mi |
+
+路由变量：（auto）
+
+## deep_ep.get_num_allocation_alignment
+
+deep_ep.get_num_allocation_alignment
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| rccl | candidate RCCL session storage with pinned 2Mi |
+
+路由变量：（auto）
+
+## deep_ep.get_num_rdma_alignment
+
+deep_ep.get_num_rdma_alignment
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| rccl | candidate RCCL session storage with pinned 2Mi |
+
+路由变量：（auto）
+
+## flash_attn.cute.interface._flash_attn_fwd
+
+flash_attn.cute.interface._flash_attn_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned ViT noncausal varlen Q/K/V ca |
+
+路由变量：（auto）
+
+## deep_ep.EngramBuffer
+
+deep_ep.EngramBuffer
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| rccl_gpu | candidate GPU tables, eager, byte-exact collec |
+| rccl_gpu_graph | candidate Explicit graph candidate for GPU tab |
+
+路由变量：（auto）
+
+## deep_ep.EPBuffer
+
+deep_ep.EPBuffer
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| dtk_v1_expanded | candidate Single-host eager expanded dispatch; |
+| dtk_v1_expanded_graph | candidate Explicit single-host graph candidate |
+
+路由变量：（auto）
+
+## deep_ep.get_physical_domain_size
+
+deep_ep.get_physical_domain_size
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lsa1 | candidate Reports LSA domain 1 on DTK2610 (no  |
+
+路由变量：（auto）
+
+## deep_ep.get_logical_domain_size
+
+deep_ep.get_logical_domain_size
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lsa1 | candidate Reports LSA domain 1 on DTK2610 (no  |
+
+路由变量：（auto）
+
+## tilelang_ops.fused_sample_tl
+
+tilelang_ops.fused_sample_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Mirrors upstream fused_sample_ref/ra |
+| torch | candidate Mirrors upstream fused_sample_ref/ra |
+
+路由变量：（auto）
+
+## tilelang_ops.random_sampling_tl
+
+tilelang_ops.random_sampling_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Mirrors upstream fused_sample_ref/ra |
+| torch | candidate Mirrors upstream fused_sample_ref/ra |
+
+路由变量：（auto）
+
+## tilelang_ops.prepare_v4_decode_metadata_tl
+
+tilelang_ops.prepare_v4_decode_metadata_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Fused device-only Triton metadata; 5 |
+| torch | candidate Device-only torch reference for deco |
+
+路由变量：（auto）
+
+## tilelang_ops.copy_block_tables_tl
+
+tilelang_ops.copy_block_tables_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Fused device-only Triton metadata; 5 |
+| torch | candidate Device-only torch reference for deco |
+
+路由变量：（auto）
+
+## tilelang_ops.gather_input_ids_zos_tl
+
+tilelang_ops.gather_input_ids_zos_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Fused device-only Triton metadata; 5 |
+| torch | candidate Device-only torch reference for deco |
+
+路由变量：（auto）
+
+## tilelang_ops.gather_engram_tokens_zos_tl
+
+tilelang_ops.gather_engram_tokens_zos_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Fused device-only Triton metadata; 5 |
+| torch | candidate Device-only torch reference for deco |
+
+路由变量：（auto）
+
+## tilelang_ops.compute_seqlens_k_zos_tl
+
+tilelang_ops.compute_seqlens_k_zos_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Fused device-only Triton metadata; 5 |
+| torch | candidate Device-only torch reference for deco |
+
+路由变量：（auto）
+
+## tilelang_ops.prepare_verification_metadata_tl
+
+tilelang_ops.prepare_verification_metadata_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only torch mirror of the upst |
+| torch | candidate Device-only torch mirror of the upst |
+
+路由变量：（auto）
+
+## tilelang_ops.expand_sampling_params_tl
+
+tilelang_ops.expand_sampling_params_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only torch mirror of the upst |
+| torch | candidate Device-only torch mirror of the upst |
+
+路由变量：（auto）
+
+## tilelang_ops.map_lookup_tl
+
+tilelang_ops.map_lookup_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only torch mirror of the upst |
+| torch | candidate Device-only torch mirror of the upst |
+
+路由变量：（auto）
+
+## tilelang_ops.remap_draft_topk_tl
+
+tilelang_ops.remap_draft_topk_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only torch mirror of the upst |
+| torch | candidate Device-only torch mirror of the upst |
+
+路由变量：（auto）
+
+## tilelang_ops.get_accept_result_tl
+
+tilelang_ops.get_accept_result_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only torch mirror of the upst |
+| torch | candidate Device-only torch mirror of the upst |
+
+路由变量：（auto）
+
+## tilelang_ops.finalize_verification_tl
+
+tilelang_ops.finalize_verification_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only torch mirror of the upst |
+| torch | candidate Device-only torch mirror of the upst |
+
+路由变量：（auto）
+
+## tilelang_ops.sum_smaller_probs_tl
+
+tilelang_ops.sum_smaller_probs_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only torch mirror of the upst |
+| torch | candidate Device-only torch mirror of the upst |
+
+路由变量：（auto）
+
+## tile_kernels.engram.fused_weight
+
+tile_kernels.engram.fused_weight
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned initialization contract; no m |
+
+路由变量：（auto）
+
+## tile_kernels.torch.engram.make_offsets
+
+tile_kernels.torch.engram.make_offsets
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Pinned initialization contract; no m |
+
+路由变量：（auto）
+
+## tile_kernels.engram.engram_gate_fwd
+
+tile_kernels.engram.engram_gate_fwd
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate SGLang 7b91060 fused inference gate  |
+
+路由变量：（auto）
+
+## tile_kernels.engram.engram_hash
+
+tile_kernels.engram.engram_hash
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Hash requires nonnegative INT64-safe |
+
+路由变量：（auto）
+
+## tilelang_ops.confidence_head_fused_tl
+
+tilelang_ops.confidence_head_fused_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.dflash_input_store_tl
+
+tilelang_ops.dflash_input_store_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.copy_dflash_decode_input_tl
+
+tilelang_ops.copy_dflash_decode_input_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.store_mtp_info_tl
+
+tilelang_ops.store_mtp_info_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.compute_seqlens_q_by_confidence_rates_tl
+
+tilelang_ops.compute_seqlens_q_by_confidence_rates_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.get_fused_dflash_get_input_tl
+
+tilelang_ops.get_fused_dflash_get_input_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.select_state_slice_tl
+
+tilelang_ops.select_state_slice_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.load_state_to_cache_tl
+
+tilelang_ops.load_state_to_cache_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.apply_token_bitmask_by_step_inplace_tl
+
+tilelang_ops.apply_token_bitmask_by_step_inplace_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.detect_outlier_and_abort_tl
+
+tilelang_ops.detect_outlier_and_abort_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only MTP/state/constraint con |
+| torch | candidate Device-only MTP/state/constraint con |
+
+路由变量：（auto）
+
+## tilelang_ops.batch_downsample_tl
+
+tilelang_ops.batch_downsample_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only vision/CP metadata contr |
+| torch | candidate Device-only vision/CP metadata contr |
+
+路由变量：（auto）
+
+## tilelang_ops.prepare_cp_mirror_tl
+
+tilelang_ops.prepare_cp_mirror_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only vision/CP metadata contr |
+| torch | candidate Device-only vision/CP metadata contr |
+
+路由变量：（auto）
+
+## tilelang_ops.replace_input_embeds_tl
+
+tilelang_ops.replace_input_embeds_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only vision/CP metadata contr |
+| torch | candidate Device-only vision/CP metadata contr |
+
+路由变量：（auto）
+
+## tilelang_ops.rgb_pad_to_patches_tl
+
+tilelang_ops.rgb_pad_to_patches_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only vision/CP metadata contr |
+| torch | candidate Device-only vision/CP metadata contr |
+
+路由变量：（auto）
+
+## tilelang_ops.yoco_cp_boundary_fused_tl
+
+tilelang_ops.yoco_cp_boundary_fused_tl
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Device-only vision/CP metadata contr |
+| torch | candidate Device-only vision/CP metadata contr |
+
+路由变量：（auto）
+
+## runtime.device_visibility
+
+runtime.device_visibility
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| ordinal_mask | candidate Before GPU initialization, align HIP |
+
+路由变量：（auto）
+
+## worker.driver_exposure
+
+worker.driver_exposure
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| rccl_engram | candidate RCCL Engram has no NVIDIA peer-memor |
+
+路由变量：（auto）
+
+## platform.device_inventory
+
+platform.device_inventory
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| drm | candidate DRM cardinality through GPU discover |
+
+路由变量：（auto）
+
+## runtime.upstream_defaults
+
+runtime.upstream_defaults
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| compatible | candidate Default GPU Engram storage and non-b |
+
+路由变量：（auto）
+
+## runtime.configuration
+
+runtime.configuration
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| file | candidate Strict JSON/YAML installer options;  |
+
+路由变量：（auto）
+
+## runtime.dump
+
+runtime.dump
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| json | candidate Atomic per-PID report of actual bind |
+
+路由变量：（auto）
+
+## worker.cpu_affinity
+
+worker.cpu_affinity
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| inherited_mask | candidate Worker and SO builder share inherite |
+
+路由变量：（auto）
+
+## worker.bootstrap.context
+
+worker.bootstrap.context
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| inherited | candidate Internal provider context propagated |
+
+路由变量：（auto）
+
+## worker.bootstrap.import_hook
+
+worker.bootstrap.import_hook
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| lazy | candidate No torch import at Python startup; i |
+
+路由变量：（auto）
+
+## worker.runtime
+
+worker.runtime
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| hip_eager | candidate Eager by default; explicit allow_cud |
+
+路由变量：（auto）
+
+## platform.bf16_tflops_limit
+
+platform.bf16_tflops_limit
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| guard | candidate MFU denominator only; BW1101 peak no |
+
+路由变量：（auto）
+
+## vendors.import_surface
+
+vendors.import_surface
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| stub | candidate Missing fused MLA, HC GEMM and visio |
+
+路由变量：（auto）
+
+## tile_kernels.import_surface
+
+tile_kernels.import_surface
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| stub | candidate Pinned production imports; only sepa |
+
+路由变量：（auto）
+
+## deepinfer._C
+
+deepinfer._C
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| hip_staged | candidate Pinned source build; external GCC13  |
+
+路由变量：（auto）
+

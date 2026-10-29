@@ -22,13 +22,18 @@ aiter_ar because CUDA-graph replay corrupts data) > per-op opt-in envs
 (e.g. HCU_AITER_AR=1). An explicit disable always wins.
 """
 
-import os
 import logging
+
+from hcu_adapter import environment as hcu_environment
 
 LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
+    "deep_ep": ("DeepInfer DeepEP compatibility surface", None),
+    "worker.runtime": ("DeepInfer worker lifecycle adaptation", None),
+    "deep_gemm": ("DeepInfer GEMM/MQA/mHC compatibility surface", None),
+    "flash_attn.cute.interface._flash_attn_fwd": ("DeepInfer ViT attention", None),
     "aiter_ar": (
         "AiterCustomAllreduce dispatch (group falls back to NCCL)",
         "HCU_AITER_AR",
@@ -44,7 +49,7 @@ _SEP = str.maketrans(",; ", ",,,")
 
 def disabled_ops():
     """Names disabled via HCU_DISABLE_OPS (frozenset, lowercase)."""
-    raw = os.environ.get("HCU_DISABLE_OPS", "")
+    raw = hcu_environment.resolve("HCU_DISABLE_OPS")[0]
     return frozenset(
         s.strip().lower() for s in raw.translate(_SEP).split(",") if s.strip()
     )
@@ -58,7 +63,10 @@ def op_disabled(name):
 def opt_in(name):
     """True when the op's per-opt-in env is set to 1 (arch auto-rules only)."""
     env = SWITCHES.get(name, (None, None))[1]
-    return bool(env) and os.environ.get(env) == "1"
+    if not env:
+        return False
+    value, source = hcu_environment.resolve(env)
+    return source == "explicit" and value == "1"
 
 
 def guard(fn, name, detail=""):
