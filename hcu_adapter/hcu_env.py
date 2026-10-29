@@ -276,6 +276,15 @@ REGISTRY = {
                  "target 轨迹漂移 + 逐次不确定；二分定位 MTP 独立致病）。"
                  "sglang-das 用 hcu_get_last_loc 同向修复；=0 还原 stock 分发",
     },
+    "HCU_SPEC_H2D_PIN": {
+        "env": "HCU_SPEC_H2D_PIN", "default": "1",
+        "about": "spec-decode prepare_for_decode KV-lens H2D pinned ring："
+                 "torch 对 pageable 内存的 non_blocking 是无效参数仍同步拷贝，"
+                 "且流序排在上一步 forward 之后（WAR 链）= 每个投机步 host "
+                 "干等整条流水线（py-spy 12/12 钉死 eagle_utils 两行 .to）。"
+                 "持久 pinned 8 深环使其成为真异步 DMA enqueue，int 元数据"
+                 "零数值面。文本桥写 eagle_utils seam；=0 关闭安装。",
+    },
     "HCU_MOE_ALIGN_FUSED": {
         "env": "HCU_MOE_ALIGN_FUSED", "default": "2048",
         "about": "moe_align_block_size 小形状融合档：topk lanes<=N 时用"
