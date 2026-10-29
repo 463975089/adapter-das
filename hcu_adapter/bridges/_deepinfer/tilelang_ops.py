@@ -8,8 +8,9 @@ import importlib.util
 from pathlib import Path
 import sys
 
-from . import hcu_env, registry
-from .hcu_config import BACKEND_CATALOG
+from . import hcu_env
+from hcu_adapter import registry
+from hcu_adapter.ops.deepinfer_catalog import BACKEND_CATALOG
 from hcu_adapter.ops import selector
 
 _BACKEND_PACKAGE = "deepinfer.model_executor.layers.tilelang_ops.cuda"

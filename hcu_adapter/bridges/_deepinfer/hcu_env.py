@@ -3,8 +3,8 @@
 import os
 import sys
 
-from hcu_adapter import environment
-from hcu_adapter.ops.kill_switch import disabled_ops
+from hcu_adapter import hcu_env as environment
+from hcu_adapter.kill_switch import disabled_ops
 
 _NAMES = ("HCU_WORKER_CONTEXT", "HCU_DISABLE_OPS", "HCU_ADAPTER_DUMP", "HCU_CONFIG",
           "HCU_PLATFORM_SEMANTICS", "HCU_BF16_TFLOPS",
@@ -52,7 +52,7 @@ def align_device_visibility(physical_device_count):
     device zero. Never expand an explicit HIP allocation or change an already
     initialized runtime's device order.
     """
-    from . import registry
+    from hcu_adapter import registry
 
     cuda_mask = os.getenv('CUDA_VISIBLE_DEVICES')
     hip_mask = os.getenv('HIP_VISIBLE_DEVICES')
@@ -91,7 +91,7 @@ def align_device_visibility(physical_device_count):
 
 def apply_upstream_defaults(allow_cuda_graph):
     """Compatible defaults only; explicit upstream choices remain authoritative."""
-    from . import registry
+    from hcu_adapter import registry
 
     defaults = {'DEEPINFER_BATCH_INVARIANT': '0', 'DEEPINFER_ENGRAM_FORCE_GPU_STORAGE': '1'}
     if not allow_cuda_graph:

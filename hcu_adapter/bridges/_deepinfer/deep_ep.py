@@ -1,6 +1,7 @@
 """Explicitly bridge the installed HCU DeepEP without replacing its package."""
 
-from . import hcu_env, registry
+from . import hcu_env
+from hcu_adapter import registry
 
 
 def _missing(name):

@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from hcu_adapter.ops import config, registry, selector
+from hcu_adapter import hcu_config as config, registry
+from hcu_adapter.ops import selector
 
 
 def load():

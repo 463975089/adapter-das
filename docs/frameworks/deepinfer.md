@@ -62,7 +62,7 @@ python3 tools/build_deepinfer_extension.py --upstream "$OFFICIAL" \
   --workdir "$BUILD_DIR" --output "$NATIVE_ARTIFACTS" --toolchain "$TOOLCHAIN_ROOT"
 ```
 
-`TOOLCHAIN_ROOT` 需要包含 `usr/bin/gcc-13`、`usr/bin/g++-13` 和对应运行库；还需当前 DTK/PyTorch 的编译依赖。工具在隔离 staging 中构建固定上游 `_C`，不修改上游工作树。`HCU_ADAPTER_DUMP` 支持 `1` 输出 stdout 或带 `{pid}` 的文件路径。无 `{pid}` 的 DeepInfer 路径自动添加 PID。初始 dump 是 adapter 安装时快照；plugin 安装后需再读取 `hcu_adapter.ops.registry.dump()` 或 plugin 报告中的覆盖记录。
+`TOOLCHAIN_ROOT` 需要包含 `usr/bin/gcc-13`、`usr/bin/g++-13` 和对应运行库；还需当前 DTK/PyTorch 的编译依赖。工具在隔离 staging 中构建固定上游 `_C`，不修改上游工作树。`HCU_ADAPTER_DUMP` 支持 `1` 输出 stdout 或带 `{pid}` 的文件路径。无 `{pid}` 的 DeepInfer 路径自动添加 PID。初始 dump 是 adapter 安装时快照；plugin 安装后需再读取 `hcu_adapter.registry.dump()` 或 plugin 报告中的覆盖记录。
 
 `HCU_DISABLE_OPS` 支持具体算子或 `deep_gemm`、`deep_ep`、`worker.runtime` 前缀组；DeepInfer 必需路径被禁用时会拒绝安装，不会静默换成语义不明的实现。
 

@@ -7,8 +7,9 @@ from pathlib import Path
 import sys
 import tempfile
 
-from . import hcu_env, registry
-from .hcu_config import BACKEND_CATALOG
+from . import hcu_env
+from hcu_adapter import registry
+from hcu_adapter.ops.deepinfer_catalog import BACKEND_CATALOG
 
 
 def snapshot(install_options=None):

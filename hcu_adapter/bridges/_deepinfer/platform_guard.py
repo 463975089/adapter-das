@@ -6,7 +6,8 @@ no verified peak in this repo, so the default is "uncalibrated" (infinite peak,
 MFU reported as 0) unless HCU_BF16_TFLOPS supplies the device spec value.
 """
 
-from . import hcu_env, registry
+from . import hcu_env
+from hcu_adapter import registry
 
 
 def install_inventory(physical_device_count):

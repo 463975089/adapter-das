@@ -3,7 +3,8 @@
 import sys
 import types
 
-from . import hcu_env, registry
+from . import hcu_env
+from hcu_adapter import registry
 
 
 def install():

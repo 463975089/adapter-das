@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-from . import registry
+from hcu_adapter import registry
 
 
 def install(artifacts):

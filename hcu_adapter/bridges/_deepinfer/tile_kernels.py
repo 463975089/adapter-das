@@ -7,7 +7,8 @@ operators raise at call time, naming the actual unresolved production symbol.
 import sys
 import types
 
-from . import hcu_env, registry
+from . import hcu_env
+from hcu_adapter import registry
 
 _MODULES = {
     "": ("set_num_sms", "get_num_sms", "set_pdl", "use_deterministic_algorithms", "set_token_alignment"),
