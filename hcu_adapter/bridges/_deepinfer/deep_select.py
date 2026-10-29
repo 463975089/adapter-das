@@ -9,7 +9,7 @@ from . import hcu_env, registry
 def install():
     from hcu_adapter.kernels.deepselect_emu import topk
     if hcu_env.lightop_ops_enabled():
-        from hcu_adapter.kernels.lightop_ops import topk
+        from hcu_adapter.kernels.deepselect_lightop import topk
 
     if "deep_select" in sys.modules:
         if getattr(sys.modules.get("deep_select.interface"), "topk", None) is topk:

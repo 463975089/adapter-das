@@ -30,7 +30,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                 'limitations': 'Pinned GPU top-k, native stable sort; no e2e/throughput '
                                                'qualification'},
                       'lightop': {'status': 'candidate',
-                                  'implementation': 'hcu_adapter.kernels.lightop_ops.topk',
+                                  'implementation': 'hcu_adapter.kernels.deepselect_lightop.topk',
                                   'limitations': 'Explicit LightOp b2f8c9d; preserve residual/clamp/FP32 '
                                                  'intermediate and SF ABI; quant native only rounded '
                                                  'block32/128 FP8, other formats counted as compatibility; '
@@ -411,7 +411,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                  'gemm/routed SF); no Mega MoE shared-SF layout; correctness '
                                                  'tier'},
                         'lightop': {'status': 'candidate',
-                                    'implementation': 'hcu_adapter.kernels.lightop_ops.mega_mhc',
+                                    'implementation': 'hcu_adapter.kernels.mhc_lightop.mega_mhc',
                                     'limitations': 'Explicit LightOp b2f8c9d; preserve residual/clamp/FP32 '
                                                    'intermediate and SF ABI; quant native only rounded '
                                                    'block32/128 FP8, other formats counted as compatibility; '
@@ -445,7 +445,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                            'BF16, tail zeroed); FP8/FP4 with per-row MX '
                                                            'scales; KV-chunked torch; correctness tier'},
                                   'lightop': {'status': 'candidate',
-                                              'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_mqa_logits',
+                                              'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_mqa_logits',
                                               'limitations': 'D128 H8/16/32 MXFP4 uses packed LightOp '
                                                              'sparse/paged math; unpaged sparse K is '
                                                              'byte-repaged for unaligned request starts, not '
@@ -461,7 +461,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                   'per vendor test contract; metadata is an '
                                                                   'HCU-private dict; correctness tier'},
                                          'lightop': {'status': 'candidate',
-                                                     'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_sparse_mqa_logits',
+                                                     'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_sparse_mqa_logits',
                                                      'limitations': 'D128 H8/16/32 MXFP4 uses packed LightOp '
                                                                     'sparse/paged math; unpaged sparse K is '
                                                                     'byte-repaged for unaligned request '
@@ -485,7 +485,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                  'per vendor test contract; metadata is an '
                                                                  'HCU-private dict; correctness tier'},
                                         'lightop': {'status': 'candidate',
-                                                    'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_paged_mqa_logits',
+                                                    'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_paged_mqa_logits',
                                                     'limitations': 'D128 H8/16/32 MXFP4 uses packed LightOp '
                                                                    'sparse/paged math; unpaged sparse K is '
                                                                    'byte-repaged for unaligned request '
@@ -509,7 +509,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                         'metadata is an HCU-private dict; '
                                                                         'correctness tier'},
                                                'lightop': {'status': 'candidate',
-                                                           'implementation': 'hcu_adapter.kernels.lightop_mqa.fp8_fp4_paged_sparse_mqa_logits',
+                                                           'implementation': 'hcu_adapter.kernels.mqa_logits_lightop.fp8_fp4_paged_sparse_mqa_logits',
                                                            'limitations': 'D128 H8/16/32 MXFP4 uses packed '
                                                                           'LightOp sparse/paged math; '
                                                                           'unpaged sparse K is byte-repaged '

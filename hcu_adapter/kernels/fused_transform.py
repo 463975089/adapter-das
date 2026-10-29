@@ -4,7 +4,7 @@ Stage semantics follow tilelang_ops/cuda/fused_transform.py @774ce24: each
 stage rounds to BF16; the norm stage reuses the norm_tl provider so the fused
 and unfused paths share one reduction order; RoPE is FP32
 fma(x0, cos, -(x1 * sin)); the cast quantizes the BF16 stage output with
-hcu_adapter.kernels.quant (UE8M0 multiplier in BF16, E4M3-scale path in FP32). No
+hcu_adapter.kernels.quant_emu (UE8M0 multiplier in BF16, E4M3-scale path in FP32). No
 deepinfer imports.
 """
 
@@ -14,7 +14,7 @@ from .quant_emu import dequantize_groups, quantize_groups
 
 
 def _norm(x, weight, eps, backend):
-    from .elementwise import norm
+    from .norm import norm
 
     out = torch.empty(x.shape, dtype=x.dtype, device=x.device)
     # Unused operands get real tensors as placeholders; the kernel never reads them.

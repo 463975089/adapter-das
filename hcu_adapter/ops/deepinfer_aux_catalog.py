@@ -102,7 +102,7 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                           'regression passed (2026-10-28); '
                                                                           'pinned layouts only'},
                                                 'torch': {'status': 'candidate',
-                                                          'implementation': 'hcu_adapter.kernels.zos_metadata.prepare_v4_decode_metadata',
+                                                          'implementation': 'hcu_adapter.kernels.zos_metadata_emu.prepare_v4_decode_metadata',
                                                           'limitations': 'Device-only torch reference for '
                                                                          'decode/ZOS metadata'}},
  'tilelang_ops.copy_block_tables_tl': {'triton': {'status': 'candidate',
@@ -112,7 +112,7 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                  'and V4.1 CP8EP8/DP8EP8 DSpark regression '
                                                                  'passed (2026-10-28); pinned layouts only'},
                                        'torch': {'status': 'candidate',
-                                                 'implementation': 'hcu_adapter.kernels.zos_metadata.copy_block_tables',
+                                                 'implementation': 'hcu_adapter.kernels.zos_metadata_emu.copy_block_tables',
                                                  'limitations': 'Device-only torch reference for decode/ZOS '
                                                                 'metadata'}},
  'tilelang_ops.gather_input_ids_zos_tl': {'triton': {'status': 'candidate',
@@ -123,7 +123,7 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                     'regression passed (2026-10-28); pinned '
                                                                     'layouts only'},
                                           'torch': {'status': 'candidate',
-                                                    'implementation': 'hcu_adapter.kernels.zos_metadata.gather_input_ids',
+                                                    'implementation': 'hcu_adapter.kernels.zos_metadata_emu.gather_input_ids',
                                                     'limitations': 'Device-only torch reference for '
                                                                    'decode/ZOS metadata'}},
  'tilelang_ops.gather_engram_tokens_zos_tl': {'triton': {'status': 'candidate',
@@ -134,7 +134,7 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                         'DSpark regression passed '
                                                                         '(2026-10-28); pinned layouts only'},
                                               'torch': {'status': 'candidate',
-                                                        'implementation': 'hcu_adapter.kernels.zos_metadata.gather_engram_tokens',
+                                                        'implementation': 'hcu_adapter.kernels.zos_metadata_emu.gather_engram_tokens',
                                                         'limitations': 'Device-only torch reference for '
                                                                        'decode/ZOS metadata'}},
  'tilelang_ops.compute_seqlens_k_zos_tl': {'triton': {'status': 'candidate',
@@ -145,7 +145,7 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                      'regression passed (2026-10-28); pinned '
                                                                      'layouts only'},
                                            'torch': {'status': 'candidate',
-                                                     'implementation': 'hcu_adapter.kernels.zos_metadata.compute_seqlens_k',
+                                                     'implementation': 'hcu_adapter.kernels.zos_metadata_emu.compute_seqlens_k',
                                                      'limitations': 'Device-only torch reference for '
                                                                     'decode/ZOS metadata'}},
  'tilelang_ops.prepare_verification_metadata_tl': {'triton': {'status': 'candidate',
@@ -389,13 +389,13 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                'passed; full vision/CP model qualification '
                                                                'pending'}},
  'tilelang_ops.prepare_cp_mirror_tl': {'triton': {'status': 'candidate',
-                                                  'implementation': 'hcu_adapter.kernels.context_parallel.prepare_mirror',
+                                                  'implementation': 'hcu_adapter.kernels.context_parallel_rccl.prepare_mirror',
                                                   'limitations': 'Device-only vision/CP metadata contract; '
                                                                  'upstream refs and changed-input graph '
                                                                  'passed; full vision/CP model qualification '
                                                                  'pending'},
                                        'torch': {'status': 'candidate',
-                                                 'implementation': 'hcu_adapter.kernels.context_parallel.prepare_mirror',
+                                                 'implementation': 'hcu_adapter.kernels.context_parallel_rccl.prepare_mirror',
                                                  'limitations': 'Device-only vision/CP metadata contract; '
                                                                 'upstream refs and changed-input graph '
                                                                 'passed; full vision/CP model qualification '
@@ -425,14 +425,14 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                  'passed; full vision/CP model qualification '
                                                                  'pending'}},
  'tilelang_ops.yoco_cp_boundary_fused_tl': {'triton': {'status': 'candidate',
-                                                       'implementation': 'hcu_adapter.kernels.context_parallel.yoco_boundary',
+                                                       'implementation': 'hcu_adapter.kernels.context_parallel_rccl.yoco_boundary',
                                                        'limitations': 'Device-only vision/CP metadata '
                                                                       'contract; upstream refs and '
                                                                       'changed-input graph passed; full '
                                                                       'vision/CP model qualification '
                                                                       'pending'},
                                             'torch': {'status': 'candidate',
-                                                      'implementation': 'hcu_adapter.kernels.context_parallel.yoco_boundary',
+                                                      'implementation': 'hcu_adapter.kernels.context_parallel_rccl.yoco_boundary',
                                                       'limitations': 'Device-only vision/CP metadata '
                                                                      'contract; upstream refs and '
                                                                      'changed-input graph passed; full '

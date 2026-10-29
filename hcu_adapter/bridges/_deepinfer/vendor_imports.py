@@ -141,9 +141,9 @@ def install(grouped_gemm_backend="torch"):
         if (hcu_env.lightop_ops_enabled() and name in (
                 'fp8_fp4_mqa_logits', 'fp8_fp4_sparse_mqa_logits',
                 'fp8_fp4_paged_mqa_logits', 'fp8_fp4_paged_sparse_mqa_logits')):
-            from hcu_adapter.kernels import lightop_mqa
+            from hcu_adapter.kernels import mqa_logits_lightop
 
-            provider = getattr(lightop_mqa, name)
+            provider = getattr(mqa_logits_lightop, name)
         current = getattr(deep_gemm, name, None)
         if current is not None and current is not provider:
             raise RuntimeError("An existing DeepGEMM MQA logits provider is already installed: " + name)

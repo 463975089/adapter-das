@@ -1,19 +1,8 @@
-"""Dense GEMM backend selection and legacy exports; implementations carry tier suffixes."""
+"""Dense GEMM backend selection; implementations carry tier suffixes."""
 
 import torch
 
 from . import gemm_emu
-from .gemm_emu import (
-    ue8m0_to_float,
-    unpack_ue8m0_sf,
-    _float_scales,
-    dequantize_fp8,
-    _recipes,
-    fp8_fp4_gemm_nt,
-    fp8_einsum,
-    dequantize_mxfp4,
-)
-from .grouped_gemm_emu import m_grouped_fp8_fp4_gemm_nt_contiguous
 
 
 def cublaslt_gemm_nt(a, b, d, c=None):
