@@ -341,7 +341,19 @@ def test_adapter_version_comes_from_the_shipping_distribution(monkeypatch):
 def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
     monkeypatch,
 ):
+    validation_calls = []
+
+    class HcuFlashAttentionBackend:
+        @classmethod
+        def validate_configuration(cls, **kwargs):
+            validation_calls.append(kwargs)
+            return []
+
     class RocmPlatform:
+        @classmethod
+        def get_device_capability(cls):
+            return "gfx936-capability"
+
         @classmethod
         def get_attn_backend_cls(
             cls, selected_backend, attn_selector_config, num_heads=None
@@ -377,9 +389,20 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
         monkeypatch.setitem(sys.modules, name, module)
     monkeypatch.delitem(sys.modules, "hcu_vllm_das", raising=False)
     monkeypatch.delitem(bridge.__dict__, "HcuPlatform", raising=False)
+    real_import_module = bridge.import_module
+    monkeypatch.setattr(
+        bridge,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(HcuFlashAttentionBackend=HcuFlashAttentionBackend)
+            if name == "hcu_vllm_das.attention.flash_attn"
+            else real_import_module(name)
+        ),
+    )
 
     platform = bridge.HcuPlatform
-    selector = object()
+    selector_values = {"dtype": "bf16", "block_size": 64, "use_dcp": False}
+    selector = SimpleNamespace(_asdict=lambda: selector_values)
 
     assert platform.device_name == "hcu"
     assert platform.get_attn_backend_cls(None, selector, 32) == (
@@ -395,7 +418,58 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
     assert platform.get_attn_backend_cls("FLASH_ATTN", selector, 8) == (
         "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
     )
+    assert validation_calls == [
+        {"device_capability": "gfx936-capability", **selector_values}
+    ]
     assert "hcu_vllm_das" not in sys.modules
+
+
+def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
+    class HcuFlashAttentionBackend:
+        @classmethod
+        def validate_configuration(cls, **kwargs):
+            return ["DCP not supported", "block_size not supported"]
+
+    class RocmPlatform:
+        @classmethod
+        def get_device_capability(cls):
+            return "gfx936-capability"
+
+    fake_vllm = ModuleType("vllm")
+    fake_vllm.__path__ = []
+    platforms = ModuleType("vllm.platforms")
+    platforms.__path__ = []
+    rocm = ModuleType("vllm.platforms.rocm")
+    rocm.RocmPlatform = RocmPlatform
+    registry = ModuleType("vllm.v1.attention.backends.registry")
+    registry.AttentionBackendEnum = SimpleNamespace(
+        FLASH_ATTN="FLASH_ATTN",
+        TRITON_ATTN="TRITON_ATTN",
+    )
+    for name, module in {
+        "vllm": fake_vllm,
+        "vllm.platforms": platforms,
+        "vllm.platforms.rocm": rocm,
+        "vllm.v1.attention.backends.registry": registry,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.delitem(bridge.__dict__, "HcuPlatform", raising=False)
+    real_import_module = bridge.import_module
+    monkeypatch.setattr(
+        bridge,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(HcuFlashAttentionBackend=HcuFlashAttentionBackend)
+            if name == "hcu_vllm_das.attention.flash_attn"
+            else real_import_module(name)
+        ),
+    )
+
+    with pytest.raises(ValueError, match="DCP not supported"):
+        bridge.HcuPlatform.get_attn_backend_cls(
+            "FLASH_ATTN",
+            SimpleNamespace(_asdict=lambda: {"block_size": 128, "use_dcp": True}),
+        )
 
 
 def test_import_and_install_do_not_eagerly_import_vllm():
