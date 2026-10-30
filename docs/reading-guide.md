@@ -19,6 +19,7 @@
 | **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
 | 改 CI / 加门禁 | docs/ci.md → ci/l0_gate.py（治理三规则在此实现） |
+| 判断一项工作归哪仓 / 开发插件新能力 | docs/governance.md §0 判别 → 本文「姊妹仓地图」→ hcu-sglang-plugin docs/ |
 
 ## 算子目录入口
 
@@ -50,6 +51,36 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | docs/vendor-kernels.md | DTK vendor 算子库 API 梳理（aiter/lightop/boltops/flash_mla/flash_attn/deepgemm/kda/tokenspeed，实机内省+热点映射机会表） | wheel 换代后 API 面/版本后缀失效 |
 | skills/hcu-adapter-dev/SKILL.md | 开发规约入口 + 任务路由（references/ 下五份专篇） | 黄金法则与代码内守卫不符 |
 | tests/tools/README.md | 物料命名语法（_test_/_probe_/_launch_/_dbg_） | 新物料未按前缀归位 |
+| hcu-sglang-plugin 仓 docs/ | 插件方法侧导航与契约（见下节姊妹仓地图） | 与本文同名文档分工表冲突 |
+
+## 姊妹仓地图（hcu-sglang-plugin）
+
+插件仓在独立 git 仓维护，机制层与插件层的文档各自成套。三条分工铁律：
+
+- **真相源分工**：机制层事实（加载时序、影子库、平台语义、算子档位与
+  目录、env 键、后端选择）以本仓为准；插件策略层与开发流程（Hook 注册
+  契约、`original_fn` 语义、插件工程/迁移台账、组合验证矩阵）以 plugin
+  仓为准。同名文档回答同一件事的两个侧面，不互为备份。
+- **判据单源**：一项工作归哪仓，以 governance §0 判别问句为准；
+  `hcu-sglang-plugin/docs/governance.md` §1 与本仓 `docs/plugins.md` §0
+  是它的两个应用视角，三处任一改动同笔同步（governance §7 前言有同款
+  铁律）。组合兼容契约在 plugin 仓 governance §2-§4。
+- **跨仓引用写"仓坐标"**（仓 + 文档路径 + 节号），不放跨仓相对链接。
+
+同名文档分工对照（6 对）：
+
+| 文档 | adapter-das（本仓） | hcu-sglang-plugin |
+|---|---|---|
+| architecture.md | 机制分层：影子库 / is_cuda 语义 / 三档路由 / 桥结构 | 插件架构 + 未来运行时目录规划 |
+| governance.md | 治理宪法：双仓判别（真相源）、裁决链、§7 共建 | 组合兼容契约：目标所有权、验证矩阵 |
+| bootstrap.md | **宿主**新容器部署手册（依赖钉 / tvm-ffi 预热 / 自检） | 方法库开发环境准备 |
+| ci.md | L0/L1/L2 宿主门禁体系 | 方法仓 CI 阶段约束 |
+| plugins.md | 需求登记表 P1-P10：**哪些项必须走 plugin** | 能力开发指南：**拿到项之后怎么做** |
+| reading-guide.md | 机制侧导航（本页） | 插件方法侧导航 |
+
+"改哪仓"速断：行为还原 / 内核实现 / 函数换绑 / 配置与环境键 → 本仓；
+新增能力 / srt 层注册与调度结构 → plugin 仓；拿不准先过 governance §0
+判别问句，再到本仓 plugins.md §0 与 plugin 仓 governance §1 复核。
 
 ## 不变量（写在多处，改代码前背一遍）
 
