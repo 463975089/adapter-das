@@ -24,6 +24,9 @@ SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx936", "gfx938"})
 HYGON_PCI_VENDOR_ID = "0x1d94"
 _PCI_DEVICES_ROOT = Path("/sys/bus/pci/devices")
 _PLATFORM_CLASS = "hcu_adapter.bridges.vllm.HcuPlatform"
+_FLASH_ATTN_BACKEND_CLASS = (
+    "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
+)
 _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
 
@@ -279,12 +282,14 @@ def _hcu_platform_class() -> type:
             attn_selector_config,
             num_heads=None,
         ) -> str:
-            if selected_backend is None:
-                from vllm.v1.attention.backends.registry import (
-                    AttentionBackendEnum,
-                )
+            from vllm.v1.attention.backends.registry import (
+                AttentionBackendEnum,
+            )
 
+            if selected_backend is None:
                 selected_backend = AttentionBackendEnum.TRITON_ATTN
+            if selected_backend == AttentionBackendEnum.FLASH_ATTN:
+                return _FLASH_ATTN_BACKEND_CLASS
             return super().get_attn_backend_cls(
                 selected_backend,
                 attn_selector_config,

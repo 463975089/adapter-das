@@ -338,7 +338,7 @@ def test_adapter_version_comes_from_the_shipping_distribution(monkeypatch):
     assert calls == ["sgl-kernel"]
 
 
-def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(
+def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
     monkeypatch,
 ):
     class RocmPlatform:
@@ -361,7 +361,10 @@ def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(
     backends = ModuleType("vllm.v1.attention.backends")
     backends.__path__ = []
     registry = ModuleType("vllm.v1.attention.backends.registry")
-    registry.AttentionBackendEnum = SimpleNamespace(TRITON_ATTN="TRITON_ATTN")
+    registry.AttentionBackendEnum = SimpleNamespace(
+        FLASH_ATTN="FLASH_ATTN",
+        TRITON_ATTN="TRITON_ATTN",
+    )
     for name, module in {
         "vllm": fake_vllm,
         "vllm.platforms": platforms,
@@ -372,6 +375,7 @@ def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(
         "vllm.v1.attention.backends.registry": registry,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.delitem(sys.modules, "hcu_vllm_das", raising=False)
     monkeypatch.delitem(bridge.__dict__, "HcuPlatform", raising=False)
 
     platform = bridge.HcuPlatform
@@ -388,6 +392,10 @@ def test_hcu_platform_delegates_to_official_rocm_and_defaults_to_triton(
         selector,
         16,
     )
+    assert platform.get_attn_backend_cls("FLASH_ATTN", selector, 8) == (
+        "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
+    )
+    assert "hcu_vllm_das" not in sys.modules
 
 
 def test_import_and_install_do_not_eagerly_import_vllm():
