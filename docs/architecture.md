@@ -1,12 +1,13 @@
 # 架构总览：影子库替换的协调关系
 
 > 本文是架构一页图的文字版（图源：仓库根 [architecture.html](../architecture.html)），
-> 讲清 sglang / plugin / adapter / lightop / aiter / mooncake / deepep / deepgemm
-> 之间的关系。环境变量见 [env-vars.md](env-vars.md)，实测模型记录见 [models.md](models.md)。
+> 讲清 sglang / vLLM / plugin / adapter / lightop / aiter / mooncake / deepep /
+> deepgemm 之间的关系。环境变量见 [env-vars.md](env-vars.md)，实测模型记录见 [models.md](models.md)。
 
 ## 1. 定位与核心机制
 
-让社区版 sglang 官方代码的 **python 部分零修改**、直接跑在海光 HCU（DCU/DTK，HIP 路径）上。
+让宿主框架（**sglang / vLLM**）官方代码的 **python 部分零修改**、直接跑在
+海光 HCU（DCU/DTK，HIP 路径）上。
 
 **平台语义路线（2026-10-12 定）**：上游的平台判定由 adapter 统一回答
 **CUDA 语义**——新模型/新功能在上游总是先落在 `_is_cuda` 分支（NVIDIA 生态
@@ -14,10 +15,10 @@
 **不走 is_hip 分支路线**（个别翻转后会静默改数值语义的判定——如 fp8 fnuz——
 由平台层白名单锁定 HIP 语义，见 governance.md §0.5）。
 
-核心机制是**影子库替换**：对 sglang 直接引用的算子库（`sgl_kernel`、`aiter`、
-`flashinfer`、`flash_attn`、vllm `_custom_ops` 等）不做调用点改造，而是由本仓库
-提供同名/同 ABI 的影子实现并自动接管 import，官方代码拉下来就能跑。
-**影子库走路由路线**：守住 CUDA 语义的调用面，HCU 没有的 NVIDIA 库符号按
+核心机制是**影子库替换**：对宿主直接引用的算子库（sglang 的 `sgl_kernel`、
+`aiter`、`flashinfer`、`flash_attn`，vLLM 的 `_custom_ops` 等）不做调用点
+改造，而是由本仓库提供同名/同 ABI 的影子实现并自动接管 import，官方代码
+拉下来就能跑。**影子库走路由路线**：守住 CUDA 语义的调用面，HCU 没有的 NVIDIA 库符号按
 **四级路由**找归宿——① lightop（vendor 首选，DTK 官方维护）→ ② aiter
 （vendor 次选）→ ③ **triton 自研先行**（保证新模型先跑通）→ ④ 响亮 stub
 （import 成功、调用报错带指引）。
@@ -66,9 +67,9 @@ sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端�
 
 | # | 优势 | 说明 |
 |---|---|---|
-| ① | 非侵入式维护 · 新模型急速适配 | 影子库与官方 sglang 版本更新**解耦**：升级只对齐算子接口；新模型补齐缺失算子即可急速拉起 |
+| ① | 非侵入式维护 · 新模型急速适配 | 适配面与宿主官方版本更新**解耦**（sglang 行影子库对齐算子接口；vLLM 行版本门＋ABI 桥）：升级只对齐接口面；新模型补齐缺失算子即可急速拉起 |
 | ② | 开箱性能 | 官方代码拉起即走 triton / vendor 优选内核，零改造获得可用性能；热点算子持续优化，默认路径越跑越快 |
-| ③ | 质量把控集中 | 质量面收敛在 adapter 一层：CI/UT 只测 adapter（契约对拍 + CUDA-graph 回归 + 快关门禁）；**adapter 全绿 ⇒ 官方 sglang 可用** |
+| ③ | 质量把控集中 | 质量面收敛在 adapter 一层：CI/UT 只测 adapter（契约对拍 + CUDA-graph 回归 + 快关门禁）；**adapter 全绿 ⇒ 官方宿主可用** |
 
 ## 3. 软件分层
 
@@ -76,7 +77,7 @@ sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端�
 
 | 层 | 内容 | 备注 |
 |---|---|---|
-| 应用层 | **sglang 官方代码**（python 零修改）＋ **plugin**（独立仓 hcu-sglang-plugin） | plugin：算子融合 / 调度逻辑优化 / 自研 channel-wise 量化 scheme 等差异化能力 |
+| 应用层 | **宿主官方代码**（sglang / vLLM，各自 python 零修改）＋ **plugin**（sglang 侧独立仓 `hcu-sglang-plugin`；vLLM 侧共建边界见 governance §7.2） | plugin：算子融合 / 调度逻辑优化 / 自研 channel-wise 量化 scheme 等差异化能力，按宿主各一 plugin |
 | 适配层 | **adapter 影子库替换层**（本仓库）：`sitecustomize.py` 薄入口 ＋ `hcu_adapter` 包（宿主分发 / bridges 宿主桥 / 机制层与域桥 / vendor 桩）＋ `sgl_kernel` 同名影子包 | 三档实现路由；配合 skill（`hcu-adapter-dev`）快速排查定位精度问题 |
 | 算子库层 | triton（自研首档）· lightop · aiter · flash_mla / flash_attn · deepgemm（待适配）· mooncake / deepep（待适配） | 见 §4 逐项说明 |
 | 运行时层 | **PyTorch（HIP 版）** | 张量计算 · 显存管理 · kernel launch；三档中的 torch 兜底也在这层 |
@@ -236,8 +237,8 @@ adapter-das/
 
 多人协作下容易被局部最优侵蚀的四条不变量，评审时对照：
 
-1. **sglang python 零修改**——一切适配经 import 面进入：影子包 / 元路径桩 /
-   `hcu_adapter` 宿主桥。出现"顺手改一下上游文件"的冲动时，答案永远是先找
+1. **宿主 python 零修改**（sglang 与 vLLM 同律）——一切适配经 import 面进入：
+   影子包 / 元路径桩 / `hcu_adapter` 宿主桥。出现"顺手改一下上游文件"的冲动时，答案永远是先找
    上游 seam，再按治理边界加桥。
 2. **三档路由**（triton 首档 → vendor 封装 → torch 兜底）——正确性优先，
    性能在档内演进；任何 op 至少有 torch 兜底保证 import 永不失败。
@@ -245,7 +246,7 @@ adapter-das/
    `BACKEND_CATALOG` 四状态（production/validated/candidate/planned）是后端
    成熟度的唯一事实源，L0 交叉一致门禁锁死 REGISTRY↔docs↔catalog↔yaml。
 4. **质量收敛在 adapter 层**——CI/UT 只测本仓（契约对拍 + graph 回归 +
-   快关门禁）；"adapter 全绿 ⇒ 官方 sglang 可用"，不背上游的测试债。
+   快关门禁）；"adapter 全绿 ⇒ 官方宿主可用"，不背上游的测试债。
 
 > 推广协作前请先读 [governance.md](governance.md)：双仓边界（adapter=行为
 > 还原，plugin 仓=新能力/性能优化）、实现层授权边界、active/ref 角色模型、

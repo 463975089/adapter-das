@@ -5,6 +5,10 @@
 容器里（CI 用自己的容器，不影响他人），不能被 CI 无脑抢占。因此分三层，
 层间用不同触发面：
 
+> **宿主定位**：L0 结构门禁零依赖、宿主中立，双宿主共用；L1 / L1.5 的上游
+> 单测与 e2e 当前挂在 sglang 宿主树（`--up-tree` 指 sglang 源码树）。vLLM
+> 宿主的版本门与验证路径见 [frameworks/vllm032.md](frameworks/vllm032.md) §6。
+
 | 层 | 内容 | 环境 | 耗时 | 触发 |
 |---|---|---|---|---|
 | **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性、治理三规则（`glue-numerics`=sitecustomize 无 triton 数学 / `text-patch`=源码补丁必在 TEXT_PATCH_ALLOWLIST / `registry-ops`=register 的 op 必须 catalog）；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（托管平台 CI 云端） |

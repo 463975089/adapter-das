@@ -2,6 +2,13 @@
 
 > 目标：任何会话（人或 AI 助手）接手本仓工作时，按本页顺序读 5 份文件
 > 就能不迷糊地干活。每份文档的一句话定位 + 何时必读。
+>
+> **宿主纪律**：本仓同时服务 **sglang 与 vLLM 两个宿主**（`HCU_ADAPTER_HOST`
+> 分发）。公共机制、公共不变量一律用"宿主"指称（= sglang 或 vLLM）；
+> 只在某宿主成立的内容必须显式特指（如 `bridges/sglang.py`、影子包
+> `sgl_kernel/` 属 sglang 进程，`bridges/vllm.py`、HcuPlatform 属 vLLM
+> 进程）。改文档时先问一句：这段在另一个宿主上成立吗？成立→写宿主；
+> 不成立→写明哪个宿主、差异是什么。
 
 ## 按任务找文档（30 秒路由）
 
@@ -84,11 +91,14 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 
 ## 不变量（写在多处，改代码前背一遍）
 
-1. **sglang python 零修改**——一切经 import 面进入（影子包/元路径桩/sitecustomize）。
+1. **宿主 python 零修改**（sglang 与 vLLM 同律）——一切经 import 面进入
+   （影子包/元路径桩/sitecustomize）。
 1b. **平台语义走 is_cuda 分支**（不走 is_hip 路线；fnuz 等语义护栏白名单锁定）——
     NVIDIA 库符号按四级路由：lightop → aiter → triton 先行 → 响亮 stub
     （governance §0.5）。
-2. **算子数学只在 `sgl_kernel/`**；桥与编排器只写 glue（L0 `glue-numerics` 强制）。
+2. **算子数学只在内核层**：sglang 侧在影子包 `sgl_kernel/`，vLLM 侧经
+   `bridges/vllm.py` 绑定同批内核；桥与编排器只写 glue
+   （L0 `glue-numerics` 强制）。
 3. **一个 catalog 算子一个 active 实现**；ref 实现只活在离线测试里。
 4. **sitecustomize 不新增实现体**（新桥直接落 `hcu_adapter/<域>.py`）。
 5. **GPU 路径零主机同步**（`.item()`/`nonzero`/布尔掩码）——graph capture 保命。

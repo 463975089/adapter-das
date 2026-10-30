@@ -3,8 +3,8 @@
 > 团队仓库：adapter-das（内网私仓；克隆地址与凭据走团队流程）。
 > 从镜像到跑通的手工部署看 [docs/bootstrap.md](docs/bootstrap.md)。
 
-让社区版 sglang 官方代码的 **python 部分零修改**、直接跑在海光 HCU
-（DCU/DTK，HIP 路径）上的适配层（adapter）。
+让宿主框架（**sglang / vLLM**）官方代码的 **python 部分零修改**、直接跑在
+海光 HCU（DCU/DTK，HIP 路径）上的适配层（adapter）。
 
 **平台语义走 is_cuda 分支**（governance §0.5）：上游平台判定由 adapter
 统一回答 CUDA——新模型/新功能上游先落 CUDA 分支，这是卡商追新的关键路径；
@@ -12,15 +12,16 @@ HCU 没有的 NVIDIA 库（flashinfer/trtllm 等）按**四级路由**找归宿�
 ① lightop → ② aiter → ③ **triton 自研先行**（先跑通，triton 优先保证正确性）
 → ④ 响亮 stub（fp8 fnuz 等语义护栏白名单锁定，见 governance.md §0.5）。
 
-核心机制是**影子库替换**：对 sglang 直接引用的算子库（`sgl_kernel`、
-`aiter`、`flashinfer`、`flash_attn`、vllm `_custom_ops` 等）不做调用点
+核心机制是**影子库替换**：对宿主直接引用的算子库（sglang 的 `sgl_kernel`、
+`aiter`、`flashinfer`、`flash_attn`，vLLM 的 `_custom_ops` 等）不做调用点
 改造，而是由本仓库提供同名/同 ABI 的影子实现并自动接管 import，官方代码
 拉下来就能跑。算子实现不绑定特定后端：**先用 triton 实现保证正确性**，
 **再做手写/vendor 优化**（lightop / aiter / flash_attn / flash_mla，
 triton / vendor / torch 三档策略，见"影子库与适配桥"）。
 
 与 **plugin** 的分工（[docs/governance.md](docs/governance.md) §0）：adapter
-只做**行为还原**——sglang 在 AMD/CUDA 上有的行为，HCU 上补齐到一致（影子库/
+只做**行为还原**——宿主（sglang / vLLM）在其参照平台（AMD ROCm /
+NVIDIA CUDA）上有的行为，HCU 上补齐到一致（影子库/
 算子路由/质量门禁），并在一致约束下持续优化性能（三档档内演进、vendor 竞速）；
 **上游没有的能力**归**独立 plugin 仓**——plugin 的目的同样是**性能优化**
 （算子融合、专项内核、新调度路径等官方代码没有的功能），只是以"新增能力"

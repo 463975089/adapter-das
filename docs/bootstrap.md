@@ -6,6 +6,11 @@
 > （bw7/nmz26/nmz18/bw6 全部现役镜像）。目标耗时：照做 ≤10 分钟。
 > 三类必做事项：**①依赖套件按版本重打 ②tvm-ffi 首次编译手工预热
 > ③adapter tree 整体同步 + PYTHONPATH**。
+>
+> **宿主定位**：本文以 sglang 宿主为主线。依赖按版本重打、tvm-ffi 预热、
+> triton/JIT 缓存自检为**双宿主通用**；§8 拉起服务与上游单测（ci.md L1.5）
+> 是 sglang 宿主专属流程——vLLM 宿主的组件职责与验证见
+> [frameworks/vllm032.md](frameworks/vllm032.md)。
 
 ## 1. adapter tree 同步：git pull 优先
 
