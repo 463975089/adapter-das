@@ -1,5 +1,10 @@
 # CI 分层设计（MR 快速自动测试）
 
+> 本文记录**当前已经落地的门禁与实测账**；精度→功能→性能、运行态路由统计、
+> 统一报告和代码退役的目标方案见 [test-route-governance.md](test-route-governance.md)，
+> 分阶段工程任务见 [test-route-implementation-plan.md](test-route-implementation-plan.md)。
+> 目标方案未落地部分不得在本页当作当前能力宣称。
+
 目标：**别人提 MR → 分钟级自动反馈**。约束：数值/内核测试必须跑在真实 HCU
 （gfx938 + DTK 栈）上，而 托管平台云端 runner 只有 CPU；GPU 在共享节点的
 容器里（CI 用自己的容器，不影响他人），不能被 CI 无脑抢占。因此分三层，

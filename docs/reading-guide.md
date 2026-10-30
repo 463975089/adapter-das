@@ -25,7 +25,9 @@
 | 跑一个模型 | docs/cookbook.md（找配方）→ docs/models.md（看先例与坑）→ cookbook.md §4 平台约束 |
 | **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
-| 改 CI / 加门禁 | docs/ci.md → ci/l0_gate.py（治理三规则在此实现） |
+| 改 CI / 加门禁 | docs/ci.md → docs/test-route-governance.md（目标态：精度→功能→性能→路由→退役）→ ci/l0_gate.py |
+| 设计性能 A/B、路由统计或代码退役 | docs/test-route-governance.md → docs/test-route-implementation-plan.md（MR-00～MR-12）→ docs/autotune.md → docs/governance.md |
+| 按测试治理路线开工 / 查依赖和验收 | docs/test-route-implementation-plan.md → 对应 MR 段的依赖、DoD 与验收命令 |
 | 判断一项工作归哪仓 / 开发插件新能力 | docs/governance.md §0 判别 → 本文「姊妹仓地图」→ hcu-sglang-plugin docs/ |
 
 ## 算子目录入口
@@ -44,7 +46,9 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | README.md | 项目是什么、装怎么装、 empirically 跑通了什么 | 覆盖范围表与 sgl_kernel 实际导出不符 |
 | docs/architecture.md | 分层机制：影子库/is_cuda 语义路由/三档路由/横向机制（配 architecture.html 一页图） | §3 图与 `hcu_adapter/` 目录结构不符 |
 | **docs/governance.md** | **治理宪法**：双仓边界（adapter=行为还原 / plugin 独立仓=性能新能力）、seam→rebind→text-patch 裁决链、active-ref 角色、运行时注册表与 dump、plugin 接入时序 / 双宿主共建 / 维护闭环（§7） | 与 ci/l0_gate.py 三规则或 `hcu_adapter/registry.py` 行为不符 |
-| docs/ci.md | CI 分层：L0 秒级 → L1 GPU ~10min → L2 夜间（含双线三绑定铁律） | GATES 列表与 l1_gpu_gate.sh 不符 |
+| docs/ci.md | CI 当前分层与实测账：L0 → L1/L1.5 GPU → L2 扩展验证（含双线三绑定铁律） | GATES 列表与 l1_gpu_gate.sh 不符 |
+| docs/test-route-governance.md | 测试目标态路线：精度→功能→性能→运行态路由→报告→代码退役 | route schema、分层、生命周期或报告格式与实际落地不符 |
+| docs/test-route-implementation-plan.md | 上述目标态的执行计划：MR 依赖、代码布局、DoD、验收、资源与回滚 | 任务已落地但状态未回写，或实现布局/schema/门槛与计划不符 |
 | docs/config.md | hcu_adapter.yaml 部署配置 + BACKEND_CATALOG 状态语义 | catalog 键集与 hcu_config.py 不符 |
 | docs/frameworks/vllm032.md | vLLM 0.32、Adapter 与可选 Plugin 的职责、部署和组合验证口径 | entry-point 所有权或版本门与代码不符 |
 | docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
