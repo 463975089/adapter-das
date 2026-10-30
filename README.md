@@ -40,7 +40,10 @@ NVIDIA CUDA）上有的行为，HCU 上补齐到一致（影子库/
 [docs/architecture.md](docs/architecture.md)（配图
 [architecture.html](architecture.html)，浏览器直开）；算子治理（实现选位
 裁决链、active/ref 角色、运行时注册表与 dump、接入时序/共建边界/
-维护闭环）见 [docs/governance.md](docs/governance.md)。
+维护闭环）见 [docs/governance.md](docs/governance.md)；测试体系从精度到功能、性能、
+运行态路由统计与代码退役的目标路线见
+[docs/test-route-governance.md](docs/test-route-governance.md)，对应 MR 拆分、DoD 与回滚见
+[docs/test-route-implementation-plan.md](docs/test-route-implementation-plan.md)。
 
 ## 安装
 
