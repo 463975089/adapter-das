@@ -2,6 +2,13 @@
 
 > 目标：任何会话（人或 AI 助手）接手本仓工作时，按本页顺序读 5 份文件
 > 就能不迷糊地干活。每份文档的一句话定位 + 何时必读。
+>
+> **宿主纪律**：本仓同时服务 **sglang 与 vLLM 两个宿主**（`HCU_ADAPTER_HOST`
+> 分发）。公共机制、公共不变量一律用"宿主"指称（= sglang 或 vLLM）；
+> 只在某宿主成立的内容必须显式特指（如 `bridges/sglang.py`、影子包
+> `sgl_kernel/` 属 sglang 进程，`bridges/vllm.py`、HcuPlatform 属 vLLM
+> 进程）。改文档时先问一句：这段在另一个宿主上成立吗？成立→写宿主；
+> 不成立→写明哪个宿主、差异是什么。
 
 ## 按任务找文档（30 秒路由）
 
@@ -19,6 +26,7 @@
 | **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
 | 改 CI / 加门禁 | docs/ci.md → ci/l0_gate.py（治理三规则在此实现） |
+| 判断一项工作归哪仓 / 开发插件新能力 | docs/governance.md §0 判别 → 本文「姊妹仓地图」→ hcu-sglang-plugin docs/ |
 
 ## 算子目录入口
 
@@ -50,14 +58,47 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | docs/vendor-kernels.md | DTK vendor 算子库 API 梳理（aiter/lightop/boltops/flash_mla/flash_attn/deepgemm/kda/tokenspeed，实机内省+热点映射机会表） | wheel 换代后 API 面/版本后缀失效 |
 | skills/hcu-adapter-dev/SKILL.md | 开发规约入口 + 任务路由（references/ 下五份专篇） | 黄金法则与代码内守卫不符 |
 | tests/tools/README.md | 物料命名语法（_test_/_probe_/_launch_/_dbg_） | 新物料未按前缀归位 |
+| hcu-sglang-plugin 仓 docs/ | 插件方法侧导航与契约（见下节姊妹仓地图） | 与本文同名文档分工表冲突 |
+
+## 姊妹仓地图（hcu-sglang-plugin）
+
+插件仓在独立 git 仓维护，机制层与插件层的文档各自成套。三条分工铁律：
+
+- **真相源分工**：机制层事实（加载时序、影子库、平台语义、算子档位与
+  目录、env 键、后端选择）以本仓为准；插件策略层与开发流程（Hook 注册
+  契约、`original_fn` 语义、插件工程/迁移台账、组合验证矩阵）以 plugin
+  仓为准。同名文档回答同一件事的两个侧面，不互为备份。
+- **判据单源**：一项工作归哪仓，以 governance §0 判别问句为准；
+  `hcu-sglang-plugin/docs/governance.md` §1 与本仓 `docs/plugins.md` §0
+  是它的两个应用视角，三处任一改动同笔同步（governance §7 前言有同款
+  铁律）。组合兼容契约在 plugin 仓 governance §2-§4。
+- **跨仓引用写"仓坐标"**（仓 + 文档路径 + 节号），不放跨仓相对链接。
+
+同名文档分工对照（6 对）：
+
+| 文档 | adapter-das（本仓） | hcu-sglang-plugin |
+|---|---|---|
+| architecture.md | 机制分层：影子库 / is_cuda 语义 / 三档路由 / 桥结构 | 插件架构 + 未来运行时目录规划 |
+| governance.md | 治理宪法：双仓判别（真相源）、裁决链、§7 共建 | 组合兼容契约：目标所有权、验证矩阵 |
+| bootstrap.md | **宿主**新容器部署手册（依赖钉 / tvm-ffi 预热 / 自检） | 方法库开发环境准备 |
+| ci.md | L0/L1/L2 宿主门禁体系 | 方法仓 CI 阶段约束 |
+| plugins.md | 需求登记表 P1-P10：**哪些项必须走 plugin** | 能力开发指南：**拿到项之后怎么做** |
+| reading-guide.md | 机制侧导航（本页） | 插件方法侧导航 |
+
+"改哪仓"速断：行为还原 / 内核实现 / 函数换绑 / 配置与环境键 → 本仓；
+新增能力 / srt 层注册与调度结构 → plugin 仓；拿不准先过 governance §0
+判别问句，再到本仓 plugins.md §0 与 plugin 仓 governance §1 复核。
 
 ## 不变量（写在多处，改代码前背一遍）
 
-1. **sglang python 零修改**——一切经 import 面进入（影子包/元路径桩/sitecustomize）。
+1. **宿主 python 零修改**（sglang 与 vLLM 同律）——一切经 import 面进入
+   （影子包/元路径桩/sitecustomize）。
 1b. **平台语义走 is_cuda 分支**（不走 is_hip 路线；fnuz 等语义护栏白名单锁定）——
     NVIDIA 库符号按四级路由：lightop → aiter → triton 先行 → 响亮 stub
     （governance §0.5）。
-2. **算子数学只在 `sgl_kernel/`**；桥与编排器只写 glue（L0 `glue-numerics` 强制）。
+2. **算子数学只在内核层**：sglang 侧在影子包 `sgl_kernel/`，vLLM 侧经
+   `bridges/vllm.py` 绑定同批内核；桥与编排器只写 glue
+   （L0 `glue-numerics` 强制）。
 3. **一个 catalog 算子一个 active 实现**；ref 实现只活在离线测试里。
 4. **sitecustomize 不新增实现体**（新桥直接落 `hcu_adapter/<域>.py`）。
 5. **GPU 路径零主机同步**（`.item()`/`nonzero`/布尔掩码）——graph capture 保命。

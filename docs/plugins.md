@@ -2,8 +2,9 @@
 
 > 本文回答：**哪些已识别的性能与能力项不能（或不该）进 adapter 零侵入层，
 > 各自的归属、现状与验收标准是什么。** adapter 的边界 = sitecustomize
-> 运行时桥 + `hcu_adapter`（vendor 内核 / emu / 路由），**不修改
-> sglang srt 层代码结构**。凡触及 srt 层注册、预编译产物、上游合并、专门
+> 运行时桥 + `hcu_adapter`（vendor 内核 / emu / 路由），**不修改宿主框架
+> 内层代码结构**（sglang 的 srt 层；vLLM 的 platform/worker/runtime 层，
+> 共建边界见 governance §7.2）。凡触及框架内层注册、预编译产物、上游合并、专门
 > GPU 窗口的项，在此登记，不在 adapter 里强行实现。
 >
 > 配套：算子契约提报标准 [operator-requests.md](operator-requests.md)、

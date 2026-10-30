@@ -1,8 +1,9 @@
 # 算子治理规约（governance）
 
 > 本文回答两个问题：**一个算子需求进来，落在哪一层、谁拥有、怎么证明它对。**
-> 以及本仓的**目标终态**：adapter 的职能是让开源 sglang 在 HCU 上的行为与
-> AMD/CUDA 参照一致——做影子库（同名包补齐 AOT 算子面）、算子路由（三档
+> 以及本仓的**目标终态**：adapter 的职能是让开源宿主框架（sglang / vLLM）
+> 在 HCU 上的行为与其参照平台（AMD ROCm / NVIDIA CUDA）一致——做影子库
+> （同名包补齐 AOT 算子面）、算子路由（三档
 > triton→vendor→torch 与 catalog 裁决）、质量检测（分级门禁回归），并在
 > 行为一致的约束下最大化性能。**行为还原**所需的桥（换绑、断言放宽、
 > 判定词 wrap）属于 adapter 本职，落在本仓；**上游没有的功能**（新算子、
@@ -92,7 +93,7 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
 | **算子/机制桥** `hcu_adapter/<域>.py` | adapter | 函数换绑、断言放宽、判定词 wrap——install() 入口 + 开关 + register 登记 | **任何数值逻辑**（数学放内核库）；上游没有的新能力（那归 plugin 仓） |
 | **分发器** `hcu_adapter/bootstrap.py` | adapter | 探测宿主 + 先 common 后唯一宿主桥；失败隔离 | 具体桥实现、宿主 eager import、数值逻辑 |
 | **自动入口** `sitecustomize.py` | adapter | `from hcu_adapter.bootstrap import install; install()` | 探测、分支、桥实现 |
-| **上游 seam** | sglang | 正式插件接入（`--quantization`、attention-backend registry、moe-runner-backend 等） | — |
+| **上游 seam** | sglang / vLLM（各自机制） | 正式插件接入。sglang：`--quantization`、attention-backend registry、moe-runner-backend 等（entry_points 组 `sglang.srt.plugins`）；vLLM：`platform_plugins` / `general_plugins`（§7.2，Adapter 独占注册） | — |
 | **plugin** | **独立仓** | 上游没有的新能力，目的即性能优化：算子融合、专项内核、新后端、新调度机制；优先经上游 seam 接入，无 seam 时提供自己的注册入口 | 把行为补丁反向塞回 adapter 职责面 |
 
 一句话红线（L0 `glue-numerics` 强制）：**算子数学只准出现在内核库；
@@ -289,6 +290,14 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
 > 承接原任务看板中的治理面（看板已移除，任务跟踪归 MR 与团队现用系统）。
 > 本节沉淀 sglang / vLLM 双宿主共建与长期维护的裁决规则，与 §0/§1 的
 > 分仓边界同源。任务看板原有的北极星与硬件备忘迁入 §7.3/§5.1。
+>
+> 与 plugin 仓的文档呼应：本仓（adapter-das）持有**机制层真相源**与
+> **归仓判据**（§0 判别问句）；`hcu-sglang-plugin` 仓的
+> `docs/governance.md` 持有组合兼容契约（目标所有权、组合验证矩阵、
+> `original_fn` 包装链语义），其 §1 判据表是 §0 的应用视角——三处判据
+> （本节 §0 / 本仓 plugins.md §0 / plugin 仓 governance §1）任一改动
+> 同笔同步。同名文档的分工对照见本仓 `docs/reading-guide.md`
+> 「姊妹仓地图」。
 
 ### 7.1 进程接入时序（红线）
 

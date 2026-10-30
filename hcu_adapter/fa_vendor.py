@@ -32,6 +32,7 @@ e2e anchor is the models.md row.
 """
 
 import logging
+import os
 
 import torch
 
@@ -151,6 +152,36 @@ _VENDOR_Q_LIM = 64
 
 _DECODE_HITS = 0
 _VARLEN_HITS = 0
+_WIDE_HITS = 0
+
+# Diagnostic (HCU_FA_EMU_TRACE=1): one-shot signature of every call that
+# lands in the sgl_kernel FA emulation, so spec (draft/verify) faces can be
+# attributed to the exact gate that rejected the triton route. Host values
+# only — capture-safe.
+_EMU_TRACE = os.environ.get("HCU_FA_EMU_TRACE", "0") == "1"
+_EMU_SIGS = set()
+
+
+def _log_emu_sig(face, p, reasons=None):
+    if not _EMU_TRACE:
+        return
+    q = p.get("q")
+    cu_q = p.get("cu_seqlens_q")
+    sig = (
+        face,
+        tuple(q.shape) if q is not None else None,
+        "causal" if p.get("causal") else "noncausal",
+        "pt" if p.get("page_table") is not None else "nopt",
+        "cuq%d" % (cu_q.numel() - 1) if cu_q is not None else "cuq-",
+        "cs" if p.get("cache_seqlens") is not None else "nocs",
+        tuple(k for k in ("k", "v", "q_descale", "qv", "sinks", "out")
+              if p.get(k) is not None),
+        tuple(p.get("window_size") or ()),
+        tuple(reasons or ()),
+    )
+    if sig not in _EMU_SIGS:
+        _EMU_SIGS.add(sig)
+        LOG.warning("HCU adapter: FA emu sig %r", (sig,))
 
 # param list the emu (sgl_kernel.flash_attn.flash_attn_varlen_func) accepts,
 # in positional order — the reroute gate reads out of this map.
@@ -247,8 +278,12 @@ def _install_triton_decode(_sk_fa, registry):
         cu_q = p.get("cu_seqlens_q")
         # Decode feeds 3D packed q, sometimes with cu_seqlens_q (FA3-style),
         # sometimes without (metadata form; B comes from the page table).
-        # Normalize to the 4D (B,1,H,D) form the triton kernel takes.
-        # Graph-capture safe: no host-device syncs — the uniform L=1
+        # Normalize to the 4D (B,L,H,D) form the triton kernels take: L=1
+        # decode rows, and uniform L>1 spec windows (NEXTN verify packs
+        # draft_token_num tokens per request; with topk=1 the tree mask
+        # degenerates to a chain == bottom-right causal, which the paged
+        # prefill kernel already applies).
+        # Graph-capture safe: no host-device syncs — the uniform-window
         # contract comes from max_seqlen_q/n_tok consistency, not an
         # .all() probe.
         if (
@@ -258,19 +293,25 @@ def _install_triton_decode(_sk_fa, registry):
             and p.get("cache_seqlens") is not None
         ):
             n_tok, H, D = q.shape
+            L = 0
             if cu_q is not None and hasattr(cu_q, "numel"):
                 B = cu_q.numel() - 1
                 msq = p.get("max_seqlen_q")
-                uniform_l1 = (
-                    n_tok == B  # every window is exactly 1 token
-                    and (msq is None
-                         or (not torch.is_tensor(msq) and int(msq) <= 1))
+                msq_i = (
+                    int(msq)
+                    if msq is not None and not torch.is_tensor(msq)
+                    else None
                 )
+                if n_tok == B and (msq_i is None or msq_i <= 1):
+                    L = 1  # every window is exactly 1 token (decode)
+                elif B > 0 and msq_i and msq_i > 1 and n_tok == B * msq_i:
+                    L = msq_i  # uniform spec windows (e.g. verify L=2)
+                # ragged windows keep L=0 -> emu
             else:
                 B = p["page_table"].shape[0]
-                uniform_l1 = n_tok == B  # one token per row == decode
-            if uniform_l1 and B > 0:
-                q = q.reshape(n_tok, 1, H, D)
+                L = 1 if n_tok == B else 0  # one token per row == decode
+            if L >= 1 and B > 0:
+                q = q.reshape(B, L, H, D)
                 p["q"] = q
                 p["cu_seqlens_q"] = None
         triton_ok = (
@@ -302,10 +343,25 @@ def _install_triton_decode(_sk_fa, registry):
                 softmax_scale=p.get("softmax_scale"),
             )
             return (o, lse) if p.get("return_softmax_lse") else o
-        if triton_ok and q.shape[1] > 1 and p.get("causal"):
-            # paged extend: whole q window against the pool, bottom-right
-            # causal (non-causal wide windows keep the emu; no LLM face
-            # issues one today)
+        if (
+            triton_ok
+            and q.shape[1] > 1
+            and p.get("causal")
+            and p.get("custom_mask") is None
+            and p.get("out") is None
+        ):
+            # paged extend / spec verify: whole q window against the pool,
+            # bottom-right causal. NEXTN topk=1 verify trees are chains ==
+            # causal; real trees (custom_mask) and graph out= buffers keep
+            # the emu.
+            global _WIDE_HITS
+            _WIDE_HITS += 1
+            if _WIDE_HITS == 1 or _WIDE_HITS % 20000 == 0:
+                LOG.warning(
+                    "HCU adapter: triton wide-window face hit #%d "
+                    "(B=%d L=%d)",
+                    _WIDE_HITS, q.shape[0], q.shape[1],
+                )
             o, lse = paged_attention_prefill_triton(
                 q,
                 p["k_cache"],
@@ -315,6 +371,26 @@ def _install_triton_decode(_sk_fa, registry):
                 softmax_scale=p.get("softmax_scale"),
             )
             return (o, lse) if p.get("return_softmax_lse") else o
+        if _EMU_TRACE:
+            reasons = []
+            if not triton_ok:
+                reasons = [
+                    n
+                    for n, ok in (
+                        ("q4d", q is not None and q.dim() == 4),
+                        ("page", p.get("page_table") is not None),
+                        ("cseq", p.get("cache_seqlens") is not None),
+                        ("cuq-none", p.get("cu_seqlens_q") is None),
+                        ("fbkeys", all(p.get(k) is None for k in _KV_FALLBACK_KEYS)),
+                        ("win", (p.get("window_size") or (-1, -1)) == (-1, -1)),
+                        ("cap", (p.get("softcap") or 0.0) == 0.0),
+                        ("onlyqv", not p.get("only_qv")),
+                    )
+                    if not ok
+                ]
+            elif q is not None and q.shape[1] > 1 and not p.get("causal"):
+                reasons = ["noncausal_wide"]
+            _log_emu_sig("kvcache", p, reasons)
         return _emu_kvcache(**p)
 
     _sk_fa.flash_attn_with_kvcache = flash_attn_with_kvcache
@@ -413,6 +489,25 @@ def _install_triton_decode(_sk_fa, registry):
                 return_softmax_lse=bool(p.get("return_softmax_lse")),
                 out=p.get("out"),
             )
+        if _EMU_TRACE:
+            reasons = [
+                n
+                for n, ok in (
+                    ("qkv3d", all(p.get(x) is not None and p.get(x).dim() == 3
+                                  for x in ("q", "k", "v"))),
+                    ("nopt", p.get("page_table") is None),
+                    ("noqv/sinks/qdescale", not any(
+                        p.get(x) is not None for x in ("qv", "sinks", "q_descale"))
+                     and not bool(p.get("only_qv"))),
+                    ("nocap", (p.get("softcap") or 0.0) == 0.0),
+                    ("dtype", p.get("q") is not None and p["q"].dtype.itemsize >= 2),
+                    ("dims", p.get("q") is None or (
+                        p["q"].shape[-1] <= 256
+                        and (p["q"].shape[-1] & (p["q"].shape[-1] - 1)) == 0)),
+                )
+                if not ok
+            ]
+            _log_emu_sig("varlen", p, reasons)
         return _emu_varlen(**p)
 
     _sk_fa.flash_attn_varlen_func = flash_attn_varlen
