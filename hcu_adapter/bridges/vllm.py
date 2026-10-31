@@ -242,7 +242,14 @@ class ProcessLocalActions:
             try:
                 callback()
             except Exception as exc:
-                failure = f"{type(exc).__name__}: {exc}"
+                # Diagnostic formatting can raise, re-enter or fork. Publish
+                # refusal before it runs and before finally clears _running.
+                failure = "runtime action failed; exception details unavailable"
+                self._records[action_id] = failure
+                try:
+                    failure = f"{type(exc).__name__}: {exc}"
+                except BaseException:
+                    pass
                 self._records[action_id] = failure
                 raise LatchedVllmRuntimeError(failure) from exc
             finally:

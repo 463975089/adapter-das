@@ -15,6 +15,16 @@ import sys
 from hcu_adapter.extensions import ExtensionCommitError, ExtensionSpec
 
 
+class UnrenderableError(RuntimeError):
+    def __str__(self):
+        raise KeyboardInterrupt("probe diagnostic formatting failed")
+
+
+class UnrenderableCommitError(ExtensionCommitError):
+    def __str__(self):
+        raise ValueError("probe fatal diagnostic formatting failed")
+
+
 def emit(event):
     import vllm.plugins
 
@@ -40,15 +50,25 @@ def early_spec():
 
 
 def owner_spec():
+    if os.environ["HCU_COMMIT_PROBE_MODE"] == "factory-badstr":
+        emit("factory-published")
+        raise UnrenderableCommitError("probe factory publication failure")
+
     def activate(context):
         emit("prepare")
-        if os.environ["HCU_COMMIT_PROBE_MODE"] == "clean":
+        mode = os.environ["HCU_COMMIT_PROBE_MODE"]
+        if mode == "clean":
             raise ImportError("clean prepare failure; no provider state published")
+        if mode == "clean-badstr":
+            raise UnrenderableError()
         emit("published")
         try:
-            raise ExtensionCommitError("probe late commit failure")
+            error_type = UnrenderableCommitError if mode == "fatal-badstr" else ExtensionCommitError
+            raise error_type("probe late commit failure")
         except ExtensionCommitError as error:
-            if os.environ["HCU_COMMIT_PROBE_MODE"] == "wrapped":
+            if mode == "wrapped-badstr":
+                raise UnrenderableError() from error
+            if mode == "wrapped":
                 raise ValueError("provider wrapper") from error
             raise
 
@@ -80,24 +100,37 @@ def exercise(config=None):
     # Explicit CPU test doubles; no vendor/platform/GPU probe is executed.
     bridge.detect_hcu = lambda: bridge.HcuDetection(True, None, "CPU admission double")
     bridge._ensure_hcu_platform_selected = lambda: None
+    mode = os.environ["HCU_COMMIT_PROBE_MODE"]
+    if mode == "runtime-badstr":
+        def fail_platform():
+            emit("runtime-prepare")
+            raise UnrenderableError()
+        bridge._ensure_hcu_platform_selected = fail_platform
     emit("before-discovery")
     failure = None
     try:
         vllm.plugins.load_general_plugins()
     except bridge.LatchedVllmRuntimeError as error:
         failure = error
-    mode = os.environ["HCU_COMMIT_PROBE_MODE"]
     reports = bridge.extension_reports()
-    expected = mode != "clean"
+    clean = mode in ("clean", "clean-badstr")
+    expected = not clean
     assert (failure is not None) == expected
     expected_reports = {
         "commit_probe_early": "active", "commit_probe_owner": "failed",
     }
-    if mode == "clean":
+    if clean:
         expected_reports["commit_probe_later"] = "active"
+    elif mode == "runtime-badstr":
+        expected_reports = {}
+    elif mode == "factory-badstr":
+        expected_reports = {"commit_probe_owner": "failed"}
     assert {r.entry_point_name: r.status.value for r in reports} == expected_reports
+    if mode.endswith("badstr") and mode != "runtime-badstr":
+        assert "details unavailable" in next(r.reason for r in reports if r.entry_point_name == "commit_probe_owner")
+    fatal = expected and mode != "runtime-badstr"
     if failure is not None:
-        assert public.is_fatal_extension_error(failure) == (mode != "clean")
+        assert public.is_fatal_extension_error(failure) == fatal
         for operation in (bridge.require_runtime_healthy, bridge.hcu_runtime_plugin):
             try:
                 operation()
@@ -122,12 +155,16 @@ def exercise(config=None):
     rows = [x for x in rows if x["pid"] == os.getpid()]
     events = [x["event"] for x in rows]
     expected_events = ["before-discovery", "early", "prepare"] + (
-        ["later"] if mode == "clean" else ["published"])
+        ["later"] if clean else ["published"])
+    if mode == "runtime-badstr":
+        expected_events = ["before-discovery", "runtime-prepare"]
+    elif mode == "factory-badstr":
+        expected_events = ["before-discovery", "factory-published"]
     assert events == (["payload-unpickle"] if config is not None else []) + expected_events
     if config is not None:
         assert rows[0]["plugins_loaded"] is False  # Actual state restoration before discovery.
     return {"pid": os.getpid(), "events": events, "failed": expected,
-            "fatal": mode != "clean", "config_roundtrip": config is not None,
+            "fatal": fatal, "config_roundtrip": config is not None,
             "adapter_origin": bridge.__file__,
             "adapter_sha256": hashlib.sha256(Path(bridge.__file__).read_bytes()).hexdigest(),
             "gpu_initialized": torch.cuda.is_initialized(),

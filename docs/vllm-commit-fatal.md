@@ -19,6 +19,16 @@ healthy state is allowed; it is not evidence activation finished. Queries
 never activate, repair or import a backend. Reports remain diagnostic and
 changing them cannot erase the failure latch.
 
+Diagnostic rendering cannot replace a startup failure. `run_once` writes a
+fixed refusal before evaluating an exception's string; a formatting failure,
+including a formatting `BaseException`, retains that refusal before the running
+marker is cleared. The callback's existing `Exception` catch boundary is
+unchanged. Discovery/activation classify the original error before rendering
+it once under a guard, preserving the actual FAILED report and typed fatal
+signal even for wrapped errors with a broken or stateful `__str__`. An ordinary
+unmarked optional error still remains optional when only its diagnostic string
+is broken. No new recovery, reset, rollback or health-check interface is added.
+
 Every HCU attention selection queries health before backend/config inspection.
 Thus catching a failed boot does not permit Flash through a stale ACTIVE
 report, nor bypass failure with default TRITON/MLA/sparse. Healthy defaults,
@@ -71,6 +81,11 @@ exception groups, retries, caught-error selectors, concurrency and actual fork.
 `test_vllm_commit_fatal_discovery.py` builds and installs a tiny test provider to
 exercise real distribution entry points, official `load_general_plugins`,
 clean/fatal/wrapped behavior and actual spawn/config unpickle before discovery.
+The fixture also covers clean/fatal/wrapped/factory failures with unrenderable
+errors and required-runtime action failures through the real official loader,
+both directly and after spawn/unpickle. Unit contracts cover parent/child
+refusal and same-process retry after diagnostic failures, including fork during
+string conversion. These checks do not transfer old wheel results to a new one.
 Only HCU admission/platform selection are CPU doubles; no EngineCore constructor,
 model or GPU kernel runs. The fixture refuses unrelated optimization providers.
 Fixture imports neither patch runtime functions nor write evidence. A normal

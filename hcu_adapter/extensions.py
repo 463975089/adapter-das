@@ -124,6 +124,14 @@ def _entry_points() -> tuple[EntryPointLike, ...]:
     return tuple(metadata.entry_points(group=EXTENSION_ENTRY_POINT_GROUP))
 
 
+def _exception_description(error: BaseException) -> str:
+    """Diagnostics cannot replace the original failure or its classification."""
+    try:
+        return f"{type(error).__name__}: {error}"
+    except BaseException:
+        return "exception details unavailable"
+
+
 def _failure(
     entry_point_name: str,
     reason: str,
@@ -189,15 +197,17 @@ def activate_extensions(
                 raise TypeError("extension priority must be an integer")
             capabilities = frozenset(spec.capabilities)
         except Exception as exc:
+            fatal = is_fatal_extension_error(exc)
+            description = _exception_description(exc)
             reports.append(
                 _failure(
                     point.name,
-                    f"load failed: {type(exc).__name__}: {exc}",
+                    f"load failed: {description}",
                 )
             )
-            if is_fatal_extension_error(exc):
+            if fatal:
                 raise ExtensionCommitError(
-                    f"fatal extension discovery failure at {point.name!r}: {exc}",
+                    f"fatal extension discovery failure at {point.name!r}: {description}",
                     _ordered_reports(reports),
                 ) from exc
             continue
@@ -253,17 +263,19 @@ def activate_extensions(
         try:
             spec.activate(context)
         except Exception as exc:
+            fatal = is_fatal_extension_error(exc)
+            description = _exception_description(exc)
             reports.append(
                 _failure(
                     point.name,
-                    f"activation failed: {type(exc).__name__}: {exc}",
+                    f"activation failed: {description}",
                     spec.name,
                     spec.capabilities,
                 )
             )
-            if is_fatal_extension_error(exc):
+            if fatal:
                 raise ExtensionCommitError(
-                    f"fatal extension activation failure at {point.name!r}: {exc}",
+                    f"fatal extension activation failure at {point.name!r}: {description}",
                     _ordered_reports(reports),
                 ) from exc
         else:

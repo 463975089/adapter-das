@@ -37,9 +37,10 @@ def installed_probe(tmp_path_factory):
     return target
 
 
-@pytest.mark.parametrize("mode,spawn", [
-    ("clean", False), ("fatal", False), ("wrapped", False),
-    ("clean", True), ("fatal", True), ("wrapped", True),
+@pytest.mark.parametrize("spawn", [False, True])
+@pytest.mark.parametrize("mode", [
+    "clean", "fatal", "wrapped", "clean-badstr", "fatal-badstr",
+    "wrapped-badstr", "factory-badstr", "runtime-badstr",
 ])
 def test_actual_metadata_general_plugin_and_config_unpickle(
     installed_probe, tmp_path, mode, spawn,
