@@ -41,5 +41,4 @@ The inherited PR23 metadata-loader fixture deliberately rejects unrelated
 installed extension entry points. Run it in a separate Adapter+target venv
 without the production Plugin; do not filter discovery to simulate that state.
 Its required-context CPU caller must forward the additive health sink keyword.
-Fresh-interpreter checks retain their health assertions with a bounded 60-second
-startup allowance, independent of any GPU or numerical acceptance threshold.
+Fresh-interpreter checks retain their original health assertions and timeout.

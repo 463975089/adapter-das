@@ -402,7 +402,7 @@ def test_fresh_interpreter_does_not_inherit_failed_runtime(startup):
          "assert b.extension_reports() == (); "
          "b._RUNTIME_ACTIONS.run_once('vllm-runtime', lambda: None); "
          "b.require_runtime_healthy()"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, timeout=10,
     )
     assert result.returncode == 0, result.stderr
     with pytest.raises(bridge.LatchedVllmRuntimeError):
