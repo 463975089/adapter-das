@@ -28,7 +28,7 @@
 | 改 CI / 加门禁 | docs/ci.md → docs/test-route-governance.md（目标态：精度→功能→性能→路由→退役）→ ci/l0_gate.py |
 | 设计性能 A/B、路由统计或代码退役 | docs/test-route-governance.md → docs/test-route-implementation-plan.md（MR-00～MR-12）→ docs/autotune.md → docs/governance.md |
 | 按测试治理路线开工 / 查依赖和验收 | docs/test-route-implementation-plan.md → 对应 MR 段的依赖、DoD 与验收命令 |
-| 判断一项工作归哪仓 / 开发插件新能力 | docs/governance.md §0 判别 → 本文「姊妹仓地图」→ hcu-sglang-plugin docs/ |
+| 判断一项工作归哪仓 / 开发插件新能力 | docs/governance.md §0 判别 → 本文「姊妹仓地图」→ sglang-plugin-das docs/ |
 
 ## 算子目录入口
 
@@ -62,9 +62,9 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | docs/vendor-kernels.md | DTK vendor 算子库 API 梳理（aiter/lightop/boltops/flash_mla/flash_attn/deepgemm/kda/tokenspeed，实机内省+热点映射机会表） | wheel 换代后 API 面/版本后缀失效 |
 | skills/hcu-adapter-dev/SKILL.md | 开发规约入口 + 任务路由（references/ 下五份专篇） | 黄金法则与代码内守卫不符 |
 | tests/tools/README.md | 物料命名语法（_test_/_probe_/_launch_/_dbg_） | 新物料未按前缀归位 |
-| hcu-sglang-plugin 仓 docs/ | 插件方法侧导航与契约（见下节姊妹仓地图） | 与本文同名文档分工表冲突 |
+| sglang-plugin-das 仓 docs/ | 插件方法侧导航与契约（见下节姊妹仓地图） | 与本文同名文档分工表冲突 |
 
-## 姊妹仓地图（hcu-sglang-plugin）
+## 姊妹仓地图（sglang-plugin-das）
 
 插件仓在独立 git 仓维护，机制层与插件层的文档各自成套。三条分工铁律：
 
@@ -73,14 +73,14 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
   契约、`original_fn` 语义、插件工程/迁移台账、组合验证矩阵）以 plugin
   仓为准。同名文档回答同一件事的两个侧面，不互为备份。
 - **判据单源**：一项工作归哪仓，以 governance §0 判别问句为准；
-  `hcu-sglang-plugin/docs/governance.md` §1 与本仓 `docs/plugins.md` §0
+  `sglang-plugin-das/docs/governance.md` §1 与本仓 `docs/plugins.md` §0
   是它的两个应用视角，三处任一改动同笔同步（governance §7 前言有同款
   铁律）。组合兼容契约在 plugin 仓 governance §2-§4。
 - **跨仓引用写"仓坐标"**（仓 + 文档路径 + 节号），不放跨仓相对链接。
 
 同名文档分工对照（6 对）：
 
-| 文档 | adapter-das（本仓） | hcu-sglang-plugin |
+| 文档 | adapter-das（本仓） | sglang-plugin-das |
 |---|---|---|
 | architecture.md | 机制分层：影子库 / is_cuda 语义 / 三档路由 / 桥结构 | 插件架构 + 未来运行时目录规划 |
 | governance.md | 治理宪法：双仓判别（真相源）、裁决链、§7 共建 | 组合兼容契约：目标所有权、验证矩阵 |

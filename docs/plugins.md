@@ -16,7 +16,7 @@
 > inference-cookbook-das）。
 >
 > **2026-10-28 状态注**：plugin 载体已从"规划"落地为独立仓
-> `hcu-sglang-plugin`，挂上游 sglang v0.5.22 官方 entry_points
+> `sglang-plugin-das`，挂上游 sglang v0.5.22 官方 entry_points
 > （`sglang.srt.plugins`）+ HookRegistry，首版只有诊断面——P1/P2 不再
 > 依赖"等 plugin 机制"，逐项迁移即可开工；vLLM 侧按对称结构另立 plugin
 > 仓（共建边界、接入时序、维护闭环见 [governance.md](governance.md) §7）。

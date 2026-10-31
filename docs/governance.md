@@ -292,7 +292,7 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
 > 分仓边界同源。任务看板原有的北极星与硬件备忘迁入 §7.3/§5.1。
 >
 > 与 plugin 仓的文档呼应：本仓（adapter-das）持有**机制层真相源**与
-> **归仓判据**（§0 判别问句）；`hcu-sglang-plugin` 仓的
+> **归仓判据**（§0 判别问句）；`sglang-plugin-das` 仓的
 > `docs/governance.md` 持有组合兼容契约（目标所有权、组合验证矩阵、
 > `original_fn` 包装链语义），其 §1 判据表是 §0 的应用视角——三处判据
 > （本节 §0 / 本仓 plugins.md §0 / plugin 仓 governance §1）任一改动

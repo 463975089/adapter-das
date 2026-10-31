@@ -165,7 +165,7 @@ python tests/tools/run_triage.py         # 精度问题四级快速定位（容�
   tilelang 0.1.13+ ThreadSync 回归（已钉 0.1.12）、fp8 内核族符号病理
   （详见 models.md 判例）。
 - plugin 仓：上游没有的新能力（算子融合/专项内核/新调度路径）归独立
-  plugin 仓——sglang 侧已立仓 `hcu-sglang-plugin`（挂上游 v0.5.22 官方
+  plugin 仓——sglang 侧已立仓 `sglang-plugin-das`（挂上游 v0.5.22 官方
   entry_points + HookRegistry）；分工与判别问句见文首，索引与共建边界见
   docs/governance.md §0/§7。
 

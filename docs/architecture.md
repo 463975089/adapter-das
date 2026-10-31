@@ -77,7 +77,7 @@ sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端�
 
 | 层 | 内容 | 备注 |
 |---|---|---|
-| 应用层 | **宿主官方代码**（sglang / vLLM，各自 python 零修改）＋ **plugin**（sglang 侧独立仓 `hcu-sglang-plugin`；vLLM 侧共建边界见 governance §7.2） | plugin：算子融合 / 调度逻辑优化 / 自研 channel-wise 量化 scheme 等差异化能力，按宿主各一 plugin |
+| 应用层 | **宿主官方代码**（sglang / vLLM，各自 python 零修改）＋ **plugin**（sglang 侧独立仓 `sglang-plugin-das`；vLLM 侧共建边界见 governance §7.2） | plugin：算子融合 / 调度逻辑优化 / 自研 channel-wise 量化 scheme 等差异化能力，按宿主各一 plugin |
 | 适配层 | **adapter 影子库替换层**（本仓库）：`sitecustomize.py` 薄入口 ＋ `hcu_adapter` 包（宿主分发 / bridges 宿主桥 / 机制层与域桥 / vendor 桩）＋ `sgl_kernel` 同名影子包 | 三档实现路由；配合 skill（`hcu-adapter-dev`）快速排查定位精度问题 |
 | 算子库层 | triton（自研首档）· lightop · aiter · flash_mla / flash_attn · deepgemm（待适配）· mooncake / deepep（待适配） | 见 §4 逐项说明 |
 | 运行时层 | **PyTorch（HIP 版）** | 张量计算 · 显存管理 · kernel launch；三档中的 torch 兜底也在这层 |
@@ -138,7 +138,7 @@ flowchart TB
 | mooncake | 待适配 | PD 分离/分层 KV transfer 的 `transfer_kv_*` 契约由 `sgl_kernel/kvcacheio.py` torch 移植顶住调用面，mooncake 本体待接 |
 | deepep | 待适配 | MoE EP 通信库，仓库内尚无落点（TP1 单机绕过），多卡 EP 时再评估 |
 
-### plugin（独立仓，sglang 侧已落地：hcu-sglang-plugin）
+### plugin（独立仓，sglang 侧已落地：sglang-plugin-das）
 
 与 adapter 分工（判别问句与裁决链见 [governance.md](governance.md) §0/§3）：
 adapter 只做**行为还原**（上游在 AMD/CUDA 上有的行为，HCU 补齐到一致）；
