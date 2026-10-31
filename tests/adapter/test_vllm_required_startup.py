@@ -112,3 +112,116 @@ def test_forked_runtime_rechecks_inherited_required_capability(startup, monkeypa
     _, status = os.waitpid(pid, 0)
     assert os.waitstatus_to_exitcode(status) == 0
     assert bridge.extension_reports()[0].status is extensions.ExtensionStatus.ACTIVE
+
+
+@pytest.mark.parametrize("mode", ["default", "explicit", "blank", "malformed-extension", "malformed-capability"])
+def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_summary(startup, monkeypatch, caplog, mode):
+    import logging
+    from hcu_adapter import bootstrap, hcu_env
+
+    points, checks = startup
+    contexts, order = [], []
+    points.append(Point("provider", "attention", contexts))
+    extension, capability = "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES"
+    expected = {extension: ("", "default"), capability: ("", "default")}
+    if mode == "explicit":
+        expected = {extension: ("provider", "explicit"), capability: ("attention", "explicit")}
+    elif mode == "blank":
+        expected = {extension: ("  ", "explicit"), capability: ("\t", "explicit")}
+    elif mode == "malformed-extension":
+        expected[extension] = ("provider,", "explicit")
+    elif mode == "malformed-capability":
+        expected[capability] = (",", "explicit")
+    for variable, (value, source) in expected.items():
+        if source == "explicit":
+            monkeypatch.setenv(variable, value)
+    monkeypatch.setenv("HCU_ADAPTER_HOST", "none")
+    monkeypatch.setattr(bootstrap, "_installed_pid", None)
+    monkeypatch.setattr(bootstrap, "_is_hip", lambda: True)  # CPU admission only.
+    resolver = hcu_env.resolve
+    def resolve(name):
+        result = resolver(name)
+        order.append(("resolve", name, *result))
+        return result
+    monkeypatch.setattr(hcu_env, "resolve", resolve)
+    monkeypatch.setattr(bridge, "_ensure_vllm_compatible", lambda: (order.append(("version",)), "0.32.0+cpu")[1])
+    monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: order.append(("registration-boundary",)))
+    with caplog.at_level(logging.WARNING, logger="hcu.adapter"):
+        bootstrap.install()
+        bootstrap.install()
+        assert order == []
+        for _ in range(2):
+            if mode.startswith("malformed"):
+                with pytest.raises(bridge.LatchedVllmRuntimeError, match="comma-separated"):
+                    bridge.hcu_runtime_plugin()
+            else:
+                bridge.hcu_runtime_plugin()
+    reached = [extension] if mode == "malformed-extension" else [extension, capability]
+    assert order[:len(reached)] == [("resolve", key, *expected[key]) for key in reached]
+    if mode.startswith("malformed"):
+        assert len(order) == len(reached) and contexts == []
+    else:
+        assert order[len(reached):] == [("version",), ("registration-boundary",)]
+        assert len(contexts) == 1
+        assert contexts[0].requested_extensions == (frozenset({"provider"}) if mode == "explicit" else frozenset())
+        assert contexts[0].requested_capabilities == (frozenset({"attention"}) if mode == "explicit" else frozenset())
+    assert not any(r.getMessage().startswith("HCU adapter env:") for r in caplog.records)
+
+
+@pytest.mark.parametrize("mode", ["default", "explicit", "blank", "malformed"])
+def test_real_vllm_bootstrap_common_logs_once_then_actual_runtime_preserves_policy(startup, monkeypatch, caplog, mode):
+    import logging
+    from hcu_adapter import bootstrap, hcu_env, hcu_config, nccl_topo_guard, tvmffi_warmup
+
+    points, checks = startup
+    contexts, order = [], []
+    points.append(Point("provider", "attention", contexts))
+    names = ("HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES")
+    # Only registered requirements participate; unrelated auto rules and the
+    # topology/JIT providers must not touch hardware in this CPU contract.
+    monkeypatch.setattr(hcu_env, "REGISTRY", {key: hcu_env.REGISTRY[key] for key in names})
+    monkeypatch.setattr(hcu_config, "lookup", lambda name: None)
+    monkeypatch.setattr(hcu_config, "summary_line", lambda: "")
+    monkeypatch.setattr(nccl_topo_guard, "install", lambda: order.append("topology-double"))
+    monkeypatch.setattr(tvmffi_warmup, "install", lambda: order.append("warmup-double"))
+    monkeypatch.delenv("HCU_ADAPTER_DUMP", raising=False)
+    monkeypatch.setenv("HCU_ADAPTER_HOST", "vllm")
+    monkeypatch.setattr(bootstrap, "_installed_pid", None)
+    monkeypatch.setattr(bootstrap, "_is_hip", lambda: True)
+    monkeypatch.setattr(bootstrap, "_available_hosts", lambda: {"vllm"})
+    monkeypatch.setattr(bootstrap, "_loaded_module_names", lambda: ())
+    monkeypatch.setenv(bootstrap.ACTIVE_HOST_ENV, "none")
+    if mode != "default":
+        monkeypatch.setenv(names[0], "provider" if mode != "blank" else "  ")
+        monkeypatch.setenv(names[1], "attention," if mode == "malformed" else "attention" if mode == "explicit" else "\t")
+    class Order(logging.Handler):
+        def emit(self, record):
+            if record.getMessage().startswith("HCU adapter env:"):
+                order.append("actual-summary")
+    logger = logging.getLogger("hcu.adapter")
+    observer = Order()
+    logger.addHandler(observer)
+    try:
+        with caplog.at_level(logging.WARNING, logger="hcu.adapter"):
+            bootstrap.install()
+            bootstrap.install()
+            for _ in range(2):
+                if mode == "malformed":
+                    with pytest.raises(bridge.LatchedVllmRuntimeError, match="comma-separated"):
+                        bridge.hcu_runtime_plugin()
+                else:
+                    bridge.hcu_runtime_plugin()
+    finally:
+        logger.removeHandler(observer)
+    summaries = [r.getMessage() for r in caplog.records if r.getMessage().startswith("HCU adapter env:")]
+    assert len(summaries) == 1
+    assert order == ["actual-summary", "topology-double", "warmup-double"]
+    if mode == "default":
+        assert summaries == ["HCU adapter env: all defaults (no explicit HCU_* vars)"]
+    else:
+        for name in names:
+            assert name + "=" in summaries[0]
+        assert summaries[0].count("(explicit)") == 2
+    assert "host=vllm source=explicit" in caplog.text
+    assert checks == ([] if mode == "malformed" else ["version"])
+    assert len(contexts) == (0 if mode == "malformed" else 1)

@@ -18,10 +18,23 @@ their inherited requirements.
 
 Both keys are registered in `hcu_adapter.hcu_env.REGISTRY` and documented in
 the [environment manual](../env-vars.md). Behavioral reads use its canonical
-resolver; explicit values appear with their source in the shared startup
-summary. The empty default requests nothing. There is no hardware/provider
+resolver. Under normal `HCU_ADAPTER_HOST=vllm` (or auto-selected vLLM),
+`bootstrap.install` calls `bridges.common.install`, which emits the shared
+summary once before the host bridge; explicit values carry `(explicit)` and
+empty defaults use the existing all-defaults line. The empty default requests nothing. There is no hardware/provider
 auto rule: a requirement asserts what must already activate successfully and
 does not itself enable or select an implementation.
+
+`HCU_ADAPTER_HOST=none` disables that automatic bootstrap/common chain. Calling
+the official general-plugin loader directly still resolves and enforces these
+requirements, but does **not** emit a common summary or an additional per-value
+log. Use `hcu_env.resolve(name)` to inspect `(value, source)` in diagnostics; do
+not infer a missing requirement check from a missing common-summary line.
+CPU regressions exercise both the actual bootstrap/common chain (only hardware
+admission/topology/JIT providers are doubles) and HOSTnone + the actual runtime
+callback, including default/explicit/blank/malformed inputs, source resolution,
+run-once behavior and refusal before runtime registration. These are not real
+GPU, CLI/model or kernel-evidence claims.
 
 Extension requirements use the installed `hcu_adapter.extensions` **entry-point
 name** (`das_hcu` above). They do not use the spec's declared name (`das-hcu`).
