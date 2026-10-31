@@ -14,6 +14,8 @@
 #             via pinned PYTHONPATH; tilelang variants excluded (DTK bug)
 #   l15_manifest  L1.5 v2 manifest collect/verify shadow (non-blocking by
 #                 default; set L15_MANIFEST_MODE=blocking to gate)
+#   l15_family_matrix  Dense/MLA/MoE/Quant/Mamba no-weight representative
+#                 matrix (off by default; observe/blocking explicitly enabled)
 #   gates     curated tools gates: config catalog, fa3-emu CP shapes, rope
 #             paths, aiter-MoE bridge dispatch, deepgemm contiguous triton
 #   vendor    flash_attn wheel sanity probe    (WARN tier: bad wheel -> warn)
@@ -31,12 +33,17 @@ L15_MANIFEST="$ROOT/tests/manifests/l15_v0522.json"
 L15_MANIFEST_MODE="${L15_MANIFEST_MODE:-observe}"
 L15_MANIFEST_BATCHES="${L15_MANIFEST_BATCHES:-current,batch-1}"
 L15_RESULT_ROOT="${L15_RESULT_ROOT:-$ROOT/results/l15-manifest}"
+L15_FAMILY_MATRIX_MODE="${L15_FAMILY_MATRIX_MODE:-off}"
+L15_FAMILY_MATRIX_FAMILIES="${L15_FAMILY_MATRIX_FAMILIES:-dense,mla,moe,quantization,mamba}"
 case "$L15_MANIFEST_MODE" in observe|blocking|off) ;; *)
     echo "L1: invalid L15_MANIFEST_MODE='$L15_MANIFEST_MODE' (use off|observe|blocking)"
     exit 2;;
 esac
+case "$L15_FAMILY_MATRIX_MODE" in observe|blocking|off) ;; *)
+    echo "L1: invalid L15_FAMILY_MATRIX_MODE='$L15_FAMILY_MATRIX_MODE' (use off|observe|blocking)"
+    exit 2;;
+esac
 
-# ---------------------------------------------------------------- arg parse
 # R-17 three-way binding: branch <-> upstream tree <-> container. Explicit
 # tree (arg --up-tree <path> / env HCU_UP_TREE) must EXIST -- a typo'd path
 # loud-fails instead of silently falling back to auto-probe (wrong-tree
@@ -262,6 +269,28 @@ if [ -n "$UP_TREE" ]; then
         FAILS+=(l15_manifest)
     else
         echo "L1: l15_manifest WARN (observe-only; manifest missing: $L15_MANIFEST)"
+    fi
+
+    if [ "$L15_FAMILY_MATRIX_MODE" != "off" ]; then
+        family_out="$L15_RESULT_ROOT/family-$(date +%Y%m%dT%H%M%S)-$$.json"
+        echo "L1: === l15_family_matrix ($L15_FAMILY_MATRIX_MODE, families=$L15_FAMILY_MATRIX_FAMILIES) ==="
+        family_rc=0
+        env HCU_DEEPGEMM_BRIDGE=1 PYTHONPATH="$ROOT:$UP_TREE/python" \
+            python3 tools/l15_family_matrix.py run \
+                --up-tree "$UP_TREE" \
+                --adapter-root "$ROOT" \
+                --families "$L15_FAMILY_MATRIX_FAMILIES" \
+                --out "$family_out" || family_rc=$?
+        if [ "$family_rc" -eq 0 ]; then
+            echo "L1: l15_family_matrix PASS (artifact=$family_out)"
+        elif [ "$L15_FAMILY_MATRIX_MODE" = "blocking" ]; then
+            echo "L1: l15_family_matrix FAIL (rc=$family_rc; artifact=$family_out)"
+            FAILS+=(l15_family_matrix)
+        else
+            echo "L1: l15_family_matrix WARN (observe-only; rc=$family_rc; artifact=$family_out)"
+        fi
+    else
+        echo "L1: l15_family_matrix SKIP (mode=off)"
     fi
 else
     echo "L1: l15_upstream SKIP (no upstream unittest tree found)"

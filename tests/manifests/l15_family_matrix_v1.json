@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "manifest_id": "sglang-v0.5.22-l15-family-matrix-v1",
+  "layer": "L1.5-family-matrix",
+  "upstream_manifest": "tests/manifests/l15_v0522.json",
+  "defaults": {
+    "device_count": 1,
+    "needs_server": false,
+    "needs_model_weights": false,
+    "external_network": false,
+    "timeout": 1200
+  },
+  "families": [
+    {
+      "id": "dense",
+      "intent": "Dense attention construction, prefill/decode, fragmented KV layout and graph-metadata replay",
+      "cases": [
+        {"id": "dense-prefill-decode", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/dense/test_triton.py::TestTritonDenseAttentionBackendCorrectness::test_projected_dense_attention_cases"},
+        {"id": "dense-layout", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/dense/test_triton.py::TestTritonDenseAttentionBackendCorrectness::test_layout_robustness_cases"},
+        {"id": "dense-graph-contract", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/dense/test_triton.py::TestTritonDenseAttentionBackendCorrectness::test_runner_mode_cuda_graph_decode_cases"}
+      ]
+    },
+    {
+      "id": "mla",
+      "intent": "MLA construction, compressed KV prefill/decode, fragmented layout and graph-metadata replay",
+      "cases": [
+        {"id": "mla-prefill-decode", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mla/test_triton.py::TestTritonMLAAttentionBackendCorrectness::test_tiny_deepseek_mla_attention_cases"},
+        {"id": "mla-layout", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mla/test_triton.py::TestTritonMLAAttentionBackendCorrectness::test_layout_robustness_cases"},
+        {"id": "mla-graph-contract", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mla/test_triton.py::TestTritonMLAAttentionBackendCorrectness::test_runner_mode_cuda_graph_decode_cases"},
+        {"id": "mla-sparse-sink", "kind": "adapter-script", "path": "tests/kernels/test_flash_mla_sparse.py"}
+      ]
+    },
+    {
+      "id": "moe",
+      "intent": "MoE routing weights, grouped gate, block alignment, EP sentinel and graph-safe metadata",
+      "cases": [
+        {"id": "moe-topk", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_gate.py::test_topk_softmax_gpu_matches_cpu"},
+        {"id": "moe-grouped-gate", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_gate.py::test_moe_fused_gate_gpu_grouped"},
+        {"id": "moe-align-reference", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_align.py::test_moe_align_block_size_gpu_matches_torch"},
+        {"id": "moe-ep-sentinel", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_align.py::test_moe_align_ep_sentinel_blocks_map_to_minus_one"},
+        {"id": "moe-align-graph", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_align.py::test_moe_align_block_size_gpu_capture_safe"}
+      ]
+    },
+    {
+      "id": "quantization",
+      "intent": "FP8 row/group/fused quantization, scale contracts and correctness-preserving fallback",
+      "cases": [
+        {"id": "quant-rowwise", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_quant_aiter_gfx938.py::test_rowwise_nameerror_fixed"},
+        {"id": "quant-group", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_quant_aiter_gfx938.py::test_group_plain_arm"},
+        {"id": "quant-fused", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_quant_aiter_gfx938.py::test_fused_whole_row_arm"},
+        {"id": "quant-scaled", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_quant_aiter_gfx938.py::test_scaled_fp8_quant_arms"},
+        {"id": "quant-fallback", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_quant_aiter_gfx938.py::test_exotic_arms_still_upstream"}
+      ]
+    },
+    {
+      "id": "mamba",
+      "intent": "Mamba2 prefill/decode, fragmented layout, replay metadata, hybrid dispatch and Conv1D varlen state",
+      "cases": [
+        {"id": "mamba-prefill-decode", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mamba/test_mamba2.py::TestTritonMamba2BackendCorrectness::test_projected_mamba2_attention_cases"},
+        {"id": "mamba-layout", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mamba/test_mamba2.py::TestTritonMamba2BackendCorrectness::test_layout_robustness_cases"},
+        {"id": "mamba-replay-metadata", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mamba/test_mamba2.py::TestTritonMamba2BackendCorrectness::test_mamba2_replay_metadata_padding_indices"},
+        {"id": "mamba-hybrid-dispatch", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mamba/test_mamba2.py::TestTritonMamba2BackendCorrectness::test_hybrid_dispatch_eager_init_forward_metadata_fan_out"},
+        {"id": "mamba-conv-varlen", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_conv1d_fn_varlen.py::test_emu_parity"}
+      ]
+    }
+  ]
+}
