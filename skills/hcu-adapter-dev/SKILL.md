@@ -82,7 +82,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 端到端性能优化（开箱基线/profiler 归因/算子优化需求/回归） | `references/e2e-performance.md`（细节检索个人知识库 kb，手册内有 kb:<id> 引用） |
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
-| vLLM required 启动策略 / 日志来源 | `docs/frameworks/vllm-required-extensions.md`（正常 bootstrap→common 才自动汇总；HOSTnone 直接 general-plugin 仍 enforce，但不承诺 common 日志；须测真实两条调用链，不能用手动 log_summary 代替） |
+| vLLM required 启动策略 / 日志来源 | `docs/frameworks/vllm-required-extensions.md`（正常 bootstrap→common 才自动汇总；HOSTnone 直接 general-plugin 仍 enforce，但不承诺 common 日志；须测真实两条调用链及官方 general-plugin loader/真实 metadata，不能用手动 log_summary 代替） |
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
 | 加/改算子档位实现文件（命名/归档） | `docs/governance.md` §3b + `python tools/gen_tier_matrix.py`（档位矩阵随 catalog 同 commit） |
 | vLLM 0.32 平台、attention/MLA backend 选型 | `docs/frameworks/vllm032.md` + `docs/governance.md`（先区分普通/MLA/Sparse MLA，保持真实架构能力） |

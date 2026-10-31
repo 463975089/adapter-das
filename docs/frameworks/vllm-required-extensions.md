@@ -31,8 +31,8 @@ requirements, but does **not** emit a common summary or an additional per-value
 log. Use `hcu_env.resolve(name)` to inspect `(value, source)` in diagnostics; do
 not infer a missing requirement check from a missing common-summary line.
 CPU regressions exercise both the actual bootstrap/common chain (only hardware
-admission/topology/JIT providers are doubles) and HOSTnone + the actual runtime
-callback, including default/explicit/blank/malformed inputs, source resolution,
+admission/topology/JIT providers are doubles) and HOSTnone, both using real installed Adapter entry-point metadata and the
+unmodified official `load_general_plugins` before the actual runtime callback, including default/explicit/blank/malformed inputs, source resolution,
 run-once behavior and refusal before runtime registration. These are not real
 GPU, CLI/model or kernel-evidence claims.
 

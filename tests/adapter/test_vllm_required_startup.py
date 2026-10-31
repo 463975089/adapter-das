@@ -114,6 +114,42 @@ def test_forked_runtime_rechecks_inherited_required_capability(startup, monkeypa
     assert bridge.extension_reports()[0].status is extensions.ExtensionStatus.ACTIVE
 
 
+def _actual_general_plugin_loader(monkeypatch):
+    from importlib.metadata import entry_points
+    from vllm import envs, plugins
+
+    assert not envs._is_envs_cache_enabled(), "startup probe requires uncached env"
+    monkeypatch.setenv("VLLM_PLUGINS", "hcu_adapter")
+    monkeypatch.setattr(plugins, "plugins_loaded", False)
+    points = [point for point in entry_points(group="vllm.general_plugins")
+              if point.name == "hcu_adapter"]
+    assert len(points) == 1
+    assert points[0].value == "hcu_adapter.bridges.vllm:hcu_runtime_plugin"
+    assert points[0].load() is bridge.hcu_runtime_plugin
+    return plugins.load_general_plugins
+
+
+def _record_startup_evidence(case, mode, caplog):
+    import hashlib
+    import json
+    from pathlib import Path
+    import vllm.plugins
+
+    destination = os.environ.get("HCU_REQUIRED_STARTUP_EVIDENCE")
+    if not destination:
+        return
+    root = Path(destination)
+    root.mkdir(exist_ok=True, parents=True)
+    row = dict(case=case, mode=mode, adapter_origin=bridge.__file__,
+               adapter_sha256=hashlib.sha256(Path(bridge.__file__).read_bytes()).hexdigest(),
+               official_loader_origin=vllm.plugins.__file__,
+               official_loader_sha256=hashlib.sha256(Path(vllm.plugins.__file__).read_bytes()).hexdigest(),
+               summaries=[record.getMessage() for record in caplog.records
+                          if record.getMessage().startswith("HCU adapter env:")],
+               scope="real Adapter metadata/bootstrap/common/official general-plugin/runtime; CPU HCU admission/topology/JIT/extension-provider doubles; no GPU/model")
+    (root / f"{case}-{mode}.json").write_text(json.dumps(row, indent=2) + "\n")
+
+
 @pytest.mark.parametrize("mode", ["default", "explicit", "blank", "malformed-extension", "malformed-capability"])
 def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_summary(startup, monkeypatch, caplog, mode):
     import logging
@@ -138,6 +174,7 @@ def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_s
     monkeypatch.setenv("HCU_ADAPTER_HOST", "none")
     monkeypatch.setattr(bootstrap, "_installed_pid", None)
     monkeypatch.setattr(bootstrap, "_is_hip", lambda: True)  # CPU admission only.
+    load_plugins = _actual_general_plugin_loader(monkeypatch)
     resolver = hcu_env.resolve
     def resolve(name):
         result = resolver(name)
@@ -150,12 +187,14 @@ def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_s
         bootstrap.install()
         bootstrap.install()
         assert order == []
-        for _ in range(2):
+        for attempt in range(2):
+            invoke = load_plugins if attempt == 0 else bridge.hcu_runtime_plugin
             if mode.startswith("malformed"):
                 with pytest.raises(bridge.LatchedVllmRuntimeError, match="comma-separated"):
-                    bridge.hcu_runtime_plugin()
+                    invoke()
             else:
-                bridge.hcu_runtime_plugin()
+                invoke()
+        load_plugins()  # Official once flag is separate from host retry health.
     reached = [extension] if mode == "malformed-extension" else [extension, capability]
     assert order[:len(reached)] == [("resolve", key, *expected[key]) for key in reached]
     if mode.startswith("malformed"):
@@ -166,6 +205,7 @@ def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_s
         assert contexts[0].requested_extensions == (frozenset({"provider"}) if mode == "explicit" else frozenset())
         assert contexts[0].requested_capabilities == (frozenset({"attention"}) if mode == "explicit" else frozenset())
     assert not any(r.getMessage().startswith("HCU adapter env:") for r in caplog.records)
+    _record_startup_evidence("host-none", mode, caplog)
 
 
 @pytest.mark.parametrize("mode", ["default", "explicit", "blank", "malformed"])
@@ -194,6 +234,7 @@ def test_real_vllm_bootstrap_common_logs_once_then_actual_runtime_preserves_poli
     if mode != "default":
         monkeypatch.setenv(names[0], "provider" if mode != "blank" else "  ")
         monkeypatch.setenv(names[1], "attention," if mode == "malformed" else "attention" if mode == "explicit" else "\t")
+    load_plugins = _actual_general_plugin_loader(monkeypatch)
     class Order(logging.Handler):
         def emit(self, record):
             if record.getMessage().startswith("HCU adapter env:"):
@@ -205,12 +246,14 @@ def test_real_vllm_bootstrap_common_logs_once_then_actual_runtime_preserves_poli
         with caplog.at_level(logging.WARNING, logger="hcu.adapter"):
             bootstrap.install()
             bootstrap.install()
-            for _ in range(2):
+            for attempt in range(2):
+                invoke = load_plugins if attempt == 0 else bridge.hcu_runtime_plugin
                 if mode == "malformed":
                     with pytest.raises(bridge.LatchedVllmRuntimeError, match="comma-separated"):
-                        bridge.hcu_runtime_plugin()
+                        invoke()
                 else:
-                    bridge.hcu_runtime_plugin()
+                    invoke()
+            load_plugins()
     finally:
         logger.removeHandler(observer)
     summaries = [r.getMessage() for r in caplog.records if r.getMessage().startswith("HCU adapter env:")]
@@ -225,3 +268,4 @@ def test_real_vllm_bootstrap_common_logs_once_then_actual_runtime_preserves_poli
     assert "host=vllm source=explicit" in caplog.text
     assert checks == ([] if mode == "malformed" else ["version"])
     assert len(contexts) == (0 if mode == "malformed" else 1)
+    _record_startup_evidence("host-vllm", mode, caplog)
