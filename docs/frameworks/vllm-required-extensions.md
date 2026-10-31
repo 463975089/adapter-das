@@ -16,6 +16,13 @@ registration. Set requirements before the first callback; they are startup
 configuration, not live enable/disable switches. Fork/spawn workers recheck
 their inherited requirements.
 
+Both keys are registered in `hcu_adapter.hcu_env.REGISTRY` and documented in
+the [environment manual](../env-vars.md). Behavioral reads use its canonical
+resolver; explicit values appear with their source in the shared startup
+summary. The empty default requests nothing. There is no hardware/provider
+auto rule: a requirement asserts what must already activate successfully and
+does not itself enable or select an implementation.
+
 Extension requirements use the installed `hcu_adapter.extensions` **entry-point
 name** (`das_hcu` above). They do not use the spec's declared name (`das-hcu`).
 Capability requirements use exact `ExtensionSpec.capabilities` strings. Missing

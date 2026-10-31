@@ -386,7 +386,9 @@ def hcu_runtime_plugin() -> None:
 
 def _required_names(variable: str) -> frozenset[str]:
     """Read a comma-separated list; reject malformed nonempty requirements."""
-    raw = os.environ.get(variable, "")
+    from hcu_adapter import hcu_env
+
+    raw, _source = hcu_env.resolve(variable)
     if not raw.strip():
         return frozenset()
     names = tuple(name.strip() for name in raw.split(","))
