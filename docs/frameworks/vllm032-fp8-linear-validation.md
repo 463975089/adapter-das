@@ -36,17 +36,23 @@ Validation completed on 2026-11-01:
 - Four image requests correctly identify swapped red/blue squares/circles.
   This is image-input sanity only, not general visual accuracy or encoder Graph
   validation.
+- Thirty-six serial cold/warm prefix requests pass at lengths63–3073, including
+  both sides of the tested16-token page boundaries. Cache counters advance and
+  generated token IDs match. Page16 comes from the official cache/backend
+  configuration; this API does not expose actual per-group manager state or
+  per-request cached_tokens, so it is not a fine-prefix or MTP claim.
 
 The model generates only about4.2tokens/s in this configuration. No controlled
-performance comparison has passed. Long-prefix/cold-warm validation is separate
-and remains open at this snapshot. gfx938 has not been tested and is not enabled.
+performance comparison has passed. Contexts beyond3073tokens, concurrency and
+general visual quality remain open. gfx938 has not been tested and is not enabled.
 The original native Torch/selector failures remain valid evidence.
 
 The durable local evidence root is `/data/models/vllm032-upgrade-20261031`:
 `torch-fp8-validation/`, `adapter-fp8-linear-attestation.json`,
 `qwen3vl4-fp8-official-fallback-server.log`,
 `humaneval32-qwen3vl4-fp8-official-fallback[-scores]`, and
-`probe-qwen3vl4-fp8-official-fallback-images`.
+`probe-qwen3vl4-fp8-official-fallback-images`, and
+`probe-qwen3vl4-fp8-official-fallback-prefix3072`.
 
 The two repository probes are `tests/tools/_probe_vllm_fp8_linear.py` and
 `tests/tools/_probe_vllm_fp8_family.py`. They require an explicitly selected
