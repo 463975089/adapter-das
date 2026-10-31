@@ -1,5 +1,11 @@
 # 自动化测试套件要求
 
+vLLM 扩展生命周期：source 与独立 wheel installed 分开跑。check_health 的
+必需参数须在激活前拒绝；报告替换/重复、sink 失败、caught error 后其他
+selector、实际 fork 格式化窗口均需断言。public registry clear/foreign 必须
+经真实官方 selector 验证，不以直接 checker 测试替代。见
+`docs/vllm-flash-registry.md`；不把 CPU 协议验证当作数值验收。
+
 目标：**adapter API 全绿 ⇒ 官方 sglang 在 HCU 上无大问题**。为此每个出口
 API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug 背书）：
 

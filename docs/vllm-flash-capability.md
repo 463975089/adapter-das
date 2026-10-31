@@ -1,5 +1,9 @@
 # Explicit HCU Flash owner gate
 
+Current public-registry/health contract: [Flash publication](vllm-flash-registry.md).
+The historical review below predates selector delegation and remains evidence
+for its original candidate; its counts are not acceptance for the new protocol.
+
 Selecting FLASH_ATTN requires one ACTIVE `hcu-flash-attention` capability owner
 in public process-local `extension_reports()`. The paired Plugin provides the
 independent `das_hcu_flash` entry point. Missing, failed or duplicate owners

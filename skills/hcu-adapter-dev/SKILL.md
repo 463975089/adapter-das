@@ -70,6 +70,11 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 
 ## 任务路由（做某类事之前先读对应参考文档）
 
+vLLM public registry/extension health 修改先读 `docs/vllm-flash-registry.md`。
+回归必须覆盖真实官方 selector 在 clear/foreign 后的拒绝、零实参签名预检、
+精确 report/PID 绑定、sink 失败和错误格式化中实际 fork；不得只直接测 owner
+checker。CPU 生命周期通过不代表 HCU 数值或模型通过。
+
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
 
 | 你要做的事 | 先读 |

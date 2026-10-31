@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from importlib import metadata
 import builtins
+import inspect
 from typing import Protocol, runtime_checkable
 
 
@@ -46,6 +47,7 @@ class ExtensionSpec:
     priority: int
     capabilities: frozenset[str]
     activate: Callable[[ExtensionContext], None]
+    check_health: Callable[[], None] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "capabilities", frozenset(self.capabilities))
@@ -153,8 +155,17 @@ def _ordered_reports(
 def activate_extensions(
     context: ExtensionContext,
     entry_points: Iterable[EntryPointLike] | None = None,
+    *,
+    health_check_sink: Callable[[ExtensionReport, Callable[[], None]], None] | None = None,
 ) -> tuple[ExtensionReport, ...]:
-    """Discover, validate, and activate extensions deterministically."""
+    """Activate deterministically; bind optional read-only synchronous checkers.
+
+    A sink receives the exact ACTIVE report returned to the caller. It runs only
+    after activation succeeded, so its failure is commit-fatal, never optional.
+    Report serialization and API1's existing positional fields stay unchanged.
+    """
+    if health_check_sink is not None and not callable(health_check_sink):
+        raise TypeError("health_check_sink must be callable or None")
     points = sorted(
         tuple(_entry_points() if entry_points is None else entry_points),
         key=lambda point: point.name,
@@ -187,7 +198,23 @@ def activate_extensions(
                 raise TypeError("extension API version must be an integer")
             if not isinstance(spec.priority, int):
                 raise TypeError("extension priority must be an integer")
+            checker = spec.check_health
+            if checker is not None:
+                target = getattr(checker, "__call__", None)
+                if not callable(checker) or any(
+                    predicate(value)
+                    for predicate in (inspect.iscoroutinefunction, inspect.isasyncgenfunction,
+                                      inspect.isgeneratorfunction)
+                    for value in (checker, target)
+                ):
+                    raise TypeError("check_health must be a synchronous callable or None")
+                # Optional/future parameters are fine; required positional or
+                # keyword-only arguments must fail before owner publication.
+                # An uninspectable callable cannot prove this public ABI.
+                inspect.signature(checker).bind()
             capabilities = frozenset(spec.capabilities)
+            if any(not isinstance(name, str) or not name.strip() for name in capabilities):
+                raise TypeError("capability names must be non-empty strings")
         except Exception as exc:
             reports.append(
                 _failure(
@@ -222,6 +249,7 @@ def activate_extensions(
                     spec.priority,
                     capabilities,
                     spec.activate,
+                    spec.check_health,
                 ),
             )
         )
@@ -246,8 +274,28 @@ def activate_extensions(
                 )
             )
 
+    capability_owners: dict[str, list[str]] = {}
+    for _point, spec in valid_specs:
+        for capability in spec.capabilities:
+            capability_owners.setdefault(capability, []).append(spec.name)
+    conflicts = {
+        capability: tuple(sorted(owners))
+        for capability, owners in capability_owners.items()
+        if len(owners) > 1
+    }
+    unambiguous_specs = []
+    for point, spec in valid_specs:
+        overlapping = sorted(spec.capabilities.intersection(conflicts))
+        if overlapping:
+            reason = "duplicate capability owners: " + "; ".join(
+                f"{name!r}: {', '.join(conflicts[name])}" for name in overlapping
+            )
+            reports.append(_failure(point.name, reason, spec.name, spec.capabilities))
+        else:
+            unambiguous_specs.append((point, spec))
+
     for point, spec in sorted(
-        valid_specs,
+        unambiguous_specs,
         key=lambda item: (-item[1].priority, item[1].name),
     ):
         try:
@@ -267,15 +315,27 @@ def activate_extensions(
                     _ordered_reports(reports),
                 ) from exc
         else:
-            reports.append(
-                ExtensionReport(
-                    entry_point_name=point.name,
-                    extension_name=spec.name,
-                    status=ExtensionStatus.ACTIVE,
-                    capabilities=spec.capabilities,
-                    reason="",
-                )
+            report = ExtensionReport(
+                entry_point_name=point.name,
+                extension_name=spec.name,
+                status=ExtensionStatus.ACTIVE,
+                capabilities=spec.capabilities,
+                reason="",
             )
+            if spec.check_health is not None and health_check_sink is not None:
+                try:
+                    health_check_sink(report, spec.check_health)
+                except BaseException as exc:
+                    # Do not append ACTIVE first and then another FAILED report
+                    # for the same owner: consumers must see one real outcome.
+                    reports.append(_failure(point.name,
+                        f"health binding failed after activation: {type(exc).__name__}: {exc}",
+                        spec.name, spec.capabilities))
+                    raise ExtensionCommitError(
+                        f"fatal extension health binding failure at {point.name!r}: {exc}",
+                        _ordered_reports(reports),
+                    ) from exc
+            reports.append(report)
 
     ordered = _ordered_reports(reports)
     for required in sorted(context.requested_extensions):

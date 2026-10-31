@@ -68,19 +68,20 @@ def platform(monkeypatch):
 def test_missing_failed_or_ambiguous_owner_refuses_before_backend_import(platform, reports):
     cls, config, imports, validations = platform
     bridge._RUNTIME_ACTIONS.record_extension_reports(reports)
-    with pytest.raises(bridge.VllmCompatibilityError, match="hcu-flash-attention"):
+    with pytest.raises(bridge.LatchedVllmRuntimeError, match="hcu-flash-attention"):
         cls.get_attn_backend_cls("FLASH", config)
     assert not imports and not validations
 
 
 def test_unique_flash_owner_is_independent_of_clean_failed_legacy_bundle(platform):
     cls, config, imports, validations = platform
+    active = report()
+    bridge._RUNTIME_ACTIONS.record_extension_health(active, lambda: None)
     bridge._RUNTIME_ACTIONS.record_extension_reports((
-        report("legacy", ExtensionStatus.FAILED, ("aiter-int8-moe",)), report(),
+        report("legacy", ExtensionStatus.FAILED, ("aiter-int8-moe",)), active,
     ))
-    assert cls.get_attn_backend_cls("FLASH", config) == bridge._FLASH_ATTN_BACKEND_CLASS
-    assert len(imports) == len(validations) == 1
-    assert validations[0]["block_size"] == 64
+    assert cls.get_attn_backend_cls("FLASH", config) == ("FLASH", config, None)
+    assert imports == validations == []
 
 
 @pytest.mark.parametrize("selected,use_mla,use_sparse,want", [
@@ -105,7 +106,7 @@ def test_actual_fork_does_not_accept_parent_active_report(platform):
     if pid == 0:
         try:
             cls.get_attn_backend_cls("FLASH", config)
-        except bridge.VllmCompatibilityError:
+        except bridge.LatchedVllmRuntimeError:
             os._exit(0 if not bridge.extension_reports() else 2)
         except BaseException:
             os._exit(3)
