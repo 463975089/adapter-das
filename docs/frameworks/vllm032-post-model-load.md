@@ -93,11 +93,51 @@ semantics. In particular, this seam does not make a policy frozen in a parent
 safe for a new child model. Runtime weight reloads, asynchronous loading, elastic
 loading and arbitrary worker implementations are outside this startup contract.
 
-Runtime weight-update rejection is an open integration issue. The startup seam
-does not guard official `Worker.reload_weights`, `start_weight_update` or
-`start_draft_weight_update`; these can bypass the successful-load callback.
-The Plugin's frozen-selection guard does not by itself reject those entry points.
-Do not infer hot-update support or an enforced prohibition from startup tests.
+Runtime weight mutation uses the separate guard interface below. The startup
+callback alone cannot prohibit reloads or provide runtime-update support.
+
+## Pre-model-mutation guards
+
+`register_model_mutation_guard(owner, callback)` registers a synchronous guard
+which returns `None` to permit delegation or raises to prohibit it. Owners are
+unique; the identical callable is idempotent. Guards run in owner-name order.
+Owner conflicts, registration during dispatch, recursive dispatch, asynchronous
+or generator guards, and non-None guard results are rejected. A refusal raises
+`ModelMutationError` with owner, operation, role and the original cause. It does
+not call the official mutation method. A passing guard does not perform an update.
+
+`ModelMutationContext` supplies `worker`, `operation`, `role` (`target`/`draft`)
+and the worker's current `vllm_config`. In the existing thin Adapter Worker:
+
+- `reload_weights(*args, **kwargs)` dispatches `reload_weights/target` before
+  calling the unchanged official Worker method with the original arguments.
+- `_start_weight_update(is_draft=False)` dispatches
+  `start_weight_update/target` or `start_weight_update/draft` before calling
+  the official common method. This covers both inherited public entry points,
+  `start_weight_update` and `start_draft_weight_update`, before draft engine
+  retargeting, engine preparation, or active-session publication.
+
+Both guards run in the current VllmConfig context. No runner, loader, transfer
+engine or Worker method body is copied. This private common-method dependency
+is pinned by actual target provenance/signature/public-call-chain tests.
+
+`model_mutation_guard_unavailable_reason(config)` and
+`require_model_mutation_guard(config)` describe resolved uni/mp Adapter Worker
+coverage and reject unsupported/foreign/elastic launch configurations. Unlike
+the startup query, **serving-time env caching is allowed**. Extensions must query
+coverage before selecting routes that require mutation protection.
+
+Dispatch itself does not gate on env cache or mutable configuration. Each owner
+must remember its successfully loaded worker/model ownership and preserve that
+protection after config overrides. Default CT workers without an owner's loaded
+models must pass through. Merely registering a guard imposes no global reload
+ban. Foreign/default Workers on unsupported executors remain untouched.
+
+Fork preserves guard declarations and recreates registry locks/dispatch state.
+Owners manage inherited model state and their own locks; Adapter does not erase
+frozen ownership or claim driver fork safety. Direct user mutation of runners or
+parameters outside the guarded Worker RPC methods is outside this contract.
+Engine/model/Graph/AOT validation of an owner's policy remains separate.
 
 ## Compile policy and cache semantics
 

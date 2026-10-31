@@ -8,6 +8,7 @@ queries lazily inspect vLLM's cache/launch state. Callback failures fail the loa
 from __future__ import annotations
 
 import os
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import RLock
@@ -19,6 +20,21 @@ OFFICIAL_MODEL_LOAD_WORKER = "vllm.v1.worker.gpu_worker.Worker"
 
 class PostModelLoadError(RuntimeError):
     """A callback conflicts, fails, or lacks a supported load boundary."""
+
+
+class ModelMutationError(RuntimeError):
+    """A mutation guard conflicts, fails, or lacks a supported worker boundary."""
+
+
+@dataclass(frozen=True)
+class ModelMutationContext:
+    worker: object
+    operation: str
+    role: str
+
+    @property
+    def vllm_config(self):
+        return self.worker.vllm_config
 
 
 @dataclass(frozen=True)
@@ -33,7 +49,7 @@ class PostModelLoadContext:
 
 class _Callbacks:
     def __init__(self):
-        self.callbacks: dict[str, Callable[[PostModelLoadContext], None]] = {}
+        self.callbacks: dict[str, Callable] = {}
         self.reset()
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self.reset)
@@ -52,6 +68,7 @@ class _Callbacks:
 
 
 _callbacks = _Callbacks()
+_mutation_guards = _Callbacks()
 
 
 def register_post_model_load(
@@ -79,7 +96,7 @@ def register_post_model_load(
         _callbacks.callbacks[owner] = callback
 
 
-def post_model_load_unavailable_reason(vllm_config) -> str | None:
+def _worker_unavailable_reason(vllm_config) -> str | None:
     """Fail-closed coverage query for a *resolved* VllmConfig.
 
     Only the Adapter's exact worker path and synchronous uni/mp startup are
@@ -95,10 +112,20 @@ def post_model_load_unavailable_reason(vllm_config) -> str | None:
         return "elastic model loading is outside the post-model-load contract"
     from vllm import envs
 
-    if envs._is_envs_cache_enabled():
-        return "post-model-load boundary is unavailable after env cache enabled"
     if envs.VLLM_ELASTIC_EP_SCALE_UP_LAUNCH:
         return "elastic scale-up bypasses the synchronous worker load boundary"
+    return None
+
+
+def post_model_load_unavailable_reason(vllm_config) -> str | None:
+    """Describe resolved worker coverage and the pre-env-cache load boundary."""
+    reason = _worker_unavailable_reason(vllm_config)
+    if reason is not None:
+        return reason
+    from vllm import envs
+
+    if envs._is_envs_cache_enabled():
+        return "post-model-load boundary is unavailable after env cache enabled"
     return None
 
 
@@ -134,3 +161,79 @@ def dispatch_post_model_load(worker, *, load_dummy_weights: bool) -> None:
                     ) from exc
         finally:
             _callbacks.dispatching = False
+
+
+def model_mutation_guard_unavailable_reason(vllm_config) -> str | None:
+    """Query the resolved uni/mp worker seam; serving env cache is allowed."""
+    return _worker_unavailable_reason(vllm_config)
+
+
+def require_model_mutation_guard(vllm_config) -> None:
+    """Call before selecting a route which requires weight-mutation protection."""
+    reason = model_mutation_guard_unavailable_reason(vllm_config)
+    if reason is not None:
+        raise ModelMutationError(reason)
+
+
+def register_model_mutation_guard(
+    owner: str, callback: Callable[[ModelMutationContext], None],
+) -> None:
+    """Register a named pre-mutation guard; owners decide which models to protect.
+
+    Same-callable registration is idempotent. Fork retains declarations and
+    resets synchronization only; owners must preserve or reject inherited state.
+    """
+    if not isinstance(owner, str) or not owner.strip():
+        raise ValueError("model-mutation owner must be a non-empty string")
+    if not callable(callback):
+        raise TypeError("model-mutation guard must be callable")
+    implementation = callback if inspect.isroutine(callback) else callback.__call__
+    if any(check(implementation) for check in (
+        inspect.iscoroutinefunction, inspect.isasyncgenfunction,
+        inspect.isgeneratorfunction,
+    )):
+        raise TypeError("model-mutation guard must be synchronous")
+    _mutation_guards.ensure_process()
+    with _mutation_guards.lock:
+        previous = _mutation_guards.callbacks.get(owner)
+        if previous is callback:
+            return
+        if previous is not None:
+            raise ModelMutationError(f"model-mutation owner {owner!r} already registered")
+        if _mutation_guards.dispatching:
+            raise ModelMutationError("cannot register during model-mutation dispatch")
+        _mutation_guards.callbacks[owner] = callback
+
+
+def dispatch_model_mutation(worker, *, operation: str, role: str) -> None:
+    """Worker-only guard before super reload/start; an exception prevents mutation.
+
+    No runtime config/cache availability gate is imposed here. Guards must use
+    their loaded-model ownership, even after config overrides, and pass through
+    workers they do not own. Registration/recursive dispatch during a guard is
+    rejected. No guard can authorize or execute an update on its own.
+    """
+    if operation not in ("reload_weights", "start_weight_update") or role not in (
+        "target", "draft",
+    ) or (operation == "reload_weights" and role != "target"):
+        raise ValueError("unsupported model-mutation operation/role")
+    _mutation_guards.ensure_process()
+    with _mutation_guards.lock:
+        if _mutation_guards.dispatching:
+            raise ModelMutationError("recursive model-mutation dispatch")
+        _mutation_guards.dispatching = True
+        try:
+            context = ModelMutationContext(worker, operation, role)
+            for owner, callback in sorted(_mutation_guards.callbacks.items()):
+                try:
+                    result = callback(context)
+                    if result is not None:
+                        if inspect.iscoroutine(result):
+                            result.close()
+                        raise ModelMutationError("model-mutation guards must return None or raise")
+                except Exception as exc:
+                    raise ModelMutationError(
+                        f"model-mutation owner {owner!r} refused {operation}/{role}: {exc}"
+                    ) from exc
+        finally:
+            _mutation_guards.dispatching = False
