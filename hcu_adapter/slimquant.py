@@ -20,7 +20,7 @@ Serving strategy (HCU, 64 GB cards cannot hold unpacked experts):
   ``tl.dot`` with per-token int8 activations — w4a8 where it counts, ~181 GB
   total instead of ~363 GB;
 - other quantized linears are dequantized to bf16 at load (shim below) and
-  served by UnquantizedLinearMethod (sgl_kernel's int8_scaled_mm has no DCU
+  served by UnquantizedLinearMethod (sgl_kernel's int8_scaled_mm has no HCU
   build; the +3.2 GB/GPU for 6144-wide projections is acceptable);
 - ``safetensors.safe_open`` is shimmed inside sglang's weight loader only, so
   no sglang module is modified.

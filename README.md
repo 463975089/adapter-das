@@ -4,7 +4,7 @@
 > 从镜像到跑通的手工部署看 [docs/bootstrap.md](docs/bootstrap.md)。
 
 让宿主框架（**sglang / vLLM**）官方代码的 **python 部分零修改**、直接跑在
-海光 HCU（DCU/DTK，HIP 路径）上的适配层（adapter）。
+海光 HCU（HCU/DTK，HIP 路径）上的适配层（adapter）。
 
 **平台语义走 is_cuda 分支**（governance §0.5）：上游平台判定由 adapter
 统一回答 CUDA——新模型/新功能上游先落 CUDA 分支，这是卡商追新的关键路径；

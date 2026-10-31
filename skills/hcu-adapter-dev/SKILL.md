@@ -5,7 +5,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 
 # hcu-sglang-adapter 开发规约
 
-不修改 sglang 官方代码，让社区版 sglang 直接跑在海光 HCU（DCU/DTK/HIP）上。
+不修改 sglang 官方代码，让社区版 sglang 直接跑在海光 HCU（HCU/DTK/HIP）上。
 本仓库的价值主张：**上游 import 什么算子名，我们就提供什么算子名，内部可
 路由到 triton / vendor / torch 三档实现，并对全部出口 API 做统一质量验证**。
 "adapter 测试全绿 ⇒ 官方 sglang 无大问题" 是本仓库的验收标准。

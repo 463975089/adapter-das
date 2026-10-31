@@ -33,7 +33,7 @@ def arch_name():
 
 
 def has_fp8(arch=None):
-    """gfx938+ BW-class DCUs carry the fp8 matrix unit; gfx936 does not."""
+    """gfx938+ BW-class HCUs carry the fp8 matrix unit; gfx936 does not."""
     a = arch or arch_name()
     try:
         major = int(a[3:]) if a.startswith("gfx") else 0

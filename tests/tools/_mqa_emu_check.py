@@ -19,7 +19,7 @@ torch.manual_seed(0)
 dev = "cpu"
 Q, H, D, T = 7, 32, 128, 257  # odd sizes to catch tiling bugs
 
-# --- fp8 quantized inputs (fnuz on DCU; values in e4m3 range) ---
+# --- fp8 quantized inputs (fnuz on HCU; values in e4m3 range) ---
 is_fnuz = hasattr(torch, "float8_e4m3fnuz")
 f8dt = torch.float8_e4m3fnuz if is_fnuz else torch.float8_e4m3fn
 

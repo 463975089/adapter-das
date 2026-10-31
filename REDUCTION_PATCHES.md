@@ -118,7 +118,7 @@
   - **环境副作用登记：profiling stop 后 scheduler 死锁**（trace 导出成功后 /health 无响应、进程 0% CPU，重启恢复）——prof 一次即重启规避，根因未查。
 - 遗产：本地 `tmp_fetch/fi_softmax_test.py`（adapter 单测）、`tmp_fetch/wave6_trace.py`（trace 普查器）、容器 /root/fi_softmax_test.py、/root/prof_wave.sh、/root/prof_new/（8 rank trace）。
 
-## 2026-10-26(晚) wave6b 拍定案：不是 runtime、不是 kernel 分支——宿主监控栈 DCU 采集冻卡（117ms 量化、8 卡同步、对照实锤）
+## 2026-10-26(晚) wave6b 拍定案：不是 runtime、不是 kernel 分支——宿主监控栈 HCU 采集冻卡（117ms 量化、8 卡同步、对照实锤）
 
 - **起因**：用户质疑"拍"归因（hipGraphLaunch 已很短、das 无此问题，怀疑 kernel 特殊分支）。逐层排查结果全部翻案：
   ①**怪物事件**：>20ms 的 kernel 记录 324 个、p50=116ms 高度量化，横跨所有核族（rope 49/manual_unroll 45/vectorized 42/hc_mix_stats 35/silu_clamp 30...）= 在飞 kernel 背锅，非 kernel 本身慢——**剔除后每步真实 kernel 时间仅 ~161ms**（旧普查的"rope 平均 1116µs"是怪物拉高的假账，rope p50=6.1µs 完全正常）；
@@ -126,9 +126,9 @@
   ③**停摆位置在图执行中途**（315 个 >50ms gap 仅 1 个贴提交边界），非 host launch 泡；
   ④**8 rank 同刻**（4 rank 抽样 pairwise 重叠 99-100%）——排除单卡电源/时钟独立抖动；
   ⑤排除项逐一验尸：容器/宿主 cgroup 全链无配额（quota=-1、nr_throttled=0）、CPU steal=0、launch 调用跨进程可并行（461 对重叠，无全局锁）、宿主 128 核 2168 线程无超卖；
-  ⑥**对照实验实锤**：本地旧 trace（10-23 上午 `fake_64k_c48`，TP3）**gap>50ms=0 全干净**；新 trace（10-23 22:29）315 个——两份之间宿主唯一 GPU 相关变化=**`/opt/monitor/v5_exporter --dcu.enabled=true --hot.enabled=true --collect.interval=30`（曙光监控栈，19:56 部署，29% CPU；同栈 node/process-exporter 不碰 GPU）**。DCU 采集轮询 quiesce 设备、周期/占空比（~230ms 周期 ~117ms 冻结 ≈50% 占空）与停摆谱完全吻合。**das 当时无此问题=彼时该 exporter 未部署**。
+  ⑥**对照实验实锤**：本地旧 trace（10-23 上午 `fake_64k_c48`，TP3）**gap>50ms=0 全干净**；新 trace（10-23 22:29）315 个——两份之间宿主唯一 GPU 相关变化=**`/opt/monitor/v5_exporter --hcu.enabled=true --hot.enabled=true --collect.interval=30`（曙光监控栈，19:56 部署，29% CPU；同栈 node/process-exporter 不碰 GPU）**。HCU 采集轮询 quiesce 设备、周期/占空比（~230ms 周期 ~117ms 冻结 ≈50% 占空）与停摆谱完全吻合。**das 当时无此问题=彼时该 exporter 未部署**。
 - **量化影响**：停摆 ~750ms/步占 82%——消除后步长估 ~250-300ms（~161ms kernel + host/图开销），**吞吐预期 ~3×（39 → ~110+ tok/s）**=全战役迄今最大单杠杆，优先级高于一切 kernel 优化。
-- **处置**：监控栈是邻居/运维设施（sugon basic-auth），按铁律不动它——**上报用户走管理渠道**：v5_exporter 关 `--dcu.enabled` 或拉长采集周期/避让压测窗口；生效后重跑 16×600 干净负载复核 ~3×。
+- **处置**：监控栈是邻居/运维设施（sugon basic-auth），按铁律不动它——**上报用户走管理渠道**：v5_exporter 关 `--hcu.enabled` 或拉长采集周期/避让压测窗口；生效后重跑 16×600 干净负载复核 ~3×。
 - **wave6 普查修正**：核族排名按"剔除怪物后 kept 时间"重排（每步）：silu_clamp_ptgq 27.2ms（17%，p50 598µs 真·均匀慢=1.6 靶）、vectorized_elementwise 22.0ms、manual_unroll 16.0ms、moe_sum_scale 14.5ms、nccl 14.1ms（含对端等待）、hc_mix_stats 13.1ms、rope 9.4ms（p50 6µs，纯量多）。hipGraphLaunch p50 11-20ms/次（2249 节点大图宿主提交成本，独立小池）。
 - 遗产：本地 `tmp_fetch/wave6_trace2..6.py`（分布/gap 解剖/跨 rank/launch 串行检验/对照）、`prof_dsv41f_dec20/dsv41f_tp{0,1,4,7}_wave6.trace.json.gz` + 旧对照 trace。
 

@@ -1208,7 +1208,7 @@ def install() -> None:
             _hcu_orig_gate = _dsa_utils.aiter_can_use_preshuffle_paged_mqa
             if os.environ.get("HCU_DSA_PRESHUFFLE") == "0":
                 # Legacy page_size=1 / KVBlockSize=1 DSA path (paired with the
-                # HCU_MQA_EMU torch emulation on gfx936-class DCUs).
+                # HCU_MQA_EMU torch emulation on gfx936-class HCUs).
                 def _hcu_gate():
                     return False
 
@@ -1671,7 +1671,7 @@ def install() -> None:
         # rule below is the sole AR gate now.
 
         # AiterCustomAllreduce silently corrupts data when the CUDA graph it was
-        # captured into replays on gfx936-class DCUs (eager all-reduce is fine).
+        # captured into replays on gfx936-class HCUs (eager all-reduce is fine).
         # sglang selects it as the AMD default because the C++ sgl_kernel
         # allreduce extension has no HIP build; the symptom is decode tokens
         # diverging from the first graph-replayed step while eager decode and
@@ -1723,7 +1723,7 @@ def install() -> None:
                     "HCU adapter: aiter AR gate not installed", exc_info=True
                 )
 
-        # gfx936-class DCUs have no fp8 matrix unit and the DTK aiter MQA-logits
+        # gfx936-class HCUs have no fp8 matrix unit and the DTK aiter MQA-logits
         # kernels hard-gate on gfx942/950: emulate paged/ragged fp8 MQA logits in
         # torch (dequant -> bf16 GEMM, fp32 scales). Legacy page_size=1 only.
         # hcu_env auto-rule: emulation ON only where the arch lacks fp8;

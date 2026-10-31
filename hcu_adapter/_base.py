@@ -1,7 +1,7 @@
 """Shared machinery for external-library meta-path adapters.
 
 Strategy: prefer the REAL library whenever it actually exists on disk (the
-DTK/DCU vendor wheel ports many of the ROCm triton kernels to HCU), and fall
+DTK/HCU vendor wheel ports many of the ROCm triton kernels to HCU), and fall
 back to per-module stubs only for the modules that are missing. `allowlist`
 entries are *fill-in* overlays: after a real module executes, any allowlist
 attribute the real module does not define itself is set on it, so our

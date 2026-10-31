@@ -7,7 +7,7 @@
 ## 1. 定位与核心机制
 
 让宿主框架（**sglang / vLLM**）官方代码的 **python 部分零修改**、直接跑在
-海光 HCU（DCU/DTK，HIP 路径）上。
+海光 HCU（HCU/DTK，HIP 路径）上。
 
 **平台语义路线（2026-10-12 定）**：上游的平台判定由 adapter 统一回答
 **CUDA 语义**——新模型/新功能在上游总是先落在 `_is_cuda` 分支（NVIDIA 生态
@@ -81,8 +81,8 @@ sglang 的统一算子层 `sglang.kernels`（RFC #29630 `BaseFusedOp` 多后端�
 | 适配层 | **adapter 影子库替换层**（本仓库）：`sitecustomize.py` 薄入口 ＋ `hcu_adapter` 包（宿主分发 / bridges 宿主桥 / 机制层与域桥 / vendor 桩）＋ `sgl_kernel` 同名影子包 | 三档实现路由；配合 skill（`hcu-adapter-dev`）快速排查定位精度问题 |
 | 算子库层 | triton（自研首档）· lightop · aiter · flash_mla / flash_attn · deepgemm（待适配）· mooncake / deepep（待适配） | 见 §4 逐项说明 |
 | 运行时层 | **PyTorch（HIP 版）** | 张量计算 · 显存管理 · kernel launch；三档中的 torch 兜底也在这层 |
-| 驱动 · 工具链层 | **DTK（DCU Toolkit）** | HIP/ROCm 软件栈：驱动 · 编译器 · 运行时 |
-| 硬件层 | **海光 HCU 加速卡（DCU）** | 驱动以下才算硬件；gfx93\* 等 arch 探测驱动 adapter 自动裁决 |
+| 驱动 · 工具链层 | **DTK（HCU Toolkit）** | HIP/ROCm 软件栈：驱动 · 编译器 · 运行时 |
+| 硬件层 | **海光 HCU 加速卡（HCU）** | 驱动以下才算硬件；gfx93\* 等 arch 探测驱动 adapter 自动裁决 |
 
 ```mermaid
 flowchart TB
@@ -110,7 +110,7 @@ flowchart TB
     ADPT -->|"三档路由：triton → 手写/vendor → torch"| OPS
     OPS --> TORCH["运行时层：PyTorch（HIP 版）"]
     TORCH --> DTK["驱动 · 工具链层：DTK（HIP/ROCm）"]
-    DTK --> HW["硬件层：海光 HCU 加速卡（DCU）"]
+    DTK --> HW["硬件层：海光 HCU 加速卡（HCU）"]
 ```
 
 ## 4. 组件协调关系
@@ -189,7 +189,7 @@ python -m sglang.launch_server
                  ├─ vendor 封装（lightop / aiter / flash_mla …，hcu_env + 快关门控）
                  └─ torch 兜底
             └─ 其余 import 面：hcu_adapter 元路径桩接管 aiter / flashinfer / flash_attn
-                 └─ PyTorch（HIP）→ DTK（驱动·编译·运行时）→ 海光 HCU（DCU）
+                 └─ PyTorch（HIP）→ DTK（驱动·编译·运行时）→ 海光 HCU（HCU）
 ```
 
 ---

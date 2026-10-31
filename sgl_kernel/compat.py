@@ -1,6 +1,6 @@
 """Environment detection and small shared helpers for the HCU sgl_kernel port.
 
-The package targets HCU (Hygon DCU, DTK/ROCm stack), where torch reports
+The package targets HCU (Hygon HCU, DTK/ROCm stack), where torch reports
 HIP (`torch.version.hip is not None`) but CUDA-specific extensions from the
 official sgl-kernel wheel are unavailable. All kernels here are pure triton,
 so they compile and run on any triton-supported backend (CUDA, HIP/HCU).

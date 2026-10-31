@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sgl-kernel"
 version = "0.1.0"
-description = "Triton-backed drop-in replacement of sgl_kernel for HCU (Hygon DCU). Provides the AOT kernel backend (`import sgl_kernel`) consumed by sglang's `sglang.kernels` fused-op layer, so upstream sglang runs on HCU without any code modification."
+description = "Triton-backed drop-in replacement of sgl_kernel for HCU (Hygon HCU). Provides the AOT kernel backend (`import sgl_kernel`) consumed by sglang's `sglang.kernels` fused-op layer, so upstream sglang runs on HCU without any code modification."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

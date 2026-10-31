@@ -1,7 +1,7 @@
 """torch emulation of the aiter fp8 MQA-logits kernels (HCU gfx936-class).
 
 The DTK aiter wheel's paged/ragged MQA-logits triton kernels hard-gate on
-gfx942/gfx950. On gfx936-class DCUs (BW200: no fp8 matrix unit, no MFMA
+gfx942/gfx950. On gfx936-class HCUs (BW200: no fp8 matrix unit, no MFMA
 definitions in triton 3.6) emulate them with torch: dequantize e4m3 via the
 dtype catwalk (encoder and decoder always share sglang's is_fp8_fnuz choice,
 so the convention matches by construction), then batched bf16 GEMMs with fp32

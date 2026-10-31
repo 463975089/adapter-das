@@ -1,6 +1,6 @@
 """sgl_kernel — HCU triton port of the sgl_kernel AOT kernel backend.
 
-Drop-in replacement for the official sgl-kernel wheel on HCU (Hygon DCU,
+Drop-in replacement for the official sgl-kernel wheel on HCU (Hygon HCU,
 DTK/HIP stack): same package name, same public functions, triton kernels
 (pure-torch fallbacks where noted). sglang's fused-op layer resolves the AOT
 backend via ``import sgl_kernel``; with this package installed, upstream
