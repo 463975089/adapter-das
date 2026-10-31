@@ -52,8 +52,9 @@ Adapter 负责：
 
 - 识别 HCU 并返回 `hcu_adapter.bridges.vllm.HcuPlatform`；
 - 执行 vLLM 0.32、平台选择和 DTK/HIP runtime 门禁；
-- 复用官方 `RocmPlatform` 行为，并在未显式选择 attention backend 时使用
-  vLLM 官方 Triton attention；
+- 复用官方 `RocmPlatform` 行为；普通 MHA/GQA 在未显式选择 attention
+  backend 时使用 vLLM 官方 Triton attention，MLA 与 Sparse MLA 则保留
+  `None`，交由官方 ROCm backend priority 按配置选型；
 - 为官方已有、但 HCU ABI 不一致的行为提供兼容桥；
 - 在基线门禁完成后发现可选 DAS Extension；
 - 保存进程内 Extension 激活报告。
@@ -158,6 +159,11 @@ Extension API v1、可选/必需失败语义和 wheel entry-point 所有权。
 5. 非 eager CUDA Graph capture/replay 变输入；
 6. 多模型短文本、长上下文、并发和服务 API；
 7. HumanEval 64 或本次发布要求的完整精度集合。
+
+Attention 路由还须覆盖三类配置：普通 MHA/GQA 的默认值仍为
+`TRITON_ATTN`；MLA 与 Sparse MLA 的默认值不得被 Adapter 改写为普通
+attention backend。`fp8_e5m2` 等特定 KV dtype 是否可用，继续由最终选中的
+官方 MLA backend 自己校验，Adapter 不伪造设备代际或 dtype 能力。
 
 验收顺序固定为：
 
