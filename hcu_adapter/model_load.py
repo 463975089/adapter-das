@@ -1,8 +1,9 @@
-"""Framework-light, process-local callbacks for successful worker model loads.
+"""Framework-free process-local model lifecycle declarations and dispatch.
 
-Extensions register during activation (spawn) or inherit declarations (fork).
-Importing this module imports no vLLM and selects no optimization. Availability
-queries lazily inspect vLLM's cache/launch state. Callback failures fail the load.
+Hosts provide their own admission at invocation; this module does not inspect
+worker/configuration types, executors or framework environment caches. Owners
+register during activation (spawn) or inherit declarations (fork). Callback
+failures abort dispatch. No optimization is selected here.
 """
 
 from __future__ import annotations
@@ -12,10 +13,6 @@ import inspect
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import RLock
-
-
-POST_MODEL_LOAD_WORKER = "hcu_adapter.bridges.vllm_worker.Worker"
-OFFICIAL_MODEL_LOAD_WORKER = "vllm.v1.worker.gpu_worker.Worker"
 
 
 class PostModelLoadError(RuntimeError):
@@ -34,6 +31,7 @@ class ModelMutationContext:
 
     @property
     def vllm_config(self):
+        """Legacy opaque worker accessor; shared dispatch never reads it."""
         return self.worker.vllm_config
 
 
@@ -44,6 +42,7 @@ class PostModelLoadContext:
 
     @property
     def vllm_config(self):
+        """Legacy opaque worker accessor; shared dispatch never reads it."""
         return self.worker.vllm_config
 
 
@@ -55,8 +54,8 @@ class _Callbacks:
             os.register_at_fork(after_in_child=self.reset)
 
     def reset(self):
-        # Keep declarations: vLLM's plugins_loaded once flag survives fork, so
-        # WorkerWrapper may not reactivate extensions. Only our synchronization
+        # Keep declarations: host plugin-loader once flags can survive fork, so
+        # a worker may not reactivate extensions. Only our synchronization
         # and invocation state reset. Owners manage their own captured state.
         self.pid = os.getpid()
         self.lock = RLock()
@@ -208,57 +207,23 @@ def register_post_model_load(
         _callbacks.callbacks[owner] = callback
 
 
-def _worker_unavailable_reason(vllm_config) -> str | None:
-    """Fail-closed coverage query for a *resolved* VllmConfig.
-
-    Only the Adapter's exact worker path and synchronous uni/mp startup are
-    covered. Foreign workers/subclasses and unresolved configuration are not
-    inferred to support this seam. This query does not register a callback.
-    """
-    parallel = vllm_config.parallel_config
-    if parallel.worker_cls != POST_MODEL_LOAD_WORKER:
-        return f"worker {parallel.worker_cls!r} does not provide the Adapter load seam"
-    if parallel.distributed_executor_backend not in ("uni", "mp"):
-        return "post-model-load requires the resolved uni or mp executor"
-    if parallel.enable_elastic_ep:
-        return "elastic model loading is outside the post-model-load contract"
-    from vllm import envs
-
-    if envs.VLLM_ELASTIC_EP_SCALE_UP_LAUNCH:
-        return "elastic scale-up bypasses the synchronous worker load boundary"
-    return None
-
-
-def post_model_load_unavailable_reason(vllm_config) -> str | None:
-    """Describe resolved worker coverage and the pre-env-cache load boundary."""
-    reason = _worker_unavailable_reason(vllm_config)
-    if reason is not None:
-        return reason
-    from vllm import envs
-
-    if envs._is_envs_cache_enabled():
-        return "post-model-load boundary is unavailable after env cache enabled"
-    return None
-
-
-def require_post_model_load(vllm_config) -> None:
-    """Call before selecting any route that requires a post-load freeze."""
-    reason = post_model_load_unavailable_reason(vllm_config)
-    if reason is not None:
-        raise PostModelLoadError(reason)
-
-
-def dispatch_post_model_load(worker, *, load_dummy_weights: bool) -> None:
+def dispatch_post_model_load(
+    worker, *, load_dummy_weights: bool,
+    before_dispatch: Callable[[], None] | None = None,
+) -> None:
     """Worker-only dispatch after super.load_model; once per successful call.
 
-    Owners run in name order. Exceptions abort loading with the owner's name;
-    there is no implicit retry, swallowing, or global once-only load latch.
+    Owners run in name order. An optional synchronous host admission callback
+    runs under the lifecycle gate before owners, only when declarations exist.
+    Exceptions abort loading; there is no implicit retry or load latch.
     """
     _ensure_lifecycle_process()
     with _lifecycle_lock, _callbacks.lock:
         if not _callbacks.callbacks:
             return
-        require_post_model_load(worker.vllm_config)
+        if before_dispatch is not None:
+            _require_synchronous(before_dispatch, "post-model-load admission")
+            before_dispatch()
         if _callbacks.dispatching:
             raise PostModelLoadError("recursive post-model-load dispatch")
         _callbacks.dispatching = True
@@ -273,18 +238,6 @@ def dispatch_post_model_load(worker, *, load_dummy_weights: bool) -> None:
                     ) from exc
         finally:
             _callbacks.dispatching = False
-
-
-def model_mutation_guard_unavailable_reason(vllm_config) -> str | None:
-    """Query the resolved uni/mp worker seam; serving env cache is allowed."""
-    return _worker_unavailable_reason(vllm_config)
-
-
-def require_model_mutation_guard(vllm_config) -> None:
-    """Call before selecting a route which requires weight-mutation protection."""
-    reason = model_mutation_guard_unavailable_reason(vllm_config)
-    if reason is not None:
-        raise ModelMutationError(reason)
 
 
 def register_model_mutation_guard(
@@ -313,17 +266,18 @@ def register_model_mutation_guard(
 
 
 def dispatch_model_mutation(worker, *, operation: str, role: str) -> None:
-    """Worker-only guard before super reload/start; an exception prevents mutation.
+    """Dispatch before a host mutation; an exception prevents the mutation.
 
     No runtime config/cache availability gate is imposed here. Guards must use
     their loaded-model ownership, even after config overrides, and pass through
     workers they do not own. Registration/recursive dispatch during a guard is
     rejected. No guard can authorize or execute an update on its own.
     """
-    if operation not in ("reload_weights", "start_weight_update") or role not in (
-        "target", "draft",
-    ) or (operation == "reload_weights" and role != "target"):
-        raise ValueError("unsupported model-mutation operation/role")
+    if (
+        not isinstance(operation, str) or not operation.strip()
+        or not isinstance(role, str) or not role.strip()
+    ):
+        raise ValueError("model-mutation operation/role must be non-empty strings")
     _ensure_lifecycle_process()
     with _lifecycle_lock, _mutation_guards.lock:
         if _mutation_guards.dispatching:

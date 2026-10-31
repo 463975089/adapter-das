@@ -18,7 +18,6 @@ from hcu_adapter import model_load as api
 def isolated(monkeypatch):
     monkeypatch.setattr(api, "_callbacks", api._Callbacks())
     monkeypatch.setattr(api, "_mutation_guards", api._Callbacks())
-    monkeypatch.setattr(api, "require_post_model_load", lambda config: None)
 
 
 def hooks(events):
@@ -41,9 +40,10 @@ def dispatch(which):
         api.dispatch_model_mutation(object(), operation="start_weight_update", role="draft")
 
 
-def test_import_and_both_public_apis_are_framework_light():
+def test_import_and_both_public_apis_are_framework_light(tmp_path):
     source = """
 import sys
+sys.path.insert(0, sys.argv[1])
 from hcu_adapter.model_load import preflight_model_lifecycle_hooks, register_model_lifecycle_hooks
 def callback(context): pass
 kwargs = dict(post_model_load_owner='one', post_model_load_callback=callback,
@@ -53,8 +53,11 @@ assert register_model_lifecycle_hooks(**kwargs) is None
 assert register_model_lifecycle_hooks(**kwargs) is None
 assert not {'torch', 'vllm', 'sgl_kernel'} & sys.modules.keys()
 """
-    subprocess.run([sys.executable, "-S", "-B", "-c", source], check=True,
-                   cwd=Path(__file__).resolve().parents[2])
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    subprocess.run([sys.executable, "-S", "-B", "-c", source,
+                    str(Path(api.__file__).resolve().parents[1])], check=True,
+                   cwd=tmp_path, env=env, timeout=15)
 
 
 def test_preflight_has_no_registration_or_callback_effect_and_commit_dispatches():

@@ -27,6 +27,7 @@ from vllm.v1.worker.gpu.spec_decode import speculator as spec
 from vllm.v1.executor import uniproc_executor as uni, multiproc_executor as mp
 
 from hcu_adapter import model_load as api
+from hcu_adapter.bridges import vllm_model_load as host
 from hcu_adapter.bridges import vllm as bridge
 from hcu_adapter.bridges.vllm_worker import Worker
 from hcu_adapter.extensions import ExtensionContext, ExtensionSpec, activate_extensions
@@ -64,7 +65,7 @@ def test_installed_target_methods_match_checkout():
     assert inspect.signature(Worker.load_model) == inspect.signature(gpu_worker.Worker.load_model)
 
 
-@pytest.mark.parametrize("choice", ["auto", api.OFFICIAL_MODEL_LOAD_WORKER, api.POST_MODEL_LOAD_WORKER, "foreign.Worker"])
+@pytest.mark.parametrize("choice", ["auto", host.OFFICIAL_MODEL_LOAD_WORKER, host.POST_MODEL_LOAD_WORKER, "foreign.Worker"])
 @pytest.mark.parametrize("backend", ["uni", "mp", "ray", "external_launcher", "contract.Executor", None])
 def test_platform_super_first_known_only_and_idempotent(monkeypatch, choice, backend):
     cfg = config(backend)
@@ -76,8 +77,8 @@ def test_platform_super_first_known_only_and_idempotent(monkeypatch, choice, bac
         return original(cls, value)
     monkeypatch.setattr(RocmPlatform, "check_and_update_config", classmethod(official))
     bridge.HcuPlatform.check_and_update_config(cfg)
-    if choice in ("auto", api.OFFICIAL_MODEL_LOAD_WORKER):
-        expected = api.POST_MODEL_LOAD_WORKER if backend in ("uni", "mp") else api.OFFICIAL_MODEL_LOAD_WORKER
+    if choice in ("auto", host.OFFICIAL_MODEL_LOAD_WORKER):
+        expected = host.POST_MODEL_LOAD_WORKER if backend in ("uni", "mp") else host.OFFICIAL_MODEL_LOAD_WORKER
     else:
         expected = choice
     assert seen == [choice]
@@ -89,35 +90,35 @@ def test_platform_super_first_known_only_and_idempotent(monkeypatch, choice, bac
 
 def test_super_failure_does_not_rewrite_worker(monkeypatch):
     cfg = config()
-    cfg.parallel_config.worker_cls = api.OFFICIAL_MODEL_LOAD_WORKER
+    cfg.parallel_config.worker_cls = host.OFFICIAL_MODEL_LOAD_WORKER
     def fail(cls, cfg):
         raise ValueError("official config rejected")
     monkeypatch.setattr(RocmPlatform, "check_and_update_config", classmethod(fail))
     with pytest.raises(ValueError, match="official config"):
         bridge.HcuPlatform.check_and_update_config(cfg)
-    assert cfg.parallel_config.worker_cls == api.OFFICIAL_MODEL_LOAD_WORKER
+    assert cfg.parallel_config.worker_cls == host.OFFICIAL_MODEL_LOAD_WORKER
 
 
 @pytest.mark.parametrize("backend,worker,elastic", [
     ("uni", "foreign.Worker", False), ("mp", "auto", False),
-    ("ray", api.POST_MODEL_LOAD_WORKER, False), (None, api.POST_MODEL_LOAD_WORKER, False),
-    ("mp", api.POST_MODEL_LOAD_WORKER, True),
+    ("ray", host.POST_MODEL_LOAD_WORKER, False), (None, host.POST_MODEL_LOAD_WORKER, False),
+    ("mp", host.POST_MODEL_LOAD_WORKER, True),
 ])
 def test_unavailable_requires_fail_closed(backend, worker, elastic):
     cfg = config()
     cfg.parallel_config.worker_cls = worker
     cfg.parallel_config.distributed_executor_backend = backend
     cfg.parallel_config.enable_elastic_ep = elastic
-    assert api.post_model_load_unavailable_reason(cfg)
+    assert host.post_model_load_unavailable_reason(cfg)
     with pytest.raises(api.PostModelLoadError):
-        api.require_post_model_load(cfg)
+        host.require_post_model_load(cfg)
 
 
 def test_elastic_launch_env_is_not_silently_covered(monkeypatch):
     cfg = config()
     monkeypatch.setenv("VLLM_ELASTIC_EP_SCALE_UP_LAUNCH", "1")
     with pytest.raises(api.PostModelLoadError, match="scale-up"):
-        api.require_post_model_load(cfg)
+        host.require_post_model_load(cfg)
 
 
 def make_runner(monkeypatch, cfg, version, events, fail_at=None):
@@ -236,7 +237,7 @@ def test_default_ct_unsupported_executor_keeps_official_load_without_callbacks(m
     prepare_wrapper(monkeypatch, cfg, runner, events, must_not_dispatch)
     wrapper = worker_base.WorkerWrapperBase(0)
     wrapper.init_worker([{"vllm_config": cfg}])
-    assert cfg.parallel_config.worker_cls == api.OFFICIAL_MODEL_LOAD_WORKER
+    assert cfg.parallel_config.worker_cls == host.OFFICIAL_MODEL_LOAD_WORKER
     assert type(wrapper.worker) is gpu_worker.Worker
     assert api._callbacks.callbacks  # A registered policy must not restrict CT.
     wrapper.load_model()
@@ -257,7 +258,7 @@ def test_explicit_quant_policy_requires_covered_executor_before_loading(monkeypa
     # This generic Adapter barrier is required by the Plugin selector. It must
     # inspect the actual resolved config, before a caller starts loading/packing.
     with pytest.raises(api.PostModelLoadError, match="does not provide the Adapter load seam"):
-        api.require_post_model_load(cfg)
+        host.require_post_model_load(cfg)
     assert events == ["activate"]
 
 
@@ -358,7 +359,23 @@ def test_late_env_cache_rejected_at_real_worker_boundary(monkeypatch):
     with pytest.raises(api.PostModelLoadError, match="after env cache"):
         wrapper.load_model()
     assert "wrong" not in events
-    assert "after env cache" in api.post_model_load_unavailable_reason(cfg)
+    assert "after env cache" in host.post_model_load_unavailable_reason(cfg)
+
+
+def test_empty_vllm_registry_does_not_impose_a_late_cache_or_worker_gate():
+    envs.enable_envs_cache()
+    # Preserve the old no-owner short circuit, including opaque worker objects.
+    host.dispatch_post_model_load(object(), load_dummy_weights=False)
+
+
+def test_public_facade_shares_the_neutral_registry_contract():
+    for name in ("PostModelLoadContext", "ModelMutationContext", "PostModelLoadError",
+                 "ModelMutationError", "preflight_model_lifecycle_hooks",
+                 "register_model_lifecycle_hooks", "register_post_model_load",
+                 "register_model_mutation_guard"):
+        assert getattr(host, name) is getattr(api, name)
+    for name in ("require_post_model_load", "require_model_mutation_guard"):
+        inspect.signature(getattr(host, name)).bind(vllm_config=object())
 
 
 @pytest.mark.parametrize("version", [1, 2])

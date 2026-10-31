@@ -10,7 +10,7 @@ An extension registers a module-level callback, once its own activation checks
 have succeeded, from its existing `ExtensionSpec.activate` function:
 
 ```python
-from hcu_adapter.model_load import (
+from hcu_adapter.bridges.vllm_model_load import (
     register_post_model_load,
     require_post_model_load,
     post_model_load_unavailable_reason,
@@ -42,6 +42,38 @@ Only the exact `hcu_adapter.bridges.vllm_worker.Worker` path with resolved `uni`
 or `mp`, no elastic EP/scale-up, and env caching still disabled is supported.
 Unresolved `auto`, `None` executor, explicit foreign workers/subclasses, Ray,
 custom executors, elastic launch and late env-cache states fail the query.
+
+### Shared mechanism and host-specific admission
+
+`hcu_adapter.model_load` owns framework-free declarations, contexts, atomic
+registration, dispatch and fork synchronization. It imports neither framework
+at import time **or invocation time**, and never reads a worker's host config.
+Contexts keep their opaque `worker` reference. The existing `vllm_config`
+accessor remains a convenience for vLLM callbacks; a different host uses its
+own worker attributes. The shared mechanism never invokes that accessor.
+
+vLLM selectors must import availability queries, `require_*` functions and
+worker-path constants from `hcu_adapter.bridges.vllm_model_load`. These names
+have moved out of the shared module; there is no shared-to-host forwarding
+shim. Their signatures and the resolved uni/mp/elastic/env-cache policy remain
+unchanged. The bridge also exposes the original registration/context/error
+objects as a single public vLLM facade. Consumers may continue importing those
+framework-neutral objects directly from `hcu_adapter.model_load`.
+
+The thin vLLM Worker calls the bridge dispatcher. It supplies its read-only
+admission check to shared post-load dispatch as `before_dispatch`, inside the
+existing lifecycle gate and only when owners are registered. Empty registries
+retain their no-config/no-cache-query short circuit. Shared mutation dispatch
+accepts nonempty host-owned operation/role strings; the vLLM bridge retains
+the exact reload/target and start/target-or-draft identifier validation.
+Calling shared dispatch directly is not a vLLM availability check.
+
+Unpublished Plugin lifecycle consumers must migrate both activation-time ABI
+preflight and runtime selector imports to the public vLLM facade before using
+this revision. Check callable signatures (including compatible optional
+arguments) before any provider or registry mutation; do not bind to an exact
+wheel version or inspect private callback registries. Frozen older wheels are
+not changed by this interface relocation.
 
 `HcuPlatform.check_and_update_config` calls the official ROCm method first and,
 only for resolved `uni`/`mp`, replaces its known

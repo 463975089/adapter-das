@@ -3,7 +3,7 @@
 from vllm.config import set_current_vllm_config
 from vllm.v1.worker.gpu_worker import Worker as OfficialWorker
 
-from hcu_adapter.model_load import dispatch_model_mutation, dispatch_post_model_load
+from hcu_adapter.bridges.vllm_model_load import dispatch_model_mutation, dispatch_post_model_load
 
 
 class Worker(OfficialWorker):

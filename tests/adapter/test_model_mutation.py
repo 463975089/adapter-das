@@ -8,6 +8,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from hcu_adapter import model_load as api
+from hcu_adapter.bridges import vllm_model_load as host
 
 pytest.importorskip("vllm")
 from vllm import envs
@@ -82,10 +83,10 @@ def test_target_mutation_method_provenance_and_signatures():
 @pytest.mark.parametrize("backend", ["ray", "external_launcher", "contract.Executor", None])
 def test_mutation_guard_query_rejects_uncovered_resolved_workers(backend):
     cfg = config(backend)
-    assert cfg.parallel_config.worker_cls == api.OFFICIAL_MODEL_LOAD_WORKER
+    assert cfg.parallel_config.worker_cls == host.OFFICIAL_MODEL_LOAD_WORKER
     envs.enable_envs_cache()
     with pytest.raises(api.ModelMutationError, match="does not provide the Adapter load seam"):
-        api.require_model_mutation_guard(cfg)
+        host.require_model_mutation_guard(cfg)
 
 
 @pytest.mark.parametrize("version", [1, 2])
@@ -106,7 +107,7 @@ def test_real_worker_guards_before_mutation_or_delegates(monkeypatch, version, o
             raise ValueError("owned model")
     api.register_model_mutation_guard("cpu-owner", guard)
     envs.enable_envs_cache()  # Serving-time guard must not reuse postload's gate.
-    api.require_model_mutation_guard(value.vllm_config)
+    host.require_model_mutation_guard(value.vllm_config)
     if refuse:
         with pytest.raises(api.ModelMutationError, match="cpu-owner.*owned model") as caught:
             invoke(value, operation)
@@ -157,6 +158,15 @@ def test_mutation_guard_requires_synchronous_callback(async_guard):
     def generator(context): yield None
     with pytest.raises(TypeError, match="synchronous"):
         api.register_model_mutation_guard("owner", asynchronous if async_guard else generator)
+
+
+@pytest.mark.parametrize("operation,role", [
+    ("reload_weights", "draft"), ("update_weights_from_tensor", "target"),
+    ("start_weight_update", "model"),
+])
+def test_vllm_bridge_retains_exact_mutation_identifier_contract(operation, role):
+    with pytest.raises(ValueError, match="unsupported model-mutation operation/role"):
+        host.dispatch_model_mutation(object(), operation=operation, role=role)
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="requires POSIX fork")

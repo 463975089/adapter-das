@@ -279,7 +279,7 @@ def _hcu_platform_class() -> type:
         def check_and_update_config(cls, vllm_config) -> None:
             # Upstream owns config validation/defaults, including worker choice.
             super().check_and_update_config(vllm_config)
-            from hcu_adapter.model_load import (
+            from hcu_adapter.bridges.vllm_model_load import (
                 OFFICIAL_MODEL_LOAD_WORKER,
                 POST_MODEL_LOAD_WORKER,
             )
