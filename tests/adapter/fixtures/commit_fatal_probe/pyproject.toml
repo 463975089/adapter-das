@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hcu-commit-fatal-probe"
+version = "0.0.1"
+requires-python = ">=3.9"
+
+[project.entry-points."hcu_adapter.extensions"]
+commit_probe_early = "hcu_commit_fatal_probe:early_spec"
+commit_probe_owner = "hcu_commit_fatal_probe:owner_spec"
+commit_probe_later = "hcu_commit_fatal_probe:later_spec"
+
+[tool.setuptools]
+py-modules = ["hcu_commit_fatal_probe", "hcu_commit_fatal_payload"]

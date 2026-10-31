@@ -91,8 +91,11 @@ Python 启动
 
 ## 4. 基线与失败语义
 
-- **未安装 Plugin**：`vLLM + Adapter` 必须可以启动并使用官方基线路径；
-- **可选 Plugin 失败**：Adapter 记录失败报告，基线继续启动；
+- **未安装 Plugin 且未显式请求 required 项**：`vLLM + Adapter` 保持官方基线路径；
+- **可选 Plugin 干净准备失败**：Adapter 记录失败报告，基线继续启动；
+- **显式 commit-fatal 失败**：已发布状态后不能安全继续时，owner 抛出公开
+  `ExtensionCommitError`；宿主停止后续激活并锁存失败，即使该 owner 是 optional。
+  详见[公开失败/健康 ABI](../vllm-commit-fatal.md)；
 - **Extension API 调用方显式传入 required Extension/capability**：缺失时响亮
   阻断；默认 vLLM runtime context 当前不请求任何必选项；
 - **不支持的 vLLM 版本或 HCU 架构**：不得选择 `HcuPlatform`；

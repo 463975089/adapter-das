@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
 from importlib import metadata
+import builtins
 from typing import Protocol, runtime_checkable
 
 
@@ -77,6 +78,39 @@ class RequiredExtensionError(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.reports = tuple(reports)
+
+
+class ExtensionCommitError(RuntimeError):
+    """Activation published state and cannot safely continue in this process.
+
+    This signals failure, not rollback. The host supplies reports when it
+    propagates the error; an owner need only provide the reason.
+    """
+
+    def __init__(self, message: str, reports: Iterable[ExtensionReport] = ()) -> None:
+        super().__init__(message)
+        self.reports = tuple(reports)
+
+
+def is_fatal_extension_error(error: BaseException) -> bool:
+    """Recognize the public signal through wrappers, suppression and cycles.
+
+    No message/type heuristics infer dirty state. Owners explicitly signal
+    their commit boundary. Feature detection keeps the Python floor.
+    """
+    group_type = getattr(builtins, "BaseExceptionGroup", ())
+    pending, visited = [error], set()
+    while pending:
+        current = pending.pop()
+        if not isinstance(current, BaseException) or id(current) in visited:
+            continue
+        visited.add(id(current))
+        if isinstance(current, ExtensionCommitError):
+            return True
+        pending.extend((current.__cause__, current.__context__))
+        if group_type and isinstance(current, group_type):
+            pending.extend(current.exceptions)
+    return False
 
 
 @runtime_checkable
@@ -161,6 +195,11 @@ def activate_extensions(
                     f"load failed: {type(exc).__name__}: {exc}",
                 )
             )
+            if is_fatal_extension_error(exc):
+                raise ExtensionCommitError(
+                    f"fatal extension discovery failure at {point.name!r}: {exc}",
+                    _ordered_reports(reports),
+                ) from exc
             continue
 
         if spec.api_version != EXTENSION_API_VERSION:
@@ -222,6 +261,11 @@ def activate_extensions(
                     spec.capabilities,
                 )
             )
+            if is_fatal_extension_error(exc):
+                raise ExtensionCommitError(
+                    f"fatal extension activation failure at {point.name!r}: {exc}",
+                    _ordered_reports(reports),
+                ) from exc
         else:
             reports.append(
                 ExtensionReport(
@@ -281,5 +325,7 @@ __all__ = [
     "ExtensionSpec",
     "ExtensionStatus",
     "RequiredExtensionError",
+    "ExtensionCommitError",
+    "is_fatal_extension_error",
     "activate_extensions",
 ]
