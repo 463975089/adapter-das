@@ -70,8 +70,6 @@ class RequiredCallable:
         pass
 
 
-@pytest.mark.parametrize('checker', [lambda required: None, lambda *, required: None,
-                                    RequiredCallable(), functools.partial(lambda a, b: None, 1)])
 @pytest.mark.parametrize('render_error', [RuntimeError, KeyboardInterrupt])
 def test_sink_broken_error_render_stays_typed_fatal_and_host_fork_refused(render_error):
     actions = bridge.ProcessLocalActions()
@@ -111,6 +109,8 @@ def test_sink_broken_error_render_stays_typed_fatal_and_host_fork_refused(render
     assert not calls
 
 
+@pytest.mark.parametrize('checker', [lambda required: None, lambda *, required: None,
+                                    RequiredCallable(), functools.partial(lambda a, b: None, 1)])
 @pytest.mark.parametrize('required', [False, True])
 def test_required_checker_arguments_are_rejected_before_owner_activation(checker, required):
     calls = []
