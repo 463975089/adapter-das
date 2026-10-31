@@ -20,8 +20,10 @@ Both keys are registered in `hcu_adapter.hcu_env.REGISTRY` and documented in
 the [environment manual](../env-vars.md). Behavioral reads use its canonical
 resolver. Under normal `HCU_ADAPTER_HOST=vllm` (or auto-selected vLLM),
 `bootstrap.install` calls `bridges.common.install`, which emits the shared
-summary once before the host bridge; explicit values carry `(explicit)` and
-empty defaults use the existing all-defaults line. The empty default requests nothing. There is no hardware/provider
+summary once before the host bridge; explicit values carry `(explicit)`.
+Empty required defaults are omitted from the per-value summary. Other registry
+entries may still be logged; the existing all-defaults line applies only when
+the summary has no effective entries. The empty default requests nothing. There is no hardware/provider
 auto rule: a requirement asserts what must already activate successfully and
 does not itself enable or select an implementation.
 

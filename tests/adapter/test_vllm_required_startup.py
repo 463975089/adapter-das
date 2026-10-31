@@ -219,6 +219,8 @@ def test_real_vllm_bootstrap_common_logs_once_then_actual_runtime_preserves_poli
     names = ("HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES")
     # Only registered requirements participate; unrelated auto rules and the
     # topology/JIT providers must not touch hardware in this CPU contract.
+    # The default all-empty line below concerns this controlled subset only;
+    # other real registry entries (for example HOST) may still be logged.
     monkeypatch.setattr(hcu_env, "REGISTRY", {key: hcu_env.REGISTRY[key] for key in names})
     monkeypatch.setattr(hcu_config, "lookup", lambda name: None)
     monkeypatch.setattr(hcu_config, "summary_line", lambda: "")
