@@ -73,6 +73,21 @@ _FORWARDS = {
         "#pragma once",
         "#include <hip/hip_runtime.h>",
     ],
+    "cub/block/block_load.cuh": [
+        "#pragma once",
+        "#include <hipcub/block/block_load.hpp>",
+        "namespace cub = hipcub;",
+    ],
+    "cub/block/block_store.cuh": [
+        "#pragma once",
+        "#include <hipcub/block/block_store.hpp>",
+        "namespace cub = hipcub;",
+    ],
+    "cub/block/block_scan.cuh": [
+        "#pragma once",
+        "#include <hipcub/block/block_scan.hpp>",
+        "namespace cub = hipcub;",
+    ],
 }
 
 _MARK = "// HCU adapter cuda->hip forwarder"
@@ -104,6 +119,7 @@ def install():
         try:
             from hcu_adapter.atomic_io import atomic_write
 
+            target.parent.mkdir(parents=True, exist_ok=True)
             atomic_write(target, body)
             written += 1
         except OSError:

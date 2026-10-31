@@ -108,6 +108,20 @@ def install():
         aiter_group(xq, x, xs, group_size, eps)
         return xq, xs
 
+    def _torch_group_column_major(x, group_size, eps, dtype):
+        """Quantize groups while preserving the column-major scale stride."""
+        groups = x.shape[-1] // group_size
+        values = x.float().reshape(x.shape[0], groups, group_size)
+        scales = values.abs().amax(dim=-1).clamp(min=eps) / 448.0
+        quant = (values / scales.unsqueeze(-1)).clamp(-448.0, 448.0)
+        # Allocate [groups, tokens] then transpose: logical shape remains
+        # [tokens, groups], but stride is column-major as upstream requires.
+        scales_col = torch.empty(
+            (groups, x.shape[0]), device=x.device, dtype=torch.float32
+        ).transpose(0, 1)
+        scales_col.copy_(scales)
+        return quant.reshape_as(x).to(dtype), scales_col
+
     def _plain(x):
         return x.dim() == 2 and x.is_contiguous() and x.shape[0] > 0
 
@@ -132,6 +146,11 @@ def install():
                   fuse_silu_and_mul=False, masked_m=None):
         plain = not (column_major_scales or scale_tma_aligned
                      or scale_ue8m0 or masked_m is not None)
+        if column_major_scales and not scale_tma_aligned \
+                and not scale_ue8m0 and not fuse_silu_and_mul \
+                and masked_m is None and _plain(x) \
+                and x.shape[-1] % group_size == 0:
+            return _torch_group_column_major(x, group_size, eps, fp8_dtype)
         if plain and fuse_silu_and_mul and x.dim() == 2 \
                 and x.is_contiguous() and x.shape[0] > 0 \
                 and group_size == x.shape[-1] // 2:
@@ -163,6 +182,10 @@ def install():
         dtype = dtype or fp8_dtype
         plain = not (column_major_scales or scale_tma_aligned
                      or scale_ue8m0)
+        if column_major_scales and not scale_tma_aligned \
+                and not scale_ue8m0 and _plain(x) \
+                and x.shape[-1] % group_size == 0:
+            return _torch_group_column_major(x, group_size, eps, dtype)
         if plain and dtype == fp8_dtype and _plain(x) \
                 and x.shape[-1] % group_size == 0:
             if group_size == x.shape[-1]:

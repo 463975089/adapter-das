@@ -32,6 +32,11 @@ import torch
 
 __all__ = [
     "get_device_accessible_ptr",
+    "hcu_alloc_decode_kernel",
+    "hcu_alloc_extend_kernel",
+    "hcu_assign_req_to_token_pool",
+    "hcu_get_last_loc",
+    "hcu_assign_extend_cache_locs",
     "transfer_kv_per_layer",
     "transfer_kv_per_layer_pf_lf",
     "transfer_kv_per_layer_ph_lf",
@@ -53,6 +58,109 @@ __all__ = [
 def _row_index(t: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     """Rows of a (N, D) or (N, ...) buffer selected by flat token ids."""
     return t.index_select(0, indices.to(torch.long))
+
+
+def hcu_alloc_decode_kernel(
+    seq_lens_ptr: torch.Tensor,
+    last_loc_ptr: torch.Tensor,
+    free_page_ptr: torch.Tensor,
+    out_indices: torch.Tensor,
+    bs: int,
+    page_size: int,
+) -> None:
+    """Compatibility face for the optional HCU paged decode AOT kernel.
+
+    Community snapshots import this name unconditionally on HIP even when the
+    matching ``torch.ops.sgl_kernel`` extension is not installed.  The upstream
+    Triton implementation has the same semantics and is the correctness route.
+    """
+    from sglang.kernels.ops.memory.allocator import alloc_decode_kernel
+
+    alloc_decode_kernel[(bs,)](
+        seq_lens_ptr,
+        last_loc_ptr,
+        free_page_ptr,
+        out_indices,
+        1 << (bs - 1).bit_length(),
+        page_size,
+    )
+
+
+def hcu_alloc_extend_kernel(
+    pre_lens_ptr: torch.Tensor,
+    seq_lens_ptr: torch.Tensor,
+    last_loc_ptr: torch.Tensor,
+    free_page_ptr: torch.Tensor,
+    out_indices: torch.Tensor,
+    bs: int,
+    page_size: int,
+) -> None:
+    """Compatibility face for the optional HCU paged extend AOT kernel."""
+    from sglang.kernels.ops.memory.allocator import alloc_extend_kernel
+
+    alloc_extend_kernel[(bs,)](
+        pre_lens_ptr,
+        seq_lens_ptr,
+        last_loc_ptr,
+        free_page_ptr,
+        out_indices,
+        1 << (bs - 1).bit_length(),
+        page_size,
+    )
+
+
+def hcu_assign_req_to_token_pool(
+    req_pool_indices: torch.Tensor,
+    req_to_token: torch.Tensor,
+    allocate_lens: torch.Tensor,
+    new_allocate_lens: torch.Tensor,
+    out_cache_loc: torch.Tensor,
+    shape: int,
+    bs: int,
+) -> None:
+    """Write variable-length cache locations without requiring the HCU AOT op."""
+    cursor = 0
+    for row in range(bs):
+        start = int(allocate_lens[row].item())
+        end = int(new_allocate_lens[row].item())
+        length = end - start
+        if length > 0:
+            req = int(req_pool_indices[row].item())
+            req_to_token[req, start:end] = out_cache_loc[cursor : cursor + length]
+            cursor += length
+
+
+def hcu_get_last_loc(
+    req_to_token: torch.Tensor,
+    req_pool_indices: torch.Tensor,
+    prefix_lens: torch.Tensor,
+) -> torch.Tensor:
+    """Return each request's final prefix slot, preserving the upstream ABI."""
+    rows = req_pool_indices.to(torch.long)
+    cols = (prefix_lens - 1).clamp_min(0).to(torch.long)
+    values = req_to_token[rows, cols]
+    return torch.where(prefix_lens > 0, values, torch.full_like(values, -1))
+
+
+def hcu_assign_extend_cache_locs(
+    req_pool_indices: torch.Tensor,
+    req_to_token: torch.Tensor,
+    start_offset: torch.Tensor,
+    end_offset: torch.Tensor,
+    out_cache_loc: torch.Tensor,
+    pool_len: int,
+    bs: int,
+) -> None:
+    """Compatibility alias for speculative variable-length cache writes."""
+    hcu_assign_req_to_token_pool(
+        req_pool_indices,
+        req_to_token,
+        start_offset,
+        end_offset,
+        out_cache_loc,
+        pool_len,
+        bs,
+    )
 
 
 _HIP_HOST_GET_DEV_PTR = None  # None until resolved; False when unavailable

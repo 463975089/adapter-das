@@ -54,6 +54,26 @@ from sgl_kernel.flash_mla import (  # noqa: F401
     get_mla_metadata,
 )
 
+
+def fast_topk(input, k, dim=-1, largest=True, sorted=True):
+    """Torch correctness fallback for the optional sgl-kernel top-k AOT op."""
+    import torch
+
+    return torch.topk(input, k, dim=dim, largest=largest, sorted=sorted)
+
+
+def build_tree_kernel_efficient(*args, **kwargs):
+    """Loud guard for speculative tree construction absent from this shadow.
+
+    The symbol must exist because community modules import it at module load;
+    actual speculative-tree execution remains unsupported until an HCU port is
+    installed, so never silently emulate an unknown in-place ABI.
+    """
+    raise NotImplementedError(
+        "build_tree_kernel_efficient is unavailable on HCU; use linear MTP or "
+        "install a compatible speculative-tree backend"
+    )
+
 # Register HCU shims for AMD/NVIDIA-only dependencies that upstream sglang
 # imports on HIP devices (`aiter`, `flashinfer`, `flash_attn`, ...). Must run
 # before any sglang module import; unimplemented symbol *calls* raise loudly.
@@ -108,4 +128,7 @@ __all__ = [
     "moe_align_block_size",
     "moe_sum",
     "moe_sum_reduce",
+    # speculative import surface
+    "fast_topk",
+    "build_tree_kernel_efficient",
 ]

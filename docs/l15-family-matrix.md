@@ -38,6 +38,27 @@ python tools/l15_family_matrix.py run \
 - MoE/Quantization 先使用 adapter-owned GPU contract，因为 v0.5.22 不同源码快照中的上游文件路径已有漂移；应在目标 HCU 树实际 collect 后再把稳定 nodeid 纳入主 classified baseline。
 - 用例通过只形成 family-matrix green；晋级 `core-green` 仍需 route evidence，证明未意外走 CUDA stub 或错误 fallback。
 
+## HCU 实测结果
+
+在与 manifest 两个 binding hash 完全一致的社区 v0.5.22 源码树上，以单张 gfx938 HCU 完整执行：**22/22 PASS**。
+
+| 家族 | 通过 |
+|---|---:|
+| Dense | 3/3 |
+| MLA | 4/4 |
+| MoE | 5/5 |
+| Quantization | 5/5 |
+| Mamba | 5/5 |
+
+本轮从首次失败到全绿修复了四类 adapter 兼容缺口：
+
+- 新版 paged allocator 无条件导入的 HCU kvcache ABI，回落到上游 Triton/torch correctness 路径；
+- speculative 与 sparse attention 的可选 public import surface，未选择的能力允许收集，实际调用仍 loud fail；
+- Mamba causal Conv1D 所需 CUB block headers 转发到 hipCUB；
+- column-major FP8 scales 从无法在 gfx938 编译的 CUDA JIT 路径改为 torch correctness fallback。
+
+该结果证明 family-matrix 行为通过；仍不自动等价于全部 case 已具备独立 route evidence 或性能达标。
+
 ## 当前明确缺口
 
 1. Mamba 真实 CUDAGraph fresh-input replay；
