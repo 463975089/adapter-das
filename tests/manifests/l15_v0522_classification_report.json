@@ -2,8 +2,8 @@
   "artifact": "l15-classification",
   "classification_summary": {
     "contract-green": 3182,
-    "diagnostic-known-fail": 5,
-    "platform-skip": 105
+    "diagnostic-known-fail": 4,
+    "platform-skip": 106
   },
   "manifest_id": "sglang-v0.5.22-l15-v2",
   "note": "contract-green does not count as kernel route coverage; core-green requires separate route evidence",

@@ -4338,10 +4338,8 @@
       "skip_reason": "('test/registered/kernels/ops/kvcache/test_set_mla_kv_buffer.py', 136, 'Skipped: The TMA bulk-store kernel requires CUDA SM90+')"
     },
     "test/registered/kernels/ops/kvcache/test_set_mla_kv_buffer.py::test_set_mla_kv_buffer_triton_fp8_quant_reserved_skip_index": {
-      "classification": "diagnostic-known-fail",
-      "fingerprint": "E triton.compiler.errors.CompilationError: at 1:0: def set_mla_kv_buffer_fp8_quant_kernel( ^ ValueError(\"type fp8e4b8 not supported in this architecture. The supported fp8 dtypes are ('fp8e4nv', 'fp8e5')\")",
-      "promotion_condition": "stable green execution with route evidence review",
-      "review_condition": "the recorded outcome or fingerprint changes"
+      "platform_guard": "gfx938 does not support requested fp8e4b8/float8_e4m3fnuz",
+      "skip_reason": "Requested float8_e4m3fnuz encoding is unsupported by the target Triton architecture; production HCU routing uses float8_e4m3fn and must not substitute incompatible encodings."
     },
     "test/registered/kernels/ops/kvcache/test_set_mla_kv_buffer.py::test_set_mla_kv_buffer_triton_reserved_skip_index[loc_dtype0]": {
       "classification": "contract-green"

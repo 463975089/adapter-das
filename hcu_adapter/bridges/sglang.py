@@ -520,6 +520,14 @@ def install() -> None:
                 "HCU adapter: gdn aiter router not installed", exc_info=True
             )
         try:
+            from hcu_adapter import gdn_cutedsl_fallback
+
+            gdn_cutedsl_fallback.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: gdn CuTeDSL fallback not installed", exc_info=True
+            )
+        try:
             # Unconditional rebind: torch's lazy op namespace can pass an
             # import-time probe and still miss the native symbol at call time.
             from hcu_adapter.bridges import vllm as _vllm_bridge
