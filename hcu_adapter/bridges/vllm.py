@@ -276,6 +276,22 @@ def _hcu_platform_class() -> type:
         device_name = "hcu"
 
         @classmethod
+        def check_and_update_config(cls, vllm_config) -> None:
+            # Upstream owns config validation/defaults, including worker choice.
+            super().check_and_update_config(vllm_config)
+            from hcu_adapter.model_load import (
+                OFFICIAL_MODEL_LOAD_WORKER,
+                POST_MODEL_LOAD_WORKER,
+            )
+
+            parallel = vllm_config.parallel_config
+            if (
+                parallel.worker_cls == OFFICIAL_MODEL_LOAD_WORKER
+                and parallel.distributed_executor_backend in ("uni", "mp")
+            ):
+                parallel.worker_cls = POST_MODEL_LOAD_WORKER
+
+        @classmethod
         def get_attn_backend_cls(
             cls,
             selected_backend,
