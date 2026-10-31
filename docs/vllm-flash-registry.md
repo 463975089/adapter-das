@@ -1,5 +1,15 @@
 # Flash publication and process-local health
 
+The transaction implementation is shared in `hcu_adapter/runtime_lifecycle.py`
+(stdlib plus framework-free extension protocol). The vLLM bridge supplies only
+its protected runtime action ID and existing public error type, public wrappers,
+admission and selector/activation orchestration. Locks, report/PID bindings,
+reentry, fork and failure-before-decrement remain one transaction in the shared
+module. It imports neither framework nor Torch/kernel/provider package.
+SGLang receives no new activation policy from this extraction. Shared contracts
+exercise independent named consumers; both actual Adapter host dispatch/import
+paths regress alongside the actual vLLM selector and metadata/spawn suites.
+
 vLLM owns attention selection and configuration validation. Adapter requires a
 unique ACTIVE `hcu-flash-attention` report and its exact current-process health
 binding, then delegates to `RocmPlatform`. No Plugin class path or backend table

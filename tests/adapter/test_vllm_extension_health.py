@@ -11,6 +11,7 @@ import pytest
 
 from hcu_adapter import extensions as ext
 from hcu_adapter.bridges import vllm as bridge
+from hcu_adapter import runtime_lifecycle as lifecycle
 
 
 CAP = 'test-capability'
@@ -382,7 +383,7 @@ def test_exception_formatting_fork_sees_refusal_before_latch_details_and_counter
         def __str__(self):
             observations.append((actions._health_inflight, fork_probe_health(actions)))
             return 'forked during exception formatting'
-    monkeypatch.setattr(bridge, 'ExtensionCommitError', ForkOnStrError)
+    monkeypatch.setattr(lifecycle, 'ExtensionCommitError', ForkOnStrError)
     def checker():
         if fault == 'checker':
             raise ForkOnStrError('checker failure')

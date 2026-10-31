@@ -1,5 +1,10 @@
 # 自动化测试套件要求
 
+共享 lifecycle 的 CPU 门禁包含 `test_runtime_lifecycle.py`、实际双宿主
+`test_bootstrap.py`、portable sequence/isolation 子集，以及原 vLLM 健康、
+selector 和真实 metadata/spawn 门禁。双宿主 import 探针拒绝框架/Torch/
+kernel/provider import；named consumer 回归不得冒称 SGLang engine 试验。
+
 vLLM 扩展生命周期：source 与独立 wheel installed 分开跑。check_health 的
 必需参数须在激活前拒绝；报告替换/重复、sink 失败、caught error 后其他
 selector、实际 fork 格式化窗口均需断言。public registry clear/foreign 必须

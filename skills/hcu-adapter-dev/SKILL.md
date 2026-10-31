@@ -71,6 +71,8 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 ## 任务路由（做某类事之前先读对应参考文档）
 
 vLLM public registry/extension health 修改先读 `docs/vllm-flash-registry.md`。
+共享 lifecycle 机制放 `runtime_lifecycle.py`，不能长在宿主薄桥内；改动须
+回归双宿主 bootstrap/import 与共享 consumer 契约，并保持真实 vLLM probes。
 回归必须覆盖真实官方 selector 在 clear/foreign 后的拒绝、零实参签名预检、
 精确 report/PID 绑定、sink 失败和错误格式化中实际 fork；不得只直接测 owner
 checker。CPU 生命周期通过不代表 HCU 数值或模型通过。

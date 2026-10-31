@@ -330,6 +330,12 @@ Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查�
 
 ### 7.2 双宿主共建边界
 
+进程内 lifecycle/health 事务实现在 framework-free 的
+`hcu_adapter/runtime_lifecycle.py`；宿主桥只注入 action ID / 公开错误类型及
+启动、选型编排。共享锁、inflight、report 绑定、fork 与失败锁存不可拆成
+相互反调的宿主/owner 锁。共享回归同时覆盖双宿主 Adapter bootstrap/import
+契约与独立 consumer 生命周期；不得把它宣传为新增 SGLang engine 激活功能。
+
 - **共享层 = `hcu_adapter/` 包本体（bridges/common + 机制层/域桥 + `sgl_kernel/`）**，
   framework-free 是硬契约（§1 表）；共享层变更两个宿主都要回归；共享算子
   配**宿主中立 parity 契约测试**（`tests/kernels/`，不依赖 sglang/vllm
