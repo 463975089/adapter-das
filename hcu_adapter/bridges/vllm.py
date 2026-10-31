@@ -29,6 +29,8 @@ _FLASH_ATTN_BACKEND_CLASS = (
 )
 _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
+_REQUIRED_EXTENSIONS = "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS"
+_REQUIRED_CAPABILITIES = "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES"
 
 
 class VllmCompatibilityError(RuntimeError):
@@ -359,12 +361,18 @@ def hcu_runtime_plugin() -> None:
         return None
 
     def initialize() -> None:
+        # Parse before any operator registration. These are startup requirements,
+        # inherited by spawned/forked workers, not runtime enable/disable knobs.
+        required_extensions = _required_names(_REQUIRED_EXTENSIONS)
+        required_capabilities = _required_names(_REQUIRED_CAPABILITIES)
         vllm_version = _ensure_vllm_compatible()
         _ensure_hcu_platform_selected()
         configure_vllm_hip_runtime_path()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,
+            requested_extensions=required_extensions,
+            requested_capabilities=required_capabilities,
         )
         try:
             reports = activate_extensions(context)
@@ -374,6 +382,17 @@ def hcu_runtime_plugin() -> None:
         _RUNTIME_ACTIONS.record_extension_reports(reports)
 
     _RUNTIME_ACTIONS.run_once("vllm-runtime", initialize)
+
+
+def _required_names(variable: str) -> frozenset[str]:
+    """Read a comma-separated list; reject malformed nonempty requirements."""
+    raw = os.environ.get(variable, "")
+    if not raw.strip():
+        return frozenset()
+    names = tuple(name.strip() for name in raw.split(","))
+    if any(not name or any(char.isspace() for char in name) for name in names):
+        raise ValueError(f"{variable} requires comma-separated non-empty names")
+    return frozenset(names)
 
 
 def install_rms_norm_bridge() -> bool:
