@@ -56,6 +56,56 @@ their own extension configuration; they must use a different supported route
 or an independently implemented seam. `worker_extension_cls` cannot override
 `load_model`: the official wrapper rejects that name conflict.
 
+## Atomic registration of a post-load/guard pair
+
+An owner which needs both existing hooks should use the public two-hook API,
+instead of reading Adapter registries or performing two separate registrations:
+
+```python
+from hcu_adapter.model_load import (
+    preflight_model_lifecycle_hooks,
+    register_model_lifecycle_hooks,
+)
+
+hooks = dict(
+    post_model_load_owner="my-extension.compile-policy",
+    post_model_load_callback=after_model_load,
+    model_mutation_owner="my-extension.frozen-models",
+    model_mutation_guard=before_model_mutation,
+)
+preflight_model_lifecycle_hooks(**hooks)  # No registration or callback execution.
+register_model_lifecycle_hooks(**hooks)  # Recheck, then commit both or neither.
+```
+
+Both functions return `None`. Preflight is a current-state query, not a
+reservation: registration repeats all checks. Named owners remain independent
+for each hook; identical callable declarations are idempotent, conflicting
+callables raise the existing hook-specific error, and both callbacks must be
+synchronous. Async/generator functions, callable objects and partials are checked
+before either registry changes. This API registers declarations; resolved worker
+availability queries are still required at the actual optimization selector.
+
+An entirely existing identical pair is a no-op even during dispatch, consistent
+with legacy single-hook idempotency. Adding either declaration during either
+hook's dispatch is rejected. Dispatch and legacy registration share a small
+process-local reentrant gate with the transaction. They cannot observe an
+intermediate one-hook state from another thread. A failure from either real
+registration restores both registries, including existing unrelated owners, and
+propagates the original exception. Callbacks are never run as part of commit.
+Recursive dispatch continues to fail with its existing public error.
+
+The gate covers only these two existing registries. It is not an activation
+transaction for an extension's aliases, compile factors or other mutable state.
+Commit this pair before extension-owned mutations which must not precede a
+hook-registration failure. Plugin code must not inspect `_callbacks`,
+`_mutation_guards`, their dictionaries or their dispatch flags. Existing separate
+registration APIs remain supported for owners needing only one hook.
+
+Fork retains declarations and resets the gate/registry synchronization and
+dispatch state; it does not reset an extension's inherited frozen-model state.
+No worker/loader/runner body, framework selection, capability ownership or
+required-extension policy changes as part of this API.
+
 ## Load boundary and ownership
 
 The Adapter Worker inherits the official Worker, calls `super().load_model`

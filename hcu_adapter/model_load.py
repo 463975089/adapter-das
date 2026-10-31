@@ -67,8 +67,120 @@ class _Callbacks:
             self.reset()
 
 
+_lifecycle_pid = os.getpid()
+_lifecycle_lock = RLock()
+
+
+def _reset_lifecycle_lock() -> None:
+    global _lifecycle_pid, _lifecycle_lock
+    _lifecycle_pid = os.getpid()
+    _lifecycle_lock = RLock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_lifecycle_lock)
+
+
 _callbacks = _Callbacks()
 _mutation_guards = _Callbacks()
+
+
+def _ensure_lifecycle_process() -> None:
+    if _lifecycle_pid != os.getpid():
+        _reset_lifecycle_lock()
+    _callbacks.ensure_process()
+    _mutation_guards.ensure_process()
+
+
+def _require_synchronous(callback, label: str) -> None:
+    implementations = (callback,) if inspect.isroutine(callback) else (callback, callback.__call__)
+    if any(check(implementation) for implementation in implementations for check in (
+        inspect.iscoroutinefunction, inspect.isasyncgenfunction,
+        inspect.isgeneratorfunction,
+    )):
+        raise TypeError(f"{label} must be synchronous")
+
+
+def _preflight_lifecycle_hooks(
+    post_model_load_owner, post_model_load_callback,
+    model_mutation_owner, model_mutation_guard,
+) -> bool:
+    """Caller holds the lifecycle gate and both registries; no state is written."""
+    unchanged = True
+    for registry, owner, callback, label, error in (
+        (_callbacks, post_model_load_owner, post_model_load_callback,
+         "post-model-load", PostModelLoadError),
+        (_mutation_guards, model_mutation_owner, model_mutation_guard,
+         "model-mutation", ModelMutationError),
+    ):
+        if not isinstance(owner, str) or not owner.strip():
+            raise ValueError(f"{label} owner must be a non-empty string")
+        if not callable(callback):
+            raise TypeError(f"{label} callback must be callable")
+        _require_synchronous(callback, f"{label} callback")
+        previous = registry.callbacks.get(owner)
+        if previous is not None and previous is not callback:
+            raise error(f"{label} owner {owner!r} already registered")
+        unchanged = unchanged and previous is callback
+    if unchanged:
+        return False
+    if _callbacks.dispatching:
+        raise PostModelLoadError("cannot register lifecycle hooks during post-model-load dispatch")
+    if _mutation_guards.dispatching:
+        raise ModelMutationError("cannot register lifecycle hooks during model-mutation dispatch")
+    return True
+
+
+def preflight_model_lifecycle_hooks(
+    *, post_model_load_owner: str,
+    post_model_load_callback: Callable[[PostModelLoadContext], None],
+    model_mutation_owner: str,
+    model_mutation_guard: Callable[[ModelMutationContext], None],
+) -> None:
+    """Check the two named hooks without registering or invoking either one.
+
+    This is a current-state query, not a reservation. Atomic registration repeats
+    these checks. Both callbacks must be synchronous; identical declarations are
+    idempotent, including an entirely unchanged pair during dispatch.
+    """
+    _ensure_lifecycle_process()
+    with _lifecycle_lock, _callbacks.lock, _mutation_guards.lock:
+        _preflight_lifecycle_hooks(
+            post_model_load_owner, post_model_load_callback,
+            model_mutation_owner, model_mutation_guard,
+        )
+
+
+def register_model_lifecycle_hooks(
+    *, post_model_load_owner: str,
+    post_model_load_callback: Callable[[PostModelLoadContext], None],
+    model_mutation_owner: str,
+    model_mutation_guard: Callable[[ModelMutationContext], None],
+) -> None:
+    """Register this post-load/guard pair atomically, restoring both on failure.
+
+    Legacy registration and dispatch share the gate, so other threads cannot
+    dispatch a partially registered pair. This only transacts the two Adapter
+    registries, not any extension-owned activation or model state.
+    """
+    _ensure_lifecycle_process()
+    with _lifecycle_lock, _callbacks.lock, _mutation_guards.lock:
+        if not _preflight_lifecycle_hooks(
+            post_model_load_owner, post_model_load_callback,
+            model_mutation_owner, model_mutation_guard,
+        ):
+            return
+        before_load = dict(_callbacks.callbacks)
+        before_mutation = dict(_mutation_guards.callbacks)
+        try:
+            register_post_model_load(post_model_load_owner, post_model_load_callback)
+            register_model_mutation_guard(model_mutation_owner, model_mutation_guard)
+        except BaseException:
+            _callbacks.callbacks.clear()
+            _callbacks.callbacks.update(before_load)
+            _mutation_guards.callbacks.clear()
+            _mutation_guards.callbacks.update(before_mutation)
+            raise
 
 
 def register_post_model_load(
@@ -84,8 +196,8 @@ def register_post_model_load(
         raise ValueError("post-model-load owner must be a non-empty string")
     if not callable(callback):
         raise TypeError("post-model-load callback must be callable")
-    _callbacks.ensure_process()
-    with _callbacks.lock:
+    _ensure_lifecycle_process()
+    with _lifecycle_lock, _callbacks.lock:
         previous = _callbacks.callbacks.get(owner)
         if previous is callback:
             return
@@ -142,8 +254,8 @@ def dispatch_post_model_load(worker, *, load_dummy_weights: bool) -> None:
     Owners run in name order. Exceptions abort loading with the owner's name;
     there is no implicit retry, swallowing, or global once-only load latch.
     """
-    _callbacks.ensure_process()
-    with _callbacks.lock:
+    _ensure_lifecycle_process()
+    with _lifecycle_lock, _callbacks.lock:
         if not _callbacks.callbacks:
             return
         require_post_model_load(worker.vllm_config)
@@ -187,14 +299,9 @@ def register_model_mutation_guard(
         raise ValueError("model-mutation owner must be a non-empty string")
     if not callable(callback):
         raise TypeError("model-mutation guard must be callable")
-    implementation = callback if inspect.isroutine(callback) else callback.__call__
-    if any(check(implementation) for check in (
-        inspect.iscoroutinefunction, inspect.isasyncgenfunction,
-        inspect.isgeneratorfunction,
-    )):
-        raise TypeError("model-mutation guard must be synchronous")
-    _mutation_guards.ensure_process()
-    with _mutation_guards.lock:
+    _require_synchronous(callback, "model-mutation guard")
+    _ensure_lifecycle_process()
+    with _lifecycle_lock, _mutation_guards.lock:
         previous = _mutation_guards.callbacks.get(owner)
         if previous is callback:
             return
@@ -217,8 +324,8 @@ def dispatch_model_mutation(worker, *, operation: str, role: str) -> None:
         "target", "draft",
     ) or (operation == "reload_weights" and role != "target"):
         raise ValueError("unsupported model-mutation operation/role")
-    _mutation_guards.ensure_process()
-    with _mutation_guards.lock:
+    _ensure_lifecycle_process()
+    with _lifecycle_lock, _mutation_guards.lock:
         if _mutation_guards.dispatching:
             raise ModelMutationError("recursive model-mutation dispatch")
         _mutation_guards.dispatching = True
