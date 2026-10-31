@@ -72,6 +72,45 @@ class RequiredCallable:
 
 @pytest.mark.parametrize('checker', [lambda required: None, lambda *, required: None,
                                     RequiredCallable(), functools.partial(lambda a, b: None, 1)])
+@pytest.mark.parametrize('render_error', [RuntimeError, KeyboardInterrupt])
+def test_sink_broken_error_render_stays_typed_fatal_and_host_fork_refused(render_error):
+    actions = bridge.ProcessLocalActions()
+    calls = []
+    class BadString(BaseException):
+        def __str__(self):
+            raise render_error('diagnostic failed')
+    error = BadString()
+    def sink(report, checker):
+        raise error
+    def callback():
+        ext.activate_extensions(ext.ExtensionContext('cpu', '0.32.0'),
+            [point(lambda: None, priority=10), NS(name='later', load=lambda: lambda:
+                ext.ExtensionSpec('later', 1, 0, (), lambda _: calls.append('BAD')))],
+            health_check_sink=sink)
+    with pytest.raises(bridge.LatchedVllmRuntimeError) as caught:
+        actions.run_once('vllm-runtime', callback)
+    fatal = caught.value.__cause__
+    assert isinstance(fatal, ext.ExtensionCommitError) and fatal.__cause__ is error
+    report, = fatal.reports
+    assert report.status is ext.ExtensionStatus.FAILED
+    assert 'exception details unavailable' in report.reason and not calls
+    with pytest.raises(bridge.LatchedVllmRuntimeError):
+        actions.require_runtime_healthy()
+    with pytest.raises(bridge.LatchedVllmRuntimeError):
+        actions.run_once('vllm-runtime', lambda: calls.append('RETRY'))
+    if hasattr(os, 'fork'):
+        pid = os.fork()
+        if pid == 0:
+            try:
+                actions.require_runtime_healthy()
+            except bridge.LatchedVllmRuntimeError:
+                os._exit(0)
+            os._exit(3)
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 0
+    assert not calls
+
+
 @pytest.mark.parametrize('required', [False, True])
 def test_required_checker_arguments_are_rejected_before_owner_activation(checker, required):
     calls = []

@@ -12,6 +12,8 @@ host lifecycle APIs. Its binding uses the exact ACTIVE report object and PID;
 replacement, duplicate and failed reports cannot borrow an earlier binding.
 Failure in the post-activation binding sink is commit-fatal, with one FAILED
 report for that owner.
+Diagnostic rendering in the sink-failure path also uses PR23's guarded renderer;
+a broken `__str__` cannot replace the typed fatal outcome or its original cause.
 
 Lock order is host snapshot, unlocked owner callback, host verification. The
 inflight counter covers all validation, callback, verification and failure

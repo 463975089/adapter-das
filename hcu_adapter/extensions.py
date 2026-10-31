@@ -340,11 +340,12 @@ def activate_extensions(
                 except BaseException as exc:
                     # Do not append ACTIVE first and then another FAILED report
                     # for the same owner: consumers must see one real outcome.
+                    description = _exception_description(exc)
                     reports.append(_failure(point.name,
-                        f"health binding failed after activation: {type(exc).__name__}: {exc}",
+                        f"health binding failed after activation: {description}",
                         spec.name, spec.capabilities))
                     raise ExtensionCommitError(
-                        f"fatal extension health binding failure at {point.name!r}: {exc}",
+                        f"fatal extension health binding failure at {point.name!r}: {description}",
                         _ordered_reports(reports),
                     ) from exc
             reports.append(report)
