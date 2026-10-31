@@ -75,6 +75,13 @@ vLLM public registry/extension health 修改先读 `docs/vllm-flash-registry.md`
 精确 report/PID 绑定、sink 失败和错误格式化中实际 fork；不得只直接测 owner
 checker。CPU 生命周期通过不代表 HCU 数值或模型通过。
 
+宿主启动失败须先锁存固定拒绝，再格式化异常；`__str__` 也可能抛
+`BaseException`、重入或 fork。扩展宿主先判原始 fatal 链，再安全生成唯一
+FAILED 报告；诊断失败不能把已发布错误变成普通 optional，也不能把干净
+optional 误判为 fatal。保留 callback 原有捕获边界，不新增恢复接口。
+回归需有真实 metadata/官方 loader、安装态坏字符串、父子拒绝和重试证据；
+详见 `docs/vllm-commit-fatal.md` 与测试参考。
+
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
 
 | 你要做的事 | 先读 |

@@ -122,6 +122,144 @@ def test_fatal_factory_does_not_continue_activation():
     assert not calls and caught.value.reports[0].entry_point_name == "bad"
 
 
+@pytest.mark.parametrize("render_error", [ValueError, KeyboardInterrupt])
+def test_runtime_refusal_survives_unrenderable_action_error(startup, render_error):
+    calls = []
+
+    class BrokenString(RuntimeError):
+        def __str__(self):
+            raise render_error("diagnostic formatting failed")
+
+    def action():
+        calls.append("attempt")
+        raise BrokenString()
+
+    actions = bridge._RUNTIME_ACTIONS
+    with pytest.raises(bridge.LatchedVllmRuntimeError, match="details unavailable") as caught:
+        actions.run_once("vllm-runtime", action)
+    assert isinstance(caught.value.__cause__, BrokenString)
+    with pytest.raises(bridge.LatchedVllmRuntimeError):
+        bridge.require_runtime_healthy()
+    with pytest.raises(bridge.LatchedVllmRuntimeError):
+        actions.run_once("vllm-runtime", lambda: calls.append("BAD retry"))
+    if hasattr(os, "fork"):
+        def child():
+            with pytest.raises(bridge.LatchedVllmRuntimeError):
+                bridge.require_runtime_healthy()
+            with pytest.raises(bridge.LatchedVllmRuntimeError):
+                actions.run_once("vllm-runtime", lambda: None)
+        child_result(child)
+    assert calls == ["attempt"]
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="requires actual fork")
+def test_runtime_unrenderable_error_fork_sees_refusal_before_formatting(startup):
+    observations = []
+
+    class ForkString(RuntimeError):
+        def __str__(self):
+            def child():
+                with pytest.raises(bridge.LatchedVllmRuntimeError):
+                    bridge.require_runtime_healthy()
+            child_result(child)
+            # Read the real stored refusal from this thread through the public
+            # query; reentrant formatting must not find a healthy runtime.
+            with pytest.raises(bridge.LatchedVllmRuntimeError):
+                bridge.require_runtime_healthy()
+            observations.append("refused")
+            raise KeyboardInterrupt("formatting interrupted after fork")
+
+    def action():
+        raise ForkString()
+
+    with pytest.raises(bridge.LatchedVllmRuntimeError, match="details unavailable"):
+        bridge._RUNTIME_ACTIONS.run_once("vllm-runtime", action)
+    assert observations == ["refused"]
+
+
+@pytest.mark.parametrize("stage", ["discovery", "activation"])
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("render_error", [ValueError, KeyboardInterrupt])
+def test_unrenderable_fatal_preserves_failed_report_and_stops_later(stage, wrapped, render_error):
+    calls = []
+    base = RuntimeError if wrapped else ext.ExtensionCommitError
+
+    class BrokenString(base):
+        def __str__(self):
+            raise render_error("diagnostic formatting failed")
+
+    def fail(*args):
+        if wrapped:
+            try:
+                raise ext.ExtensionCommitError("explicit publication failure")
+            except ext.ExtensionCommitError as cause:
+                raise BrokenString("original failure") from cause
+        raise BrokenString("original failure")
+
+    bad = (NS(name="dirty", load=fail) if stage == "discovery"
+           else Point("dirty", 10, fail, ("dirty-capability",)))
+    points = [Point("early", 20, lambda _: calls.append("early")), bad,
+              Point("later", 0, lambda _: calls.append("BAD later"))]
+    with pytest.raises(ext.ExtensionCommitError) as caught:
+        ext.activate_extensions(ext.ExtensionContext("cpu", "0.32.0"), points)
+    reports = caught.value.reports
+    assert [r.entry_point_name for r in reports].count("dirty") == 1
+    dirty = next(r for r in reports if r.entry_point_name == "dirty")
+    assert dirty.status is ext.ExtensionStatus.FAILED
+    assert "details unavailable" in dirty.reason
+    assert isinstance(caught.value.__cause__, BrokenString)
+    if stage == "activation":
+        assert dirty.extension_name == "dirty" and dirty.capabilities == {"dirty-capability"}
+        assert {r.entry_point_name: r.status.value for r in reports} == {"early": "active", "dirty": "failed"}
+        assert calls == ["early"]
+    else:
+        assert calls == []
+
+
+@pytest.mark.parametrize("stage", ["discovery", "activation"])
+@pytest.mark.parametrize("required", [False, True])
+def test_unrenderable_clean_error_keeps_optional_and_required_policy(stage, required):
+    class BrokenString(ImportError):
+        def __str__(self):
+            raise KeyboardInterrupt("diagnostic formatting failed")
+
+    def fail(*args):
+        raise BrokenString()
+
+    later = []
+    point = NS(name="clean", load=fail) if stage == "discovery" else Point("clean", 10, fail)
+    context = ext.ExtensionContext("cpu", "0.32.0", requested_extensions={"clean"} if required else ())
+    points = [point, Point("later", 0, lambda _: later.append(1))]
+    if required:
+        with pytest.raises(ext.RequiredExtensionError) as caught:
+            ext.activate_extensions(context, points)
+        reports = caught.value.reports
+    else:
+        reports = ext.activate_extensions(context, points)
+    assert {r.entry_point_name: r.status.value for r in reports} == {"clean": "failed", "later": "active"}
+    assert "details unavailable" in reports[0].reason
+    assert later == [1]
+
+
+def test_unrenderable_wrapper_cannot_hide_fatal_cause_during_formatting():
+    class MutatingString(RuntimeError):
+        def __str__(self):
+            self.__cause__ = None
+            self.__context__ = None
+            raise ValueError("diagnostic formatting changed its exception chain")
+
+    def fail(_):
+        try:
+            raise ext.ExtensionCommitError("explicit publication failure")
+        except ext.ExtensionCommitError as cause:
+            raise MutatingString() from cause
+
+    with pytest.raises(ext.ExtensionCommitError) as caught:
+        ext.activate_extensions(ext.ExtensionContext("cpu", "0.32.0"), [Point("dirty", 0, fail)])
+    assert caught.value.reports[0].status is ext.ExtensionStatus.FAILED
+    assert isinstance(caught.value.__cause__, MutatingString)
+
+
 @pytest.mark.parametrize("required", [False, True])
 @pytest.mark.parametrize("selected,mla,sparse", [("FLASH",False,False), (None,False,False), (None,True,False), (None,True,True)])
 def test_caught_boot_failure_blocks_all_routes_without_import_or_reactivation(startup, platform, monkeypatch, required, selected, mla, sparse):
