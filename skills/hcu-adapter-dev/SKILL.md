@@ -85,6 +85,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
 | 加/改算子档位实现文件（命名/归档） | `docs/governance.md` §3b + `python tools/gen_tier_matrix.py`（档位矩阵随 catalog 同 commit） |
 | vLLM 0.32 平台、attention/MLA backend 选型 | `docs/frameworks/vllm032.md` + `docs/governance.md`（先区分普通/MLA/Sparse MLA，保持真实架构能力） |
+| vLLM 扩展发布状态后失败 / 捕获错误后继续 / fork 健康 | `docs/vllm-commit-fatal.md` + `docs/governance.md` §7.2（干净 optional 失败仍可继续；显式 commit-fatal 不得恢复或伪装回滚） |
 | 需求/任务领取 | 任务跟踪不走仓内看板（board.md 已移除），归 MR 与团队现用任务系统；协作红线见 `docs/governance.md` §7 |
 
 ## 治理闭环（改代码必走的登记链，L0 机器查）

@@ -343,8 +343,14 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
   经 `hcu_adapter.extensions` entry-point 组接入，只交付可选优化实现
   （`ExtensionSpec` + 实现），不得复制版本/平台/DTK 门禁——宿主适配只有
   一个启动裁决点。激活发生在版本、平台和 DTK runtime guard **之后**；
-  optional 扩展失败降级为进程内报告，仅显式 required 扩展/capability
-  失败才响亮阻断；无 plugin wheel 时保持官方 vLLM 基线路径可启动；
+  optional 扩展的干净准备失败降级为进程内报告，显式 required 扩展/capability
+  失败响亮阻断。已发布状态后无法安全继续的失败须由 owner 显式抛出公开
+  `ExtensionCommitError`；即使 optional，宿主也停止后续激活并锁存失败，
+  不声称回滚。捕获错误、重试、改报告或 fork 均不得恢复该不安全进程；
+  普通未标记的 optional 失败仍保留原有行为。公开只读健康查询与完整语义见
+  [vLLM commit-fatal ABI](vllm-commit-fatal.md)。这是既有扩展宿主的启动故障
+  处理，不新增算子、后端或执行能力；未显式请求 required 项且无 plugin wheel 时
+  仍保持官方基线路径；
 - **宿主仲裁待改**：argv 无信号且双框架并存时 bootstrap 现静默取 sglang
   （legacy-default）——应改为 loud fail 要求显式 `HCU_ADAPTER_HOST`，
   在此之前两框架混装的节点必须显式设该变量。
