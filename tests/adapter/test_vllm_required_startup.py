@@ -5,7 +5,6 @@ import os
 import pytest
 
 from hcu_adapter.bridges import vllm as bridge
-from hcu_adapter.bridges import vllm_fp8
 from hcu_adapter import extensions
 
 
@@ -26,27 +25,27 @@ def startup(monkeypatch):
     monkeypatch.delenv("HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", raising=False)
     monkeypatch.delenv("HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES", raising=False)
     monkeypatch.setattr(bridge, "detect_hcu", lambda: bridge.HcuDetection(True, "gfx936", ""))
-    monkeypatch.setattr(bridge, "_ensure_vllm_compatible", lambda: "0.32.0+test")
     monkeypatch.setattr(bridge, "_ensure_hcu_platform_selected", lambda: None)
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: None)
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "test")
     monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
-    installs = []
-    monkeypatch.setattr(vllm_fp8, "install", lambda: installs.append("fp8"))
+    checks = []
+    monkeypatch.setattr(bridge, "_ensure_vllm_compatible",
+                        lambda: (checks.append("version"), "0.32.0+test")[1])
     points = []
     monkeypatch.setattr(extensions, "_entry_points", lambda: points)
-    return points, installs
+    return points, checks
 
 
 def test_environment_requirements_reach_activation_and_run_once(startup, monkeypatch):
-    points, installs = startup
+    points, checks = startup
     contexts = []
     points.append(Point("provider", "attention", contexts))
     monkeypatch.setenv("HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", " provider,provider ")
     monkeypatch.setenv("HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES", " attention ")
     bridge.hcu_runtime_plugin()
     bridge.hcu_runtime_plugin()
-    assert installs == ["fp8"]
+    assert checks == ["version"]
     assert len(contexts) == 1
     assert contexts[0].requested_extensions == frozenset({"provider"})
     assert contexts[0].requested_capabilities == frozenset({"attention"})
@@ -59,7 +58,7 @@ def test_environment_requirements_reach_activation_and_run_once(startup, monkeyp
     ("HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES", "missing"),
 ])
 def test_missing_required_entrypoint_or_capability_latches_with_reports(startup, monkeypatch, variable, name):
-    points, installs = startup
+    points, checks = startup
     contexts = []
     points.append(Point("provider", "attention", contexts))
     monkeypatch.setenv(variable, name)
@@ -67,7 +66,7 @@ def test_missing_required_entrypoint_or_capability_latches_with_reports(startup,
         with pytest.raises(bridge.LatchedVllmRuntimeError, match=name):
             bridge.hcu_runtime_plugin()
     assert len(contexts) == 1
-    assert installs == ["fp8"]
+    assert checks == ["version"]
     assert len(bridge.extension_reports()) == 1
     assert bridge.extension_reports()[0].entry_point_name == "provider"
 
@@ -85,12 +84,12 @@ def test_conflicting_required_capability_latches_without_either_activation(start
 
 
 @pytest.mark.parametrize("raw", (",", "attention,", "a,,b", "two words"))
-def test_malformed_requirements_fail_before_kernel_registration(startup, monkeypatch, raw):
-    points, installs = startup
+def test_malformed_requirements_fail_before_runtime_checks(startup, monkeypatch, raw):
+    points, checks = startup
     monkeypatch.setenv("HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES", raw)
     with pytest.raises(bridge.LatchedVllmRuntimeError, match="comma-separated"):
         bridge.hcu_runtime_plugin()
-    assert installs == []
+    assert checks == []
     assert bridge.extension_reports() == ()
 
 
