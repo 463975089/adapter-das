@@ -14,6 +14,7 @@ from packaging.version import InvalidVersion, Version
 from hcu_adapter.extensions import (
     ExtensionContext,
     ExtensionReport,
+    ExtensionStatus,
     RequiredExtensionError,
     activate_extensions,
 )
@@ -27,6 +28,7 @@ _PLATFORM_CLASS = "hcu_adapter.bridges.vllm.HcuPlatform"
 _FLASH_ATTN_BACKEND_CLASS = (
     "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
 )
+_FLASH_ATTN_CAPABILITY = "hcu-flash-attention"
 _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
 
@@ -258,6 +260,27 @@ def extension_reports() -> tuple[ExtensionReport, ...]:
     return _RUNTIME_ACTIONS.extension_reports()
 
 
+def _require_flash_capability() -> None:
+    # Reports are process-local and cleared after fork. Do not activate or
+    # repair extensions from a backend selector, or trust a parent report.
+    owners = [
+        report for report in extension_reports()
+        if _FLASH_ATTN_CAPABILITY in report.capabilities
+    ]
+    if len(owners) != 1:
+        raise VllmCompatibilityError(
+            "Selected HCU FLASH_ATTN requires exactly one extension owner for "
+            f"{_FLASH_ATTN_CAPABILITY!r}; found {len(owners)}. "
+            "Complete HCU runtime activation before selecting the backend."
+        )
+    owner = owners[0]
+    if owner.status is not ExtensionStatus.ACTIVE:
+        raise VllmCompatibilityError(
+            f"Selected HCU FLASH_ATTN capability {_FLASH_ATTN_CAPABILITY!r} "
+            f"is not active ({owner.entry_point_name}): {owner.reason}"
+        )
+
+
 def install() -> None:
     """Defer vLLM activation to its official plugin discovery lifecycle."""
 
@@ -297,6 +320,7 @@ def _hcu_platform_class() -> type:
             if selected_backend is None and not (uses_mla or uses_sparse):
                 selected_backend = AttentionBackendEnum.TRITON_ATTN
             if selected_backend == AttentionBackendEnum.FLASH_ATTN:
+                _require_flash_capability()
                 module_name, class_name = _FLASH_ATTN_BACKEND_CLASS.rsplit(".", 1)
                 backend_class = getattr(import_module(module_name), class_name)
                 device_capability = cls.get_device_capability()

@@ -435,6 +435,10 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
         selector,
         16,
     )
+    monkeypatch.setattr(bridge, "extension_reports", lambda: (
+        ExtensionReport("flash", "flash", ExtensionStatus.ACTIVE,
+                        frozenset({"hcu-flash-attention"}), ""),
+    ))
     assert platform.get_attn_backend_cls("FLASH_ATTN", selector, 8) == (
         "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
     )
@@ -485,6 +489,10 @@ def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
         ),
     )
 
+    monkeypatch.setattr(bridge, "extension_reports", lambda: (
+        ExtensionReport("flash", "flash", ExtensionStatus.ACTIVE,
+                        frozenset({"hcu-flash-attention"}), ""),
+    ))
     with pytest.raises(ValueError, match="DCP not supported"):
         bridge.HcuPlatform.get_attn_backend_cls(
             "FLASH_ATTN",
