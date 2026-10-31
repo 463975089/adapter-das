@@ -93,7 +93,8 @@ attention backend 和机制层回归，不能系统发现 `sgl_kernel` 公共 AB
 量化、KV Cache、Sampling、MoE 和底层 Conv1D 的上游漂移。
 
 L1.5 v2 保持上游测试本体零拷贝，扩展目标不是“把 `test/registered` 全跑一遍”，而是
-覆盖社区 sglang 经 adapter 进入 HCU 的主要调用面：
+覆盖社区 sglang 经 adapter 进入 HCU 的主要调用面。逐文件候选、初始分类、已知风险与
+晋级条件统一维护在 [l15-test-inventory.md](l15-test-inventory.md)：
 
 | 域 | 首批候选 | 主要验证 |
 |---|---|---|

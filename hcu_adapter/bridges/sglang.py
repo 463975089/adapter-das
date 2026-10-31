@@ -528,6 +528,16 @@ def install() -> None:
         except Exception:  # pragma: no cover - vllm absent: sglang falls back natively
             pass
 
+        # v0.5.22's layernorm face otherwise compiles CUDA-source JIT kernels.
+        try:
+            from hcu_adapter import sglang_layernorm as _sgl_layernorm
+
+            _sgl_layernorm.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: sglang layernorm route not installed", exc_info=True
+            )
+
         try:
             import sgl_kernel as _sk
 

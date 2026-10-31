@@ -1,0 +1,79 @@
+"""Pytest plugin used by L1.5 runs to emit machine-readable per-node outcomes.
+
+Loaded explicitly with ``-p tools.l15_pytest_report``.  The output path is
+required through ``L15_PYTEST_REPORT``; no repository or upstream files are
+modified by the plugin.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+
+_RESULTS: dict[str, dict[str, Any]] = {}
+
+
+def _bounded(value: object, limit: int = 500) -> str:
+    text = " ".join(str(value).split())
+    return text[:limit]
+
+
+def _normalize_nodeid(nodeid: str) -> str:
+    if nodeid.startswith("registered/"):
+        return "test/" + nodeid
+    return nodeid
+
+
+def pytest_runtest_logreport(report: Any) -> None:
+    if report.when not in {"setup", "call", "teardown"}:
+        return
+    nodeid = _normalize_nodeid(report.nodeid)
+    record = _RESULTS.setdefault(
+        nodeid,
+        {"nodeid": nodeid, "outcome": "not_collected", "phases": {}},
+    )
+    phase = {"outcome": report.outcome}
+    if getattr(report, "wasxfail", None):
+        phase["wasxfail"] = _bounded(report.wasxfail)
+    if report.failed:
+        phase["fingerprint"] = _bounded(report.longrepr)
+    if report.skipped:
+        phase["reason"] = _bounded(report.longrepr)
+    record["phases"][report.when] = phase
+
+    if report.when == "setup" and report.skipped:
+        record["outcome"] = "skipped"
+    elif report.when == "setup" and report.failed:
+        record["outcome"] = "error"
+    elif report.when == "call":
+        if report.skipped and getattr(report, "wasxfail", None):
+            record["outcome"] = "xfail"
+        elif report.passed and getattr(report, "wasxfail", None):
+            record["outcome"] = "xpass"
+        else:
+            record["outcome"] = report.outcome
+    elif report.when == "teardown" and report.failed:
+        record["outcome"] = "error"
+
+
+def pytest_sessionfinish(session: Any, exitstatus: int) -> None:
+    output = os.environ.get("L15_PYTEST_REPORT")
+    if not output:
+        raise RuntimeError("L15_PYTEST_REPORT is required by l15_pytest_report")
+    document = {
+        "schema_version": 1,
+        "artifact": "l15-pytest-outcomes",
+        "exitstatus": int(exitstatus),
+        "tests": sorted(_RESULTS.values(), key=lambda item: item["nodeid"]),
+    }
+    path = Path(output)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)

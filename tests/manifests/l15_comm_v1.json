@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "manifest_id": "l15-comm-v1",
+  "layer": "L1.5-comm",
+  "defaults": {
+    "device_count": 2,
+    "classification": "candidate-observe",
+    "external_network": false,
+    "needs_model_weights": false
+  },
+  "cases": [
+    {
+      "id": "allreduce-aiter-stress",
+      "kind": "pytest",
+      "path": "tests/vendor/test_allreduce.py",
+      "nodeid": "tests/vendor/test_allreduce.py::test_aiter_ar_stress_eager_and_graph",
+      "primitive": "all_reduce",
+      "backend": "aiter",
+      "timeout": 1200,
+      "owner": "collective"
+    },
+    {
+      "id": "cp-allgather-two-rank",
+      "kind": "torchrun-script",
+      "path": "tests/tools/_test_cp_allgather.py",
+      "primitive": "all_gather_into_tensor",
+      "backend": "nccl",
+      "timeout": 600,
+      "owner": "context-parallel"
+    },
+    {
+      "id": "allreduce-rmsnorm-fused",
+      "kind": "pytest",
+      "path": "tests/kernels/test_ar_norm_aiter_gfx938.py",
+      "nodeid": "tests/kernels/test_ar_norm_aiter_gfx938.py::test_fused_parity_and_graph_replay",
+      "primitive": "all_reduce+rms_norm",
+      "backend": "aiter",
+      "timeout": 1200,
+      "owner": "collective-fusion"
+    }
+  ]
+}

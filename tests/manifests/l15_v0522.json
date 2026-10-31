@@ -1,0 +1,317 @@
+{
+  "schema_version": 1,
+  "manifest_id": "sglang-v0.5.22-l15-v2",
+  "upstream": {
+    "project": "sglang",
+    "version": "v0.5.22",
+    "binding_files": {
+      "python/pyproject.toml": "6bf7a1f03c235ed0404d91067987995e6f1e06ea8182c206853a7f4cdb830f3c",
+      "python/sglang/version.py": "b10f7d9ea276972352b1e9de0eb0bbb47d8ebe64c29469e15ea016a12019bb22"
+    },
+    "tree_markers": [
+      "python/sglang",
+      "test/registered"
+    ]
+  },
+  "defaults": {
+    "device_count": 1,
+    "needs_server": false,
+    "needs_model_weights": false,
+    "external_network": false,
+    "route_evidence": "required",
+    "classification": "candidate-observe"
+  },
+  "selectors": [
+    {
+      "id": "attention-core-current",
+      "domain": "attention-core",
+      "paths": [
+        "test/registered/attention/unittests/dsa",
+        "test/registered/attention/unittests/kda",
+        "test/registered/attention/unittests/dense",
+        "test/registered/attention/unittests/mla"
+      ],
+      "exclude_keywords": ["tilelang"],
+      "classification": "candidate-observe",
+      "owner": "attention"
+    },
+    {
+      "id": "mechanism-current",
+      "domain": "mechanism",
+      "paths": [
+        "test/registered/attention/unittests/gdn",
+        "test/registered/attention/unittests/hybrid_linear",
+        "test/registered/attention/unittests/mamba",
+        "test/registered/attention/unittests/swa",
+        "test/registered/attention/unittests/lightning",
+        "test/registered/attention/unittests/dsv4"
+      ],
+      "exclude_keywords": ["tilelang"],
+      "classification": "candidate-observe",
+      "owner": "attention"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "activation-fused-parity",
+      "batch": "batch-1",
+      "domain": "activation",
+      "path": "test/registered/kernels/ops/activation/test_fused_op_gpu_parity.py",
+      "logical_ops": ["silu_and_mul", "activation"],
+      "expected_backends": ["triton", "vendor"],
+      "owner": "kernel-abi"
+    },
+    {
+      "id": "layernorm-fused-parity",
+      "batch": "batch-1",
+      "domain": "normalization",
+      "path": "test/registered/kernels/ops/layernorm/test_fused_op_gpu_parity.py",
+      "logical_ops": ["rms_norm", "layernorm"],
+      "expected_backends": ["triton", "vendor"],
+      "owner": "kernel-abi"
+    },
+    {
+      "id": "rmsnorm",
+      "batch": "batch-1",
+      "domain": "normalization",
+      "path": "test/registered/kernels/ops/layernorm/test_rmsnorm.py",
+      "logical_ops": ["rms_norm"],
+      "expected_backends": ["triton", "vendor"],
+      "owner": "kernel-abi"
+    },
+    {
+      "id": "fused-add-rmsnorm",
+      "batch": "batch-1",
+      "domain": "normalization",
+      "path": "test/registered/kernels/ops/layernorm/test_fused_add_rmsnorm.py",
+      "logical_ops": ["fused_add_rms_norm"],
+      "expected_backends": ["triton", "vendor"],
+      "owner": "kernel-abi"
+    },
+    {
+      "id": "rope-rocm",
+      "batch": "batch-1",
+      "domain": "rotary",
+      "path": "test/registered/rotary/test_rope_rocm.py",
+      "logical_ops": ["rotary_embedding"],
+      "expected_backends": ["vendor", "triton"],
+      "owner": "rotary"
+    },
+    {
+      "id": "sampling-renorm",
+      "batch": "batch-1",
+      "domain": "sampling",
+      "path": "test/registered/kernels/ops/sampling/test_renorm.py",
+      "logical_ops": ["sampling_renorm"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "sampling"
+    },
+    {
+      "id": "sampling-top-p-renorm",
+      "batch": "batch-1",
+      "domain": "sampling",
+      "path": "test/registered/kernels/ops/sampling/test_top_p_renorm.py",
+      "logical_ops": ["top_p_renorm"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "sampling"
+    },
+    {
+      "id": "kvcache-store",
+      "batch": "batch-1",
+      "domain": "kvcache",
+      "path": "test/registered/kernels/ops/kvcache/test_store_cache.py",
+      "logical_ops": ["kv_cache_store"],
+      "expected_backends": ["triton", "vendor"],
+      "owner": "kvcache"
+    },
+    {
+      "id": "mla-kv-buffer",
+      "batch": "batch-1",
+      "domain": "kvcache",
+      "path": "test/registered/kernels/ops/kvcache/test_set_mla_kv_buffer.py",
+      "logical_ops": ["set_mla_kv_buffer"],
+      "expected_backends": ["triton", "vendor"],
+      "owner": "kvcache"
+    },
+    {
+      "id": "fp8-utils-aiter",
+      "batch": "batch-2",
+      "domain": "quantization",
+      "path": "test/registered/kernels/ops/quantization/test_fp8_utils_aiter.py",
+      "logical_ops": ["fp8_utils"],
+      "expected_backends": ["vendor"],
+      "owner": "quantization"
+    },
+    {
+      "id": "per-token-quant-fp8",
+      "batch": "batch-2",
+      "domain": "quantization",
+      "path": "test/registered/kernels/ops/quantization/test_per_token_quant_fp8.py",
+      "logical_ops": ["per_token_quant"],
+      "expected_backends": ["vendor", "triton"],
+      "classification": "diagnostic-known-fail",
+      "route_evidence": "not_collected",
+      "owner": "quantization",
+      "fingerprint": "cannot import name 'sgl_per_token_quant_fp8'",
+      "review_condition": "the public sgl_kernel symbol is available",
+      "promotion_condition": "adapter regression and upstream nodeids are stable green with route evidence"
+    },
+    {
+      "id": "per-token-group-quant",
+      "batch": "batch-2",
+      "domain": "quantization",
+      "path": "test/registered/kernels/ops/quantization/test_per_token_group_quant.py",
+      "logical_ops": ["per_token_group_quant"],
+      "expected_backends": ["vendor", "triton"],
+      "owner": "quantization"
+    },
+    {
+      "id": "moe-topk-padded",
+      "batch": "batch-2",
+      "domain": "moe",
+      "path": "test/registered/moe/test_topk_padded_region.py",
+      "logical_ops": ["moe_gate", "moe_align"],
+      "expected_backends": ["vendor", "triton"],
+      "owner": "moe"
+    },
+    {
+      "id": "moe-topk-degenerate",
+      "batch": "batch-2",
+      "domain": "moe",
+      "path": "test/registered/moe/test_topk_renormalize_degenerate.py",
+      "logical_ops": ["moe_gate"],
+      "expected_backends": ["vendor", "triton"],
+      "owner": "moe"
+    },
+    {
+      "id": "attention-create-kvindices",
+      "batch": "batch-3",
+      "domain": "attention-kernel",
+      "path": "test/registered/attention/test_create_kvindices.py",
+      "logical_ops": ["create_kv_indices"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "attention"
+    },
+    {
+      "id": "attention-decode-metadata",
+      "batch": "batch-3",
+      "domain": "attention-kernel",
+      "path": "test/registered/attention/test_normal_decode_set_metadata.py",
+      "logical_ops": ["decode_metadata"],
+      "expected_backends": ["upstream"],
+      "route_evidence": "optional",
+      "owner": "attention"
+    },
+    {
+      "id": "attention-triton-kernels",
+      "batch": "batch-3",
+      "domain": "attention-kernel",
+      "path": "test/registered/attention/test_triton_attention_kernels.py",
+      "logical_ops": ["flash_attention"],
+      "expected_backends": ["triton"],
+      "owner": "attention"
+    },
+    {
+      "id": "attention-fp8-kv-write",
+      "batch": "batch-3",
+      "domain": "attention-kernel",
+      "path": "test/registered/attention/test_fused_fp8_kv_write.py",
+      "logical_ops": ["kv_cache_store", "fp8_kv_write"],
+      "expected_backends": ["triton", "vendor"],
+      "owner": "attention"
+    },
+    {
+      "id": "attention-kda-kernels",
+      "batch": "batch-3",
+      "domain": "attention-kernel",
+      "path": "test/registered/attention/test_kda_kernels.py",
+      "logical_ops": ["kda"],
+      "expected_backends": ["triton", "emu"],
+      "owner": "attention"
+    },
+    {
+      "id": "attention-verify-shared-kv",
+      "batch": "batch-3",
+      "domain": "attention-kernel",
+      "path": "test/registered/attention/test_verify_shared_kv.py",
+      "logical_ops": ["verify_shared_kv"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "attention"
+    },
+    {
+      "id": "attention-verify-splitkv",
+      "batch": "batch-3",
+      "domain": "attention-kernel",
+      "path": "test/registered/attention/test_verify_splitkv.py",
+      "logical_ops": ["verify_split_kv"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "attention"
+    },
+    {
+      "id": "mamba-causal-conv1d",
+      "batch": "batch-4",
+      "domain": "mamba",
+      "path": "test/registered/kernels/ops/mamba/test_causal_conv1d.py",
+      "logical_ops": ["conv1d"],
+      "expected_backends": ["triton", "vendor", "emu"],
+      "owner": "mamba"
+    },
+    {
+      "id": "mamba-replay-state-indices",
+      "batch": "batch-4",
+      "domain": "mamba",
+      "path": "test/registered/kernels/ops/mamba/test_fused_replay_state_indices.py",
+      "logical_ops": ["replay_state_indices"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "mamba"
+    },
+    {
+      "id": "mamba-sconv-cache",
+      "batch": "batch-4",
+      "domain": "mamba",
+      "path": "test/registered/kernels/ops/mamba/test_sconv_cache.py",
+      "logical_ops": ["sconv_cache"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "mamba"
+    },
+    {
+      "id": "mamba-sconv-decode-metadata",
+      "batch": "batch-4",
+      "domain": "mamba",
+      "path": "test/registered/kernels/ops/mamba/test_sconv_decode_metadata.py",
+      "logical_ops": ["sconv_decode_metadata"],
+      "expected_backends": ["upstream"],
+      "route_evidence": "optional",
+      "owner": "mamba"
+    },
+    {
+      "id": "mamba-sconv-extend-metadata",
+      "batch": "batch-4",
+      "domain": "mamba",
+      "path": "test/registered/kernels/ops/mamba/test_sconv_extend_metadata.py",
+      "logical_ops": ["sconv_extend_metadata"],
+      "expected_backends": ["upstream"],
+      "route_evidence": "optional",
+      "owner": "mamba"
+    },
+    {
+      "id": "mamba-sconv-tracking",
+      "batch": "batch-4",
+      "domain": "mamba",
+      "path": "test/registered/kernels/ops/mamba/test_sconv_tracking.py",
+      "logical_ops": ["sconv_tracking"],
+      "expected_backends": ["triton", "upstream"],
+      "owner": "mamba"
+    },
+    {
+      "id": "mamba-verify-commit-triton",
+      "batch": "batch-4",
+      "domain": "mamba",
+      "path": "test/registered/kernels/ops/mamba/test_verify_commit_triton.py",
+      "logical_ops": ["verify_commit"],
+      "expected_backends": ["triton"],
+      "owner": "mamba"
+    }
+  ],
+  "tests": []
+}

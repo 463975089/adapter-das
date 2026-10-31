@@ -1,0 +1,28 @@
+{
+  "artifact": "l15-classification",
+  "classification_summary": {
+    "contract-green": 3182,
+    "diagnostic-known-fail": 5,
+    "platform-skip": 105
+  },
+  "manifest_id": "sglang-v0.5.22-l15-v2",
+  "note": "contract-green does not count as kernel route coverage; core-green requires separate route evidence",
+  "outcome_summary": {
+    "failed": 5,
+    "passed": 3182,
+    "skipped": 105
+  },
+  "promoted_contract_green_count": 3182,
+  "schema_version": 1,
+  "unobserved_count": 0,
+  "upstream": {
+    "binding_files": {
+      "python/pyproject.toml": "6bf7a1f03c235ed0404d91067987995e6f1e06ea8182c206853a7f4cdb830f3c",
+      "python/sglang/version.py": "b10f7d9ea276972352b1e9de0eb0bbb47d8ebe64c29469e15ea016a12019bb22"
+    },
+    "git_head": null,
+    "marker_hash": "d3da9b3e00330773cb1e3781429ef97c99a91be3517b6361abc75298aa0e9637",
+    "project": "sglang",
+    "version": "v0.5.22"
+  }
+}
