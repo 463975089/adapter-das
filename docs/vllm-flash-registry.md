@@ -37,3 +37,9 @@ unpickle. CPU evidence is not a numerical or full-model claim. Run the focused
 tests in `tests/adapter/test_vllm_extension_health.py`,
 `test_vllm_commit_fatal.py`, `test_vllm_flash_capability.py`, and the paired
 Plugin `tests/vllm032/test_flash_public_selector.py` in isolated environments.
+The inherited PR23 metadata-loader fixture deliberately rejects unrelated
+installed extension entry points. Run it in a separate Adapter+target venv
+without the production Plugin; do not filter discovery to simulate that state.
+Its required-context CPU caller must forward the additive health sink keyword.
+Fresh-interpreter checks retain their health assertions with a bounded 60-second
+startup allowance, independent of any GPU or numerical acceptance threshold.
