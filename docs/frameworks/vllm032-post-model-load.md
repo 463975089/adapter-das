@@ -188,6 +188,13 @@ or generator guards, and non-None guard results are rejected. A refusal raises
 `ModelMutationError` with owner, operation, role and the original cause. It does
 not call the official mutation method. A passing guard does not perform an update.
 
+A guard that returns a non-None value violates the callback contract; its
+`ModelMutationError` identifies the owner, operation and role without labelling
+it an owner refusal or chaining a synthetic callback exception. A returned
+coroutine is closed without execution. Exceptions raised by the callback retain
+the refusal diagnostic and original cause. Both cases stop later guards and
+prevent the mutation.
+
 `ModelMutationContext` supplies `worker`, `operation`, `role` (`target`/`draft`)
 and the worker's current `vllm_config`. In the existing thin Adapter Worker:
 

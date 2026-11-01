@@ -72,6 +72,43 @@ def test_preflight_has_no_registration_or_callback_effect_and_commit_dispatches(
     assert events == [("loaded", False), ("guarded", "start_weight_update", "draft")]
 
 
+@pytest.mark.parametrize("invalid_result", [False, 0, object()])
+def test_guard_return_contract_is_distinct_from_owner_refusal(invalid_result):
+    events = []
+    results = [invalid_result, None]
+
+    def guard(context):
+        events.append("guard")
+        return results.pop(0)
+
+    api.register_model_mutation_guard("a.owner", guard)
+    api.register_model_mutation_guard("b.later", lambda context: events.append("later"))
+    with pytest.raises(api.ModelMutationError, match="owner 'a.owner'.*return None") as caught:
+        dispatch("mutation")
+    assert "refused" not in str(caught.value)
+    assert "start_weight_update/draft" in str(caught.value)
+    assert caught.value.__cause__ is None
+    assert events == ["guard"]
+    dispatch("mutation")
+    assert events == ["guard", "guard", "later"]
+
+
+def test_guard_returned_coroutine_is_closed_and_reported_as_contract_error():
+    async def asynchronous():
+        pytest.fail("a returned coroutine must not execute")
+
+    result = asynchronous()
+    api.register_model_mutation_guard("owner", lambda context: result)
+    try:
+        with pytest.raises(api.ModelMutationError, match="return None") as caught:
+            dispatch("mutation")
+        assert "refused" not in str(caught.value)
+        assert caught.value.__cause__ is None
+        assert result.cr_frame is None
+    finally:
+        result.close()
+
+
 @pytest.mark.parametrize("existing", ["post", "mutation", "both"])
 def test_legacy_declarations_and_pair_idempotency(monkeypatch, existing):
     values = hooks([])

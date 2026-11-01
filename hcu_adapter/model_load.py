@@ -288,13 +288,16 @@ def dispatch_model_mutation(worker, *, operation: str, role: str) -> None:
             for owner, callback in sorted(_mutation_guards.callbacks.items()):
                 try:
                     result = callback(context)
-                    if result is not None:
-                        if inspect.iscoroutine(result):
-                            result.close()
-                        raise ModelMutationError("model-mutation guards must return None or raise")
                 except Exception as exc:
                     raise ModelMutationError(
                         f"model-mutation owner {owner!r} refused {operation}/{role}: {exc}"
                     ) from exc
+                if result is not None:
+                    if inspect.iscoroutine(result):
+                        result.close()
+                    raise ModelMutationError(
+                        f"model-mutation owner {owner!r} violated {operation}/{role}: "
+                        "model-mutation guards must return None or raise"
+                    )
         finally:
             _mutation_guards.dispatching = False

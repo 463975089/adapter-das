@@ -7,6 +7,10 @@ post-load/guard dispatch；另以真实 vLLM Worker/config 验证桥上的原覆
 公开门面迁移须检查 source/wheel/install 来源及实际消费者的 callable ABI，
 不能用安装成功代替宿主语义验证。
 
+guard 的非 None 返回属于契约违规，不能被回调异常包装成主动 refused；分别断言
+诊断分类、owner/operation/role、原异常 cause、后续 guard 不执行和 dispatch 状态
+恢复。误返回的协程须关闭而不执行。修复共享 dispatch 时同步保留真实宿主入口回归。
+
 目标：**adapter API 全绿 ⇒ 官方 sglang 在 HCU 上无大问题**。为此每个出口
 API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug 背书）：
 
