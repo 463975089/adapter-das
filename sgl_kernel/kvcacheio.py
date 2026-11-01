@@ -32,6 +32,15 @@ import torch
 
 __all__ = [
     "get_device_accessible_ptr",
+    # HCU paged-allocation ops (vendor wheel surface, see hcu_* below)
+    "hcu_align_evict_mask_to_page_size",
+    "hcu_alloc_decode_kernel",
+    "hcu_alloc_extend_kernel",
+    "hcu_assign_extend_cache_locs",
+    "hcu_assign_req_to_token_pool",
+    "hcu_create_chunked_prefix_cache_kv_indices",
+    "hcu_create_extend_after_decode_spec_info",
+    "hcu_get_last_loc",
     "transfer_kv_per_layer",
     "transfer_kv_per_layer_pf_lf",
     "transfer_kv_per_layer_ph_lf",
@@ -392,3 +401,162 @@ def copy_all_layer_kv_cache_cpu(
                 ctypes.c_void_p(base + s_i * stride),
                 stride,
             )
+
+
+# ---------------------------------------------------------------------------
+# HCU paged-allocation ops (vendor wheel surface)
+#
+# The dtk sglang-kernel wheel registers torch.ops.sgl_kernel.hcu_* allocation
+# /indexing ops and ships matching python wrappers in its own
+# sgl_kernel.kvcacheio. This shadow package shadows that module on PYTHONPATH,
+# so the ops' python surface must be mirrored here (same-name package surface
+# completion): consumers importing them from sgl_kernel.kvcacheio — e.g. the
+# sglang plugin's mem_cache allocation hooks — resolve again. Signatures are
+# aligned verbatim with the dtk wheel; thin passthrough only, the ops
+# themselves are registered by the vendor library load, and on hosts without
+# it the calls fail loudly (never a silent fallback).
+# ---------------------------------------------------------------------------
+def hcu_create_extend_after_decode_spec_info(
+    verified_id: torch.Tensor,
+    seq_lens: torch.Tensor,
+    accept_lens: torch.Tensor,
+    positions: torch.Tensor,
+    new_verified_id: torch.Tensor,
+    bs: int,
+):
+    torch.ops.sgl_kernel.hcu_create_extend_after_decode_spec_info(
+        verified_id,
+        seq_lens,
+        accept_lens,
+        positions,
+        new_verified_id,
+        bs,
+    )
+
+
+def hcu_alloc_extend_kernel(
+    pre_lens_ptr: torch.Tensor,
+    seq_lens_ptr: torch.Tensor,
+    last_loc_ptr: torch.Tensor,
+    free_page_ptr: torch.Tensor,
+    out_indices: torch.Tensor,
+    bs: int,
+    page_size: int,
+):
+    torch.ops.sgl_kernel.hcu_alloc_extend_kernel(
+        pre_lens_ptr,
+        seq_lens_ptr,
+        last_loc_ptr,
+        free_page_ptr,
+        out_indices,
+        bs,
+        page_size,
+    )
+
+
+def hcu_alloc_decode_kernel(
+    seq_lens_ptr: torch.Tensor,
+    last_loc_ptr: torch.Tensor,
+    free_page_ptr: torch.Tensor,
+    out_indices: torch.Tensor,
+    bs: int,
+    page_size: int,
+):
+    torch.ops.sgl_kernel.hcu_alloc_decode_kernel(
+        seq_lens_ptr,
+        last_loc_ptr,
+        free_page_ptr,
+        out_indices,
+        bs,
+        page_size,
+    )
+
+
+def hcu_get_last_loc(
+    req_to_token: torch.Tensor,
+    req_pool_indices: torch.Tensor,
+    prefix_lens: torch.Tensor,
+):
+    return torch.ops.sgl_kernel.hcu_get_last_loc(
+        req_to_token,
+        req_pool_indices,
+        prefix_lens,
+    )
+
+
+def hcu_assign_req_to_token_pool(
+    req_pool_indices: torch.Tensor,
+    req_to_token: torch.Tensor,
+    allocate_lens: torch.Tensor,
+    new_allocate_lens: torch.Tensor,
+    out_cache_loc: torch.Tensor,
+    shape: int,
+    bs: int,
+):
+    torch.ops.sgl_kernel.hcu_assign_req_to_token_pool(
+        req_pool_indices,
+        req_to_token,
+        allocate_lens,
+        new_allocate_lens,
+        out_cache_loc,
+        shape,
+        bs,
+    )
+
+
+def hcu_assign_extend_cache_locs(
+    req_pool_indices: torch.Tensor,
+    req_to_token: torch.Tensor,
+    start_offset: torch.Tensor,
+    end_offset: torch.Tensor,
+    out_cache_loc: torch.Tensor,
+    pool_len: int,
+    bs: int,
+):
+    torch.ops.sgl_kernel.hcu_assign_extend_cache_locs(
+        req_pool_indices,
+        req_to_token,
+        start_offset,
+        end_offset,
+        out_cache_loc,
+        pool_len,
+        bs,
+    )
+
+
+def hcu_create_chunked_prefix_cache_kv_indices(
+    req_to_token: torch.Tensor,
+    req_pool_indices: torch.Tensor,
+    chunk_starts: torch.Tensor,
+    chunk_seq_lens: torch.Tensor,
+    chunk_cu_seq_lens: torch.Tensor,
+    chunk_kv_indices: torch.Tensor,
+    col_num: int,
+    bs: int,
+):
+    torch.ops.sgl_kernel.hcu_create_chunked_prefix_cache_kv_indices(
+        req_to_token,
+        req_pool_indices,
+        chunk_starts,
+        chunk_seq_lens,
+        chunk_cu_seq_lens,
+        chunk_kv_indices,
+        col_num,
+        bs,
+    )
+
+
+def hcu_align_evict_mask_to_page_size(
+    seq_lens: torch.Tensor,
+    evict_mask: torch.Tensor,
+    page_size: int,
+    num_draft_tokens: int,
+    bs: int,
+):
+    torch.ops.sgl_kernel.hcu_align_evict_mask_to_page_size(
+        seq_lens,
+        evict_mask,
+        page_size,
+        num_draft_tokens,
+        bs,
+    )
