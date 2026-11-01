@@ -14,11 +14,21 @@ DeepInfer 契约实现按算子族和档位放入 `hcu_adapter/kernels/`，文�
 | 社区 import 的包 | 我们的形态 | 位置 | 状态 |
 |---|---|---|---|
 | `sgl_kernel` | 完整同名包（triton/torch） | `sgl_kernel/` | 生产 |
-| `vllm._custom_ops` | 属性级桥接（rms_norm 等 HIP 形态） | `hcu_adapter/bridges/vllm.py` | 生产 |
+| `vllm._custom_ops` | SGLang 启动链使用的 RMS 属性级兼容绑定；不是 vLLM 宿主的默认重绑定 | `hcu_adapter/bridges/vllm.py::install_rms_norm_bridge` | SGLang 兼容路径 |
 | `aiter` | 真包优先 + 缺口填空 + 高危守卫 | `hcu_adapter/aiter/` | 生产 |
 | `flashinfer` | 填空桥 + 响亮 stub | `hcu_adapter/flashinfer/` | 生产 |
 | `flash_attn` / `flash_attn_interface` | 响亮 stub；装 HCU flash_attn wheel 后真包自动胜出（零改动切 vendor 档） | `hcu_adapter/flash_attn/` | 生产 |
 | `lightop` | vendor 直调档（不出现在 import 面，按 ops 路由调用；见下盘点） | 系统包直调 | silu/MQA 已入 catalog |
+
+**RMS 宿主 ABI 分开核对**：上述 helper 的生产调用点在
+`hcu_adapter/bridges/sglang.py`；vLLM runtime plugin 不调用它。helper 的
+`fused_add_rms_norm(out, input, residual_out, residual, weight, epsilon)` 是
+六参数、独立输出目标的兼容签名；vLLM 0.32 官方
+`fused_add_rms_norm(input, residual, weight, epsilon)` 是四参数原位接口，
+修改 input/residual 并返回 `None`。不能因同名把前者装进 vLLM 启动链。
+该属性绑定也不是 `vllm._custom_ops` / `_C` 的完整影子实现；缺失的原生符号
+须逐项验证。vendor 的响亮 stub 可让 import / `hasattr` / `callable` 成功，
+这些检查不能证明所需 provider 的 ABI 或计算可用。
 
 **flash_attn wheel 兼容性现状**（2026-10-10 实测）：共享盘
 `/public/share/dtk_fa_whl/*/flash_attn-2.6.1+das.opt1.dtk2604-cp310`
