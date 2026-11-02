@@ -23,10 +23,13 @@ def _row_parameter(value, probs, *, dtype):
 def top_k_renorm_prob(probs, top_ks):
     probs = probs.float()
     k = _row_parameter(top_ks, probs, dtype=torch.long).clamp(1, probs.shape[1])
-    sorted_probs = torch.sort(probs, dim=-1, descending=True).values
-    pivot = sorted_probs.gather(1, k - 1)
-    out = probs * (probs >= pivot)
-    return out / out.sum(dim=-1, keepdim=True).clamp_min(1e-10)
+    sorted_probs, indices = torch.sort(
+        probs, dim=-1, descending=True, stable=True
+    )
+    keep = torch.arange(probs.shape[1], device=probs.device) < k
+    selected = sorted_probs * keep
+    selected = selected / selected.sum(dim=-1, keepdim=True).clamp_min(1e-10)
+    return torch.zeros_like(selected).scatter_(1, indices, selected)
 
 
 def top_p_renorm_prob(probs, top_ps):

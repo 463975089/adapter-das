@@ -8,6 +8,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "tools" / "l15_manifest.py"
@@ -15,6 +17,83 @@ SPEC = importlib.util.spec_from_file_location("l15_manifest", MODULE_PATH)
 assert SPEC and SPEC.loader
 l15 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(l15)
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_manifest_device_count_rejects_boolean(value):
+    document = minimal_manifest()
+    document["defaults"]["device_count"] = value
+    assert "device_count" in l15.validate_manifest(document)[0]
+
+
+@pytest.mark.parametrize("value", [True, False])
+@pytest.mark.parametrize(
+    "kind,field",
+    [
+        ("l15-collect", "returncode"),
+        ("l15-classification", "promoted_contract_green_count"),
+        ("l15-classification", "unobserved_count"),
+    ],
+)
+def test_artifact_integer_fields_reject_boolean(kind, field, value):
+    document = {
+        "schema_version": 1,
+        "artifact": kind,
+        "manifest_id": "fixture",
+        "upstream": {"project": "sglang", "version": "fixture", "marker_hash": "fixture"},
+        "nodeids": [],
+        "missing_paths": [],
+        "collection_errors": [],
+        "returncode": 0,
+        "timed_out": False,
+        "outcome_summary": {},
+        "classification_summary": {},
+        "promoted_contract_green_count": 0,
+        "unobserved_count": 0,
+    }
+    assert l15.validate_artifact(document) == []
+    document[field] = value
+    assert field in l15.validate_artifact(document)[0]
+
+
+@pytest.mark.parametrize("use_defaults", [False, True])
+def test_compaction_preserves_effective_classification_and_route_evidence(use_defaults):
+    document = minimal_manifest()
+    if use_defaults:
+        document["defaults"].update(
+            classification="contract-green", route_evidence="optional"
+        )
+    else:
+        document["defaults"].pop("classification")
+        document["defaults"].pop("route_evidence")
+    source = {
+        "id": "fixture",
+        "domain": "kernel",
+        "logical_ops": ["op"],
+        "owner": "kernel",
+        "paths": ["test/registered"],
+    }
+    document["selectors"] = [source]
+    common = {
+        "source_id": source["id"],
+        "domain": source["domain"],
+        "logical_ops": source["logical_ops"],
+        "owner": source["owner"],
+    }
+    tests = [
+        dict(common, nodeid="test/registered/test_x.py::test_default"),
+        dict(common, nodeid="test/registered/test_x.py::test_core", classification="core-green", route_evidence="required"),
+        dict(common, nodeid="test/registered/test_x.py::test_override", classification="candidate-observe", route_evidence="not_collected"),
+    ]
+    document["tests"] = tests
+    assert l15.validate_manifest(document) == []
+    compact = l15._compact_tests(document, tests)
+    assert l15.validate_manifest(compact) == []
+    expanded = {test["nodeid"]: test for test in l15._expanded_tests(compact)}
+    for original in tests:
+        restored = expanded[original["nodeid"]]
+        assert l15._classification(restored, compact["defaults"]) == l15._classification(original, document["defaults"])
+        assert l15._route_evidence(restored, compact["defaults"]) == l15._route_evidence(original, document["defaults"])
 
 
 def minimal_manifest(**overrides):

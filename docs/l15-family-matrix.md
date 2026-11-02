@@ -77,3 +77,8 @@ python tools/l15_family_matrix.py run \
 - 任一固定 case 失败，runner 返回非零；
 - 缺失上游文件 loud fail，不静默跳到其他源码树；
 - 后续 HCU 实测结果按 exact case 更新，不以总通过数掩盖替换失败。
+
+输入校验要求非空 `manifest_id`、正整数 `defaults.timeout`，以及恰好五个
+不重复的家族；`families`/`cases` 每项必须为对象。布尔值不能冒充整数，
+坏输入通过 `MatrixError` 返回可读错误。artifact 原子写入失败时清理临时文件，
+并保留原有结果文件，避免磁盘错误产生残留或覆盖上一次有效证据。

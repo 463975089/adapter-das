@@ -172,8 +172,12 @@ def _compact_tests(
         for source in [*result.get("selectors", []), *result.get("candidates", [])]
     }
     grouped: dict[str, list[Mapping[str, Any]]] = {}
+    defaults = result.get("defaults", {})
     for test in tests:
-        grouped.setdefault(str(test["source_id"]), []).append(test)
+        effective = dict(test)
+        effective["classification"] = _classification(test, defaults)
+        effective["route_evidence"] = _route_evidence(test, defaults)
+        grouped.setdefault(str(test["source_id"]), []).append(effective)
     groups: list[dict[str, Any]] = []
     overrides: dict[str, dict[str, Any]] = {}
     inherited = {"source_id", "domain", "logical_ops", "owner"}
@@ -183,8 +187,8 @@ def _compact_tests(
         class_counts: dict[tuple[str, str], int] = {}
         for record in records:
             key = (
-                str(record.get("classification", "candidate-observe")),
-                str(record.get("route_evidence", "not_collected")),
+                record["classification"],
+                record["route_evidence"],
             )
             class_counts[key] = class_counts.get(key, 0) + 1
         dominant_class, dominant_evidence = max(
@@ -281,7 +285,7 @@ def validate_manifest(document: Mapping[str, Any]) -> list[str]:
         ):
             if not isinstance(defaults.get(boolean_key), bool):
                 raise ManifestError(f"manifest.defaults.{boolean_key}: boolean required")
-        if not isinstance(defaults.get("device_count"), int) or defaults["device_count"] < 0:
+        if type(defaults.get("device_count")) is not int or defaults["device_count"] < 0:
             raise ManifestError("manifest.defaults.device_count: non-negative integer required")
         _classification(defaults, {})
         _route_evidence(defaults, {})
@@ -402,7 +406,7 @@ def validate_artifact(document: Mapping[str, Any]) -> list[str]:
             _string_list(document.get("nodeids"), "artifact.nodeids", nonempty=False)
             _require(document, "missing_paths", list, "artifact")
             _require(document, "collection_errors", list, "artifact")
-            if not isinstance(document.get("returncode"), int):
+            if type(document.get("returncode")) is not int:
                 raise ManifestError("artifact.returncode: integer required")
             if not isinstance(document.get("timed_out"), bool):
                 raise ManifestError("artifact.timed_out: boolean required")
@@ -412,11 +416,11 @@ def validate_artifact(document: Mapping[str, Any]) -> list[str]:
         elif artifact == "l15-classification":
             _require(document, "outcome_summary", dict, "artifact")
             _require(document, "classification_summary", dict, "artifact")
-            if not isinstance(document.get("promoted_contract_green_count"), int):
+            if type(document.get("promoted_contract_green_count")) is not int:
                 raise ManifestError(
                     "artifact.promoted_contract_green_count: integer required"
                 )
-            if not isinstance(document.get("unobserved_count"), int):
+            if type(document.get("unobserved_count")) is not int:
                 raise ManifestError("artifact.unobserved_count: integer required")
         else:
             raise ManifestError(f"unsupported artifact kind {artifact!r}")

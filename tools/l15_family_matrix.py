@@ -21,8 +21,8 @@ class MatrixError(ValueError):
     pass
 
 
-def _safe_path(value: str, prefix: str, where: str) -> str:
-    if not value or "\\" in value:
+def _safe_path(value: object, prefix: str, where: str) -> str:
+    if not isinstance(value, str) or not value or "\\" in value:
         raise MatrixError(f"{where}: non-empty POSIX path required")
     path = PurePosixPath(value)
     if path.is_absolute() or ".." in path.parts or not value.startswith(prefix):
@@ -37,14 +37,30 @@ def validate(document: Mapping[str, Any]) -> list[str]:
             raise MatrixError(f"schema_version must be {SCHEMA_VERSION}")
         if document.get("layer") != "L1.5-family-matrix":
             raise MatrixError("layer must be 'L1.5-family-matrix'")
+        if not isinstance(document.get("manifest_id"), str) or not document["manifest_id"]:
+            raise MatrixError("manifest_id: non-empty string required")
         defaults = document.get("defaults")
-        if not isinstance(defaults, dict) or defaults.get("device_count") != 1:
+        if (
+            not isinstance(defaults, dict)
+            or type(defaults.get("device_count")) is not int
+            or defaults["device_count"] != 1
+        ):
             raise MatrixError("defaults.device_count must be exactly 1")
+        timeout = defaults.get("timeout")
+        if type(timeout) is not int or timeout <= 0:
+            raise MatrixError("defaults.timeout: positive integer required")
         for key in ("needs_server", "needs_model_weights", "external_network"):
             if defaults.get(key) is not False:
                 raise MatrixError(f"defaults.{key} must be false")
         families = document.get("families")
-        if not isinstance(families, list) or {f.get("id") for f in families if isinstance(f, dict)} != FAMILIES:
+        if not isinstance(families, list):
+            raise MatrixError("families: list required")
+        for fi, family in enumerate(families):
+            if not isinstance(family, dict):
+                raise MatrixError(f"families[{fi}]: object required")
+            if not isinstance(family.get("id"), str):
+                raise MatrixError(f"families[{fi}].id: string required")
+        if len(families) != len(FAMILIES) or {f["id"] for f in families} != FAMILIES:
             raise MatrixError("families must contain exactly dense, mla, moe, quantization, mamba")
         case_ids: set[str] = set()
         for fi, family in enumerate(families):
@@ -56,6 +72,8 @@ def validate(document: Mapping[str, Any]) -> list[str]:
                 raise MatrixError(f"{where}.cases: non-empty list required")
             for ci, case in enumerate(cases):
                 cwhere = f"{where}.cases[{ci}]"
+                if not isinstance(case, dict):
+                    raise MatrixError(f"{cwhere}: object required")
                 case_id = case.get("id")
                 if not isinstance(case_id, str) or not case_id or case_id in case_ids:
                     raise MatrixError(f"{cwhere}.id: unique non-empty string required")
@@ -149,10 +167,17 @@ def run(document: Mapping[str, Any], up_tree: Path, adapter_root: Path, selected
     artifact = {"schema_version": 1, "artifact": "l15-family-matrix-run", "manifest_id": document["manifest_id"], "families": sorted(selected), "passed": all_passed, "results": results}
     out.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{out.name}.", dir=str(out.parent))
-    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-        json.dump(artifact, stream, ensure_ascii=False, indent=2, sort_keys=True)
-        stream.write("\n")
-    os.replace(tmp, out)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(artifact, stream, ensure_ascii=False, indent=2, sort_keys=True)
+            stream.write("\n")
+        os.replace(tmp, out)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
     return all_passed
 
 

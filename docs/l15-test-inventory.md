@@ -252,6 +252,16 @@ summary.md           # 新增、消失、漂移和待分诊摘要
 
 禁止只报告“总共多少 passed”。
 
+紧凑清单压缩前先解析文档级 `classification`/`route_evidence` 默认值；
+未声明时分别为 `candidate-observe`/`required`。压缩再展开不得改变生效值，
+尤其不能把 `core-green` 的证据要求降为 `not_collected`。
+设备数、返回码与分类计数字段必须是整数，JSON 布尔值不作为整数接受。
+
+通信 runner 以非零返回码保留真实失败：pytest 的 failed+skipped 混合摘要
+仍记为 failed，仅成功退出或 pytest 无用例（rc=5）允许判为 skipped。
+observe 保持非阻塞，但 artifact 的失败结果及 `hard_failures` 必须如实记录；
+torchrun 脚本的 rc=5 不具有 pytest 的“未收集”语义。
+
 ## 8. 首轮梳理结论
 
 1. 保留现有 Attention core 和 Mechanism 作为迁移基线，但停止把目录总数视为最终裁决；

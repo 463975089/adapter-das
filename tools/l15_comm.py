@@ -94,7 +94,7 @@ def validate_manifest(document: Mapping[str, Any]) -> list[str]:
                 if not isinstance(case.get(key), str) or not case[key]:
                     raise CommManifestError(f"{where}.{key}: non-empty string required")
             timeout = case.get("timeout")
-            if not isinstance(timeout, int) or timeout <= 0:
+            if type(timeout) is not int or timeout <= 0:
                 raise CommManifestError(f"{where}.timeout: positive integer required")
             classification = case.get("classification", defaults.get("classification"))
             if classification not in CLASSIFICATIONS:
@@ -184,7 +184,9 @@ def run_manifest(
             stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
         outcome = "passed" if returncode == 0 else "failed"
         classification = case.get("classification", manifest["defaults"]["classification"])
-        if returncode == 5 or " skipped" in stdout[-500:]:
+        if case["kind"] == "pytest" and (
+            returncode == 5 or (returncode == 0 and " skipped" in stdout[-500:])
+        ):
             outcome = "skipped"
         result = {
             "id": case["id"],

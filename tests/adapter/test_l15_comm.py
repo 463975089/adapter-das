@@ -7,6 +7,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -120,3 +123,48 @@ class CommManifestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize("timeout", [True, False, 0, -1, 1.5, None])
+def test_rejects_non_positive_integer_timeout(timeout):
+    manifest = fixture_manifest()
+    manifest["cases"][0]["timeout"] = timeout
+    assert ".timeout: positive integer required" in comm.validate_manifest(manifest)[0]
+
+
+@pytest.mark.parametrize("mode", ["observe", "blocking"])
+@pytest.mark.parametrize(
+    "returncode,stdout,outcome",
+    [
+        (1, "1 failed, 1 skipped in 0.1s", "failed"),
+        (2, "1 skipped, 1 error in 0.1s", "failed"),
+        (0, "1 skipped in 0.1s", "skipped"),
+        (5, "no tests ran in 0.1s", "skipped"),
+        (0, "1 passed in 0.1s", "passed"),
+    ],
+)
+def test_pytest_outcome_preserves_failure_with_skipped_summary(
+    tmp_path, mode, returncode, stdout, outcome
+):
+    manifest = fixture_manifest()
+    manifest["cases"] = [manifest["cases"][1]]
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/test_ar.py").write_text("pass\n", encoding="utf-8")
+    result = comm.subprocess.CompletedProcess([], returncode, stdout, "")
+    with patch.object(comm.subprocess, "run", return_value=result):
+        artifact, passed = comm.run_manifest(manifest, tmp_path, tmp_path / "out", mode)
+    assert artifact["summary"] == {outcome: 1}
+    assert artifact["hard_failures"] == (["ar"] if outcome == "failed" else [])
+    assert passed is (mode == "observe" or outcome != "failed")
+
+
+def test_torchrun_exit_five_is_failure(tmp_path):
+    manifest = fixture_manifest()
+    manifest["cases"] = [manifest["cases"][0]]
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/gather.py").write_text("pass\n", encoding="utf-8")
+    result = comm.subprocess.CompletedProcess([], 5, "worker skipped a step", "")
+    with patch.object(comm.subprocess, "run", return_value=result):
+        artifact, passed = comm.run_manifest(manifest, tmp_path, tmp_path / "out", "blocking")
+    assert not passed
+    assert artifact["summary"] == {"failed": 1}
