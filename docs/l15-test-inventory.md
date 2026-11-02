@@ -8,6 +8,11 @@
 > 本文列出的 `candidate-observe` 不代表已经支持或已经进入硬门。测试本体始终来自绑定的
 > 社区 sglang 源码树，本仓只保存 manifest、分诊结果和 adapter 侧回归，不复制上游用例。
 
+已提交 classified manifest 和候选基线记录的是拆分前兼容快照的执行/分诊结果；
+其生产兼容改动移至 [PR #27](https://github.com/HYGON-AI/adapter-das/pull/27)。
+工具分支本身不提供这些生产修复，历史 `contract-green` 标签也不免除新组合的重跑、
+分诊和 route evidence 要求。
+
 ## 1. 目标与边界
 
 L1.5 验证的是：**社区 sglang 的公开调用面经过 adapter 后，在单卡 HCU 环境中仍满足
