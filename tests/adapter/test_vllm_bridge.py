@@ -410,6 +410,26 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
         selector,
         32,
     )
+    mla_selector = SimpleNamespace(
+        use_mla=True,
+        use_sparse=False,
+        _asdict=lambda: {"use_mla": True, "use_sparse": False},
+    )
+    assert platform.get_attn_backend_cls(None, mla_selector, 24) == (
+        None,
+        mla_selector,
+        24,
+    )
+    sparse_mla_selector = SimpleNamespace(
+        use_mla=True,
+        use_sparse=True,
+        _asdict=lambda: {"use_mla": True, "use_sparse": True},
+    )
+    assert platform.get_attn_backend_cls(None, sparse_mla_selector, 20) == (
+        None,
+        sparse_mla_selector,
+        20,
+    )
     assert platform.get_attn_backend_cls("EXPLICIT", selector, 16) == (
         "EXPLICIT",
         selector,

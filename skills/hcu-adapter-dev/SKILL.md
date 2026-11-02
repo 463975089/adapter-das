@@ -60,6 +60,14 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
     后跑 `python tools/gen_tier_matrix.py`，`docs/tier-matrix.md` 一眼
     看全"谁有哪些档、缺哪档"（L0 freshness 钉同步）。
 
+13. **vLLM 专项后端保留官方语义**：普通 MHA/GQA 可在已验证条件下默认
+    `TRITON_ATTN`，但 `use_mla` / `use_sparse` 等专项配置必须保留 `None`
+    交给官方 `RocmPlatform` priority，禁止强改成普通 attention backend；
+    Plugin 的普通 FlashAttention 优化也不得接管 MLA/Sparse MLA。禁止把
+    `gfx936` 等 HCU 架构伪装成 CDNA3 来让单个 AITER 检查通过——平台代际会
+    同时放开 FP8/GEMM/MHA/MLA 等不相关能力。只在最窄 seam 表达真实能力，
+    测试至少覆盖普通、MLA、Sparse MLA 路由以及安装态 wheel 的实际 backend 日志。
+
 ## 任务路由（做某类事之前先读对应参考文档）
 
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
@@ -76,6 +84,7 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
 | 加/改算子档位实现文件（命名/归档） | `docs/governance.md` §3b + `python tools/gen_tier_matrix.py`（档位矩阵随 catalog 同 commit） |
+| vLLM 0.32 平台、attention/MLA backend 选型 | `docs/frameworks/vllm032.md` + `docs/governance.md`（先区分普通/MLA/Sparse MLA，保持真实架构能力） |
 | 需求/任务领取 | 任务跟踪不走仓内看板（board.md 已移除），归 MR 与团队现用任务系统；协作红线见 `docs/governance.md` §7 |
 
 ## 治理闭环（改代码必走的登记链，L0 机器查）
@@ -146,6 +155,7 @@ skills/hcu-adapter-dev/  本 skill
   `python tests/tools/run_triage.py --stage ops`（或直接 `bash
   ci/l1_gpu_gate.sh` 一键全门）。
 - commit 信息带根因短句（参考 fbc540c / 1eb038d 风格），便于回溯 bug 类。
-- 文档与代码同库同 PR：改行为必须同步改本 skill 对应参考文档；README
+- 文档与代码同库同 PR：发现可复用的新坑后立即在修复所在 MR 同步更新本
+  skill/对应参考文档，不等最终总结；一次性环境日志只留验证证据。README
   是指针型入口，静态资产表只活在 catalog/models.md（已立规约：README
   不维护清单、不留本地任务编号）。

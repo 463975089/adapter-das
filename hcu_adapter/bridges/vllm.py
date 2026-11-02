@@ -286,7 +286,15 @@ def _hcu_platform_class() -> type:
                 AttentionBackendEnum,
             )
 
-            if selected_backend is None:
+            # Keep the validated ordinary-attention default, but let the
+            # official ROCm priority table choose specialized MLA backends.
+            # Forcing TRITON_ATTN here makes both MLA and sparse MLA fail
+            # capability validation before model weights are loaded.
+            uses_mla = bool(getattr(attn_selector_config, "use_mla", False))
+            uses_sparse = bool(
+                getattr(attn_selector_config, "use_sparse", False)
+            )
+            if selected_backend is None and not (uses_mla or uses_sparse):
                 selected_backend = AttentionBackendEnum.TRITON_ATTN
             if selected_backend == AttentionBackendEnum.FLASH_ATTN:
                 module_name, class_name = _FLASH_ATTN_BACKEND_CLASS.rsplit(".", 1)
