@@ -34,9 +34,9 @@ def _visible_gpus():
         return 0
 
 
-def _rank_worker(rank, world, master_port):
-    os.environ["MASTER_ADDR"] = "127.0.0.1"
-    os.environ["MASTER_PORT"] = str(master_port)
+def _rank_worker(rank, world):
+    os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    os.environ.setdefault("MASTER_PORT", "29631")
     torch.cuda.set_device(rank)
     import torch.distributed as dist
 
@@ -75,9 +75,8 @@ def _rank_worker(rank, world, master_port):
         torch.manual_seed(100 + rank)
         x = torch.randn(t, hidden, device=dev, dtype=torch.bfloat16) * 0.7
         res = torch.randn(t, hidden, device=dev, dtype=torch.bfloat16) * .3
-        res_ref = res.clone()
         normed, res_out = ca.custom_fused_ar_rms(x, res, w, eps, one_stage)
-        res_exact = (exact_ar(x).to(torch.bfloat16) + res_ref)
+        res_exact = (exact_ar(x).to(torch.bfloat16) + res)
         norm_exact = rms(res_exact, w)
         en, er = ulp_err(normed, norm_exact), ulp_err(res_out, res_exact)
         assert en <= 2.0 and er <= 2.0, (
@@ -102,11 +101,9 @@ def _rank_worker(rank, world, master_port):
         torch.manual_seed(9000 + trial * 11 + rank)
         x.copy_(torch.randn_like(x) * 0.9)
         res.copy_(torch.randn_like(res) * 0.4)
-        x_ref = x.clone()
-        res_ref = res.clone()
         gr.replay()
         torch.cuda.synchronize()
-        res_exact = exact_ar(x_ref).to(torch.bfloat16) + res_ref
+        res_exact = exact_ar(x).to(torch.bfloat16) + res
         en = ulp_err(out[0], rms(res_exact, w))
         er = ulp_err(out[1], res_exact)
         assert en <= 3.0 and er <= 3.0, (
@@ -114,11 +111,7 @@ def _rank_worker(rank, world, master_port):
         if rank == 0:
             print(f"[PASS] graph replay {trial}: ulp-err {en:.2f}/{er:.2f}")
 
-    torch.cuda.synchronize()
     dist.barrier()
-    del gr, out, s, ca
-    torch.cuda.synchronize()
-    dist.destroy_process_group(gloo)
     dist.destroy_process_group()
 
 
@@ -137,14 +130,14 @@ def test_bridge_installed():
     assert getattr(
         fcf.flashinfer_allreduce_residual_rmsnorm,
         "_hcu_ar_norm_aiter", False), "flashinfer dispatch not bridged"
-    # <=v0.5.21 requires the ARM copies; v0.5.22 removed that gate and uses
-    # the dispatch seam directly.
-    if hasattr(an, "apply_flashinfer_allreduce_fusion"):
-        for mod in (an, fus):
-            assert getattr(
-                mod.apply_flashinfer_allreduce_fusion,
-                "_hcu_ar_norm_arm", False), (
-                f"arm not rebound on {mod.__name__}")
+    # the ARM rebind must cover the definition site and both from-import
+    # copies, else the boundary candidate stays untried (v1 lesson: the
+    # dispatch alone is architecturally unreachable on HIP)
+    for mod in (an, fus):
+        assert getattr(
+            mod.apply_flashinfer_allreduce_fusion,
+            "_hcu_ar_norm_arm", False), (
+            f"arm not rebound on {mod.__name__}")
 
 
 @pytest.mark.skipif(
@@ -152,14 +145,9 @@ def test_bridge_installed():
     reason="needs HIP GPU (aiter tier)")
 @pytest.mark.skipif(_visible_gpus() < 2, reason="needs >=2 visible GPUs")
 def test_fused_parity_and_graph_replay():
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        master_port = sock.getsockname()[1]
-    world = 2
+    world = min(4, _visible_gpus())
     torch.multiprocessing.spawn(
-        _rank_worker, args=(world, master_port), nprocs=world, join=True)
+        _rank_worker, args=(world,), nprocs=world, join=True)
 
 
 if __name__ == "__main__":

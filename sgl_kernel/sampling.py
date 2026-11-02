@@ -13,28 +13,21 @@ whose cumulative mass reaches p (cumsum-before-current < p).
 import torch
 
 
-def _row_parameter(value, probs, *, dtype):
-    parameter = torch.as_tensor(value, device=probs.device, dtype=dtype)
-    if parameter.numel() == 1:
-        parameter = parameter.expand(probs.shape[0])
-    return parameter.reshape(-1, 1)
-
-
 def top_k_renorm_prob(probs, top_ks):
     probs = probs.float()
-    k = _row_parameter(top_ks, probs, dtype=torch.long).clamp(1, probs.shape[1])
-    sorted_probs, indices = torch.sort(
-        probs, dim=-1, descending=True, stable=True
-    )
-    keep = torch.arange(probs.shape[1], device=probs.device) < k
-    selected = sorted_probs * keep
-    selected = selected / selected.sum(dim=-1, keepdim=True).clamp_min(1e-10)
-    return torch.zeros_like(selected).scatter_(1, indices, selected)
+    k = top_ks.to(torch.long).clamp_min(1).view(-1, 1)
+    sp, idx = torch.sort(probs, dim=-1, descending=True)
+    keep = torch.arange(sp.shape[1], device=probs.device).expand_as(sp) < k
+    sp = sp * keep
+    sp = sp / sp.sum(dim=-1, keepdim=True).clamp_min(1e-10)
+    out = torch.zeros_like(sp)
+    out.scatter_(1, idx, sp)
+    return out
 
 
 def top_p_renorm_prob(probs, top_ps):
     probs = probs.float()
-    p = _row_parameter(top_ps, probs, dtype=torch.float32).clamp(0.0, 1.0)
+    p = top_ps.float().clamp(0.0, 1.0).view(-1, 1)
     sp, idx = torch.sort(probs, dim=-1, descending=True)
     cum = sp.cumsum(dim=-1)
     keep = (cum - sp) < p  # smallest prefix covering p; keeps at least 1

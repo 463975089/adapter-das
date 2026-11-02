@@ -12,7 +12,7 @@ Contract (flashmla v3 sparse):
 - indices:  (s_q, h_kv=1, topk) int32 — token ids INTO the flat kv axis;
             tail padding is -1 and masked out
 - sm_scale, d_v (v width < d_qk: the rope channels score but no value),
-  attn_sink (per-head zero-valued virtual-key logit), topk_length
+  attn_sink (per-head additive pre-softmax bias), topk_length
             (per-row valid width; rows shorter than topk mask the tail)
 - returns   (o [s_q, H, d_v], lse [s_q, H], ?) — third slot ignored upstream
 
@@ -57,14 +57,10 @@ def flash_mla_sparse_fwd(
     k = k_sel.to(torch.float32)
     scores = torch.einsum("thd,tkd->thk", q.to(torch.float32), k) * sm_scale
     scores = scores.masked_fill(~valid[:, None, :], float("-inf"))
-    real_lse = torch.logsumexp(scores, dim=-1)  # [s_q, heads]
-    probs = torch.softmax(scores, dim=-1)  # [s_q, heads, topk]
     if attn_sink is not None:
-        sink = attn_sink.reshape(1, -1).to(scores.dtype)
-        lse = torch.logaddexp(real_lse, sink)
-        probs = probs * torch.exp(real_lse - lse).unsqueeze(-1)
-    else:
-        lse = real_lse
+        scores = scores + attn_sink.reshape(1, -1, 1).to(scores.dtype)
+    probs = torch.softmax(scores, dim=-1)  # [s_q, heads, topk]
     v = k[..., :d_v]
     o = torch.einsum("thk,tkd->thd", probs, v).to(q.dtype)
+    lse = torch.logsumexp(scores, dim=-1)  # [s_q, heads]
     return o, lse, None

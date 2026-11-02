@@ -64,109 +64,6 @@ def _row_index(t: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     return t.index_select(0, indices.to(torch.long))
 
 
-def _hcu_alloc_decode_kernel_fallback(
-    seq_lens_ptr: torch.Tensor,
-    last_loc_ptr: torch.Tensor,
-    free_page_ptr: torch.Tensor,
-    out_indices: torch.Tensor,
-    bs: int,
-    page_size: int,
-) -> None:
-    """Compatibility face for the optional HCU paged decode AOT kernel.
-
-    Community snapshots import this name unconditionally on HIP even when the
-    matching ``torch.ops.sgl_kernel`` extension is not installed.  The upstream
-    Triton implementation has the same semantics and is the correctness route.
-    """
-    from sglang.kernels.ops.memory.allocator import alloc_decode_kernel
-
-    alloc_decode_kernel[(bs,)](
-        seq_lens_ptr,
-        last_loc_ptr,
-        free_page_ptr,
-        out_indices,
-        1 << (bs - 1).bit_length(),
-        page_size,
-    )
-
-
-def _hcu_alloc_extend_kernel_fallback(
-    pre_lens_ptr: torch.Tensor,
-    seq_lens_ptr: torch.Tensor,
-    last_loc_ptr: torch.Tensor,
-    free_page_ptr: torch.Tensor,
-    out_indices: torch.Tensor,
-    bs: int,
-    page_size: int,
-) -> None:
-    """Compatibility face for the optional HCU paged extend AOT kernel."""
-    from sglang.kernels.ops.memory.allocator import alloc_extend_kernel
-
-    alloc_extend_kernel[(bs,)](
-        pre_lens_ptr,
-        seq_lens_ptr,
-        last_loc_ptr,
-        free_page_ptr,
-        out_indices,
-        1 << (bs - 1).bit_length(),
-        page_size,
-    )
-
-
-def _hcu_assign_req_to_token_pool_fallback(
-    req_pool_indices: torch.Tensor,
-    req_to_token: torch.Tensor,
-    allocate_lens: torch.Tensor,
-    new_allocate_lens: torch.Tensor,
-    out_cache_loc: torch.Tensor,
-    shape: int,
-    bs: int,
-) -> None:
-    """Write variable-length cache locations without requiring the HCU AOT op."""
-    cursor = 0
-    for row in range(bs):
-        start = int(allocate_lens[row].item())
-        end = int(new_allocate_lens[row].item())
-        length = end - start
-        if length > 0:
-            req = int(req_pool_indices[row].item())
-            req_to_token[req, start:end] = out_cache_loc[cursor : cursor + length]
-            cursor += length
-
-
-def _hcu_get_last_loc_fallback(
-    req_to_token: torch.Tensor,
-    req_pool_indices: torch.Tensor,
-    prefix_lens: torch.Tensor,
-) -> torch.Tensor:
-    """Return each request's final prefix slot, preserving the upstream ABI."""
-    rows = req_pool_indices.to(torch.long)
-    cols = (prefix_lens - 1).clamp_min(0).to(torch.long)
-    values = req_to_token[rows, cols]
-    return torch.where(prefix_lens > 0, values, torch.full_like(values, -1))
-
-
-def _hcu_assign_extend_cache_locs_fallback(
-    req_pool_indices: torch.Tensor,
-    req_to_token: torch.Tensor,
-    start_offset: torch.Tensor,
-    end_offset: torch.Tensor,
-    out_cache_loc: torch.Tensor,
-    pool_len: int,
-    bs: int,
-) -> None:
-    """Compatibility alias for speculative variable-length cache writes."""
-    _hcu_assign_req_to_token_pool_fallback(
-        req_pool_indices,
-        req_to_token,
-        start_offset,
-        end_offset,
-        out_cache_loc,
-        pool_len,
-        bs,
-    )
-
-
 _HIP_HOST_GET_DEV_PTR = None  # None until resolved; False when unavailable
 
 
@@ -516,9 +413,8 @@ def copy_all_layer_kv_cache_cpu(
 # completion): consumers importing them from sgl_kernel.kvcacheio — e.g. the
 # sglang plugin's mem_cache allocation hooks — resolve again. Signatures are
 # aligned verbatim with the dtk wheel; thin passthrough only, the ops
-# themselves are registered by the vendor library load. The five allocator
-# compatibility faces retain their upstream Triton/Torch route when the vendor
-# op is absent; vendor-only faces still fail loudly without the extension.
+# themselves are registered by the vendor library load, and on hosts without
+# it the calls fail loudly (never a silent fallback).
 # ---------------------------------------------------------------------------
 def hcu_create_extend_after_decode_spec_info(
     verified_id: torch.Tensor,
@@ -547,9 +443,7 @@ def hcu_alloc_extend_kernel(
     bs: int,
     page_size: int,
 ):
-    getattr(
-        torch.ops.sgl_kernel, "hcu_alloc_extend_kernel", _hcu_alloc_extend_kernel_fallback
-    )(
+    torch.ops.sgl_kernel.hcu_alloc_extend_kernel(
         pre_lens_ptr,
         seq_lens_ptr,
         last_loc_ptr,
@@ -568,9 +462,7 @@ def hcu_alloc_decode_kernel(
     bs: int,
     page_size: int,
 ):
-    getattr(
-        torch.ops.sgl_kernel, "hcu_alloc_decode_kernel", _hcu_alloc_decode_kernel_fallback
-    )(
+    torch.ops.sgl_kernel.hcu_alloc_decode_kernel(
         seq_lens_ptr,
         last_loc_ptr,
         free_page_ptr,
@@ -585,9 +477,7 @@ def hcu_get_last_loc(
     req_pool_indices: torch.Tensor,
     prefix_lens: torch.Tensor,
 ):
-    return getattr(
-        torch.ops.sgl_kernel, "hcu_get_last_loc", _hcu_get_last_loc_fallback
-    )(
+    return torch.ops.sgl_kernel.hcu_get_last_loc(
         req_to_token,
         req_pool_indices,
         prefix_lens,
@@ -603,9 +493,7 @@ def hcu_assign_req_to_token_pool(
     shape: int,
     bs: int,
 ):
-    getattr(
-        torch.ops.sgl_kernel, "hcu_assign_req_to_token_pool", _hcu_assign_req_to_token_pool_fallback
-    )(
+    torch.ops.sgl_kernel.hcu_assign_req_to_token_pool(
         req_pool_indices,
         req_to_token,
         allocate_lens,
@@ -625,9 +513,7 @@ def hcu_assign_extend_cache_locs(
     pool_len: int,
     bs: int,
 ):
-    getattr(
-        torch.ops.sgl_kernel, "hcu_assign_extend_cache_locs", _hcu_assign_extend_cache_locs_fallback
-    )(
+    torch.ops.sgl_kernel.hcu_assign_extend_cache_locs(
         req_pool_indices,
         req_to_token,
         start_offset,

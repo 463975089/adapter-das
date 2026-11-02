@@ -162,16 +162,6 @@ plugin 时仍保持官方 vLLM 基线路径可启动。
 
 ## 5. 横切机制
 
-`sgl_kernel.kvcacheio` 的 HCU 分页分配接口优先转发已注册的
-`torch.ops.sgl_kernel.hcu_*`。未注册时，decode/extend 分配及请求槽位写入、
-末位置查询保留上游 Triton/Torch 兼容路径；其余 vendor 专属接口仍响亮报错。
-已注册 vendor 算子的执行错误直接传播，不触发兼容回退。
-
-`sgl_kernel.sampling.top_k_renorm_prob` 接受 scalar 或逐行 k，并把 k
-限制在 `[1, vocab_size]`。并列概率按原 token 顺序稳定排序，只保留前 k
-个位置再归一化；不能用 `probs >= kth_probability`，否则平局会扩大候选集合。
-对应回归覆盖均匀分布、边界平局和变更概率/k 后的 GPU graph 重放。
-
 - **配置裁决**（`hcu_env.py` + `hcu_config.py`）：显式 env > `hcu_adapter.yaml`
   > 自动规则（arch/wheel 探测）> 默认值；启动日志打印每个生效值及来源，
   正确部署零环境变量。手册见 [env-vars.md](env-vars.md)、配置层见

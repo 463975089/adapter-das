@@ -31,20 +31,6 @@ Per-subtask #229/#234 findings, the main import surfaces covered:
 """
 
 from hcu_adapter._base import ABSENT, LibStubFinder, is_registered
-from sgl_kernel.layernorm import (
-    fused_add_rmsnorm as _sgl_fused_add_rmsnorm,
-    rmsnorm as _sgl_rmsnorm,
-)
-
-
-def rmsnorm(input, weight, eps=1e-6, out=None, enable_pdl=None):
-    return _sgl_rmsnorm(input, weight, eps=eps, out=out, enable_pdl=enable_pdl)
-
-
-def fused_add_rmsnorm(input, residual, weight, eps=1e-6, enable_pdl=None):
-    return _sgl_fused_add_rmsnorm(
-        input, residual, weight, eps=eps, enable_pdl=enable_pdl
-    )
 
 
 class _FlashInferFinder(LibStubFinder):
@@ -52,10 +38,6 @@ class _FlashInferFinder(LibStubFinder):
         super().__init__(
             "flashinfer",
             allowlist={
-                "flashinfer.norm": {
-                    "rmsnorm": rmsnorm,
-                    "fused_add_rmsnorm": fused_add_rmsnorm,
-                },
                 "flashinfer.comm": {
                     "allreduce_fusion": ABSENT,
                     "create_allreduce_fusion_workspace": ABSENT,
@@ -87,26 +69,6 @@ def register() -> None:
         import sys
 
         sys.meta_path.insert(0, _FlashInferFinder())
-
-    try:
-        from hcu_adapter import registry as _reg
-
-        _reg.register(
-            "rms_norm",
-            rmsnorm,
-            target="flashinfer.norm:rmsnorm",
-            mechanism=_reg.MECH_SEAM,
-            detail="sgl_kernel.layernorm rmsnorm compatibility",
-        )
-        _reg.register(
-            "rms_norm",
-            fused_add_rmsnorm,
-            target="flashinfer.norm:fused_add_rmsnorm",
-            mechanism=_reg.MECH_SEAM,
-            detail="sgl_kernel.layernorm fused add+rmsnorm compatibility",
-        )
-    except Exception:
-        pass
 
     # sampler face: sglang's is_cuda branch imports from flashinfer.sampling;
     # bind to the same torch-reference kernels sgl_kernel exports (§0.5).
