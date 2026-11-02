@@ -196,6 +196,8 @@ def activate_extensions(
             if not isinstance(spec.priority, int):
                 raise TypeError("extension priority must be an integer")
             capabilities = frozenset(spec.capabilities)
+            if any(not isinstance(name, str) or not name.strip() for name in capabilities):
+                raise TypeError("capability names must be non-empty strings")
         except Exception as exc:
             fatal = is_fatal_extension_error(exc)
             description = _exception_description(exc)
@@ -256,8 +258,28 @@ def activate_extensions(
                 )
             )
 
+    capability_owners: dict[str, list[str]] = {}
+    for _point, spec in valid_specs:
+        for capability in spec.capabilities:
+            capability_owners.setdefault(capability, []).append(spec.name)
+    conflicts = {
+        capability: tuple(sorted(owners))
+        for capability, owners in capability_owners.items()
+        if len(owners) > 1
+    }
+    unambiguous_specs = []
+    for point, spec in valid_specs:
+        overlapping = sorted(spec.capabilities.intersection(conflicts))
+        if overlapping:
+            reason = "duplicate capability owners: " + "; ".join(
+                f"{name!r}: {', '.join(conflicts[name])}" for name in overlapping
+            )
+            reports.append(_failure(point.name, reason, spec.name, spec.capabilities))
+        else:
+            unambiguous_specs.append((point, spec))
+
     for point, spec in sorted(
-        valid_specs,
+        unambiguous_specs,
         key=lambda item: (-item[1].priority, item[1].name),
     ):
         try:

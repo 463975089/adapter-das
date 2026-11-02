@@ -1,9 +1,27 @@
 # 自动化测试套件要求
 
+共享机制的 framework-free 契约覆盖 import 和调用两个阶段。模型 lifecycle
+测试须在新解释器阻断 vLLM、SGLang、Torch 导入后，执行真实注册、原子预检、
+post-load/guard dispatch；另以真实 vLLM Worker/config 验证桥上的原覆盖查询、
+空注册表短路和调用顺序。双宿主 bootstrap/import 回归不等于模型或 GPU 验收。
+公开门面迁移须检查 source/wheel/install 来源及实际消费者的 callable ABI，
+不能用安装成功代替宿主语义验证。
+
+guard 的非 None 返回属于契约违规，不能被回调异常包装成主动 refused；分别断言
+诊断分类、owner/operation/role、原异常 cause、后续 guard 不执行和 dispatch 状态
+恢复。误返回的协程须关闭而不执行。修复共享 dispatch 时同步保留真实宿主入口回归。
+
 目标：**adapter API 全绿 ⇒ 官方 sglang 在 HCU 上无大问题**。为此每个出口
 API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug 背书）：
 
 ## 四质量维度
+
+vLLM dense FP8官方fallback接线探针：`tests/tools/_probe_vllm_fp8_linear.py`
+直接验证既有官方provider；`_probe_vllm_fp8_family.py` 验证runtime正式注册、
+官方选型、QuantFP8及apply_weights完整链路。非单位tensor/token/channel尺度、
+bias和三波变输入Graph必须对拍FP32；只验证的gfx936不为gfx938背书。
+桥接契约由 `tests/adapter/test_vllm_fp8_bridge.py` 离线覆盖。命令与退出条件
+见 `docs/frameworks/vllm032.md`，禁止通过伪CDNA或放宽native Torch支持谓词接线。
 
 vLLM 启动故障回归须覆盖异常 `__str__` 自身失败（普通 Exception 与
 BaseException）、格式化期间实际 fork、父子 health/同进程 retry 持续拒绝。
