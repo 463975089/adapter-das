@@ -11,6 +11,17 @@ guard 的非 None 返回属于契约违规，不能被回调异常包装成主�
 诊断分类、owner/operation/role、原异常 cause、后续 guard 不执行和 dispatch 状态
 恢复。误返回的协程须关闭而不执行。修复共享 dispatch 时同步保留真实宿主入口回归。
 
+共享 lifecycle 的 CPU 门禁包含 `test_runtime_lifecycle.py`、实际双宿主
+`test_bootstrap.py`、portable sequence/isolation 子集，以及原 vLLM 健康、
+selector 和真实 metadata/spawn 门禁。双宿主 import 探针拒绝框架/Torch/
+kernel/provider import；named consumer 回归不得冒称 SGLang engine 试验。
+
+vLLM 扩展生命周期：source 与独立 wheel installed 分开跑。check_health 的
+必需参数须在激活前拒绝；报告替换/重复、sink 失败、caught error 后其他
+selector、实际 fork 格式化窗口均需断言。public registry clear/foreign 必须
+经真实官方 selector 验证，不以直接 checker 测试替代。见
+`docs/vllm-flash-registry.md`；不把 CPU 协议验证当作数值验收。
+
 目标：**adapter API 全绿 ⇒ 官方 sglang 在 HCU 上无大问题**。为此每个出口
 API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug 背书）：
 

@@ -273,9 +273,9 @@ def test_caught_boot_failure_blocks_all_routes_without_import_or_reactivation(st
         # Existing PR17 public context API, supplied by this CPU caller. This
         # tests required/fatal compatibility without importing PR20 env policy.
         activate = bridge.activate_extensions
-        monkeypatch.setattr(bridge, "activate_extensions", lambda context: activate(
+        monkeypatch.setattr(bridge, "activate_extensions", lambda context, **kwargs: activate(
             ext.ExtensionContext(context.adapter_version, context.vllm_version,
-                                 requested_extensions={"dirty"})))
+                                 requested_extensions={"dirty"}), **kwargs))
     with pytest.raises(bridge.LatchedVllmRuntimeError):
         bridge.hcu_runtime_plugin()
     # Reports remain diagnostic; changing them cannot erase runtime failure.

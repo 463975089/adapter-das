@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, MutableMapping
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from importlib import import_module, metadata
 from pathlib import Path
-from threading import RLock
 
 from packaging.version import InvalidVersion, Version
 
@@ -18,6 +17,7 @@ from hcu_adapter.extensions import (
     RequiredExtensionError,
     activate_extensions,
 )
+from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
 
 
 SUPPORTED_VLLM_RELEASE_PREFIX = (0, 32)
@@ -25,9 +25,7 @@ SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx936", "gfx938"})
 HYGON_PCI_VENDOR_ID = "0x1d94"
 _PCI_DEVICES_ROOT = Path("/sys/bus/pci/devices")
 _PLATFORM_CLASS = "hcu_adapter.bridges.vllm.HcuPlatform"
-_FLASH_ATTN_BACKEND_CLASS = (
-    "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
-)
+_FLASH_ATTN_CAPABILITY = "hcu-flash-attention"
 _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
 _REQUIRED_EXTENSIONS = "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS"
@@ -217,87 +215,11 @@ def _require_vllm_hip_runtime_abi() -> None:
         ) from exc
 
 
-class ProcessLocalActions:
-    """Run required callbacks once per PID and latch partial failures."""
+class ProcessLocalActions(ProcessLocalLifecycle):
+    """Supply only vLLM action identity and its existing public error type."""
 
     def __init__(self) -> None:
-        self._owner_pid = os.getpid()
-        self._lock = RLock()
-        self._records: dict[str, str | None] = {}
-        self._running: set[str] = set()
-        self._extension_reports: tuple[ExtensionReport, ...] = ()
-        if hasattr(os, "register_at_fork"):
-            os.register_at_fork(after_in_child=self._after_fork_child)
-
-    def _reset(self, owner_pid: int) -> None:
-        # Only the existing vLLM runtime action inherits failure. Its registry
-        # mutations also survive fork. Other actions keep their old reset.
-        failure = self._records.get("vllm-runtime")
-        if failure is None and "vllm-runtime" in self._running:
-            failure = "inherited incomplete vllm-runtime activation; spawn a fresh process"
-        self._owner_pid = owner_pid
-        self._lock = RLock()
-        self._records = {} if failure is None else {"vllm-runtime": failure}
-        self._running = set()
-        self._extension_reports = ()
-
-    def _after_fork_child(self) -> None:
-        self._reset(os.getpid())
-
-    def _ensure_process_local(self) -> None:
-        pid = os.getpid()
-        if pid != self._owner_pid:
-            self._reset(pid)
-
-    def run_once(self, action_id: str, callback: Callable[[], object]) -> None:
-        self._ensure_process_local()
-        with self._lock:
-            if action_id in self._records:
-                failure = self._records[action_id]
-                if failure is not None:
-                    raise LatchedVllmRuntimeError(failure)
-                return
-            if action_id == "vllm-runtime" and action_id in self._running:
-                raise LatchedVllmRuntimeError("recursive vllm-runtime activation")
-            self._running.add(action_id)
-            try:
-                callback()
-            except Exception as exc:
-                # Diagnostic formatting can raise, re-enter or fork. Publish
-                # refusal before it runs and before finally clears _running.
-                failure = "runtime action failed; exception details unavailable"
-                self._records[action_id] = failure
-                try:
-                    failure = f"{type(exc).__name__}: {exc}"
-                except BaseException:
-                    pass
-                self._records[action_id] = failure
-                raise LatchedVllmRuntimeError(failure) from exc
-            finally:
-                self._running.discard(action_id)
-            self._records[action_id] = None
-
-    def require_runtime_healthy(self) -> None:
-        """Read failure only; safe/reentrant inside the runtime callback."""
-        self._ensure_process_local()
-        with self._lock:
-            failure = self._records.get("vllm-runtime")
-            if failure is not None:
-                raise LatchedVllmRuntimeError(failure)
-
-    def record_extension_reports(
-        self,
-        reports: tuple[ExtensionReport, ...],
-    ) -> None:
-        self._ensure_process_local()
-        with self._lock:
-            self._extension_reports = tuple(reports)
-
-    def extension_reports(self) -> tuple[ExtensionReport, ...]:
-        self._ensure_process_local()
-        with self._lock:
-            return self._extension_reports
-
+        super().__init__(runtime_action="vllm-runtime", error_type=LatchedVllmRuntimeError)
 
 _RUNTIME_ACTIONS = ProcessLocalActions()
 
@@ -307,6 +229,12 @@ def extension_reports() -> tuple[ExtensionReport, ...]:
     return _RUNTIME_ACTIONS.extension_reports()
 
 
+def _require_flash_capability() -> None:
+    # Reports are process-local and cleared after fork. Do not activate or
+    # repair extensions from a backend selector, or trust a parent report.
+    require_extension_healthy(_FLASH_ATTN_CAPABILITY)
+
+
 def require_runtime_healthy() -> None:
     """Refuse failed boot without activation, repair or backend selection.
 
@@ -314,6 +242,11 @@ def require_runtime_healthy() -> None:
     Reports remain available after failure for diagnosis.
     """
     _RUNTIME_ACTIONS.require_runtime_healthy()
+
+
+def require_extension_healthy(capability: str) -> None:
+    """Check a unique current-process ACTIVE owner without activation/repair."""
+    _RUNTIME_ACTIONS.require_extension_healthy(capability)
 
 
 def install() -> None:
@@ -372,23 +305,9 @@ def _hcu_platform_class() -> type:
             if selected_backend is None and not (uses_mla or uses_sparse):
                 selected_backend = AttentionBackendEnum.TRITON_ATTN
             if selected_backend == AttentionBackendEnum.FLASH_ATTN:
-                module_name, class_name = _FLASH_ATTN_BACKEND_CLASS.rsplit(".", 1)
-                backend_class = getattr(import_module(module_name), class_name)
-                device_capability = cls.get_device_capability()
-                if device_capability is None:
-                    raise VllmCompatibilityError(
-                        "HCU FLASH_ATTN requires a detected device capability"
-                    )
-                invalid_reasons = backend_class.validate_configuration(
-                    device_capability=device_capability,
-                    **attn_selector_config._asdict(),
-                )
-                if invalid_reasons:
-                    raise ValueError(
-                        "Selected HCU FLASH_ATTN backend is not valid for this "
-                        f"configuration. Reason: {invalid_reasons}"
-                    )
-                return _FLASH_ATTN_BACKEND_CLASS
+                _require_flash_capability()
+                # The owner publishes via vLLM's public backend registry.
+                # Official ROCm selection owns class lookup and validation.
             return super().get_attn_backend_cls(
                 selected_backend,
                 attn_selector_config,
@@ -453,7 +372,9 @@ def hcu_runtime_plugin() -> None:
             requested_capabilities=required_capabilities,
         )
         try:
-            reports = activate_extensions(context)
+            reports = activate_extensions(
+                context, health_check_sink=_RUNTIME_ACTIONS.record_extension_health,
+            )
         except (RequiredExtensionError, ExtensionCommitError) as exc:
             _RUNTIME_ACTIONS.record_extension_reports(exc.reports)
             raise
