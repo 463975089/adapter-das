@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hcu-required-capability-validation-probe"
+version = "0.1.0"
+description = "Test-only entry-point stimuli; no operators or production optimizations"
+
+[project.entry-points."hcu_adapter.extensions"]
+upgrade_probe_left = "hcu_required_capability_probe:left"
+upgrade_probe_right = "hcu_required_capability_probe:right"
+
+[tool.setuptools]
+py-modules = ["hcu_required_capability_probe"]

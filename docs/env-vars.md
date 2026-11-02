@@ -26,6 +26,8 @@
 | 变量 | 默认 | 自动规则 | 说明 |
 |---|---|---|---|
 | `HCU_ADAPTER_HOST` | auto | 启动参数 / 已加载模块 / 单一可用宿主；双包无启动线索时保持 sglang 兼容 | 自动分发宿主桥；`sglang`/`vllm` 可用于诊断时显式固定，`none` 禁用自动桥。父进程的自动结果经 adapter 私有键传给 spawn 子进程，正常部署无需设置。 |
+| `HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS` | 空（不请求） | —（显式启动断言，不按硬件/wheel 自动推断） | vLLM 必选 extension **entry-point 名**，逗号分隔、大小写敏感；缺失或失败阻断。启动前设置，非运行期快关；经 REGISTRY 解析，正常 HOSTvllm/auto 的 common 启动汇总标记 `explicit`；HOSTnone 直接 general-plugin 不自动汇总，诊断用 `hcu_env.resolve` 查看值/来源。 |
+| `HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES` | 空（不请求） | —（显式启动断言，不自动启用 provider） | vLLM 必选 capability 名，逗号分隔；缺失、失败或歧义阻断。空白不请求；空元素/名字内部空白在任何注册前拒绝。规则详见 [required startup](frameworks/vllm-required-extensions.md)。 |
 | `HCU_DISABLE_OPS` | 空 | —（快关只应显式） | 快关总闸，逗号分隔：`aiter_ar`（拒用→NCCL 回退）、`aiter_fa`（调用时报错）。精度排查用，见 skills/…/kill-switches.md |
 | `HCU_PLATFORM_SEMANTICS` | cuda | —（§0.5 拍板路线，platform_seam.py 桥） | sglang 平台判定语义：cuda=上游 `is_cuda/is_hip/is_cuda_alike/platforms` 统一回 CUDA（新模型天然走 CUDA 分支），外加 is_flashinfer_available=False、external-event 关、CUDA 版本特性门 False、FP8_E4M3_MAX 重算 fn(448)；硬件层（torch.version/triton/vllm/kernels 选核）保持 HIP 真值。hip=legacy 适配路线（降级调试 / A-B 对照） |
 | `HCU_ADAPTER_DUMP` | 空 | —（排查只应显式） | 启动时落 runtime dump：每个 catalog 算子的活跃实现、安装来源（seam/rebind/text-patch）、env 生效值+来源。`=路径` 写 JSON 文件（归因脚本与配置级二分消费），`=1` 打进启动日志。规约见 docs/governance.md |
