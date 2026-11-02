@@ -287,6 +287,11 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
 
 ## 7. 双宿主共建、plugin 接入时序与维护闭环（2026-10-28 定）
 
+vLLM 扩展公共健康契约见 [Flash publication](vllm-flash-registry.md)：API1
+可选零实参同步 checker 绑定真实 ACTIVE report/PID；先锁存失败再格式化，
+inflight 覆盖失败发布后才递减。host/owner 不嵌套持锁，checker 不反调生命周期。
+Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查归 Plugin。
+
 > 承接原任务看板中的治理面（看板已移除，任务跟踪归 MR 与团队现用系统）。
 > 本节沉淀 sglang / vLLM 双宿主共建与长期维护的裁决规则，与 §0/§1 的
 > 分仓边界同源。任务看板原有的北极星与硬件备忘迁入 §7.3/§5.1。
@@ -325,6 +330,12 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
 
 ### 7.2 双宿主共建边界
 
+进程内 lifecycle/health 事务实现在 framework-free 的
+`hcu_adapter/runtime_lifecycle.py`；宿主桥只注入 action ID / 公开错误类型及
+启动、选型编排。共享锁、inflight、report 绑定、fork 与失败锁存不可拆成
+相互反调的宿主/owner 锁。共享回归同时覆盖双宿主 Adapter bootstrap/import
+契约与独立 consumer 生命周期；不得把它宣传为新增 SGLang engine 激活功能。
+
 - **共享层 = `hcu_adapter/` 包本体（bridges/common + 机制层/域桥 + `sgl_kernel/`）**，
   framework-free 是硬契约（§1 表）；共享层变更两个宿主都要回归；共享算子
   配**宿主中立 parity 契约测试**（`tests/kernels/`，不依赖 sglang/vllm
@@ -343,8 +354,14 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
   经 `hcu_adapter.extensions` entry-point 组接入，只交付可选优化实现
   （`ExtensionSpec` + 实现），不得复制版本/平台/DTK 门禁——宿主适配只有
   一个启动裁决点。激活发生在版本、平台和 DTK runtime guard **之后**；
-  optional 扩展失败降级为进程内报告，仅显式 required 扩展/capability
-  失败才响亮阻断；无 plugin wheel 时保持官方 vLLM 基线路径可启动；
+  optional 扩展的干净准备失败降级为进程内报告，显式 required 扩展/capability
+  失败响亮阻断。已发布状态后无法安全继续的失败须由 owner 显式抛出公开
+  `ExtensionCommitError`；即使 optional，宿主也停止后续激活并锁存失败，
+  不声称回滚。捕获错误、重试、改报告或 fork 均不得恢复该不安全进程；
+  普通未标记的 optional 失败仍保留原有行为。公开只读健康查询与完整语义见
+  [vLLM commit-fatal ABI](vllm-commit-fatal.md)。这是既有扩展宿主的启动故障
+  处理，不新增算子、后端或执行能力；未显式请求 required 项且无 plugin wheel 时
+  仍保持官方基线路径；
 - **宿主仲裁待改**：argv 无信号且双框架并存时 bootstrap 现静默取 sglang
   （legacy-default）——应改为 loud fail 要求显式 `HCU_ADAPTER_HOST`，
   在此之前两框架混装的节点必须显式设该变量。

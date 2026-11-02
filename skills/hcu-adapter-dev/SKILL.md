@@ -60,7 +60,37 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
     后跑 `python tools/gen_tier_matrix.py`，`docs/tier-matrix.md` 一眼
     看全"谁有哪些档、缺哪档"（L0 freshness 钉同步）。
 
+13. **vLLM 专项后端保留官方语义**：普通 MHA/GQA 可在已验证条件下默认
+    `TRITON_ATTN`，但 `use_mla` / `use_sparse` 等专项配置必须保留 `None`
+    交给官方 `RocmPlatform` priority，禁止强改成普通 attention backend；
+    Plugin 的普通 FlashAttention 优化也不得接管 MLA/Sparse MLA。禁止把
+    `gfx936` 等 HCU 架构伪装成 CDNA3 来让单个 AITER 检查通过——平台代际会
+    同时放开 FP8/GEMM/MHA/MLA 等不相关能力。只在最窄 seam 表达真实能力，
+    测试至少覆盖普通、MLA、Sparse MLA 路由以及安装态 wheel 的实际 backend 日志。
+
 ## 任务路由（做某类事之前先读对应参考文档）
+
+共享机制在**调用时**也必须 framework-free，不能用惰性 `from vllm import
+envs` 隐藏宿主决策。模型 lifecycle 的声明/上下文/同步留在 `model_load`；
+vLLM worker/executor/env-cache 覆盖查询归 `bridges.vllm_model_load`，薄 Worker
+通过该公开门面调用。迁移公开路径时同步真实 Plugin 的 ABI 预检和 selector
+导入，禁止共享层反向导入宿主桥作兼容壳。验证必须含双宿主 import-blocking
+下的真实共享 dispatch，而不只检查 import 成功；详见
+`docs/frameworks/vllm032-post-model-load.md`。
+
+vLLM public registry/extension health 修改先读 `docs/vllm-flash-registry.md`。
+共享 lifecycle 机制放 `runtime_lifecycle.py`，不能长在宿主薄桥内；改动须
+回归双宿主 bootstrap/import 与共享 consumer 契约，并保持真实 vLLM probes。
+回归必须覆盖真实官方 selector 在 clear/foreign 后的拒绝、零实参签名预检、
+精确 report/PID 绑定、sink 失败和错误格式化中实际 fork；不得只直接测 owner
+checker。CPU 生命周期通过不代表 HCU 数值或模型通过。
+
+宿主启动失败须先锁存固定拒绝，再格式化异常；`__str__` 也可能抛
+`BaseException`、重入或 fork。扩展宿主先判原始 fatal 链，再安全生成唯一
+FAILED 报告；诊断失败不能把已发布错误变成普通 optional，也不能把干净
+optional 误判为 fatal。保留 callback 原有捕获边界，不新增恢复接口。
+回归需有真实 metadata/官方 loader、安装态坏字符串、父子拒绝和重试证据；
+详见 `docs/vllm-commit-fatal.md` 与测试参考。
 
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
 
@@ -74,8 +104,11 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 | 端到端性能优化（开箱基线/profiler 归因/算子优化需求/回归） | `references/e2e-performance.md`（细节检索个人知识库 kb，手册内有 kb:<id> 引用） |
 | 评估 sglang cookbook NVIDIA 参数能否直接用 | `references/cookbook-matrix.md` |
 | 加/改一个环境变量 | `docs/env-vars.md`（手册+维护规则）与 `hcu_env.py` 注册表 |
+| vLLM required 启动策略 / 日志来源 | `docs/frameworks/vllm-required-extensions.md`（正常 bootstrap→common 才自动汇总；空 required 默认不单列、不得为补日志另造策略；HOSTnone 直接 general-plugin 仍 enforce，但不承诺 common 日志；须测真实两条调用链及官方 general-plugin loader/真实 metadata，不能用手动 log_summary 代替） |
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
 | 加/改算子档位实现文件（命名/归档） | `docs/governance.md` §3b + `python tools/gen_tier_matrix.py`（档位矩阵随 catalog 同 commit） |
+| vLLM 0.32 平台、attention/MLA backend 选型 | `docs/frameworks/vllm032.md` + `docs/governance.md`（先区分普通/MLA/Sparse MLA，保持真实架构能力） |
+| vLLM 扩展发布状态后失败 / 捕获错误后继续 / fork 健康 | `docs/vllm-commit-fatal.md` + `docs/governance.md` §7.2（干净 optional 失败仍可继续；显式 commit-fatal 不得恢复或伪装回滚） |
 | 需求/任务领取 | 任务跟踪不走仓内看板（board.md 已移除），归 MR 与团队现用任务系统；协作红线见 `docs/governance.md` §7 |
 
 ## 治理闭环（改代码必走的登记链，L0 机器查）
@@ -146,6 +179,7 @@ skills/hcu-adapter-dev/  本 skill
   `python tests/tools/run_triage.py --stage ops`（或直接 `bash
   ci/l1_gpu_gate.sh` 一键全门）。
 - commit 信息带根因短句（参考 fbc540c / 1eb038d 风格），便于回溯 bug 类。
-- 文档与代码同库同 PR：改行为必须同步改本 skill 对应参考文档；README
+- 文档与代码同库同 PR：发现可复用的新坑后立即在修复所在 MR 同步更新本
+  skill/对应参考文档，不等最终总结；一次性环境日志只留验证证据。README
   是指针型入口，静态资产表只活在 catalog/models.md（已立规约：README
   不维护清单、不留本地任务编号）。

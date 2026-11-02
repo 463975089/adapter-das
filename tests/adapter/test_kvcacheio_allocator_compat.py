@@ -5,9 +5,73 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
 import torch
 
 from sgl_kernel import kvcacheio
+
+
+@pytest.fixture(autouse=True)
+def isolated_vendor_ops(monkeypatch):
+    """Exercise absence independently of extensions installed on the runner."""
+    monkeypatch.setattr(torch.ops, "sgl_kernel", types.SimpleNamespace())
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "hcu_alloc_decode_kernel",
+        "hcu_alloc_extend_kernel",
+        "hcu_assign_req_to_token_pool",
+        "hcu_get_last_loc",
+        "hcu_assign_extend_cache_locs",
+        "hcu_create_extend_after_decode_spec_info",
+        "hcu_create_chunked_prefix_cache_kv_indices",
+        "hcu_align_evict_mask_to_page_size",
+    ],
+)
+def test_registered_vendor_op_takes_precedence(monkeypatch, name):
+    import inspect
+
+    calls = []
+    result = object()
+
+    def vendor(*args):
+        calls.append(args)
+        return result
+
+    monkeypatch.setattr(torch.ops.sgl_kernel, name, vendor, raising=False)
+    wrapper = getattr(kvcacheio, name)
+    args = tuple(object() for _ in inspect.signature(wrapper).parameters)
+    actual = wrapper(*args)
+    assert calls == [args]
+    if name == "hcu_get_last_loc":
+        assert actual is result
+
+
+def test_vendor_failure_is_not_hidden_by_fallback(monkeypatch):
+    def vendor(*args):
+        raise RuntimeError("vendor execution failed")
+
+    monkeypatch.setattr(
+        torch.ops.sgl_kernel, "hcu_get_last_loc", vendor, raising=False
+    )
+    with pytest.raises(RuntimeError, match="vendor execution failed"):
+        kvcacheio.hcu_get_last_loc(None, None, None)
+
+
+def test_speculative_cache_write_fallback():
+    pool = torch.full((1, 4), -1, dtype=torch.int64)
+    kvcacheio.hcu_assign_extend_cache_locs(
+        torch.tensor([0]),
+        pool,
+        torch.tensor([1]),
+        torch.tensor([3]),
+        torch.tensor([7, 8]),
+        pool_len=4,
+        bs=1,
+    )
+    assert pool.tolist() == [[-1, 7, 8, -1]]
 
 
 class _Kernel:

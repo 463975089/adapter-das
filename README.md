@@ -177,3 +177,5 @@ MR 快速自动测试分层（L0 结构门禁云端秒级 / L1 GPU 数值门禁�
 ## DeepInfer 接入
 
 固定上游接口的 HCU 适配候选见[DeepInfer 手册](docs/frameworks/deepinfer.md)与[首版范围](docs/frameworks/deepinfer-scope.md)。模型扩展保留在独立 plugin；新组合尚待节点验收。
+
+vLLM 的必需扩展/capability 配置、唯一 owner 与失败报告见[启动要求](docs/frameworks/vllm-required-extensions.md)。

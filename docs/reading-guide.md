@@ -54,10 +54,12 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | docs/test-route-implementation-plan.md | 上述目标态的执行计划：MR 依赖、代码布局、DoD、验收、资源与回滚 | 任务已落地但状态未回写，或实现布局/schema/门槛与计划不符 |
 | docs/config.md | hcu_adapter.yaml 部署配置 + BACKEND_CATALOG 状态语义 | catalog 键集与 hcu_config.py 不符 |
 | docs/frameworks/vllm032.md | vLLM 0.32、Adapter 与可选 Plugin 的职责、部署和组合验证口径 | entry-point 所有权或版本门与代码不符 |
+| docs/vllm-commit-fatal.md | 公共显式 commit-fatal 与只读 runtime health；PR17 最小基线 | 锁存/fork/selector 行为或最小依赖与代码不符 |
 | docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
 | docs/plugins.md | 须走 plugin/上游/镜像/专门窗口的需求登记表（P1-P9，判定规则+验收锚点） | 完成项未更新现状列 / 未过 §0 判定就收录 |
 | docs/upstream-watch.md | 上游追新巡检规约（对账工具+日流程+自主修复授权边界，可交接版） | 工具清单状态与 #349/#350 实际落地不符 |
 | docs/env-vars.md | 全量环境变量手册（调试覆盖定位） | REGISTRY 键集与 hcu_env.py 不符（L0 会抓） |
+| docs/frameworks/vllm-required-extensions.md | vLLM 必选 entry-point/capability 启动策略、来源与 bootstrap/HOSTnone 日志边界 | 环境解析或实际 common/general-plugin 时序与契约不符 |
 | docs/cookbook.md | 已验证启动配方（按模型/特性），§4 平台约束必读 | 配方与最新 master 行为不符 |
 | docs/bootstrap.md | 新容器 Bootstrap 手册：依赖套件版本钉、tvm-ffi 手工预热、镜像差异表、四条自检 | 镜像换代后版本钉失效（快照与镜像不符） |
 | docs/models.md | 模型验证记录表（一天一行，判定四门）+ 组合特性清单 | 新模型跑完未加行 |

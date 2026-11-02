@@ -162,6 +162,11 @@ plugin 时仍保持官方 vLLM 基线路径可启动。
 
 ## 5. 横切机制
 
+`sgl_kernel.kvcacheio` 的 HCU 分页分配接口优先转发已注册的
+`torch.ops.sgl_kernel.hcu_*`。未注册时，decode/extend 分配及请求槽位写入、
+末位置查询保留上游 Triton/Torch 兼容路径；其余 vendor 专属接口仍响亮报错。
+已注册 vendor 算子的执行错误直接传播，不触发兼容回退。
+
 - **配置裁决**（`hcu_env.py` + `hcu_config.py`）：显式 env > `hcu_adapter.yaml`
   > 自动规则（arch/wheel 探测）> 默认值；启动日志打印每个生效值及来源，
   正确部署零环境变量。手册见 [env-vars.md](env-vars.md)、配置层见

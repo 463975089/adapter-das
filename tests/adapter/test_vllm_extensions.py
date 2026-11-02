@@ -141,6 +141,55 @@ def test_duplicate_declared_names_fail_without_activation():
     assert all("duplicate declared extension name" in report.reason for report in reports)
 
 
+@pytest.mark.parametrize("required", (False, True))
+def test_duplicate_capability_owners_never_activate_even_with_different_priorities(required):
+    api = _api()
+    activated = []
+    points = [
+        FakeEntryPoint("a", _factory("alpha", priority=100,
+            capabilities={"attention", "norm"}, activated=activated)),
+        FakeEntryPoint("b", _factory("beta", priority=1,
+            capabilities={"attention"}, activated=activated)),
+        FakeEntryPoint("c", _factory("independent", capabilities={"moe"},
+            activated=activated)),
+    ]
+    context = _context(capabilities={"attention"} if required else ())
+    if required:
+        with pytest.raises(api.RequiredExtensionError, match="attention") as caught:
+            api.activate_extensions(context, points)
+        reports = caught.value.reports
+    else:
+        reports = api.activate_extensions(context, points)
+    assert activated == ["independent"]
+    assert [point.loads for point in points] == [1, 1, 1]
+    assert [report.status for report in reports] == [
+        api.ExtensionStatus.FAILED, api.ExtensionStatus.FAILED, api.ExtensionStatus.ACTIVE,
+    ]
+    assert all("'attention': alpha, beta" in r.reason for r in reports[:2])
+
+
+def test_incompatible_api_does_not_reserve_capability_from_valid_owner():
+    api = _api()
+    activated = []
+    reports = api.activate_extensions(_context(capabilities={"attention"}), [
+        FakeEntryPoint("bad", _factory("old", api_version=2, capabilities={"attention"})),
+        FakeEntryPoint("good", _factory("current", capabilities={"attention"}, activated=activated)),
+    ])
+    assert activated == ["current"]
+    assert [r.status for r in reports] == [api.ExtensionStatus.FAILED, api.ExtensionStatus.ACTIVE]
+
+
+@pytest.mark.parametrize("capabilities", ({""}, {" "}, {None}, {1}))
+def test_invalid_capability_declaration_fails_before_activation(capabilities):
+    activated = []
+    report, = _api().activate_extensions(_context(), [FakeEntryPoint(
+        "invalid", _factory("invalid", capabilities=capabilities, activated=activated),
+    )])
+    assert activated == []
+    assert report.status is _api().ExtensionStatus.FAILED
+    assert "capability names must be non-empty strings" in report.reason
+
+
 def test_incompatible_optional_api_is_a_failed_report():
     report = _api().activate_extensions(
         _context(), [FakeEntryPoint("old", _factory("old", api_version=2))]

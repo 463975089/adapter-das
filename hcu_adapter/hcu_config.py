@@ -55,6 +55,17 @@ class HcuConfigError(RuntimeError):
 # backends   selectable backend -> {status, note}
 
 BACKEND_CATALOG = {
+    "vllm_fp8_linear": {
+        "var": None,
+        "summary": "vLLM official dense FP8 fallback via public linear registration",
+        "backends": {
+            "official-triton": {"status": "validated",
+                "note": "gfx936 only: official TritonFP8ScaledMMLinearKernel last priority; "
+                        "nonunit tensor/token/channel scales, BF16/FP16 bias and changed-input Graph; "
+                        "native Torch remains unsupported; gfx938 unvalidated. "
+                        "Disable with VLLM_DISABLED_KERNELS=TritonFP8ScaledMMLinearKernel."},
+        },
+    },
     "silu_and_mul": {
         "var": "HCU_SILU_MUL_IMPL",
         "summary": "gated activation out = silu(x[:,:d]) * x[:,d:]",

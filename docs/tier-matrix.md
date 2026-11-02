@@ -1,8 +1,18 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-10-29）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-10-31）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
+
+## vllm_fp8_linear
+
+vLLM official dense FP8 fallback via public linear registration
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| official-triton | validated gfx936 only: official TritonFP8Scale |
+
+路由变量：（auto）
 
 ## silu_and_mul
 

@@ -130,6 +130,19 @@ REGISTRY = {
         "about": "宿主分发：auto 自动识别；sglang/vllm/deepinfer 显式固定；none 禁用。"
                  "自动结果由 adapter 私有键传给 spawn 子进程，部署无需手设。",
     },
+    # Explicit startup assertions, never inferred from installed providers.
+    "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS": {
+        "env": "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", "default": "",
+        "hosts": ("vllm",),
+        "about": "vLLM 启动必选 extension entry-point 名，逗号分隔；"
+                 "默认不请求，缺失/失败阻断；启动前设置，非运行期快关。",
+    },
+    "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES": {
+        "env": "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES", "default": "",
+        "hosts": ("vllm",),
+        "about": "vLLM 启动必选 capability 名，逗号分隔；"
+                 "默认不请求，缺失/失败/歧义阻断；非算子启用开关。",
+    },
     # kill switches (triage; see kill_switch.py) — explicit-only by nature
     "HCU_DISABLE_OPS": {
         "env": "HCU_DISABLE_OPS", "default": "",

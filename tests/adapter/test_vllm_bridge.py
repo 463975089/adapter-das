@@ -262,13 +262,14 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "configure_vllm_hip_runtime_path",
         lambda: calls.append("dtk"),
     )
+    monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: calls.append("runtime-abi"))
     monkeypatch.setattr(
         bridge,
         "_installed_adapter_version",
         lambda: (calls.append("adapter-version"), "0.1.0")[1],
     )
 
-    def activate(context):
+    def activate(context, *, health_check_sink):
         calls.append(
             ("extensions", context.adapter_version, context.vllm_version)
         )
@@ -284,6 +285,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "version",
         "platform",
         "dtk",
+        "runtime-abi",
         "adapter-version",
         ("extensions", "0.1.0", "0.32.0+rocm723"),
     ]
@@ -307,9 +309,10 @@ def test_runtime_plugin_records_required_reports_before_latching(monkeypatch):
     monkeypatch.setattr(bridge, "_ensure_vllm_compatible", lambda: "0.32.0")
     monkeypatch.setattr(bridge, "_ensure_hcu_platform_selected", lambda: None)
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: None)
+    monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "0.1.0")
 
-    def fail(_context):
+    def fail(_context, *, health_check_sink):
         calls.append("activate")
         raise RequiredExtensionError("required extension failed", (report,))
 
@@ -410,17 +413,41 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
         selector,
         32,
     )
+    mla_selector = SimpleNamespace(
+        use_mla=True,
+        use_sparse=False,
+        _asdict=lambda: {"use_mla": True, "use_sparse": False},
+    )
+    assert platform.get_attn_backend_cls(None, mla_selector, 24) == (
+        None,
+        mla_selector,
+        24,
+    )
+    sparse_mla_selector = SimpleNamespace(
+        use_mla=True,
+        use_sparse=True,
+        _asdict=lambda: {"use_mla": True, "use_sparse": True},
+    )
+    assert platform.get_attn_backend_cls(None, sparse_mla_selector, 20) == (
+        None,
+        sparse_mla_selector,
+        20,
+    )
     assert platform.get_attn_backend_cls("EXPLICIT", selector, 16) == (
         "EXPLICIT",
         selector,
         16,
     )
+    actions = bridge.ProcessLocalActions()
+    monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", actions)
+    active = ExtensionReport("flash", "flash", ExtensionStatus.ACTIVE,
+                             frozenset({"hcu-flash-attention"}), "")
+    actions.record_extension_health(active, lambda: None)
+    actions.record_extension_reports((active,))
     assert platform.get_attn_backend_cls("FLASH_ATTN", selector, 8) == (
-        "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
+        "FLASH_ATTN", selector, 8,
     )
-    assert validation_calls == [
-        {"device_capability": "gfx936-capability", **selector_values}
-    ]
+    assert validation_calls == []
     assert "hcu_vllm_das" not in sys.modules
 
 
@@ -434,6 +461,13 @@ def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
         @classmethod
         def get_device_capability(cls):
             return "gfx936-capability"
+
+        @classmethod
+        def get_attn_backend_cls(cls, selected, attn_selector_config, num_heads=None):
+            # CPU-double official selector owns validation, not Adapter.
+            invalid = HcuFlashAttentionBackend.validate_configuration(
+                device_capability=cls.get_device_capability(), **attn_selector_config._asdict())
+            raise ValueError(str(invalid))
 
     fake_vllm = ModuleType("vllm")
     fake_vllm.__path__ = []
@@ -465,6 +499,12 @@ def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
         ),
     )
 
+    actions = bridge.ProcessLocalActions()
+    monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", actions)
+    active = ExtensionReport("flash", "flash", ExtensionStatus.ACTIVE,
+                             frozenset({"hcu-flash-attention"}), "")
+    actions.record_extension_health(active, lambda: None)
+    actions.record_extension_reports((active,))
     with pytest.raises(ValueError, match="DCP not supported"):
         bridge.HcuPlatform.get_attn_backend_cls(
             "FLASH_ATTN",

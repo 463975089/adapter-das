@@ -52,8 +52,9 @@ Adapter 负责：
 
 - 识别 HCU 并返回 `hcu_adapter.bridges.vllm.HcuPlatform`；
 - 执行 vLLM 0.32、平台选择和 DTK/HIP runtime 门禁；
-- 复用官方 `RocmPlatform` 行为，并在未显式选择 attention backend 时使用
-  vLLM 官方 Triton attention；
+- 复用官方 `RocmPlatform` 行为；普通 MHA/GQA 在未显式选择 attention
+  backend 时使用 vLLM 官方 Triton attention，MLA 与 Sparse MLA 则保留
+  `None`，交由官方 ROCm backend priority 按配置选型；
 - 为官方已有、但 HCU ABI 不一致的行为提供兼容桥；
 - 在基线门禁完成后发现可选 DAS Extension；
 - 保存进程内 Extension 激活报告。
@@ -90,8 +91,11 @@ Python 启动
 
 ## 4. 基线与失败语义
 
-- **未安装 Plugin**：`vLLM + Adapter` 必须可以启动并使用官方基线路径；
-- **可选 Plugin 失败**：Adapter 记录失败报告，基线继续启动；
+- **未安装 Plugin 且未显式请求 required 项**：`vLLM + Adapter` 保持官方基线路径；
+- **可选 Plugin 干净准备失败**：Adapter 记录失败报告，基线继续启动；
+- **显式 commit-fatal 失败**：已发布状态后不能安全继续时，owner 抛出公开
+  `ExtensionCommitError`；宿主停止后续激活并锁存失败，即使该 owner 是 optional。
+  详见[公开失败/健康 ABI](../vllm-commit-fatal.md)；
 - **Extension API 调用方显式传入 required Extension/capability**：缺失时响亮
   阻断；默认 vLLM runtime context 当前不请求任何必选项；
 - **不支持的 vLLM 版本或 HCU 架构**：不得选择 `HcuPlatform`；
@@ -128,6 +132,38 @@ python3 -m pip install --no-deps /wheels/hcu_vllm_das_plugin-*.whl  # 可选
 
 ## 6. 验证
 
+### Dense channel-FP8 fallback（gfx936）
+
+DTK Torch 2.11 的 `torch._scaled_mm` 在 gfx936 上会由自身架构检查拒绝，
+即使放宽 TorchFP8 linear helper 也不能执行。Adapter 不改变该判定、
+`get_cdna_version` 或任何其他架构身份，而是在官方 general-plugin runtime
+阶段通过 `register_linear_kernel(..., kernel_type="fp8")` 将官方已有
+`TritonFP8ScaledMMLinearKernel` **追加到最后**。既有 AITER/tuned/native
+优先级以及官方 `is_supported`、`can_implement`、禁用名单仍生效；不复制
+kernel、模型或 QuantConfig。该已有行为兼容属于 Adapter，不是新优化 Plugin。
+
+只有 Hygon PCI+HIP+gfx936 门通过才注册；gfx938/gfx928 和其他架构保持原逻辑。
+gfx938 尚无本次实机证据，不继承 gfx936 的通过结论。注册和 provider 签名变更
+会响亮失败。官方 native support 返回真时不再注册；官方 ROCm 候选列表将来
+纳入该 fallback 后应删除本桥。可用已有
+`VLLM_DISABLED_KERNELS=TritonFP8ScaledMMLinearKernel` 禁用，诊断登记可从
+`hcu_adapter.registry.records()["vllm_fp8_linear"]` 查看。
+
+独立数值/Graph探针（无模型，GPU3，allocator上限4GiB，非单位尺度与bias）：
+
+```bash
+python tests/tools/_probe_vllm_fp8_linear.py --output /path/to/new-provider-evidence
+python tests/tools/_probe_vllm_fp8_family.py --output /path/to/new-family-evidence
+```
+
+使用 `env -i` 明确 DTK动态库、`HIP_VISIBLE_DEVICES=3`、`TMPDIR`/Triton cache
+放 `/dev/shm`。第一个命令使用官方已安装环境、空PYTHONPATH直接验证原provider；
+第二个仅将此worktree设为明确的PYTHONPATH，验证真实runtime注册、官方选型、
+官方QuantFP8和apply_weights完整链路。二者都按解码FP8的FP32 GEMM+scale+bias
+对拍，要求cosine≥.9999、NRMSE≤.01、max-abs/ref-max-abs≤.01；Graph至少三波
+更换inputs/scales/bias。完整family参考复用官方quantizer，未重新实现量化。
+模型加载/质量和性能另行验证，不将micro通过等同于模型通过。
+
 ### 6.1 任意开发机
 
 ```bash
@@ -159,6 +195,11 @@ Extension API v1、可选/必需失败语义和 wheel entry-point 所有权。
 6. 多模型短文本、长上下文、并发和服务 API；
 7. HumanEval 64 或本次发布要求的完整精度集合。
 
+Attention 路由还须覆盖三类配置：普通 MHA/GQA 的默认值仍为
+`TRITON_ATTN`；MLA 与 Sparse MLA 的默认值不得被 Adapter 改写为普通
+attention backend。`fp8_e5m2` 等特定 KV dtype 是否可用，继续由最终选中的
+官方 MLA backend 自己校验，Adapter 不伪造设备代际或 dtype 能力。
+
 验收顺序固定为：
 
 ```text
@@ -171,6 +212,10 @@ Plugin 跑通不能反向证明 Adapter 基线正确，性能提升也不能替�
 门禁。
 
 ## 7. 维护原则
+
+通用成功加载回调、worker 可用性判定以及 compile-policy freeze 的集成边界见
+[post-model-load 接口](vllm032-post-model-load.md)。此接口不激活 Plugin；foreign
+worker 仍由操作者配置，依赖 freeze 的 Plugin 选型必须显式检查接口可用性。
 
 - 官方 vLLM 已支持且能在 HCU 正确运行的能力直接复用，不重复建设；
 - 官方已有行为的 HCU 缺口留在 Adapter；

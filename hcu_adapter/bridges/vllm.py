@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, MutableMapping
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from importlib import import_module, metadata
 from pathlib import Path
-from threading import RLock
 
 from packaging.version import InvalidVersion, Version
 
 from hcu_adapter.extensions import (
     ExtensionContext,
     ExtensionReport,
+    ExtensionCommitError,
     RequiredExtensionError,
     activate_extensions,
 )
+from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
 
 
 SUPPORTED_VLLM_RELEASE_PREFIX = (0, 32)
@@ -24,11 +25,11 @@ SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx936", "gfx938"})
 HYGON_PCI_VENDOR_ID = "0x1d94"
 _PCI_DEVICES_ROOT = Path("/sys/bus/pci/devices")
 _PLATFORM_CLASS = "hcu_adapter.bridges.vllm.HcuPlatform"
-_FLASH_ATTN_BACKEND_CLASS = (
-    "hcu_vllm_das.attention.flash_attn.HcuFlashAttentionBackend"
-)
+_FLASH_ATTN_CAPABILITY = "hcu-flash-attention"
 _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
+_REQUIRED_EXTENSIONS = "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS"
+_REQUIRED_CAPABILITIES = "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES"
 
 
 class VllmCompatibilityError(RuntimeError):
@@ -195,60 +196,30 @@ def configure_vllm_hip_runtime_path(
     return None
 
 
-class ProcessLocalActions:
-    """Run required callbacks once per PID and latch partial failures."""
+def _require_vllm_hip_runtime_abi() -> None:
+    """Admit the runtime through vLLM's own loader, without executing HIP ops.
+
+    Its constructor resolves the actual loaded library before the configured
+    fallback and binds the required symbols/types. Preserve that precedence
+    and the operator's path spelling; do not duplicate its native ABI table.
+    """
+    try:
+        wrapper = import_module(
+            "vllm.distributed.device_communicators.cuda_wrapper"
+        )
+        wrapper.CudaRTLibrary()
+    except Exception as exc:
+        raise VllmCompatibilityError(
+            "vLLM HIP runtime ABI admission failed before operator registration: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+
+class ProcessLocalActions(ProcessLocalLifecycle):
+    """Supply only vLLM action identity and its existing public error type."""
 
     def __init__(self) -> None:
-        self._owner_pid = os.getpid()
-        self._lock = RLock()
-        self._records: dict[str, str | None] = {}
-        self._extension_reports: tuple[ExtensionReport, ...] = ()
-        if hasattr(os, "register_at_fork"):
-            os.register_at_fork(after_in_child=self._after_fork_child)
-
-    def _reset(self, owner_pid: int) -> None:
-        self._owner_pid = owner_pid
-        self._lock = RLock()
-        self._records = {}
-        self._extension_reports = ()
-
-    def _after_fork_child(self) -> None:
-        self._reset(os.getpid())
-
-    def _ensure_process_local(self) -> None:
-        pid = os.getpid()
-        if pid != self._owner_pid:
-            self._reset(pid)
-
-    def run_once(self, action_id: str, callback: Callable[[], object]) -> None:
-        self._ensure_process_local()
-        with self._lock:
-            if action_id in self._records:
-                failure = self._records[action_id]
-                if failure is not None:
-                    raise LatchedVllmRuntimeError(failure)
-                return
-            try:
-                callback()
-            except Exception as exc:
-                failure = f"{type(exc).__name__}: {exc}"
-                self._records[action_id] = failure
-                raise LatchedVllmRuntimeError(failure) from exc
-            self._records[action_id] = None
-
-    def record_extension_reports(
-        self,
-        reports: tuple[ExtensionReport, ...],
-    ) -> None:
-        self._ensure_process_local()
-        with self._lock:
-            self._extension_reports = tuple(reports)
-
-    def extension_reports(self) -> tuple[ExtensionReport, ...]:
-        self._ensure_process_local()
-        with self._lock:
-            return self._extension_reports
-
+        super().__init__(runtime_action="vllm-runtime", error_type=LatchedVllmRuntimeError)
 
 _RUNTIME_ACTIONS = ProcessLocalActions()
 
@@ -256,6 +227,26 @@ _RUNTIME_ACTIONS = ProcessLocalActions()
 def extension_reports() -> tuple[ExtensionReport, ...]:
     """Return the latest process-local optimization activation reports."""
     return _RUNTIME_ACTIONS.extension_reports()
+
+
+def _require_flash_capability() -> None:
+    # Reports are process-local and cleared after fork. Do not activate or
+    # repair extensions from a backend selector, or trust a parent report.
+    require_extension_healthy(_FLASH_ATTN_CAPABILITY)
+
+
+def require_runtime_healthy() -> None:
+    """Refuse failed boot without activation, repair or backend selection.
+
+    Unknown/healthy state is allowed; this is not evidence activation completed.
+    Reports remain available after failure for diagnosis.
+    """
+    _RUNTIME_ACTIONS.require_runtime_healthy()
+
+
+def require_extension_healthy(capability: str) -> None:
+    """Check a unique current-process ACTIVE owner without activation/repair."""
+    _RUNTIME_ACTIONS.require_extension_healthy(capability)
 
 
 def install() -> None:
@@ -276,36 +267,47 @@ def _hcu_platform_class() -> type:
         device_name = "hcu"
 
         @classmethod
+        def check_and_update_config(cls, vllm_config) -> None:
+            # Upstream owns config validation/defaults, including worker choice.
+            super().check_and_update_config(vllm_config)
+            from hcu_adapter.bridges.vllm_model_load import (
+                OFFICIAL_MODEL_LOAD_WORKER,
+                POST_MODEL_LOAD_WORKER,
+            )
+
+            parallel = vllm_config.parallel_config
+            if (
+                parallel.worker_cls == OFFICIAL_MODEL_LOAD_WORKER
+                and parallel.distributed_executor_backend in ("uni", "mp")
+            ):
+                parallel.worker_cls = POST_MODEL_LOAD_WORKER
+
+        @classmethod
         def get_attn_backend_cls(
             cls,
             selected_backend,
             attn_selector_config,
             num_heads=None,
         ) -> str:
+            require_runtime_healthy()
             from vllm.v1.attention.backends.registry import (
                 AttentionBackendEnum,
             )
 
-            if selected_backend is None:
+            # Keep the validated ordinary-attention default, but let the
+            # official ROCm priority table choose specialized MLA backends.
+            # Forcing TRITON_ATTN here makes both MLA and sparse MLA fail
+            # capability validation before model weights are loaded.
+            uses_mla = bool(getattr(attn_selector_config, "use_mla", False))
+            uses_sparse = bool(
+                getattr(attn_selector_config, "use_sparse", False)
+            )
+            if selected_backend is None and not (uses_mla or uses_sparse):
                 selected_backend = AttentionBackendEnum.TRITON_ATTN
             if selected_backend == AttentionBackendEnum.FLASH_ATTN:
-                module_name, class_name = _FLASH_ATTN_BACKEND_CLASS.rsplit(".", 1)
-                backend_class = getattr(import_module(module_name), class_name)
-                device_capability = cls.get_device_capability()
-                if device_capability is None:
-                    raise VllmCompatibilityError(
-                        "HCU FLASH_ATTN requires a detected device capability"
-                    )
-                invalid_reasons = backend_class.validate_configuration(
-                    device_capability=device_capability,
-                    **attn_selector_config._asdict(),
-                )
-                if invalid_reasons:
-                    raise ValueError(
-                        "Selected HCU FLASH_ATTN backend is not valid for this "
-                        f"configuration. Reason: {invalid_reasons}"
-                    )
-                return _FLASH_ATTN_BACKEND_CLASS
+                _require_flash_capability()
+                # The owner publishes via vLLM's public backend registry.
+                # Official ROCm selection owns class lookup and validation.
             return super().get_attn_backend_cls(
                 selected_backend,
                 attn_selector_config,
@@ -347,20 +349,33 @@ def _ensure_hcu_platform_selected() -> None:
 
 def hcu_runtime_plugin() -> None:
     """Apply the required vLLM runtime guards once in each HCU process."""
+    require_runtime_healthy()
     if not detect_hcu().detected:
         return None
 
     def initialize() -> None:
+        # Parse before any operator registration. These are startup requirements,
+        # inherited by spawned/forked workers, not runtime enable/disable knobs.
+        required_extensions = _required_names(_REQUIRED_EXTENSIONS)
+        required_capabilities = _required_names(_REQUIRED_CAPABILITIES)
         vllm_version = _ensure_vllm_compatible()
         _ensure_hcu_platform_selected()
         configure_vllm_hip_runtime_path()
+        _require_vllm_hip_runtime_abi()
+        from hcu_adapter.bridges.vllm_fp8 import install as install_fp8_fallback
+
+        install_fp8_fallback()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,
+            requested_extensions=required_extensions,
+            requested_capabilities=required_capabilities,
         )
         try:
-            reports = activate_extensions(context)
-        except RequiredExtensionError as exc:
+            reports = activate_extensions(
+                context, health_check_sink=_RUNTIME_ACTIONS.record_extension_health,
+            )
+        except (RequiredExtensionError, ExtensionCommitError) as exc:
             _RUNTIME_ACTIONS.record_extension_reports(exc.reports)
             raise
         _RUNTIME_ACTIONS.record_extension_reports(reports)
@@ -368,8 +383,27 @@ def hcu_runtime_plugin() -> None:
     _RUNTIME_ACTIONS.run_once("vllm-runtime", initialize)
 
 
+def _required_names(variable: str) -> frozenset[str]:
+    """Read a comma-separated list; reject malformed nonempty requirements."""
+    from hcu_adapter import hcu_env
+
+    raw, _source = hcu_env.resolve(variable)
+    if not raw.strip():
+        return frozenset()
+    names = tuple(name.strip() for name in raw.split(","))
+    if any(not name or any(char.isspace() for char in name) for name in names):
+        raise ValueError(f"{variable} requires comma-separated non-empty names")
+    return frozenset(names)
+
+
 def install_rms_norm_bridge() -> bool:
-    """Bind vLLM's HCU RMSNorm ABI to the adapter's equivalent kernels."""
+    """Install the compatibility bindings consumed by the SGLang bridge.
+
+    The SGLang startup chain calls this helper; the vLLM runtime plugin does not.
+    Its six-argument fused shim has separate output destinations, unlike vLLM
+    0.32's four-argument, in-place fused ABI. Do not install it in the vLLM
+    runtime to replace the official RMS operators.
+    """
     try:
         import vllm._custom_ops as custom_ops
 
