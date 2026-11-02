@@ -389,7 +389,7 @@ def moe_align_block_size(
     # except intra-segment token order, which the runner ignores.
     fused_max = 2048
     try:
-        from .hcu_adapter.hcu_env import resolve
+        from hcu_adapter.hcu_env import resolve
 
         _mode, _src = resolve("HCU_MOE_ALIGN_FUSED")
         if _mode in ("0", "off", "false"):
