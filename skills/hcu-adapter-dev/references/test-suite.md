@@ -5,6 +5,13 @@ API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug
 
 ## 四质量维度
 
+vLLM dense FP8官方fallback接线探针：`tests/tools/_probe_vllm_fp8_linear.py`
+直接验证既有官方provider；`_probe_vllm_fp8_family.py` 验证runtime正式注册、
+官方选型、QuantFP8及apply_weights完整链路。非单位tensor/token/channel尺度、
+bias和三波变输入Graph必须对拍FP32；只验证的gfx936不为gfx938背书。
+桥接契约由 `tests/adapter/test_vllm_fp8_bridge.py` 离线覆盖。命令与退出条件
+见 `docs/frameworks/vllm032.md`，禁止通过伪CDNA或放宽native Torch支持谓词接线。
+
 | 维度 | 断言 | 不测会漏掉的 bug（真实案例） |
 |---|---|---|
 | 1 数值契约 | vs torch fp32 参考：cos ≥ 0.9999 且 maxrel ≤ tol | rope cache 半分布局（fbc540c）："能跑"但语义错 |

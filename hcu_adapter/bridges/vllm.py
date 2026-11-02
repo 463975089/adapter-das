@@ -382,6 +382,9 @@ def hcu_runtime_plugin() -> None:
         _ensure_hcu_platform_selected()
         configure_vllm_hip_runtime_path()
         _require_vllm_hip_runtime_abi()
+        from hcu_adapter.bridges.vllm_fp8 import install as install_fp8_fallback
+
+        install_fp8_fallback()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,

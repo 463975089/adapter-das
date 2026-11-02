@@ -129,6 +129,38 @@ python3 -m pip install --no-deps /wheels/hcu_vllm_das_plugin-*.whl  # 可选
 
 ## 6. 验证
 
+### Dense channel-FP8 fallback（gfx936）
+
+DTK Torch 2.11 的 `torch._scaled_mm` 在 gfx936 上会由自身架构检查拒绝，
+即使放宽 TorchFP8 linear helper 也不能执行。Adapter 不改变该判定、
+`get_cdna_version` 或任何其他架构身份，而是在官方 general-plugin runtime
+阶段通过 `register_linear_kernel(..., kernel_type="fp8")` 将官方已有
+`TritonFP8ScaledMMLinearKernel` **追加到最后**。既有 AITER/tuned/native
+优先级以及官方 `is_supported`、`can_implement`、禁用名单仍生效；不复制
+kernel、模型或 QuantConfig。该已有行为兼容属于 Adapter，不是新优化 Plugin。
+
+只有 Hygon PCI+HIP+gfx936 门通过才注册；gfx938/gfx928 和其他架构保持原逻辑。
+gfx938 尚无本次实机证据，不继承 gfx936 的通过结论。注册和 provider 签名变更
+会响亮失败。官方 native support 返回真时不再注册；官方 ROCm 候选列表将来
+纳入该 fallback 后应删除本桥。可用已有
+`VLLM_DISABLED_KERNELS=TritonFP8ScaledMMLinearKernel` 禁用，诊断登记可从
+`hcu_adapter.registry.records()["vllm_fp8_linear"]` 查看。
+
+独立数值/Graph探针（无模型，GPU3，allocator上限4GiB，非单位尺度与bias）：
+
+```bash
+python tests/tools/_probe_vllm_fp8_linear.py --output /path/to/new-provider-evidence
+python tests/tools/_probe_vllm_fp8_family.py --output /path/to/new-family-evidence
+```
+
+使用 `env -i` 明确 DTK动态库、`HIP_VISIBLE_DEVICES=3`、`TMPDIR`/Triton cache
+放 `/dev/shm`。第一个命令使用官方已安装环境、空PYTHONPATH直接验证原provider；
+第二个仅将此worktree设为明确的PYTHONPATH，验证真实runtime注册、官方选型、
+官方QuantFP8和apply_weights完整链路。二者都按解码FP8的FP32 GEMM+scale+bias
+对拍，要求cosine≥.9999、NRMSE≤.01、max-abs/ref-max-abs≤.01；Graph至少三波
+更换inputs/scales/bias。完整family参考复用官方quantizer，未重新实现量化。
+模型加载/质量和性能另行验证，不将micro通过等同于模型通过。
+
 ### 6.1 任意开发机
 
 ```bash
