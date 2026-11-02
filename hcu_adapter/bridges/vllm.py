@@ -14,6 +14,7 @@ from packaging.version import InvalidVersion, Version
 from hcu_adapter.extensions import (
     ExtensionContext,
     ExtensionReport,
+    ExtensionCommitError,
     RequiredExtensionError,
     activate_extensions,
 )
@@ -223,14 +224,21 @@ class ProcessLocalActions:
         self._owner_pid = os.getpid()
         self._lock = RLock()
         self._records: dict[str, str | None] = {}
+        self._running: set[str] = set()
         self._extension_reports: tuple[ExtensionReport, ...] = ()
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork_child)
 
     def _reset(self, owner_pid: int) -> None:
+        # Only the existing vLLM runtime action inherits failure. Its registry
+        # mutations also survive fork. Other actions keep their old reset.
+        failure = self._records.get("vllm-runtime")
+        if failure is None and "vllm-runtime" in self._running:
+            failure = "inherited incomplete vllm-runtime activation; spawn a fresh process"
         self._owner_pid = owner_pid
         self._lock = RLock()
-        self._records = {}
+        self._records = {} if failure is None else {"vllm-runtime": failure}
+        self._running = set()
         self._extension_reports = ()
 
     def _after_fork_child(self) -> None:
@@ -249,13 +257,33 @@ class ProcessLocalActions:
                 if failure is not None:
                     raise LatchedVllmRuntimeError(failure)
                 return
+            if action_id == "vllm-runtime" and action_id in self._running:
+                raise LatchedVllmRuntimeError("recursive vllm-runtime activation")
+            self._running.add(action_id)
             try:
                 callback()
             except Exception as exc:
-                failure = f"{type(exc).__name__}: {exc}"
+                # Diagnostic formatting can raise, re-enter or fork. Publish
+                # refusal before it runs and before finally clears _running.
+                failure = "runtime action failed; exception details unavailable"
+                self._records[action_id] = failure
+                try:
+                    failure = f"{type(exc).__name__}: {exc}"
+                except BaseException:
+                    pass
                 self._records[action_id] = failure
                 raise LatchedVllmRuntimeError(failure) from exc
+            finally:
+                self._running.discard(action_id)
             self._records[action_id] = None
+
+    def require_runtime_healthy(self) -> None:
+        """Read failure only; safe/reentrant inside the runtime callback."""
+        self._ensure_process_local()
+        with self._lock:
+            failure = self._records.get("vllm-runtime")
+            if failure is not None:
+                raise LatchedVllmRuntimeError(failure)
 
     def record_extension_reports(
         self,
@@ -277,6 +305,15 @@ _RUNTIME_ACTIONS = ProcessLocalActions()
 def extension_reports() -> tuple[ExtensionReport, ...]:
     """Return the latest process-local optimization activation reports."""
     return _RUNTIME_ACTIONS.extension_reports()
+
+
+def require_runtime_healthy() -> None:
+    """Refuse failed boot without activation, repair or backend selection.
+
+    Unknown/healthy state is allowed; this is not evidence activation completed.
+    Reports remain available after failure for diagnosis.
+    """
+    _RUNTIME_ACTIONS.require_runtime_healthy()
 
 
 def install() -> None:
@@ -319,6 +356,7 @@ def _hcu_platform_class() -> type:
             attn_selector_config,
             num_heads=None,
         ) -> str:
+            require_runtime_healthy()
             from vllm.v1.attention.backends.registry import (
                 AttentionBackendEnum,
             )
@@ -392,6 +430,7 @@ def _ensure_hcu_platform_selected() -> None:
 
 def hcu_runtime_plugin() -> None:
     """Apply the required vLLM runtime guards once in each HCU process."""
+    require_runtime_healthy()
     if not detect_hcu().detected:
         return None
 
@@ -415,7 +454,7 @@ def hcu_runtime_plugin() -> None:
         )
         try:
             reports = activate_extensions(context)
-        except RequiredExtensionError as exc:
+        except (RequiredExtensionError, ExtensionCommitError) as exc:
             _RUNTIME_ACTIONS.record_extension_reports(exc.reports)
             raise
         _RUNTIME_ACTIONS.record_extension_reports(reports)

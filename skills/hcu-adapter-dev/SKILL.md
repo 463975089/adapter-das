@@ -78,6 +78,13 @@ vLLM worker/executor/env-cache 覆盖查询归 `bridges.vllm_model_load`，薄 W
 下的真实共享 dispatch，而不只检查 import 成功；详见
 `docs/frameworks/vllm032-post-model-load.md`。
 
+宿主启动失败须先锁存固定拒绝，再格式化异常；`__str__` 也可能抛
+`BaseException`、重入或 fork。扩展宿主先判原始 fatal 链，再安全生成唯一
+FAILED 报告；诊断失败不能把已发布错误变成普通 optional，也不能把干净
+optional 误判为 fatal。保留 callback 原有捕获边界，不新增恢复接口。
+回归需有真实 metadata/官方 loader、安装态坏字符串、父子拒绝和重试证据；
+详见 `docs/vllm-commit-fatal.md` 与测试参考。
+
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
 
 | 你要做的事 | 先读 |
@@ -94,6 +101,7 @@ vLLM worker/executor/env-cache 覆盖查询归 `bridges.vllm_model_load`，薄 W
 | 改上游行为补丁（text patch） | `docs/governance.md` TEXT_PATCH_ALLOWLIST（L0 硬门） |
 | 加/改算子档位实现文件（命名/归档） | `docs/governance.md` §3b + `python tools/gen_tier_matrix.py`（档位矩阵随 catalog 同 commit） |
 | vLLM 0.32 平台、attention/MLA backend 选型 | `docs/frameworks/vllm032.md` + `docs/governance.md`（先区分普通/MLA/Sparse MLA，保持真实架构能力） |
+| vLLM 扩展发布状态后失败 / 捕获错误后继续 / fork 健康 | `docs/vllm-commit-fatal.md` + `docs/governance.md` §7.2（干净 optional 失败仍可继续；显式 commit-fatal 不得恢复或伪装回滚） |
 | 需求/任务领取 | 任务跟踪不走仓内看板（board.md 已移除），归 MR 与团队现用任务系统；协作红线见 `docs/governance.md` §7 |
 
 ## 治理闭环（改代码必走的登记链，L0 机器查）

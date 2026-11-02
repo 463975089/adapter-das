@@ -23,6 +23,13 @@ bias和三波变输入Graph必须对拍FP32；只验证的gfx936不为gfx938背�
 桥接契约由 `tests/adapter/test_vllm_fp8_bridge.py` 离线覆盖。命令与退出条件
 见 `docs/frameworks/vllm032.md`，禁止通过伪CDNA或放宽native Torch支持谓词接线。
 
+vLLM 启动故障回归须覆盖异常 `__str__` 自身失败（普通 Exception 与
+BaseException）、格式化期间实际 fork、父子 health/同进程 retry 持续拒绝。
+公开 ExtensionCommitError 经坏字符串 wrapper 包装也须保留真实 FAILED
+报告并停止后续 owner；干净 optional 的诊断失败仍保持原有降级语义。
+使用实际 metadata/官方 general-plugin loader 与 spawn/unpickle 验证新安装
+产物；源码计数和旧 wheel 证据不可转授。该 seam 不引入算子质量晋级。
+
 | 维度 | 断言 | 不测会漏掉的 bug（真实案例） |
 |---|---|---|
 | 1 数值契约 | vs torch fp32 参考：cos ≥ 0.9999 且 maxrel ≤ tol | rope cache 半分布局（fbc540c）："能跑"但语义错 |

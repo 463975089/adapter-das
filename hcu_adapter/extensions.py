@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import Enum
 from importlib import metadata
+import builtins
 from typing import Protocol, runtime_checkable
 
 
@@ -79,6 +80,39 @@ class RequiredExtensionError(RuntimeError):
         self.reports = tuple(reports)
 
 
+class ExtensionCommitError(RuntimeError):
+    """Activation published state and cannot safely continue in this process.
+
+    This signals failure, not rollback. The host supplies reports when it
+    propagates the error; an owner need only provide the reason.
+    """
+
+    def __init__(self, message: str, reports: Iterable[ExtensionReport] = ()) -> None:
+        super().__init__(message)
+        self.reports = tuple(reports)
+
+
+def is_fatal_extension_error(error: BaseException) -> bool:
+    """Recognize the public signal through wrappers, suppression and cycles.
+
+    No message/type heuristics infer dirty state. Owners explicitly signal
+    their commit boundary. Feature detection keeps the Python floor.
+    """
+    group_type = getattr(builtins, "BaseExceptionGroup", ())
+    pending, visited = [error], set()
+    while pending:
+        current = pending.pop()
+        if not isinstance(current, BaseException) or id(current) in visited:
+            continue
+        visited.add(id(current))
+        if isinstance(current, ExtensionCommitError):
+            return True
+        pending.extend((current.__cause__, current.__context__))
+        if group_type and isinstance(current, group_type):
+            pending.extend(current.exceptions)
+    return False
+
+
 @runtime_checkable
 class EntryPointLike(Protocol):
     name: str
@@ -88,6 +122,14 @@ class EntryPointLike(Protocol):
 
 def _entry_points() -> tuple[EntryPointLike, ...]:
     return tuple(metadata.entry_points(group=EXTENSION_ENTRY_POINT_GROUP))
+
+
+def _exception_description(error: BaseException) -> str:
+    """Diagnostics cannot replace the original failure or its classification."""
+    try:
+        return f"{type(error).__name__}: {error}"
+    except BaseException:
+        return "exception details unavailable"
 
 
 def _failure(
@@ -157,12 +199,19 @@ def activate_extensions(
             if any(not isinstance(name, str) or not name.strip() for name in capabilities):
                 raise TypeError("capability names must be non-empty strings")
         except Exception as exc:
+            fatal = is_fatal_extension_error(exc)
+            description = _exception_description(exc)
             reports.append(
                 _failure(
                     point.name,
-                    f"load failed: {type(exc).__name__}: {exc}",
+                    f"load failed: {description}",
                 )
             )
+            if fatal:
+                raise ExtensionCommitError(
+                    f"fatal extension discovery failure at {point.name!r}: {description}",
+                    _ordered_reports(reports),
+                ) from exc
             continue
 
         if spec.api_version != EXTENSION_API_VERSION:
@@ -236,14 +285,21 @@ def activate_extensions(
         try:
             spec.activate(context)
         except Exception as exc:
+            fatal = is_fatal_extension_error(exc)
+            description = _exception_description(exc)
             reports.append(
                 _failure(
                     point.name,
-                    f"activation failed: {type(exc).__name__}: {exc}",
+                    f"activation failed: {description}",
                     spec.name,
                     spec.capabilities,
                 )
             )
+            if fatal:
+                raise ExtensionCommitError(
+                    f"fatal extension activation failure at {point.name!r}: {description}",
+                    _ordered_reports(reports),
+                ) from exc
         else:
             reports.append(
                 ExtensionReport(
@@ -303,5 +359,7 @@ __all__ = [
     "ExtensionSpec",
     "ExtensionStatus",
     "RequiredExtensionError",
+    "ExtensionCommitError",
+    "is_fatal_extension_error",
     "activate_extensions",
 ]

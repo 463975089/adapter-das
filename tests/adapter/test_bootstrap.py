@@ -159,13 +159,14 @@ def _arm_install(monkeypatch, *, hip=True, available=("sglang",), common_failure
     return events
 
 
-def test_install_runs_common_before_the_selected_host(monkeypatch, caplog):
-    events = _arm_install(monkeypatch)
+@pytest.mark.parametrize("host", ["sglang", "vllm"])
+def test_install_runs_common_before_the_selected_host(monkeypatch, caplog, host):
+    events = _arm_install(monkeypatch, available=(host,))
 
     bootstrap.install()
 
-    assert events == ["common", "sglang"]
-    assert "host=sglang source=availability" in caplog.text
+    assert events == ["common", host]
+    assert f"host={host} source=availability" in caplog.text
 
 
 def test_deepinfer_installs_without_the_early_common_bridge(monkeypatch, caplog):
