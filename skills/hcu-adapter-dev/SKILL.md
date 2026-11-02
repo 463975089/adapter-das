@@ -70,6 +70,14 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 
 ## 任务路由（做某类事之前先读对应参考文档）
 
+共享机制在**调用时**也必须 framework-free，不能用惰性 `from vllm import
+envs` 隐藏宿主决策。模型 lifecycle 的声明/上下文/同步留在 `model_load`；
+vLLM worker/executor/env-cache 覆盖查询归 `bridges.vllm_model_load`，薄 Worker
+通过该公开门面调用。迁移公开路径时同步真实 Plugin 的 ABI 预检和 selector
+导入，禁止共享层反向导入宿主桥作兼容壳。验证必须含双宿主 import-blocking
+下的真实共享 dispatch，而不只检查 import 成功；详见
+`docs/frameworks/vllm032-post-model-load.md`。
+
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
 
 | 你要做的事 | 先读 |
