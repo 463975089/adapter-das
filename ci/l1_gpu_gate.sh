@@ -12,6 +12,10 @@
 #   kernels   tests/kernels + tests/adapter    triton numerics vs torch refs
 #   l15_up    upstream registered/attention/unittests (dsa+kda+dense+mla)
 #             via pinned PYTHONPATH; tilelang variants excluded (DTK bug)
+#   l15_manifest  L1.5 v2 manifest collect/verify shadow (non-blocking by
+#                 default; set L15_MANIFEST_MODE=blocking to gate)
+#   l15_family_matrix  Dense/MLA/MoE/Quant/Mamba no-weight representative
+#                 matrix (off by default; observe/blocking explicitly enabled)
 #   gates     curated tools gates: config catalog, fa3-emu CP shapes, rope
 #             paths, aiter-MoE bridge dispatch, deepgemm contiguous triton
 #   vendor    flash_attn wheel sanity probe    (WARN tier: bad wheel -> warn)
@@ -22,7 +26,24 @@ cd "$ROOT"
 
 FAILS=()
 
-# ---------------------------------------------------------------- arg parse
+# L1.5 v2 manifest migration is observe-only by default.  The output root is
+# caller-controlled so durable CI artifacts do not depend on /tmp.  Existing
+# segment logs remain unchanged for backward compatibility until MR-06.
+L15_MANIFEST="$ROOT/tests/manifests/l15_v0522.json"
+L15_MANIFEST_MODE="${L15_MANIFEST_MODE:-observe}"
+L15_MANIFEST_BATCHES="${L15_MANIFEST_BATCHES:-current,batch-1}"
+L15_RESULT_ROOT="${L15_RESULT_ROOT:-$ROOT/results/l15-manifest}"
+L15_FAMILY_MATRIX_MODE="${L15_FAMILY_MATRIX_MODE:-off}"
+L15_FAMILY_MATRIX_FAMILIES="${L15_FAMILY_MATRIX_FAMILIES:-dense,mla,moe,quantization,mamba}"
+case "$L15_MANIFEST_MODE" in observe|blocking|off) ;; *)
+    echo "L1: invalid L15_MANIFEST_MODE='$L15_MANIFEST_MODE' (use off|observe|blocking)"
+    exit 2;;
+esac
+case "$L15_FAMILY_MATRIX_MODE" in observe|blocking|off) ;; *)
+    echo "L1: invalid L15_FAMILY_MATRIX_MODE='$L15_FAMILY_MATRIX_MODE' (use off|observe|blocking)"
+    exit 2;;
+esac
+
 # R-17 three-way binding: branch <-> upstream tree <-> container. Explicit
 # tree (arg --up-tree <path> / env HCU_UP_TREE) must EXIST -- a typo'd path
 # loud-fails instead of silently falling back to auto-probe (wrong-tree
@@ -53,7 +74,7 @@ if [ -n "$UP_TREE" ] && [ ! -d "$UP_TREE/test/registered/attention/unittests" ];
     exit 2
 fi
 if [ -z "$UP_TREE" ]; then
-  for d in /sglang-v0521 /root/sglang-v0521-src; do
+  for d in /sglang-v0522 /root/sglang-v0522-src /sglang-v0521 /root/sglang-v0521-src; do
     [ -d "$d/test/registered/attention/unittests" ] && UP_TREE="$d" && break
   done
 fi
@@ -203,6 +224,73 @@ if [ -n "$UP_TREE" ]; then
         fi
     else
         echo "L1: l15_mech SKIP (no mechanism dirs in this tree)"
+    fi
+
+    # L1.5 v2 manifest shadow.  This collects explicit candidate sources and
+    # exact nodeids without modifying the upstream tree.  During migration the
+    # legacy directory/count gates above remain authoritative.  Observe mode
+    # reports drift and infrastructure failures without adding FAILS; blocking
+    # mode is opt-in.
+    if [ "$L15_MANIFEST_MODE" != "off" ] && [ -f "$L15_MANIFEST" ]; then
+        run_id="$(date +%Y%m%dT%H%M%S)-$$"
+        manifest_out="$L15_RESULT_ROOT/$run_id"
+        mkdir -p "$manifest_out"
+        echo "L1: === l15_manifest ($L15_MANIFEST_MODE, batches=$L15_MANIFEST_BATCHES) ==="
+        manifest_rc=0
+        env HCU_DEEPGEMM_BRIDGE=1 PYTHONPATH="$UP_TREE/python:$ROOT" \
+            python3 tools/l15_manifest.py collect \
+                --up-tree "$UP_TREE" \
+                --manifest "$L15_MANIFEST" \
+                --out-dir "$manifest_out" \
+                --batches "$L15_MANIFEST_BATCHES" \
+                --timeout $(( 900 * TSCALE )) || manifest_rc=$?
+        verify_rc=0
+        if [ -f "$manifest_out/collect.json" ]; then
+            python3 tools/l15_manifest.py verify \
+                --manifest "$L15_MANIFEST" \
+                --collect "$manifest_out/collect.json" \
+                --mode "$L15_MANIFEST_MODE" \
+                --out "$manifest_out/verify.json" || verify_rc=$?
+        else
+            verify_rc=2
+        fi
+        if [ "$manifest_rc" -eq 0 ] && [ "$verify_rc" -eq 0 ]; then
+            echo "L1: l15_manifest PASS ($L15_MANIFEST_MODE; artifacts=$manifest_out)"
+        elif [ "$L15_MANIFEST_MODE" = "blocking" ]; then
+            echo "L1: l15_manifest FAIL (collect=$manifest_rc verify=$verify_rc; artifacts=$manifest_out)"
+            FAILS+=(l15_manifest)
+        else
+            echo "L1: l15_manifest WARN (observe-only; collect=$manifest_rc verify=$verify_rc; artifacts=$manifest_out)"
+        fi
+    elif [ "$L15_MANIFEST_MODE" = "off" ]; then
+        echo "L1: l15_manifest SKIP (mode=off)"
+    elif [ "$L15_MANIFEST_MODE" = "blocking" ]; then
+        echo "L1: l15_manifest FAIL (manifest missing: $L15_MANIFEST)"
+        FAILS+=(l15_manifest)
+    else
+        echo "L1: l15_manifest WARN (observe-only; manifest missing: $L15_MANIFEST)"
+    fi
+
+    if [ "$L15_FAMILY_MATRIX_MODE" != "off" ]; then
+        family_out="$L15_RESULT_ROOT/family-$(date +%Y%m%dT%H%M%S)-$$.json"
+        echo "L1: === l15_family_matrix ($L15_FAMILY_MATRIX_MODE, families=$L15_FAMILY_MATRIX_FAMILIES) ==="
+        family_rc=0
+        env HCU_DEEPGEMM_BRIDGE=1 PYTHONPATH="$ROOT:$UP_TREE/python" \
+            python3 tools/l15_family_matrix.py run \
+                --up-tree "$UP_TREE" \
+                --adapter-root "$ROOT" \
+                --families "$L15_FAMILY_MATRIX_FAMILIES" \
+                --out "$family_out" || family_rc=$?
+        if [ "$family_rc" -eq 0 ]; then
+            echo "L1: l15_family_matrix PASS (artifact=$family_out)"
+        elif [ "$L15_FAMILY_MATRIX_MODE" = "blocking" ]; then
+            echo "L1: l15_family_matrix FAIL (rc=$family_rc; artifact=$family_out)"
+            FAILS+=(l15_family_matrix)
+        else
+            echo "L1: l15_family_matrix WARN (observe-only; rc=$family_rc; artifact=$family_out)"
+        fi
+    else
+        echo "L1: l15_family_matrix SKIP (mode=off)"
     fi
 else
     echo "L1: l15_upstream SKIP (no upstream unittest tree found)"

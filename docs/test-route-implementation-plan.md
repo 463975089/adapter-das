@@ -282,8 +282,9 @@ python ci/l0_gate.py
 
 **依赖**：MR-01A。
 
-**范围**：建立候选扫描器，对社区 v0.5.22 的 Attention、kernels/ops、rotary、MoE、
-Mamba 和无权重模型契约测试执行 collect-only，并输出机器清单。每个候选记录：
+**范围**：以 [l15-test-inventory.md](l15-test-inventory.md) 的逐文件候选账为输入，建立
+候选扫描器，对社区 v0.5.22 的 Attention、kernels/ops、rotary、MoE、Mamba 和无权重
+模型契约测试执行 collect-only，并输出机器清单。每个候选记录：
 
 ```text
 nodeid / domain / logical ops / expected backend / route evidence /
@@ -310,8 +311,9 @@ model contract tests without weights
 
 ```bash
 PYTHONPATH="$UP/python:$ROOT" python tools/l15_manifest.py inventory \
-  --up-tree "$UP" --out <dir>/l15-inventory.json
-python tools/l15_manifest.py validate-inventory <dir>/l15-inventory.json
+  --up-tree "$UP" --manifest tests/manifests/l15_v0522.json \
+  --out <dir>/l15-inventory.json
+python tools/l15_manifest.py validate-artifact <dir>/l15-inventory.json
 ```
 
 **DoD**：同一树两次 inventory 除时间字段外稳定；server/model/multi-GPU/external-dep
@@ -333,13 +335,14 @@ nodeid。现有目录门和 `l15_mech` 总数预算继续裁决，新 manifest �
 ```bash
 python tools/l15_manifest.py validate tests/manifests/l15_v0522.json
 PYTHONPATH="$UP/python:$ROOT" python tools/l15_manifest.py collect \
-  --up-tree "$UP" --manifest tests/manifests/l15_v0522.json --out <dir>
+  --up-tree "$UP" --manifest tests/manifests/l15_v0522.json --out-dir <dir>
 python tools/l15_manifest.py verify --mode observe \
   --manifest tests/manifests/l15_v0522.json --collect <dir>/collect.json
 ```
 
 **DoD**：两轮 collect 稳定；新增/消失/skip/fingerprint 漂移可见；树或版本错配 loud
-fail；现有 235 个左右收集实例全部有分类或明确 `unclassified`。
+fail；现有 235 个左右收集实例全部有分类或明确 `unclassified`。`run` 只接受 manifest
+内的精确 nodeid，并要求显式选择 classification，不透传任意 pytest 参数。
 
 ---
 
@@ -347,19 +350,21 @@ fail；现有 235 个左右收集实例全部有分类或明确 `unclassified`�
 
 **依赖**：MR-02B。
 
-**范围**：把以下上游测试加入 v2 manifest 的 observe 集：
+**范围**：把 [l15-test-inventory.md](l15-test-inventory.md) §4.1 的基础 ABI 文件加入
+v2 manifest 的 observe 集，覆盖：
 
 ```text
 activation fused-op parity
 layernorm fused-op parity / rmsnorm / fused-add rmsnorm
 rotary ROCm
-sampling renorm / top-p / temperature
+sampling renorm / top-p
 kvcache store-cache / set-MLA-KV-buffer
 ```
 
-先完成收集和单卡实跑分诊。收集错误进入 diagnostic，合法平台 skip 单列，只有真实执行
-且稳定通过的 nodeid 才标 core-green。已知 layernorm parity 收集问题必须留下精确错误
-证据，不能整文件静默剔除。
+先完成收集和单卡实跑分诊。文件内 CPU-only、GPU parity、平台 skip 等参数实例必须逐
+nodeid 分类，不能整文件标绿。收集错误进入 diagnostic，合法平台 skip 单列，只有真实
+执行且稳定通过的 nodeid 才标 core-green。已知 layernorm parity 收集问题必须留下精确
+错误证据，不能整文件静默剔除。
 
 **DoD**：每个 nodeid 有 logical op、当前结果、路由要求和耗时；连续两跑绿色集合稳定；
 影子运行不阻塞 MR，但新增 import/ABI 缺口进入报告。
@@ -368,7 +373,8 @@ kvcache store-cache / set-MLA-KV-buffer
 
 ### MR-02D：Quant/MoE/Attention/Mamba 分批纳入
 
-**依赖**：MR-02C；可拆 D1–D4 小 MR。
+**依赖**：MR-02C；可拆 D1–D4 小 MR。逐文件范围与初始分类以
+[l15-test-inventory.md](l15-test-inventory.md) §4.2–§4.4 为准。
 
 | 子批 | 范围 | 重点 |
 |---|---|---|
@@ -393,14 +399,16 @@ core-green。完整服务、多卡、模型权重、外部存储和纯性能测�
 **范围**：
 
 - 只把稳定 `core-green` 切为 MR 阻塞；
-- `contract-green` 建独立扩展验证段，首批收无权重的模型构造、quant config、packed weight
-  mapping/loader、pipeline/embedding registration；
+- `contract-green` 建独立扩展验证段，按 [l15-test-inventory.md](l15-test-inventory.md)
+  §4.5–§4.6 逐 nodeid 收无权重的模型构造、quant config、packed weight mapping/loader、
+  pipeline/embedding registration；不得按 `unit/models` 整目录纳入，也不得计入 kernel
+  route coverage；
 - diagnostic 以 nodeid+fingerprint 检查，错误指纹变化打红；
 - platform-skip 检查 skip reason；
 - 保留旧目录门直到新旧裁决结果连续一致，确认后删除总数预算。
 
 **验收**：构造“旧失败修复 1 个、新回归增加 1 个、总数不变”的 fixture，新门必须
-判红；删除或改名 core nodeid 必须判集合漂移；到期 diagnostic 至少 WARN。
+判红；删除或改名 core nodeid 必须判集合漂移；满足复审条件但未处理的 diagnostic 至少 WARN。
 
 **DoD**：MR core 目标 250–350 个稳定实例，保持单卡、可分段和可配置超时；
 contract/diagnostic 扩展段在扩展验证入口运行；有效覆盖分母不含合法 skip。
