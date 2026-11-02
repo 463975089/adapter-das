@@ -30,7 +30,7 @@ def _resolve_impl():
     global _IMPL_CHOICE, _LIGHTOP_IMPL
     if _IMPL_CHOICE is None:
         try:
-            from .hcu_adapter import hcu_env
+            from hcu_adapter import hcu_env
 
             impl, _src = hcu_env.resolve("HCU_SILU_MUL_IMPL")
             # auto = triton (default); lightop/torch only on explicit

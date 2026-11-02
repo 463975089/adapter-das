@@ -386,3 +386,45 @@ def test_kvcacheio_hcu_op_surface():
         op_ns = torch.ops.sgl_kernel
         if hasattr(op_ns, name):
             assert getattr(op_ns, name) is not None, name
+
+
+def test_shadow_impl_resolvers_reach_hcu_env(monkeypatch, capsys):
+    """Regression: shadow-op tier resolvers import hcu_env absolutely.
+
+    The tier resolvers run lazily at first op call inside sgl_kernel. The old
+    relative import (`from .hcu_adapter import hcu_env`) resolved to the
+    nonexistent sgl_kernel.hcu_adapter submodule, so the except arms fell back
+    to defaults while the registered switches HCU_SILU_MUL_IMPL /
+    HCU_RMS_NORM_IMPL / HCU_MOE_ALIGN_FUSED silently never took effect
+    (bare stderr traceback at best, `except: pass` in moe.py). Pin both the
+    behavior (explicit env flows through hcu_env, no stderr noise) and the
+    structural invariant (no relative-form host import in the shadow package).
+
+    Any machine, no GPU: resolution only, no kernel invocation.
+    """
+    import inspect
+
+    import sgl_kernel.elementwise as elementwise
+    import sgl_kernel.layernorm as layernorm
+    import sgl_kernel.moe as moe
+
+    # Structural pin: every resolver must use absolute hcu_adapter imports.
+    for module in (elementwise, layernorm, moe):
+        assert "from .hcu_adapter" not in inspect.getsource(module), module.__name__
+
+    # Behavior pin (fresh caches): defaults resolve without stderr noise.
+    monkeypatch.setattr(elementwise, "_IMPL_CHOICE", None)
+    monkeypatch.setattr(elementwise, "_LIGHTOP_IMPL", None)
+    monkeypatch.setattr(layernorm, "_RMS_IMPL", None)
+    assert elementwise._resolve_impl() == "triton"
+    assert layernorm._resolve_rms_impl() == "triton"
+    assert "ModuleNotFoundError" not in capsys.readouterr().err
+
+    # Explicit env must actually flow through hcu_env (source 'explicit').
+    monkeypatch.setenv("HCU_RMS_NORM_IMPL", "torch")
+    monkeypatch.setenv("HCU_SILU_MUL_IMPL", "torch")
+    monkeypatch.setattr(layernorm, "_RMS_IMPL", None)
+    monkeypatch.setattr(elementwise, "_IMPL_CHOICE", None)
+    assert layernorm._resolve_rms_impl() == "torch"
+    assert elementwise._resolve_impl() == "torch"
+    assert "ModuleNotFoundError" not in capsys.readouterr().err
