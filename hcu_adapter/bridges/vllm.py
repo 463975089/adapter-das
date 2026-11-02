@@ -377,7 +377,13 @@ def hcu_runtime_plugin() -> None:
 
 
 def install_rms_norm_bridge() -> bool:
-    """Bind vLLM's HCU RMSNorm ABI to the adapter's equivalent kernels."""
+    """Install the compatibility bindings consumed by the SGLang bridge.
+
+    The SGLang startup chain calls this helper; the vLLM runtime plugin does not.
+    Its six-argument fused shim has separate output destinations, unlike vLLM
+    0.32's four-argument, in-place fused ABI. Do not install it in the vLLM
+    runtime to replace the official RMS operators.
+    """
     try:
         import vllm._custom_ops as custom_ops
 
