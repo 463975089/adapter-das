@@ -195,6 +195,25 @@ def configure_vllm_hip_runtime_path(
     return None
 
 
+def _require_vllm_hip_runtime_abi() -> None:
+    """Admit the runtime through vLLM's own loader, without executing HIP ops.
+
+    Its constructor resolves the actual loaded library before the configured
+    fallback and binds the required symbols/types. Preserve that precedence
+    and the operator's path spelling; do not duplicate its native ABI table.
+    """
+    try:
+        wrapper = import_module(
+            "vllm.distributed.device_communicators.cuda_wrapper"
+        )
+        wrapper.CudaRTLibrary()
+    except Exception as exc:
+        raise VllmCompatibilityError(
+            "vLLM HIP runtime ABI admission failed before operator registration: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+
 class ProcessLocalActions:
     """Run required callbacks once per PID and latch partial failures."""
 
@@ -362,6 +381,7 @@ def hcu_runtime_plugin() -> None:
         vllm_version = _ensure_vllm_compatible()
         _ensure_hcu_platform_selected()
         configure_vllm_hip_runtime_path()
+        _require_vllm_hip_runtime_abi()
         from hcu_adapter.bridges.vllm_fp8 import install as install_fp8_fallback
 
         install_fp8_fallback()
@@ -380,7 +400,13 @@ def hcu_runtime_plugin() -> None:
 
 
 def install_rms_norm_bridge() -> bool:
-    """Bind vLLM's HCU RMSNorm ABI to the adapter's equivalent kernels."""
+    """Install the compatibility bindings consumed by the SGLang bridge.
+
+    The SGLang startup chain calls this helper; the vLLM runtime plugin does not.
+    Its six-argument fused shim has separate output destinations, unlike vLLM
+    0.32's four-argument, in-place fused ABI. Do not install it in the vLLM
+    runtime to replace the official RMS operators.
+    """
     try:
         import vllm._custom_ops as custom_ops
 
