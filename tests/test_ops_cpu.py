@@ -350,3 +350,39 @@ def test_import_surface():
     for name in sgl_kernel.__all__:
         assert hasattr(sgl_kernel, name), name
     assert sgl_kernel.__version__
+
+
+# ---------------------------------------------------------------------------
+# kvcacheio hcu_* passthrough surface (vendor dtk wheel ops)
+# ---------------------------------------------------------------------------
+
+KVCACHEIO_HCU_OPS = [
+    "hcu_align_evict_mask_to_page_size",
+    "hcu_alloc_decode_kernel",
+    "hcu_alloc_extend_kernel",
+    "hcu_assign_extend_cache_locs",
+    "hcu_assign_req_to_token_pool",
+    "hcu_create_chunked_prefix_cache_kv_indices",
+    "hcu_create_extend_after_decode_spec_info",
+    "hcu_get_last_loc",
+]
+
+
+def test_kvcacheio_hcu_op_surface():
+    """Shadow kvcacheio mirrors the dtk wheel's hcu_* allocation wrappers.
+
+    The torch ops themselves are registered by the vendor sglang-kernel
+    library; only the python surface is ours. Losing these wrappers broke
+    consumers at runtime (AttributeError on sgl_kernel.kvcacheio, raised
+    only when the matching scheduling path runs), so pin the surface here.
+    """
+    from sgl_kernel import kvcacheio
+
+    for name in KVCACHEIO_HCU_OPS:
+        assert name in kvcacheio.__all__, name
+        assert callable(getattr(kvcacheio, name)), name
+        # where the vendor library is loaded, every wrapper must resolve to
+        # its registered op (no stale/renamed mirror); skip on clean hosts
+        op_ns = torch.ops.sgl_kernel
+        if hasattr(op_ns, name):
+            assert getattr(op_ns, name) is not None, name

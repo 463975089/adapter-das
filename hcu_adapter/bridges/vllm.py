@@ -28,6 +28,8 @@ _PLATFORM_CLASS = "hcu_adapter.bridges.vllm.HcuPlatform"
 _FLASH_ATTN_CAPABILITY = "hcu-flash-attention"
 _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
+_REQUIRED_EXTENSIONS = "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS"
+_REQUIRED_CAPABILITIES = "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES"
 
 
 class VllmCompatibilityError(RuntimeError):
@@ -194,6 +196,25 @@ def configure_vllm_hip_runtime_path(
     return None
 
 
+def _require_vllm_hip_runtime_abi() -> None:
+    """Admit the runtime through vLLM's own loader, without executing HIP ops.
+
+    Its constructor resolves the actual loaded library before the configured
+    fallback and binds the required symbols/types. Preserve that precedence
+    and the operator's path spelling; do not duplicate its native ABI table.
+    """
+    try:
+        wrapper = import_module(
+            "vllm.distributed.device_communicators.cuda_wrapper"
+        )
+        wrapper.CudaRTLibrary()
+    except Exception as exc:
+        raise VllmCompatibilityError(
+            "vLLM HIP runtime ABI admission failed before operator registration: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+
 class ProcessLocalActions(ProcessLocalLifecycle):
     """Supply only vLLM action identity and its existing public error type."""
 
@@ -244,6 +265,22 @@ def _hcu_platform_class() -> type:
         """Reuse official ROCm behavior under an HCU platform identity."""
 
         device_name = "hcu"
+
+        @classmethod
+        def check_and_update_config(cls, vllm_config) -> None:
+            # Upstream owns config validation/defaults, including worker choice.
+            super().check_and_update_config(vllm_config)
+            from hcu_adapter.bridges.vllm_model_load import (
+                OFFICIAL_MODEL_LOAD_WORKER,
+                POST_MODEL_LOAD_WORKER,
+            )
+
+            parallel = vllm_config.parallel_config
+            if (
+                parallel.worker_cls == OFFICIAL_MODEL_LOAD_WORKER
+                and parallel.distributed_executor_backend in ("uni", "mp")
+            ):
+                parallel.worker_cls = POST_MODEL_LOAD_WORKER
 
         @classmethod
         def get_attn_backend_cls(
@@ -317,12 +354,22 @@ def hcu_runtime_plugin() -> None:
         return None
 
     def initialize() -> None:
+        # Parse before any operator registration. These are startup requirements,
+        # inherited by spawned/forked workers, not runtime enable/disable knobs.
+        required_extensions = _required_names(_REQUIRED_EXTENSIONS)
+        required_capabilities = _required_names(_REQUIRED_CAPABILITIES)
         vllm_version = _ensure_vllm_compatible()
         _ensure_hcu_platform_selected()
         configure_vllm_hip_runtime_path()
+        _require_vllm_hip_runtime_abi()
+        from hcu_adapter.bridges.vllm_fp8 import install as install_fp8_fallback
+
+        install_fp8_fallback()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,
+            requested_extensions=required_extensions,
+            requested_capabilities=required_capabilities,
         )
         try:
             reports = activate_extensions(
@@ -336,8 +383,27 @@ def hcu_runtime_plugin() -> None:
     _RUNTIME_ACTIONS.run_once("vllm-runtime", initialize)
 
 
+def _required_names(variable: str) -> frozenset[str]:
+    """Read a comma-separated list; reject malformed nonempty requirements."""
+    from hcu_adapter import hcu_env
+
+    raw, _source = hcu_env.resolve(variable)
+    if not raw.strip():
+        return frozenset()
+    names = tuple(name.strip() for name in raw.split(","))
+    if any(not name or any(char.isspace() for char in name) for name in names):
+        raise ValueError(f"{variable} requires comma-separated non-empty names")
+    return frozenset(names)
+
+
 def install_rms_norm_bridge() -> bool:
-    """Bind vLLM's HCU RMSNorm ABI to the adapter's equivalent kernels."""
+    """Install the compatibility bindings consumed by the SGLang bridge.
+
+    The SGLang startup chain calls this helper; the vLLM runtime plugin does not.
+    Its six-argument fused shim has separate output destinations, unlike vLLM
+    0.32's four-argument, in-place fused ABI. Do not install it in the vLLM
+    runtime to replace the official RMS operators.
+    """
     try:
         import vllm._custom_ops as custom_ops
 

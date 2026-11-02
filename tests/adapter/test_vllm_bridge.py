@@ -262,6 +262,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "configure_vllm_hip_runtime_path",
         lambda: calls.append("dtk"),
     )
+    monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: calls.append("runtime-abi"))
     monkeypatch.setattr(
         bridge,
         "_installed_adapter_version",
@@ -284,6 +285,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "version",
         "platform",
         "dtk",
+        "runtime-abi",
         "adapter-version",
         ("extensions", "0.1.0", "0.32.0+rocm723"),
     ]
@@ -307,6 +309,7 @@ def test_runtime_plugin_records_required_reports_before_latching(monkeypatch):
     monkeypatch.setattr(bridge, "_ensure_vllm_compatible", lambda: "0.32.0")
     monkeypatch.setattr(bridge, "_ensure_hcu_platform_selected", lambda: None)
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: None)
+    monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "0.1.0")
 
     def fail(_context, *, health_check_sink):
