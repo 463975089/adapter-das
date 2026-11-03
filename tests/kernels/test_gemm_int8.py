@@ -39,8 +39,8 @@ def _ref(a, b, sa, sb, out_dtype, bias):
     return o
 
 
-def _mk(M, N, K):
-    torch.manual_seed(M * 5 + N * 3 + K)
+def _mk(M, N, K, wave=0):
+    torch.manual_seed(M * 5 + N * 3 + K + wave * 100003)
     a = torch.randint(-127, 128, (M, K), device="cuda", dtype=torch.int8)
     b = torch.randint(-127, 128, (N, K), device="cuda", dtype=torch.int8).t()
     sa = (torch.randn(M, device="cuda") * 0.01).float()
@@ -87,10 +87,15 @@ def test_int8_scaled_mm_graph_replay_tracks_fresh_inputs():
     with torch.cuda.graph(g):
         out = sgl_kernel.int8_scaled_mm(static_a, b, static_sa, sb,
                                         torch.bfloat16)
-    new_a, _, new_sa, _ = _mk(M, N, K)
-    static_a.copy_(new_a)
-    static_sa.copy_(new_sa)
-    g.replay()
-    torch.cuda.synchronize()
-    ref = _ref(new_a, b, new_sa, sb, torch.bfloat16, None)
-    torch.testing.assert_close(out.float(), ref.float(), rtol=5e-2, atol=2e-2)
+    previous = out.clone()
+    for wave in range(1, 4):
+        new_a, _, new_sa, _ = _mk(M, N, K, wave=wave)
+        assert not torch.equal(new_a.float(), static_a.float())
+        static_a.copy_(new_a)
+        static_sa.copy_(new_sa)
+        g.replay()
+        torch.cuda.synchronize()
+        ref = _ref(new_a, b, new_sa, sb, torch.bfloat16, None)
+        assert not torch.allclose(previous.float(), ref.float(), rtol=5e-2, atol=2e-2)
+        torch.testing.assert_close(out.float(), ref.float(), rtol=5e-2, atol=2e-2)
+        previous = out.clone()

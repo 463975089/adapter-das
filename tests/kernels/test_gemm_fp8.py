@@ -42,8 +42,8 @@ def _ref(a_fp8, b_fp8, sa, sb, out_dtype, bias):
     return o
 
 
-def _mk_case(M, N, K):
-    torch.manual_seed(M * 7 + N * 3 + K)
+def _mk_case(M, N, K, wave=0):
+    torch.manual_seed(M * 7 + N * 3 + K + wave * 100003)
     fp8_max = torch.finfo(FP8).max
     a = ((torch.rand(M, K, device="cuda") - 0.5) * 2 * fp8_max).to(FP8)
     b = ((torch.rand(N, K, device="cuda") - 0.5) * 2 * fp8_max).to(FP8).t()
@@ -82,10 +82,15 @@ def test_fp8_scaled_mm_graph_replay_tracks_fresh_inputs():
     with torch.cuda.graph(g):
         out = sgl_kernel.fp8_scaled_mm(
             static_a, b, static_sa, sb, torch.bfloat16)
-    new_a, _, new_sa, _ = _mk_case(M, N, K)
-    static_a.copy_(new_a)
-    static_sa.copy_(new_sa)
-    g.replay()
-    torch.cuda.synchronize()
-    ref = _ref(new_a, b, new_sa, sb, torch.bfloat16, None)
-    torch.testing.assert_close(out.float(), ref.float(), rtol=5e-2, atol=1e-3)
+    previous = out.clone()
+    for wave in range(1, 4):
+        new_a, _, new_sa, _ = _mk_case(M, N, K, wave=wave)
+        assert not torch.equal(new_a.float(), static_a.float())
+        static_a.copy_(new_a)
+        static_sa.copy_(new_sa)
+        g.replay()
+        torch.cuda.synchronize()
+        ref = _ref(new_a, b, new_sa, sb, torch.bfloat16, None)
+        assert not torch.allclose(previous.float(), ref.float(), rtol=5e-2, atol=1e-3)
+        torch.testing.assert_close(out.float(), ref.float(), rtol=5e-2, atol=1e-3)
+        previous = out.clone()

@@ -12,6 +12,11 @@ import sys
 import tempfile
 from typing import Any, Mapping
 
+try:
+    from tools.l15_runtime import check_outcomes, preflight, test_env, write_json
+except ModuleNotFoundError:
+    from l15_runtime import check_outcomes, preflight, test_env, write_json
+
 SCHEMA_VERSION = 1
 FAMILIES = {"dense", "mla", "moe", "quantization", "mamba"}
 KINDS = {"upstream-pytest", "adapter-pytest", "adapter-script"}
@@ -39,6 +44,7 @@ def validate(document: Mapping[str, Any]) -> list[str]:
             raise MatrixError("layer must be 'L1.5-family-matrix'")
         if not isinstance(document.get("manifest_id"), str) or not document["manifest_id"]:
             raise MatrixError("manifest_id: non-empty string required")
+        _safe_path(document.get("upstream_manifest"), "tests/manifests/", "upstream_manifest")
         defaults = document.get("defaults")
         if (
             not isinstance(defaults, dict)
@@ -78,6 +84,8 @@ def validate(document: Mapping[str, Any]) -> list[str]:
                 if not isinstance(case_id, str) or not case_id or case_id in case_ids:
                     raise MatrixError(f"{cwhere}.id: unique non-empty string required")
                 case_ids.add(case_id)
+                if case.get("coverage", "gpu-contract") not in {"gpu-contract", "cpu-contract"}:
+                    raise MatrixError(f"{cwhere}.coverage: unsupported evidence kind")
                 kind = case.get("kind")
                 if kind not in KINDS:
                     raise MatrixError(f"{cwhere}.kind: unsupported {kind!r}")
@@ -118,16 +126,14 @@ def _contained(root: Path, relative: str) -> Path:
 
 
 def _env(up_tree: Path, adapter_root: Path) -> dict[str, str]:
-    env = dict(os.environ)
-    parts = [str(adapter_root), str(up_tree / "python")]
-    if env.get("PYTHONPATH"):
-        parts.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = os.pathsep.join(parts)
-    env["PYTHONUNBUFFERED"] = "1"
-    return env
+    return test_env(up_tree, adapter_root)
 
 
 def run(document: Mapping[str, Any], up_tree: Path, adapter_root: Path, selected: set[str], out: Path) -> bool:
+    if not selected or selected - FAMILIES:
+        raise MatrixError("select at least one valid family")
+    binding = _contained(adapter_root, document["upstream_manifest"])
+    runtime = preflight(up_tree, adapter_root, binding)
     env = _env(up_tree, adapter_root)
     timeout = int(document["defaults"]["timeout"])
     results: list[dict[str, Any]] = []
@@ -137,40 +143,47 @@ def run(document: Mapping[str, Any], up_tree: Path, adapter_root: Path, selected
             continue
         for case in family["cases"]:
             kind = case["kind"]
+            report_path = out.parent / (out.stem + "-cases") / (case["id"] + ".json")
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.unlink(missing_ok=True)
             if kind == "upstream-pytest":
                 nodeid = case["nodeid"]
                 _contained(up_tree, nodeid.split("::", 1)[0])
-                argv = [sys.executable, "-m", "pytest", "-q", "--tb=line", nodeid]
+                argv = [sys.executable, "-m", "tools.l15_pytest_entry", "-q", "--tb=line", nodeid]
                 cwd = up_tree
             elif kind == "adapter-pytest":
                 nodeid = case["nodeid"]
                 _contained(adapter_root, nodeid.split("::", 1)[0])
-                argv = [sys.executable, "-m", "pytest", "-q", "--tb=line", nodeid]
+                argv = [sys.executable, "-m", "tools.l15_pytest_entry", "-q", "--tb=line", nodeid]
                 cwd = adapter_root
             else:
-                script = case["path"]
-                _contained(adapter_root, script)
-                argv = [sys.executable, script]
-                cwd = adapter_root
+                raise MatrixError("strict matrix requires pytest outcomes; convert adapter-script cases")
+            argv.extend(["-p", "tools.l15_pytest_report"])
+            case_env = dict(env, L15_PYTEST_REPORT=str(report_path))
             try:
-                completed = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, check=False)
+                completed = subprocess.run(argv, cwd=cwd, env=case_env, capture_output=True, text=True, timeout=timeout, check=False)
                 returncode, timed_out = completed.returncode, False
                 stdout, stderr = completed.stdout, completed.stderr
             except subprocess.TimeoutExpired as exc:
                 returncode, timed_out = 124, True
                 stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
                 stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
-            passed = returncode == 0 and not timed_out
+            try:
+                outcomes = json.loads(report_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                outcomes = {}
+            passed = returncode == 0 and not timed_out and check_outcomes(outcomes, nodeid)
             all_passed = all_passed and passed
-            results.append({"family": family["id"], "case_id": case["id"], "kind": kind, "argv": argv, "returncode": returncode, "timed_out": timed_out, "passed": passed, "stdout": stdout, "stderr": stderr})
+            results.append({"family": family["id"], "case_id": case["id"], "kind": kind, "argv": argv, "returncode": returncode, "timed_out": timed_out, "passed": passed, "stdout": stdout, "stderr": stderr, "outcomes": outcomes, "coverage": case.get("coverage", "gpu-contract")})
             print(f"L1.5 matrix: {family['id']}/{case['id']} {'PASS' if passed else 'FAIL'}")
-    artifact = {"schema_version": 1, "artifact": "l15-family-matrix-run", "manifest_id": document["manifest_id"], "families": sorted(selected), "passed": all_passed, "results": results}
+    artifact = {"schema_version": 1, "artifact": "l15-family-matrix-run", "manifest_id": document["manifest_id"], "runtime": runtime, "families": sorted(selected), "passed": all_passed, "results": results}
     out.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{out.name}.", dir=str(out.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             json.dump(artifact, stream, ensure_ascii=False, indent=2, sort_keys=True)
             stream.write("\n")
+        os.chmod(tmp, 0o644)
         os.replace(tmp, out)
     except BaseException:
         try:
@@ -203,7 +216,12 @@ def main() -> int:
         if unknown:
             raise MatrixError(f"unknown families: {sorted(unknown)}")
         return 0 if run(document, args.up_tree.resolve(), args.adapter_root.resolve(), selected, args.out.resolve()) else 1
-    except (OSError, json.JSONDecodeError, MatrixError) as exc:
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        if args.command == "run":
+            write_json(args.out.resolve(), {
+                "schema_version": 1, "artifact": "l15-family-matrix-run",
+                "passed": False, "error": str(exc), "results": [],
+            })
         print(f"L1.5 family matrix ERROR: {exc}", file=sys.stderr)
         return 2
 

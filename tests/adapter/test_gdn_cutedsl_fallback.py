@@ -51,7 +51,8 @@ class GdnCutedslFallbackTests(unittest.TestCase):
         )
         self.assertEqual(out.shape, (B, T, HV, V))
         self.assertEqual(seen["q"].shape, (1, B * T, H, K))
-        self.assertEqual(seen["initial_state_source"].shape, (slots, HV, K, V))
+        self.assertIs(seen["initial_state_source"], state)
+        self.assertEqual(seen["initial_state_source"].shape, (slots, HV, V, K))
         self.assertTrue(
             torch.equal(
                 seen["cu_seqlens"], torch.tensor([0, T, 2 * T], dtype=torch.int32)

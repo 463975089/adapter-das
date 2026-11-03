@@ -79,7 +79,7 @@
 
 | 组件 | 状态 | 说明 |
 |---|---|---|
-| `ci/upstream_diff.py` | 待建（#349） | registry 驱动的静态对账；验收=对基线零误报+人为演进符号能红 |
+| `ci/upstream_diff.py` | 静态首版 | 比较两个明确 commit 的注册 literal target、签名/函数体、白名单 needle 与 L1.5 nodeid；dynamic/re-export 等未解析面单列 baseline gaps，不冒称全覆盖 |
 | import smoke | 待建（#349 内） | 见 ci.md L1 前半段的独立化 |
 | 上游单元层挂 L1 | 待建（#350） | `upstream-contracts` segment |
 | registered e2e 薄壳 | 待建（#350） | 精选 ~20 个,模型路径/端口/旗标注入 |
@@ -87,6 +87,35 @@
 
 > 维护规则:本文件随工具有效性修订——对账工具出现连环误报/漏报时,先修
 > 工具或在本文件登记已知盲区,不允许让巡检带着坏对账表跑。
+
+### 手动升级验证入口
+
+```bash
+HCU_ADAPTER_HOST=none python3 ci/upstream_diff.py /path/to/sglang \
+  --baseline-ref <old-commit> --candidate-ref <new-commit>
+
+HIP_VISIBLE_DEVICES=0 CUDA_VISIBLE_DEVICES=0 HCU_ADAPTER_HOST=none \
+  python3 -m tools.l15_upgrade_check --up-tree /path/to/sglang \
+  --baseline-ref <old-commit> --candidate-ref <new-commit> \
+  --checkpoint /path/to/local-real-checkpoint
+```
+
+静态对账读 Git commit 原文，不读 adapter 启动后已改写的工作树。结果另外记录
+工作树 HEAD/dirty；验证树 HEAD 必须与 candidate 一致。工具只比较声明契约，
+不能保证动态注册/导入重导出或整个仓库的语义兼容。函数体变化也会要求审查，
+不会只核签名后默认兼容。相同 commit 可用于验证零漂移基线，
+报告明确 `same_revision=true`，不代表完成了一次升级。
+
+串联入口顺序执行静态对账、五家族严格组件门、五类 dummy 小模型与真实
+checkpoint 的 eager/graph 冒烟。任何阶段失败停止；每次删除旧阶段产物，
+拒绝错误 artifact 或其他 upstream commit 的绿色报告。只有全部实际通过才
+写 `ready=true`。`--audit-only` 只生成静态报告，始终保留 `ready=false`。
+版本升级后应审查并更新矩阵及其绑定 manifest，而不是跳过指纹检查。
+静态漂移经审查且适配修复后，可用 `--reviewed-drift <已审查的对账JSON>`
+显式接受该份差异；工具核对 baseline、candidate 和完整 changes 精确一致，
+拒绝旧版本或其他变更的报告，并在 verdict 记录接受来源。该选项仍强制执行
+全部组件和模型验证，不跳过源码绑定。默认不接受任何静态漂移。
+该入口是手动工作流，尚未配置定时巡检。
 
 ## 5. 轮子问题登记（镜像/DTK 轮升级踩雷实录，升级镜像时先过这里）
 

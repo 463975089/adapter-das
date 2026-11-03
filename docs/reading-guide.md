@@ -33,6 +33,8 @@
 
 ## 算子目录入口
 
+当前启动就绪门禁的执行顺序与严格入口见 [l15-readiness-plan.md](l15-readiness-plan.md)。
+
 目录分工见 [governance 算子三居地图](governance.md#算子三居地图与宿主绑定层)：
 `sgl_kernel/` 是 SGLang ABI 影子层，`hcu_adapter/` 顶层保留历史桥接和公共机制，
 `hcu_adapter/kernels/` 放上游契约计算实现，宿主安装与契约分发位于 `bridges/`。

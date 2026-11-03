@@ -30,6 +30,21 @@ L1.5 v2/代表矩阵的下列 HCU 计数是**拆分前兼容快照的历史证�
 | **L1.5-comm 双卡通信（独立层）** | 固定 3 case、显式两设备、safe argv：CP AllGather 两 rank 四形状 **passed**；Aiter AR stress 因 vendor custom-AR 动态库符号不兼容 **skipped/platform**；AR+RMSNorm fused 在 rank 子进程/通信清理阶段失败，保留 **diagnostic-known-fail**。observe 汇总为 1 passed/1 skipped/1 failed；无 `core-green`，blocking 不自动申请第二张卡。 | HCU 容器，恰好 2 卡 | 依 vendor 初始化而定 | `L15_COMM_MODE=observe|blocking` 显式启用 |
 | **L2 e2e** | 0.6B 四判定（launch/生成/锚点/长文）+ 多卡项（AR/EP/PD）= `tests/tools/run_model_suite.sh` / cookbook 配方 | HCU 容器，1-2 卡 | ~1h | 夜间 / 发版 / 手动（勿挂 MR，太慢太占卡） |
 
+### 启动就绪严格入口（2026-11-03）
+
+`bash ci/l15_readiness_gate.sh /path/to/sglang` 强制真实单卡 HIP 预检、
+源码绑定和逐 nodeid/subtest 判定。当前五家族清单共 28 case；nmz28 证据为
+完整 27 case 通过，另新增非零 RoPE MLA case 的 6 个参数化节点增量通过，
+其中 2 case 明确是 CPU 契约。该入口拒绝 skip/xfail/xpass、缺失报告和 collection
+失败；旧 observe/预算分诊结果不能替代它。
+
+真实 Engine 的 dummy/真实 checkpoint eager/graph 冒烟见
+[l15-readiness-plan.md](l15-readiness-plan.md)。升级串联入口为
+`python3 -m tools.l15_upgrade_check`，执行静态漂移审查、严格组件门和模型冒烟；
+参数、已审查差异的接受方式及静态覆盖缺口见
+[upstream-watch.md](upstream-watch.md#手动升级验证入口)。
+全部 GPU 工作仅在指定的远端空闲节点执行。
+
 ### L1.5b KNOWN_FAILURES 账本（l15_mech 六机制目录，2026-10-19 首跑分诊）
 
 基线（容器 g53-tp8，新镜像 sf_b075-20261018-0048，/tmp/l1_mech_first.log）：

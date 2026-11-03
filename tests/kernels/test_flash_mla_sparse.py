@@ -100,5 +100,10 @@ def main():
     return 1 if fails else 0
 
 
+def test_sparse_emu_contract():
+    """CPU numerical contract; not evidence of HCU kernel execution."""
+    assert main() == 0
+
+
 if __name__ == "__main__":
     sys.exit(main())

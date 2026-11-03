@@ -32,8 +32,8 @@ def _triton_gated_delta_rule_mtp(original, recurrent, *args, **kwargs):
 
     B, T, H, K = q.shape
     HV, V = v.shape[2], v.shape[3]
-    # CuTe stores [slot, HV, V, K]; FLA recurrent stores [slot, HV, K, V].
-    state_fla = state.transpose(-1, -2).contiguous()
+    # Both kernels address state as [slot, HV, V, K] (offset v*K+k).
+    # Preserve the pool view, including its envelope slot stride.
     cu_seqlens = torch.arange(
         0, B * T + 1, step=T, dtype=torch.int32, device=q.device
     )
@@ -47,7 +47,7 @@ def _triton_gated_delta_rule_mtp(original, recurrent, *args, **kwargs):
         "v": v.reshape(1, B * T, HV, V),
         "b": b.reshape(B * T, HV),
         "a": a.reshape(B * T, HV),
-        "initial_state_source": state_fla,
+        "initial_state_source": state,
         "initial_state_indices": slots,
         "cu_seqlens": cu_seqlens,
         "use_qk_l2norm_in_kernel": kwargs.get("use_qk_l2norm_in_kernel", True),
@@ -63,8 +63,6 @@ def _triton_gated_delta_rule_mtp(original, recurrent, *args, **kwargs):
         if name in kwargs:
             recurrent_kwargs[name] = kwargs[name]
     out = recurrent(**recurrent_kwargs)
-    if not recurrent_kwargs["disable_state_update"]:
-        state.copy_(state_fla.transpose(-1, -2))
     return out.reshape(B, T, HV, V)
 
 
