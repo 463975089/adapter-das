@@ -15,7 +15,7 @@
 | 你要做的事 | 必读（按序） |
 |---|---|
 | **第一次接触本仓** | 本文 → README → docs/architecture.md（§1-§3 机制图）→ docs/governance.md |
-| 提 MR / 改代码 | docs/governance.md（§1 分工授权 / §7 协作红线与共建边界）→ docs/ci.md |
+| 提 MR / 改代码 | docs/governance.md（§1 分工授权 / §5.0 squash 合入 / §7 协作红线与共建边界）→ docs/ci.md |
 | 加/改一个算子 | skills/…/SKILL.md → references/shadow-matrix.md → references/test-suite.md（命名与档位归档见 governance §3b，改完跑 gen_tier_matrix） |
 | 加一座桥 / 新功能选位 | docs/governance.md（§0 双仓判别 → §3 裁决链 → §4 登记/dump → §7 接入时序/共建） |
 | 向算子组/供应商提需求 | docs/operator-requests.md（锚定 sglang 契约面，机器数据先行） |

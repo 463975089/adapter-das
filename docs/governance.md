@@ -222,6 +222,22 @@ sglang 符号面，shim 妥协不进契约。
 - **变更面**：改 KERNEL 实现 → 跑该算子 ref 测试 + L1.5；改 sitecustomize/
   `_base.py`/注册表 → 加 e2e 冒烟（ci.md 门禁节既有规则）。
 
+### 5.0 合入方式（2026-11-03 定，对齐协作规范 PPT 06）
+
+**一律 squash 合并**：main 上**一颗 commit = 一个完整 PR**
+（标题即 PR 标题，描述即 PR body）。约定四条：
+
+- **分支内历史是作者自由**，合入时压平；多 commit / update-branch /
+  冲突解法等过程痕迹留在 PR 页（GitHub 永久可查），不进 main 的 git log；
+- **跨仓联动引用用 squash 后的 commit 坐标**（adapter-plugin 同笔裁定、
+  姊妹仓对账单以 main 上的单颗 hash 互指，不指作者分支的中间态）；
+- **本地拉取习惯 `git pull --rebase`**：直线历史上本地 merge commit 会
+  长期游离于 origin/main 之外；
+- **revert 语义**：撤销一个 PR = revert main 上那一颗（不用回溯分支链）。
+
+历史豁免：本节生效前已合入的 merge commit 不追改；生效首个观察点是
+#27/#26。
+
 ### 5.1 plugin 的演进轨迹（接入 → 上游化 → 退役）
 
 plugin 承载的"上游没有的新能力"（自研量化格式、新算子、新后端）不是终点
