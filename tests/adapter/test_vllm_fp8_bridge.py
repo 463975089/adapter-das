@@ -44,7 +44,7 @@ def test_registers_the_exact_official_class_last_once(fake_seams):
     assert records[0]['mechanism'] == registry.MECH_SEAM
 
 
-@pytest.mark.parametrize('arch,detected', [('gfx938',True),('gfx928',True),('gfx942',False),('gfx950',False),(None,False)])
+@pytest.mark.parametrize('arch,detected', [('gfx938',True),('gfx928',True),('gfx92a',True),('gfx942',False),('gfx950',False),(None,False)])
 def test_unvalidated_architectures_do_not_import_or_register(monkeypatch, arch, detected):
     monkeypatch.setattr(bridge, 'detect_hcu', lambda: bridge.HcuDetection(detected,arch,''))
     monkeypatch.setattr(fallback, 'import_module', lambda name: pytest.fail('unvalidated host imported '+name))

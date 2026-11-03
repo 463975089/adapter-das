@@ -41,6 +41,11 @@ BaseException）、格式化期间实际 fork、父子 health/同进程 retry �
 使用实际 metadata/官方 general-plugin loader 与 spawn/unpickle 验证新安装
 产物；源码计数和旧 wheel 证据不可转授。该 seam 不引入算子质量晋级。
 
+CPU required-policy 用例须显式隔离 native ABI 与 FP8 注册前置条件，避免
+在被测 required 检查前退出。runtime ABI 用例保留真实官方 loader 和无效库
+负控，只隔离后续 FP8 provider；扩展替身须接收并检查公开
+`health_check_sink` 参数。前置隔离不能用于设备或 native ABI 验收。
+
 | 维度 | 断言 | 不测会漏掉的 bug（真实案例） |
 |---|---|---|
 | 1 数值契约 | vs torch fp32 参考：cos ≥ 0.9999 且 maxrel ≤ tol | rope cache 半分布局（fbc540c）："能跑"但语义错 |

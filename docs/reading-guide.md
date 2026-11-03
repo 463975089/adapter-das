@@ -22,6 +22,7 @@
 | 追上游新版本 / 日常 compatibility 巡检 | docs/upstream-watch.md（规则版：报告优先+自主修复边界+工具清单） |
 | 配置后端 / 部署 | docs/config.md → hcu_adapter.example.yaml → docs/env-vars.md（调试覆盖） |
 | 部署 vLLM 0.32 | docs/frameworks/vllm032.md（组件职责、启动时序、wheel 锁定与验证） |
+| 迁移 vLLM 0.33 | docs/frameworks/vllm033.md（独立发布线、三仓定位、公开 attention/communicator 接口与验收边界） |
 | 跑一个模型 | docs/cookbook.md（找配方）→ docs/models.md（看先例与坑）→ cookbook.md §4 平台约束 |
 | **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |

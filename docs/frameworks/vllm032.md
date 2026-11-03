@@ -2,9 +2,9 @@
 
 ## 1. 支持范围
 
-本仓通过官方 vLLM Plugin seam 为 vLLM `0.32.x` release line 提供 HCU
-平台与运行时适配。版本门接受 epoch 为 0 的整个 0.32 patch line，包括
-prerelease、dev、post 和 local build 后缀，但拒绝 `0.31.x`、`0.33.x`、非零
+本页保留 vLLM `0.32.x` 的部署与验证记录；v0.33 迁移见
+[vllm033.md](vllm033.md)。当前公共版本门接受 epoch 为 0 的 0.32 与 0.33
+patch line，包括 prerelease、dev、post 和 local build 后缀，但拒绝 `0.31.x`、`0.34.x`、非零
 epoch 和无效版本。版本门通过后仍由 `RocmPlatform`、平台选择与 runtime 接口
 检查能力；缺少必需 seam 时响亮失败。
 

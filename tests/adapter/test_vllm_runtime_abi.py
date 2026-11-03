@@ -34,7 +34,17 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: calls.append("configure"))
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "test")
     monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
-    monkeypatch.setattr(bridge, "activate_extensions", lambda context: (calls.append("extensions"), ())[1])
+    from hcu_adapter.bridges import vllm_fp8
+    # Native admission remains real or explicitly injected below; optional FP8
+    # operator registration is outside this fixture's runtime-loader contract.
+    monkeypatch.setattr(vllm_fp8, "install", lambda: False)
+
+    def activate(context, *, health_check_sink):
+        assert callable(health_check_sink)
+        calls.append("extensions")
+        return ()
+
+    monkeypatch.setattr(bridge, "activate_extensions", activate)
     monkeypatch.delenv("HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", raising=False)
     monkeypatch.delenv("HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES", raising=False)
     return calls, failure

@@ -42,6 +42,11 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "_ensure_vllm_compatible", lambda: "0.32.0+cpu")
     monkeypatch.setattr(bridge, "_ensure_hcu_platform_selected", lambda: None)
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: None)
+    # This fixture exercises extension failure/publication, not native runtime
+    # admission or FP8 operators (covered by their dedicated integration tests).
+    monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
+    from hcu_adapter.bridges import vllm_fp8
+    monkeypatch.setattr(vllm_fp8, "install", lambda: None)
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "cpu")
     points = []
     monkeypatch.setattr(ext, "_entry_points", lambda: points)

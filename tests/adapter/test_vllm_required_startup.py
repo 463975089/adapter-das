@@ -27,6 +27,11 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "detect_hcu", lambda: bridge.HcuDetection(True, "gfx936", ""))
     monkeypatch.setattr(bridge, "_ensure_hcu_platform_selected", lambda: None)
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: None)
+    # Required-extension policy has no device/runtime prerequisites. Native ABI
+    # and FP8 registration are exercised by their dedicated contract tests.
+    monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
+    from hcu_adapter.bridges import vllm_fp8
+    monkeypatch.setattr(vllm_fp8, "install", lambda: False)
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "test")
     monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
     checks = []

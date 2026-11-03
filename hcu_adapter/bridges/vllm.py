@@ -1,4 +1,4 @@
-"""Official vLLM v0.32 platform/runtime seams and shared custom-op glue."""
+"""Official vLLM platform/runtime seams and shared custom-op glue."""
 
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ from hcu_adapter.extensions import (
 from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
 
 
-SUPPORTED_VLLM_RELEASE_PREFIX = (0, 32)
-SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx936", "gfx938"})
+SUPPORTED_VLLM_RELEASE_PREFIXES = frozenset({(0, 32), (0, 33)})
+SUPPORTED_HCU_ARCHES = frozenset({"gfx928", "gfx92a", "gfx936", "gfx938"})
 HYGON_PCI_VENDOR_ID = "0x1d94"
 _PCI_DEVICES_ROOT = Path("/sys/bus/pci/devices")
 _PLATFORM_CLASS = "hcu_adapter.bridges.vllm.HcuPlatform"
@@ -48,7 +48,7 @@ class HcuDetection:
 
 
 def is_supported_vllm_version(raw_version: str | None) -> bool:
-    """Accept prerelease, patch, post, and local builds on vLLM 0.32.x."""
+    """Accept supported release lines; runtime ABI admission remains separate."""
     if raw_version is None:
         return False
     try:
@@ -57,7 +57,7 @@ def is_supported_vllm_version(raw_version: str | None) -> bool:
         return False
     return (
         parsed.epoch == 0
-        and parsed.release[:2] == SUPPORTED_VLLM_RELEASE_PREFIX
+        and parsed.release[:2] in SUPPORTED_VLLM_RELEASE_PREFIXES
     )
 
 
@@ -80,10 +80,13 @@ def _installed_adapter_version() -> str:
 def _ensure_vllm_compatible() -> str:
     version = _installed_vllm_version()
     if not is_supported_vllm_version(version):
-        expected = ".".join(map(str, SUPPORTED_VLLM_RELEASE_PREFIX)) + ".x"
+        expected = ", ".join(
+            ".".join(map(str, prefix)) + ".x"
+            for prefix in sorted(SUPPORTED_VLLM_RELEASE_PREFIXES)
+        )
         raise VllmCompatibilityError(
             f"unsupported vLLM release {version!r}; expected release line "
-            f"{expected} (>=0.32.0,<0.33.0)"
+            f"{expected}; required runtime APIs must also be available"
         )
     return version
 
@@ -107,7 +110,7 @@ def _has_hygon_pci_device(
 
 
 def detect_hcu(torch_module: object | None = None) -> HcuDetection:
-    """Detect a validated HCU lazily and fail safely on other HIP hosts."""
+    """Detect a supported HCU identity lazily; provider admission is separate."""
     if torch_module is None:
         if not _has_hygon_pci_device():
             return HcuDetection(

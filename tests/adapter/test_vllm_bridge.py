@@ -35,9 +35,16 @@ from hcu_adapter.extensions import (
         "0.32.1",
         "0.32.1rc1",
         "0.32.99+vendor.7",
+        "0.33.0",
+        "0.33.0rc1",
+        "0.33.0.dev7",
+        "0.33.0.post1",
+        "0.33.0+dtk2610",
+        "0.33.1",
+        "0.33.99+vendor.7",
     ),
 )
-def test_vllm_release_gate_accepts_the_032_patch_line(version):
+def test_vllm_release_gate_accepts_supported_patch_lines(version):
     assert bridge.is_supported_vllm_version(version) is True
 
 
@@ -47,10 +54,11 @@ def test_vllm_release_gate_accepts_the_032_patch_line(version):
         None,
         "not-a-version",
         "1!0.32.0",
+        "1!0.33.0",
         "0.3.0",
         "0.31.99",
-        "0.33.0rc1",
-        "0.33.0",
+        "0.34.0rc1",
+        "0.34.0",
     ),
 )
 def test_vllm_release_gate_rejects_missing_malformed_or_other_releases(version):
@@ -81,9 +89,10 @@ def _fake_torch(*, hip="6.2", available=True, architecture="gfx938"):
     ), accelerator
 
 
-@pytest.mark.parametrize("architecture", ("gfx928", "gfx936", "gfx938"))
-def test_hcu_detection_accepts_the_validated_architectures(architecture):
-    torch_module, _ = _fake_torch(architecture=architecture)
+@pytest.mark.parametrize("architecture", ("gfx928", "gfx92a", "gfx936", "gfx938"))
+@pytest.mark.parametrize("suffix", ("", ":sramecc+:xnack-"))
+def test_hcu_detection_accepts_supported_architectures(architecture, suffix):
+    torch_module, _ = _fake_torch(architecture=architecture + suffix)
 
     result = bridge.detect_hcu(torch_module)
 
@@ -102,13 +111,14 @@ def test_hcu_detection_rejects_non_hip_without_querying_a_device():
     assert accelerator.property_calls == 0
 
 
-def test_hcu_detection_rejects_an_unvalidated_rocm_architecture():
-    torch_module, _ = _fake_torch(architecture="gfx942")
+@pytest.mark.parametrize("architecture", ("gfx942", "gfx950", "gfx92a0"))
+def test_hcu_detection_rejects_an_unsupported_architecture(architecture):
+    torch_module, _ = _fake_torch(architecture=architecture)
 
     result = bridge.detect_hcu(torch_module)
 
     assert result.detected is False
-    assert result.architecture == "gfx942"
+    assert result.architecture == architecture
     assert "unsupported" in result.reason
 
 
