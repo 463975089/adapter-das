@@ -194,16 +194,24 @@ def _flash_mla_with_kvcache_sparse(
     scores = torch.matmul(qf, kf.transpose(1, 2).unsqueeze(1))  # [bs,win,H,T]
     scores = scores * scale
     scores = scores.masked_fill(~valid[:, None, None, :], float("-inf"))
-    if attn_sink is not None:
-        scores = scores + attn_sink.to(torch.float32).reshape(1, 1, -1, 1)
+    real_lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
     probs = torch.softmax(scores, dim=-1)
+    # ``attn_sink`` is a zero-valued virtual key, not an additive bias on
+    # every real key. Its only contribution is to the softmax denominator.
+    # Adding it to all real logits cancels for ordinary values and destroys
+    # score differences for the -1e30 sentinel through fp32 rounding.
+    if attn_sink is not None:
+        sink = attn_sink.to(torch.float32).reshape(1, 1, -1)
+        lse = torch.logaddexp(real_lse, sink)
+        probs = probs * torch.exp(real_lse - lse).unsqueeze(-1)
+    else:
+        lse = real_lse
     # p@v as 3D bmm (gfx938 rejects the p@v 4D combo): fold (win, heads)
     # into the batch — v needs no per-head expand this way
     T = k.shape[1]
     o = torch.matmul(probs.reshape(bs, win * heads, T), v).reshape(
         bs, win, heads, head_dim_v
     )
-    lse = torch.logsumexp(scores, dim=-1)  # [bs, win, H]
     return o.to(q.dtype), lse
 
 

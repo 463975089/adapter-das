@@ -520,6 +520,14 @@ def install() -> None:
                 "HCU adapter: gdn aiter router not installed", exc_info=True
             )
         try:
+            from hcu_adapter import gdn_cutedsl_fallback
+
+            gdn_cutedsl_fallback.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: gdn CuTeDSL fallback not installed", exc_info=True
+            )
+        try:
             # Unconditional rebind: torch's lazy op namespace can pass an
             # import-time probe and still miss the native symbol at call time.
             from hcu_adapter.bridges import vllm as _vllm_bridge
@@ -527,6 +535,16 @@ def install() -> None:
             _vllm_bridge.install_rms_norm_bridge()
         except Exception:  # pragma: no cover - vllm absent: sglang falls back natively
             pass
+
+        # v0.5.22's layernorm face otherwise compiles CUDA-source JIT kernels.
+        try:
+            from hcu_adapter import sglang_layernorm as _sgl_layernorm
+
+            _sgl_layernorm.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: sglang layernorm route not installed", exc_info=True
+            )
 
         try:
             import sgl_kernel as _sk

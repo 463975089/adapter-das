@@ -88,7 +88,7 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
 
 | 层 | 仓库 | 允许 | 禁止 |
 |---|---|---|---|
-| **内核库** `sgl_kernel/*.py` | adapter | 算子的数值实现（triton 首档 / vendor 封装 / torch 兜底） | 依赖 sglang 内部模块（保持 framework-free） |
+| **内核库** `sgl_kernel/*.py` | adapter | 算子的数值实现（triton 首档 / vendor 封装 / torch 兜底）与宿主 ABI 影子面 | 依赖 sglang 内部模块（保持 framework-free） |
 | **宿主桥** `hcu_adapter/bridges/<host>.py` | adapter | 宿主级行为还原 glue、ABI 适配和安装顺序；common 只放跨框架守卫 | 数值内核；把一个宿主的补丁装进另一个宿主；上游没有的新能力 |
 | **算子/机制桥** `hcu_adapter/<域>.py` | adapter | 函数换绑、断言放宽、判定词 wrap——install() 入口 + 开关 + register 登记 | **任何数值逻辑**（数学放内核库）；上游没有的新能力（那归 plugin 仓） |
 | **分发器** `hcu_adapter/bootstrap.py` | adapter | 探测宿主 + 先 common 后唯一宿主桥；失败隔离 | 具体桥实现、宿主 eager import、数值逻辑 |
@@ -128,6 +128,10 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
    在 `sgl_kernel/`，桥只做绑定动作），
    `install()` 入口 + env/yaml 开关 + 安装时 `registry.register(...)`
    登记，由宿主桥在原顺序点调用。
+   影子包的宿主 Triton fallback 必须放在 `hcu_adapter/<域>.py`；
+   `sgl_kernel/` 只保留公开 ABI 和 vendor 转发，不得在 import 期加载宿主
+   内部模块。fallback 通过 call-time 路由选择，并记录一次性 DEBUG 路由，
+   以便区分 vendor 与兼容路径。
 3. **text-patch（源码文本替换+重编译，adapter 仓内）**：断言放宽类。
    **白名单制**：每个 needle 必须登记在 `registry.py` 的
    `TEXT_PATCH_ALLOWLIST`（含 op 与上游原文），新增条目 = 治理评审 =

@@ -413,8 +413,9 @@ def copy_all_layer_kv_cache_cpu(
 # completion): consumers importing them from sgl_kernel.kvcacheio — e.g. the
 # sglang plugin's mem_cache allocation hooks — resolve again. Signatures are
 # aligned verbatim with the dtk wheel; thin passthrough only, the ops
-# themselves are registered by the vendor library load, and on hosts without
-# it the calls fail loudly (never a silent fallback).
+# themselves are registered by the vendor library load. The five allocator
+# compatibility faces retain their upstream Triton/Torch route when the vendor
+# op is absent; vendor-only faces still fail loudly without the extension.
 # ---------------------------------------------------------------------------
 def hcu_create_extend_after_decode_spec_info(
     verified_id: torch.Tensor,
@@ -443,7 +444,9 @@ def hcu_alloc_extend_kernel(
     bs: int,
     page_size: int,
 ):
-    torch.ops.sgl_kernel.hcu_alloc_extend_kernel(
+    from hcu_adapter.kvcacheio_allocator import resolve
+
+    resolve("hcu_alloc_extend_kernel")(
         pre_lens_ptr,
         seq_lens_ptr,
         last_loc_ptr,
@@ -462,7 +465,9 @@ def hcu_alloc_decode_kernel(
     bs: int,
     page_size: int,
 ):
-    torch.ops.sgl_kernel.hcu_alloc_decode_kernel(
+    from hcu_adapter.kvcacheio_allocator import resolve
+
+    resolve("hcu_alloc_decode_kernel")(
         seq_lens_ptr,
         last_loc_ptr,
         free_page_ptr,
@@ -477,7 +482,9 @@ def hcu_get_last_loc(
     req_pool_indices: torch.Tensor,
     prefix_lens: torch.Tensor,
 ):
-    return torch.ops.sgl_kernel.hcu_get_last_loc(
+    from hcu_adapter.kvcacheio_allocator import resolve
+
+    return resolve("hcu_get_last_loc")(
         req_to_token,
         req_pool_indices,
         prefix_lens,
@@ -493,7 +500,9 @@ def hcu_assign_req_to_token_pool(
     shape: int,
     bs: int,
 ):
-    torch.ops.sgl_kernel.hcu_assign_req_to_token_pool(
+    from hcu_adapter.kvcacheio_allocator import resolve
+
+    resolve("hcu_assign_req_to_token_pool")(
         req_pool_indices,
         req_to_token,
         allocate_lens,
@@ -513,7 +522,9 @@ def hcu_assign_extend_cache_locs(
     pool_len: int,
     bs: int,
 ):
-    torch.ops.sgl_kernel.hcu_assign_extend_cache_locs(
+    from hcu_adapter.kvcacheio_allocator import resolve
+
+    resolve("hcu_assign_extend_cache_locs")(
         req_pool_indices,
         req_to_token,
         start_offset,

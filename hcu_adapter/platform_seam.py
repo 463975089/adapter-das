@@ -203,13 +203,13 @@ def install():
     # Event(external=True)。HCU 硬件真值= HIP 无此能力，把上游的构造口替换
     # 为普通 Event（语义降级：外部读端 fastpath 关闭，与 is_cuda()=False 时
     # 上游行为一致——返回 None 正是它自己的降级臂）。
+    def _hcu_make_external_event(device_module):
+        return None
+
     try:
         from sglang.srt.model_executor.runner_utils import (
             shared_read_event as _sre,
         )
-
-        def _hcu_make_external_event(device_module):
-            return None
 
         _sre.make_external_event = _hcu_make_external_event
     except Exception:

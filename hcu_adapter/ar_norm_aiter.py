@@ -101,42 +101,41 @@ def install():
     # capability probing in layer_boundary/fusions/allreduce.py). On such
     # trees arm nothing and fall through to the dispatch-only install
     # below; on <=v0.5.21 trees keep the original ARM behavior.
+    arm_fn = None
     stock_apply = getattr(_an, "apply_flashinfer_allreduce_fusion", None)
     if stock_apply is not None:
         if getattr(stock_apply, "_hcu_ar_norm_arm", False):
-            return  # already installed (sitecustomize + explicit install)
-        max_bs = getattr(_an, "FUSE_ALLREDUCE_MAX_BATCH_SIZE", 128)
+            arm_fn = stock_apply
+        else:
+            max_bs = getattr(_an, "FUSE_ALLREDUCE_MAX_BATCH_SIZE", 128)
 
-        def _apply_ar_fusion(batch_size):
-            try:
-                if not (0 < batch_size <= max_bs):
-                    return False
-                if _an.is_dp_attention_enabled():
-                    return False
-                from sglang.srt.distributed import get_tp_group
-                from sglang.srt.runtime_context import get_parallel
+            def _apply_ar_fusion(batch_size):
+                try:
+                    if not (0 < batch_size <= max_bs):
+                        return False
+                    if _an.is_dp_attention_enabled():
+                        return False
+                    from sglang.srt.distributed import get_tp_group
+                    from sglang.srt.runtime_context import get_parallel
 
-                tp = get_tp_group()
-                if tp.world_size <= 1:
+                    tp = get_tp_group()
+                    if tp.world_size <= 1:
+                        return False
+                    # Pure-TP topologies only. Under EP (moe_ep>1) or a MoE-TP
+                    # split, keep deployments on the stock eager path.
+                    p = get_parallel()
+                    if p.moe_ep_size > 1 or p.moe_tp_size != tp.world_size:
+                        return False
+                    return True
+                except Exception:
                     return False
-                # Pure-TP topologies only. Under EP (moe_ep>1) or a MoE-TP
-                # split, the fused consumers decline (reduction group is not
-                # attn-tp) and the armed producer deferral falls back to the
-                # reduce-scatter completion, whose aiter ca_comm.reduce_scatter
-                # rejects overlapping in/out tensors (EP-LL TP2+EP2 crash,
-                # 2026-10-18) -- keep those deployments on the stock eager path.
-                p = get_parallel()
-                if p.moe_ep_size > 1 or p.moe_tp_size != tp.world_size:
-                    return False
-                return True
-            except Exception:
-                return False
 
-        _apply_ar_fusion._hcu_ar_norm_arm = True
-        _apply_ar_fusion._hcu_stock_apply = stock_apply
-        for mod in (_an, _lb_exit, _lb_fus):
-            if hasattr(mod, "apply_flashinfer_allreduce_fusion"):
-                mod.apply_flashinfer_allreduce_fusion = _apply_ar_fusion
+            _apply_ar_fusion._hcu_ar_norm_arm = True
+            _apply_ar_fusion._hcu_stock_apply = stock_apply
+            arm_fn = _apply_ar_fusion
+            for mod in (_an, _lb_exit, _lb_fus):
+                if hasattr(mod, "apply_flashinfer_allreduce_fusion"):
+                    mod.apply_flashinfer_allreduce_fusion = arm_fn
     else:
         LOG.warning(
             "[HCU ar+norm] upstream candidate gate absent (v0.5.22 "
@@ -147,22 +146,20 @@ def install():
     stock = _fcf.flashinfer_allreduce_residual_rmsnorm
     if getattr(stock, "_hcu_ar_norm_aiter", False):
         register(
-            "allreduce", _apply_ar_fusion,
-            target="sglang.srt.layers.layer_boundary.residual.add_norm."
-                   "apply_flashinfer_allreduce_fusion",
+            "allreduce", stock,
+            target="sglang.srt.layers.flashinfer_comm_fusion."
+                   "flashinfer_allreduce_residual_rmsnorm",
             mechanism=MECH_REBIND,
-            detail="aiter fused AR+RMSNorm arm (HCU_AR_NORM_IMPL=%s): "
-                   "candidate gate rebound (def site + exit.py + "
-                   "fusions/allreduce.py copies); dispatch via the "
-                   "flashinfer entry at GroupCoordinator.fused_allreduce_"
-                   "rmsnorm -> aiter GraphSafe fused kernels (R-09(1))"
-                   % impl,
+            detail=(
+                "aiter fused AR+RMSNorm already installed; "
+                + ("legacy candidate arm retained" if arm_fn else "v0.5.22 dispatch-only seam")
+            ),
         )
         LOG.warning("[HCU ar+norm] aiter fused AR+RMSNorm tier installed "
                     "(HCU_AR_NORM_IMPL=%s)", impl)
         return
 
-    declined = []
+    decline_state = {"kernel": False, "error": False}
 
     def _fused_ar_norm(input_tensor, residual, weight, eps=1e-6,
                        max_token_num=2048, use_oneshot=None,
@@ -186,10 +183,12 @@ def install():
                                 "[HCU ar+norm] fused AR+RMSNorm serving"
                                 " (aiter GraphSafe, R-09(1))")
                         return out
-                    declined.append("kernel-declined")
+                    if not decline_state["kernel"]:
+                        decline_state["kernel"] = True
+                        LOG.warning("[HCU ar+norm] fused kernel declined; using stock")
         except Exception:
-            if not declined:
-                declined.append("error")
+            if not decline_state["error"]:
+                decline_state["error"] = True
                 LOG.warning("[HCU ar+norm] fused attempt failed; declining"
                             " to stock", exc_info=True)
         return stock(input_tensor, residual, weight, eps=eps,

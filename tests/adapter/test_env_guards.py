@@ -72,11 +72,28 @@ def test_bf16_forwarder_carries_nv_bfloat16():
     assert "using __nv_bfloat16 = __hip_bfloat16;" in body
 
 
-def test_forwarder_set_unchanged():
+def test_forwarder_set_matches_supported_cuda_headers():
     assert set(jit_compat._FORWARDS) == {
         "cuda_bf16.h", "cuda_fp16.h", "cuda_fp8.h",
         "cuda.h", "cuda_runtime.h", "vector_types.h",
+        "cub/block/block_load.cuh",
+        "cub/block/block_store.cuh",
+        "cub/block/block_scan.cuh",
     }
+
+
+def test_cub_forwarders_install_nested_hipcub_headers(tmp_path, monkeypatch):
+    from hcu_adapter import registry
+
+    monkeypatch.setattr(jit_compat, "_find_hip_include_root", lambda: tmp_path)
+    monkeypatch.setattr(registry, "register", lambda *args, **kwargs: None)
+    jit_compat.install()
+    for primitive in ("load", "store", "scan"):
+        header = tmp_path / f"cub/block/block_{primitive}.cuh"
+        body = header.read_text(encoding="utf-8")
+        assert f"#include <hipcub/block/block_{primitive}.hpp>" in body
+        assert "namespace cub = hipcub;" in body
+        assert body.startswith(jit_compat._MARK)
 
 
 # ---------------------------------------------------------------- topo guard
