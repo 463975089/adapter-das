@@ -40,9 +40,9 @@ nmz28 的环境结论；不清理或占用其他用户任务。
 清理该新容器镜像残留的 SGLang 0.5.18 DTK 定制包与 kernel 包，
 核对 SGLang 从社区源码、`sgl_kernel` 从 adapter 导入；不更改其他节点环境。
 
-当前前置差距：`jit_*`、`dsv4_*`
-等存在源码磁盘写回，须以实际调用点逐项审计，
-上述目标尚未完成。对象广播 `dist_bc` 已迁移为运行时只读 numpy buffer
+历史前置差距包括 `jit_*`、`dsv4_*` 的源码磁盘写回，
+现已逐项迁移；Qwen2 当前组合通过严格源码完整性检查，其他模型与配置
+仍须逐项验证，上述完整目标尚未完成。对象广播 `dist_bc` 已迁移为运行时只读 numpy buffer
 兼容，保留已导入函数别名，不再写回 `common.py`。nmz28 隐藏 GPU 的
 回归为 **6 passed**：包括以 Git 原始社区广播函数执行两 rank spawn/Gloo，
 验证双向广播、空/中文/bytes/大对象和测试源文件字节不变。
@@ -219,6 +219,149 @@ L0 GREEN（31 项既有 warning），未运行全量 adapter/vendor 套件。
 这是本次加载桥和真实 Qwen2 执行回归证据，不等于真实 DSV4 CT-int8
 checkpoint 已验证，亦不等于整体源码零改写或多模型精度目标已完成。
 下一步迁移剩余 JIT 编译输入，保留这些 portability 修复和数值语义。
+
+### JIT 编译输入迁出社区源码（GPU 集成待复验）
+
+`jit_sources` 将现有八组 portability 变换集中在 adapter 私有 staging
+目录执行，仅复制 JIT `csrc/include` 编译资产，排除独立 Python 生成脚本。
+输入文件字节、变换实现及 forwarder 定义共同生成缓存 key；全部变换、
+白名单和输出哈希通过后原子发布到
+`~/.cache/hcu_adapter/jit-inputs/<sha256>`。同 key 并发发布只能读到完整
+bundle；已有缓存损坏拒绝，不覆盖“自愈”。manifest 记录输入、输出和变换。
+CUDA→HIP 头文件也移入 bundle，不再写 DTK include。
+
+社区 `resolve_sources` 与原 `load_jit` 的函数对象保留，已缓存别名和
+Torch 包装仍调用原对象。以私有调用命名空间映射相对/绝对 source，
+以及默认、显式和实时 dependency provider 的 include；原
+BuildSpec/ninja/cache、编译参数及依赖追踪仍在使用，不转移社区 Python
+模块或改写 `__file__`。量化变换先生成 packed BF16 shuffle 分支，再由
+warp 变换把接收类型修正为 `T`，避免旧顺序造成首轮安装缺针。
+补齐已有 v2 FP8 conversion needle 的治理登记，不删除 portability 修复。
+
+nmz21 隐藏全部 GPU 的最终缓存/环境/启动结构及 CPU 算子组合回归
+**75 passed、5 skipped、1 deselected**（`iteration7-final-cpu.log`）。
+其中 source 两臂分别
+使用离线接口及 Git HEAD 原始社区资产/函数；spawn 子进程实际安装文件
+写入 audit hook，先验证写入社区目录会被拒绝，再并发生成同一 bundle。
+包含真实官方 BuildSpec→ninja→cache→tvm-ffi **CPU 编译 2 passed**
+（另有独立 `iteration7-host-compiler.log`）：从缓存编译 source 和传递 include，
+两轮改变头文件值后返回值随之改变，证明缓存失效与真实编译路径。
+另隐藏 GPU，以明确 `gfx938` 编译目标实例化真实 HIP wrapper：
+RoPE NeoX/interleaved 及 FP8 group32/group128 **4 passed**
+（离线合成资产四臂按设计 skip），日志为
+`iteration7-hip-template-compile.log`。未运行这些 device 函数，
+这不是 GPU 数值验证。L0 GREEN（31 项既有 warning）。
+
+实际社区编译器绑定与重复安装通过（`iteration7-actual-compiler-bind.log`）。
+干净 `sglang-0.5.22-pristine-iter7` 隐藏 GPU 后执行宿主导入，
+前后源码完整性为 **0 changed、0 added sources**，报告为
+`iteration7-pristine-before.json`、`iteration7-bootstrap-source-after.json`。
+隐藏 GPU 导致部分其他可选桥无法取得设备 capability，导入日志保留相关
+warning；该结果只证明本次导入没有源码写回，不作为功能就绪证据。
+
+此前 nmz21 多次显存预检不足，确认有其他用户的 8 卡
+`all_reduce_perf` 压测，未停止其任务。节点释放后重新预检，
+物理 GPU 0 空闲显存比例 0.969343，再补齐设备验证。
+
+### JIT FP8 输出存储接口与源码不变的真实 Qwen2 回归
+
+首轮 GPU 测试中 RoPE 两种布局通过，FP8 分组量化在 FFI 边界失败：
+DTK DLPack 暴露名义 `float8_e4m3fn`，社区 HIP kernel 要求 `uint8`
+存储。原始失败日志保留为 `iteration7-jit-inputs-gpu.log`。
+`jit_fp8_ffi` 现在覆盖 generic/v2 与已有 DSV4 两个 factory，仅在
+调用编译导出时对输出做零拷贝 uint8 view；输入、scale、其他 dtype
+及 factory 的名义 dtype 选择不变。保留原 `cache_once` 函数对象与
+已有 factory 别名，适配 warm cache 与后续 cold key；布局漂移拒绝。
+原有 `HCU_JIT_FP8_FFI` 补入环境注册表，显式 0 在启动时跳过安装。
+
+nmz21 隐藏 GPU 的最终接口/环境/启动顺序回归 **25 passed、3 skipped**
+（`iteration8-fp8-ffi-cpu-final.log`，排除另行探测的 4 个 DSV4 GPU 项）。
+包括离线及 Git 原始社区 factory/cache、指针和 stride、warm/cold
+别名、spawn、非目标 dtype、快关与失败原子性。
+RoPE 两布局及 generic/v2 FP8 group32/128 的真实编译、独立参考与
+三轮变输入 graph 共 **6 passed**（`iteration8-jit-inputs-gpu.log`）。
+
+真实 `/model/qwen2/Qwen2-0.5B-Instruct` 在
+`sglang-0.5.22-pristine-iter7`、社区 commit
+`baa9befa381511cd4d56f83980951e5a45fffc6d` 上 eager/graph **2/2 passed**，
+报告 `iteration8-qwen2-checkpoint.json`。每模式两批两请求各生成 8 token，
+检查词表、有限 logprob 及实际 graph 分配；控制器核对 10,594 个跟踪文件，
+最终 **0 changed、0 added sources**。这证明该组合的加载和生成以及源码
+不变，不代表模型精度已验收。此前 25 个 JIT 文件写回失败报告继续保留。
+
+额外 DSV4 连续/变长布局 × group32/128 数值探测发现 **4 failed**：
+编译及 FFI 已通过，scale 对拍通过，FP8 输出值失败。原始日志
+`iteration8-dsv4-ffi-gpu.log` 保留；初步定位共享软件转换的最高指数段
+过早饱和，待独立修复，不能以 generic/v2 的通过代替 DSV4 数值验收。
+
+### DSV4 gfx938 FP8 最高指数段转换修复
+
+已确认社区 `deepseek_v4/fp8_utils.cuh` 的软件转换在 `exp8 >= 15`
+时直接饱和，使 OCP E4M3 的合法最高段（256～448）过早变为 448。
+`jit_quant_fp8` 在 adapter 编译输入缓存内仅把 gfx938 纳入现有
+DTK OCP 转换分支，原始头文件字节不变；其他架构继续原有分支，
+尤其不修改 gfx942 的 FNUZ 语义。新增 needle 仍经白名单登记和缓存哈希。
+
+nmz21 GPU 0 对原失败用例原样复测，连续/变长布局 × group32/128
+**4 passed**（`iteration9-dsv4-ffi-gpu.log`）。每项由原社区 public API
+实际编译，独立 FP32 SiLU×mul/分组 scale/FP8 参考对拍，三轮改变输入
+幅度和专家有效 token 数后 replay；有效行检查 scale、逐元素误差和
+cosine，未放宽首轮失败断言。隐藏 GPU 的 source/FFI 两臂回归
+**25 passed**（`iteration9-jit-cpu.log`）；L0 GREEN（31 既有 warning）。
+这是该设备上的算子证据，尚不代表真实 DSV4 checkpoint 或完整模型精度。
+
+### 真实 Qwen3 与可重复 CPU FP32 参考探针
+
+nmz21 物理 GPU 1 重新预检空闲显存比例 0.969343，
+真实 `/model/qwen3/Qwen3-0.6B` eager/graph **2/2 passed**，
+报告 `iteration9-qwen3-checkpoint.json`。同一 pristine-iter7 社区树，
+两批两请求每请求 8 token，控制器源码完整性 **0 changed、0 added sources**。
+硬件 BW1100/gfx938，Torch 2.11.0、HIP 6.3.26113。
+
+配方参考固定为 `HYGON-AI/inference-cookbook-das` commit
+`40adc4d30ec2640e3391cfd78759bd3598e95f71`，
+`docs/model-deployment/sglang/qwen3.md` 的
+“Qwen3-0.6B IFB BW1100 1x SGLang 0.5.12” 小节。保留单卡、BF16 和
+同一 checkpoint 选择；本轮为了验证社区 0.5.22 的 adapter 计算链，
+使用 Engine API、Triton attention、mem_fraction_static=0.25、
+context_length=128、max_total_tokens=512，并分别启用 eager/graph。
+配方原为 0.5.12、fa3、mem_fraction_static=0.9、page_size=64、关闭
+graph 和 overlap、跳过 warmup，且附带 HTTP 工具/推理解析器及定制环境。
+实际 page_size=1、trust_remote_code=False、overlap 与 warmup 启用，
+tool_call_parser/reasoning_parser 均为 None。
+这些部署项未按原配方逐一验收，本报告只覆盖实际 Engine 参数；
+未执行配方中的 sysctl 或套用其定制环境变量。
+
+新增可重复参考入口（远端容器内、隐藏 GPU）：
+
+```bash
+HCU_ADAPTER_HOST=none HIP_VISIBLE_DEVICES= CUDA_VISIBLE_DEVICES= \
+  python3 -m tools.l15_checkpoint_reference \
+  --smoke-report results/l15-readiness/iteration9-qwen3-checkpoint.json \
+  --out results/l15-readiness/iteration10-qwen3-reference.json
+```
+
+工具要求严格源码检查成功、真实 checkpoint、eager/graph 两模式完整
+worker、两批两请求和完整 uncached prompt IDs，拒绝 dummy/失败/缺失/重复
+证据。独立 Transformers 5.12.1 的 CPU FP32 eager 模型对同一
+prompt+生成 token 序列 teacher-force，记录逐位置参考 logprob、绝对误差
+及相对参考 top1 的 greedy regret，保留 BF16 平局附近的差异。运行前后
+校验本轮参考权重/JSON 文件 SHA256 与输入 smoke 报告字节，禁止覆盖原报告。
+
+Qwen2/Qwen3 各 **64 个生成位置**：Qwen2 最大 logprob 绝对差
+**0.053874**，最大 regret **0**，top1 匹配 64/64；
+Qwen3 最大绝对差 **0.055951**，最大 regret **0.024235**，
+top1 匹配 62/64。报告为 `iteration10-qwen2-reference.json`、
+`iteration10-qwen3-reference.json`。这是对所选 token 概率的独立短输入
+探针，报告标记 `exploratory-short-prompts`，不输出精度验收 `passed`。
+历史 smoke 没有绑定 HCU 执行时的权重字节哈希，因此当前参考时间点的
+fingerprint 不能倒推证明此前 HCU 使用的权重完全一致。
+最终参考工具与原 smoke 失败契约回归 **23 passed**
+（`iteration10-reference-final-tests.log`），含 NaN、dummy、源码失败、
+重复 mode、缺波次/缓存 prompt、错误概率/非 greedy token、权重/配置变更及
+原报告防覆盖；L0 GREEN（31 既有 warning）。
+后续须补同轮 checkpoint 字节绑定、更全面的输入/长度/分布和模型族覆盖，
+才能提升为完整精度门禁。
 
 ## 原四步实施与验证记录
 

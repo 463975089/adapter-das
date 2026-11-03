@@ -247,6 +247,13 @@ REGISTRY = {
         "auto": _auto_aiter_ar, "auto_hosts": ("sglang", "vllm"),
         "about": "gfx93* 旧 aiter AR 自动拒用（图重放损坏）；=1 显式夺回",
     },
+    "HCU_JIT_FP8_FFI": {
+        "env": "HCU_JIT_FP8_FFI", "default": "1",
+        "about": "JIT tvm-ffi 输出存储适配：generic/v2 分组量化及 DSV4 "
+                 "silu-mul 量化仅将 e4m3fn 输出零拷贝 view 为 uint8，"
+                 "保留输入、scale、量化 dtype 选择、原 factory/cache 别名；"
+                 "=0 跳过安装，不改写社区源码。",
+    },
     "HCU_QUANT_IMPL": {
         "env": "HCU_QUANT_IMPL", "default": "auto",
         "auto": _auto_quant_impl,

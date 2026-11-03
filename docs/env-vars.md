@@ -25,6 +25,7 @@
 
 | 变量 | 默认 | 自动规则 | 说明 |
 |---|---|---|---|
+| `HCU_JIT_FP8_FFI` | 1 | HIP 宿主安装 | generic/v2 分组量化及 DSV4 silu-mul JIT 的 FFI 存储兼容。仅将 e4m3fn 输出零拷贝 view 为 uint8，保持输入、scale、dtype 选型、原 factory 及已有 cache/别名，不改写源码。显式 0 在启动时跳过安装；已安装后不提供运行期撤销。 |
 | `HCU_ADAPTER_HOST` | auto | 启动参数 / 已加载模块 / 单一可用宿主；双包无启动线索时保持 sglang 兼容 | 自动分发宿主桥；`sglang`/`vllm` 可用于诊断时显式固定，`none` 禁用自动桥。父进程的自动结果经 adapter 私有键传给 spawn 子进程，正常部署无需设置。 |
 | `HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS` | 空（不请求） | —（显式启动断言，不按硬件/wheel 自动推断） | vLLM 必选 extension **entry-point 名**，逗号分隔、大小写敏感；缺失或失败阻断。启动前设置，非运行期快关；经 REGISTRY 解析，正常 HOSTvllm/auto 的 common 启动汇总标记 `explicit`；HOSTnone 直接 general-plugin 不自动汇总，诊断用 `hcu_env.resolve` 查看值/来源。 |
 | `HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES` | 空（不请求） | —（显式启动断言，不自动启用 provider） | vLLM 必选 capability 名，逗号分隔；缺失、失败或歧义阻断。空白不请求；空元素/名字内部空白在任何注册前拒绝。规则详见 [required startup](frameworks/vllm-required-extensions.md)。 |

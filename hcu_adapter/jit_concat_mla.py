@@ -1,5 +1,10 @@
 """JIT elementwise/concat_mla.cuh portability patch — HIP arm.
 
+Compiler-input transformation: _apply operates only on private adapter staging
+assets via jit_sources. install() delegates to that complete bundle pipeline;
+no community source or module origin is rewritten.
+
+
 MLA-absorb concat (GLM-5.2/DSA models) JIT-compiles
 `sglang/kernels/jit/csrc/elementwise/concat_mla.cuh`. The file's memory
 helpers are hand-written PTX inline asm:
@@ -103,10 +108,10 @@ _DLDEVICE_NEEDLE = "        .with_device<kDLCUDA>(device)"
 _DLDEVICE_REPL = "        .with_device<kDLROCM>(device)"
 
 
-def install():
-    import sglang.kernels.jit as _jit_root
+def _apply(root, register):
+    """Transform adapter-owned staging files; never pass a community root."""
 
-    p = pathlib.Path(_jit_root.__file__).parent / "csrc" / _RELPATH
+    p = root / "csrc" / _RELPATH
     text = p.read_text(encoding="utf-8")
     registered = []
     for needle, repl in _PATCHES:
@@ -133,7 +138,7 @@ def install():
     # TEXT_PATCH_ALLOWLIST keys are (op, exact needle) — one record per
     # needle, jit_quant_fp8 pattern.
     for needle in registered:
-        _reg.register(
+        register(
             "platform_detect",  # ISA-portability routing patch; nearest catalog op
             "gfx93x-hipcc-portability",
             target=f"text:sglang/kernels/jit/csrc/{_RELPATH}",
@@ -144,3 +149,10 @@ def install():
         "HCU adapter: JIT concat_mla portability patch installed (%d edits)",
         applied,
     )
+
+
+def install():
+    """Compatibility entry: prepare the complete immutable JIT input bundle."""
+    from .jit_sources import install as install_inputs
+
+    return install_inputs()

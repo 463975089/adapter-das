@@ -1,5 +1,10 @@
 """JIT rope portability patch — gfx936 DTK hipcc (clang) vs nvcc-isms.
 
+Compiler-input transformation: _apply operates only on private adapter staging
+assets via jit_sources. install() delegates to that complete bundle pipeline;
+no community source or module origin is rewritten.
+
+
 Upstream sglang 0.5.21 JIT-compiles its fused rope kernel from
 `sglang/kernels/jit/csrc/elementwise/rope.cuh` at first call. gfx936's DTK
 clang-based hipcc rejects two nvcc-only constructs:
@@ -11,8 +16,8 @@ clang-based hipcc rejects two nvcc-only constructs:
    explicit `.x/.y` member reads.
 
 This is a source-level compatibility patch (behavior identical on both
-platforms), applied by reading the module's .cuh files at import time and
-rewriting the needle strings before ninja launches hipcc. The loader hashes
+platforms), applied to adapter-owned .cuh assets before publication and before
+ninja launches hipcc. The loader hashes
 the generated build text, so patched sources land in their own cache entry —
 upstream trees stay untouched and stock NVIDIA hosts never see this bridge's
 output (they don't take the HIP route at all).
@@ -93,10 +98,10 @@ __attribute__((device, always_inline)) inline void __syncwarp_full_mask(unsigned
 """
 
 
-def install():
-    import sglang.kernels.jit as _jit_root
+def _apply(root, register):
+    """Transform adapter-owned staging files; never pass a community root."""
 
-    csrc = pathlib.Path(_jit_root.__file__).parent / "csrc"
+    csrc = root / "csrc"
     applied = 0
     for rel, needle, repl in _PATCHES:
         p = csrc / rel
@@ -125,7 +130,7 @@ def install():
 
     import hcu_adapter.registry as _reg
 
-    _reg.register(
+    register(
         "rotary_embedding",
         "gfx936-hipcc-portability",
         target="text:sglang/kernels/jit/csrc/elementwise/rope.cuh",
@@ -136,3 +141,10 @@ def install():
         "HCU adapter: JIT rope portability patch installed (%d edits + shim)",
         applied,
     )
+
+
+def install():
+    """Compatibility entry: prepare the complete immutable JIT input bundle."""
+    from .jit_sources import install as install_inputs
+
+    return install_inputs()

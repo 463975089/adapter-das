@@ -1,5 +1,10 @@
 """JIT dsa/fused_store_index_cache.cuh portability patch — HIP arm.
 
+Compiler-input transformation: _apply operates only on private adapter staging
+assets via jit_sources. install() delegates to that complete bundle pipeline;
+no community source or module origin is rewritten.
+
+
 GLM-5.2-DSA indexer k-cache store (unfused path) JIT-compiles
 `sglang/kernels/jit/csrc/dsa/fused_store_index_cache.cuh`. On HCU
 (USE_ROCM) the type aliases make `fp8x2_e4m3_t` a bare `uint16_t`
@@ -62,10 +67,10 @@ _PATCHES = (
 )
 
 
-def install():
-    import sglang.kernels.jit as _jit_root
+def _apply(root, register):
+    """Transform adapter-owned staging files; never pass a community root."""
 
-    p = pathlib.Path(_jit_root.__file__).parent / "csrc" / _RELPATH
+    p = root / "csrc" / _RELPATH
     text = p.read_text(encoding="utf-8")
     applied = 0
     registered = []
@@ -91,7 +96,7 @@ def install():
     # needle (same-op/same-target re-registration of an immutable text
     # patch is the jit_quant_fp8 pattern).
     for needle in registered:
-        _reg.register(
+        register(
             "per_token_quant",  # catalog op: per-token fp8 quant+store kernel
             "gfx93x-hipcc-portability",
             target=f"text:sglang/kernels/jit/csrc/{_RELPATH}",
@@ -102,3 +107,10 @@ def install():
         "HCU adapter: JIT dsa store-cache portability patch installed (%d edits)",
         applied,
     )
+
+
+def install():
+    """Compatibility entry: prepare the complete immutable JIT input bundle."""
+    from .jit_sources import install as install_inputs
+
+    return install_inputs()

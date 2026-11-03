@@ -1,5 +1,10 @@
 """JIT sgl_kernel/gemm/dot_product.cuh portability patch — HIP arm.
 
+Compiler-input transformation: _apply operates only on private adapter staging
+assets via jit_sources. install() delegates to that complete bundle pipeline;
+no community source or module origin is rewritten.
+
+
 `dot_product_vec` (bf16 dot-product accumulation inside the tiny_gemm /
 attention inner kernels) decomposes `fp32x2_t` — a HIP `float2`, i.e. a
 class with an anonymous union member — via structured bindings, which DTK
@@ -30,10 +35,10 @@ _PATCHES = (
 )
 
 
-def install():
-    import sglang.kernels.jit as _jit_root
+def _apply(root, register):
+    """Transform adapter-owned staging files; never pass a community root."""
 
-    p = pathlib.Path(_jit_root.__file__).parent / _RELPATH
+    p = root / _RELPATH
     text = p.read_text(encoding="utf-8")
     registered = []
     for needle, repl in _PATCHES:
@@ -53,7 +58,7 @@ def install():
     import hcu_adapter.registry as _reg
 
     for needle in registered:
-        _reg.register(
+        register(
             "platform_detect",  # ISA-portability patch; header included by
             # several JIT kernels (tiny_gemm, ...) — no single catalog op
             "gfx93x-hipcc-portability",
@@ -65,3 +70,10 @@ def install():
         "HCU adapter: JIT dot_product portability patch installed (%d edits)",
         len(registered),
     )
+
+
+def install():
+    """Compatibility entry: prepare the complete immutable JIT input bundle."""
+    from .jit_sources import install as install_inputs
+
+    return install_inputs()

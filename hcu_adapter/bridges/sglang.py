@@ -113,49 +113,15 @@ def install() -> None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: kv stride text patch not installed", exc_info=True
             )
-        # JIT rope portability (gfx936 hipcc rejects bare __syncwarp + HIP vector
-        # structured bindings); text patch on the .cuh kernel source.
+        # Compile adapted csrc/include assets from an immutable adapter cache.
+        # Community sources remain untouched; cached function aliases are retained.
         try:
-            from hcu_adapter import jit_rope
+            from hcu_adapter import jit_sources
 
-            jit_rope.install()
+            jit_sources.install()
         except Exception:
             logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit rope portability patch not installed", exc_info=True
-            )
-        # JIT DSA indexer k-cache store (GLM-5.2-DSA unfused path): HIP fp8x2
-        # alias has no brace ctor + two HIP-vector binding decomposes.
-        try:
-            from hcu_adapter import jit_store_cache
-
-            jit_store_cache.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit dsa store-cache portability patch not installed",
-                exc_info=True,
-            )
-        # JIT per-token-group quant (v0.5.22 family): DTK hipcc has no mask-form
-        # __all_sync -- glm53f decode graph capture dies on name lookup.
-        try:
-            from hcu_adapter import jit_ptgq
-
-            jit_ptgq.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit per-token-group-quant patch not installed",
-                exc_info=True,
-            )
-        # JIT DSV4 paged-mqa-metadata (indexer plan builder): the cuh includes
-        # NVIDIA cub for BlockScan; DTK has hipCUB only -> hipcc file-not-found
-        # kills decode graph capture (DSV4-Flash nmz16, 2026-10-20).
-        try:
-            from hcu_adapter import jit_dpskmeta
-
-            jit_dpskmeta.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit paged_mqa_metadata cub->hipcub patch not installed",
-                exc_info=True,
+                "HCU adapter: immutable JIT compiler inputs not installed", exc_info=True
             )
         # DSA top-k v2 fusion (dsv41f decode): stride seam on the upstream JIT
         # topk_v2 kernel + the v41 full-topk fused decode arm. Replaces the
@@ -234,18 +200,6 @@ def install() -> None:
                 "HCU adapter: deepseek_v41 registry alias not installed",
                 exc_info=True,
             )
-        # JIT warp reduce: HIP arm hardcodes a __hip_bfloat162 shuffle receiver,
-        # making reduce<T> un-compilable for every non-bf16 T (fp32 warp max in
-        # the DSA k-cache store, integer/float reduces elsewhere).
-        try:
-            from hcu_adapter import jit_warp
-
-            jit_warp.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit warp reduce portability patch not installed",
-                exc_info=True,
-            )
         # CUDA-only attention backends (fa4 = CUTLASS cute DSL SM90a;
         # flashinfer = is_flashinfer_available() False yet unguarded names):
         # fail at the backend-registry seam (constructor-time ImportError) so
@@ -295,29 +249,6 @@ def install() -> None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: model-env defaults not installed", exc_info=True
             )
-        # JIT concat_mla (MLA-absorb q concat): hand-written PTX helpers
-        # (%laneid register / L1::no_allocate st+ld / prefetch) -> HIP-portable
-        # C++ equivalents.
-        try:
-            from hcu_adapter import jit_concat_mla
-
-            jit_concat_mla.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit concat_mla portability patch not installed",
-                exc_info=True,
-            )
-        # JIT dot_product (tiny_gemm inner): fp32x2 structured binding ->
-        # .x/.y member reads (rope.cuh / store_cache.cuh ABI fact, third site).
-        try:
-            from hcu_adapter import jit_dot_product
-
-            jit_dot_product.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit dot_product portability patch not installed",
-                exc_info=True,
-            )
         # fused-MoE triton tile guard: HCU 64KB LDS vs the ~72KB NV default
         # config — clamp oversized tiles at the durable resolution seam.
         try:
@@ -338,17 +269,6 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: bmm_fp8 bridge not installed", exc_info=True
-            )
-        # JIT per-token-group-quant fp8: CUDA trait reference without the HIP
-        # member; patch the cuh onto the DTK conversion family (EP deep_gemm
-        # runner's bf16-in/fp8-out activation quant needs this kernel).
-        try:
-            from hcu_adapter import jit_quant_fp8
-
-            jit_quant_fp8.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit fp8-quant patch not installed", exc_info=True
             )
         # R-09(2/3): aiter per-token fp8 quant vendor tier -- rowwise wrapper
         # NameError fix (HIP has no sgl_per_token_quant_fp8), group plain arm
@@ -387,16 +307,6 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").debug(
                 "HCU adapter: aiter jit cache report skipped", exc_info=True
-            )
-        # JIT cuda-header forwarders (cuda_bf16.h et al -> hip equivalents) in
-        # the DTK include root the JIT toolchain already puts on the compile line.
-        try:
-            from hcu_adapter import jit_compat
-
-            jit_compat.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: jit cuda-header forwarders not installed", exc_info=True
             )
         # triton extra.cuda libdevice -> hip/OCML redirect (is_cuda semantics
         # picks the cuda libdevice package; hcu backend rejects __nv_* LLVM).

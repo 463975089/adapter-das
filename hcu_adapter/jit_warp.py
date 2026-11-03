@@ -1,5 +1,10 @@
 """JIT sgl_kernel/warp.cuh portability patch — HIP arm reduce<T> + shfl *_sync.
 
+Compiler-input transformation: _apply operates only on private adapter staging
+assets via jit_sources. install() delegates to that complete bundle pipeline;
+no community source or module origin is rewritten.
+
+
 Two independent text patches on the same header:
 
 1. ``warp::reduce`` declares ``__hip_bfloat162 _v;`` unconditionally in both
@@ -50,12 +55,12 @@ _SHFL_MAP = [
 _SHFL_TAG = "  // HCU adapter: DTK lacks the *_sync variant"
 
 
-def install():
-    import sglang.kernels.jit as _jit_root
+def _apply(root, register):
+    """Transform adapter-owned staging files; never pass a community root."""
 
     import hcu_adapter.registry as _reg
 
-    p = pathlib.Path(_jit_root.__file__).parent / _RELPATH
+    p = root / _RELPATH
     text = p.read_text(encoding="utf-8")
     changed = False
 
@@ -76,7 +81,7 @@ def install():
         changed = True
         # One allowlist record per needle (fingerprint is (op, detail); both
         # loop occurrences share the needle, so a single record covers them).
-        _reg.register(
+        register(
             "per_token_quant",  # the failing instantiation: fp32 warp max in
             # the indexer k-store; catalog has no warp-primitive entry
             "gfx93x-hipcc-portability",
@@ -108,7 +113,7 @@ def install():
             continue
         text = text.replace(needle, tagged)
         changed = True
-        _reg.register(
+        register(
             "per_token_quant",
             "gfx93x-hipcc-portability",
             target=f"text:sglang/kernels/jit/{_RELPATH}",
@@ -124,3 +129,10 @@ def install():
         from hcu_adapter.atomic_io import atomic_write
 
         atomic_write(p, text)
+
+
+def install():
+    """Compatibility entry: prepare the complete immutable JIT input bundle."""
+    from .jit_sources import install as install_inputs
+
+    return install_inputs()

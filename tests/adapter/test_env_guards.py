@@ -82,18 +82,14 @@ def test_forwarder_set_matches_supported_cuda_headers():
     }
 
 
-def test_cub_forwarders_install_nested_hipcub_headers(tmp_path, monkeypatch):
-    from hcu_adapter import registry
+def test_forwarders_use_compiler_cache_entry(tmp_path, monkeypatch):
+    from hcu_adapter import jit_sources
 
-    monkeypatch.setattr(jit_compat, "_find_hip_include_root", lambda: tmp_path)
-    monkeypatch.setattr(registry, "register", lambda *args, **kwargs: None)
-    jit_compat.install()
-    for primitive in ("load", "store", "scan"):
-        header = tmp_path / f"cub/block/block_{primitive}.cuh"
-        body = header.read_text(encoding="utf-8")
-        assert f"#include <hipcub/block/block_{primitive}.hpp>" in body
-        assert "namespace cub = hipcub;" in body
-        assert body.startswith(jit_compat._MARK)
+    calls = []
+    monkeypatch.setattr(jit_sources, "install", lambda: calls.append("cache") or tmp_path)
+    assert jit_compat.install() == tmp_path
+    assert calls == ["cache"]
+    assert not list(tmp_path.iterdir())  # compatibility entry never edits DTK
 
 
 # ---------------------------------------------------------------- topo guard

@@ -209,6 +209,12 @@ sglang 符号面，shim 妥协不进契约。
   `mechanism ∈ {seam, rebind, text-patch}`；target 是调试器可下断点的
   点符号。register 自带防重复（同 target 换 op 抛错）、catalog 交叉校验
   （op 必须在 `BACKEND_CATALOG`，无 catalog 条目的绑定不存在）。
+- SGLang JIT portability 的 text-patch needle 白名单同时约束
+  `jit_sources` 的编译输入变换。其 target 使用 `jit-input:`，指向
+  adapter 内容寻址缓存内的 `csrc/include` 资产；不表示社区文件被写回。
+  编译器入口本身按 rebind 登记，保留函数对象与已导入别名。
+  发布须包含完整输入/输出哈希和变换实现，失败不得发布半成品；
+  不复制社区 Python 包、不修改模块来源，也不改写 DTK include。
 - **人读**：启动日志 `HCU adapter runtime:` 每算子一行
   （`op <- impl [role/mechanism] via target`），接在 `HCU adapter env:` 之后。
 - **机读**：`HCU_ADAPTER_DUMP=路径` 启动时写 JSON（算子→活跃实现+机制+来源、

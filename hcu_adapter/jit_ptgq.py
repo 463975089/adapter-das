@@ -1,5 +1,10 @@
 """JIT per_token_group_quant portability — DTK hipcc has no __all_sync.
 
+Compiler-input transformation: _apply operates only on private adapter staging
+assets via jit_sources. install() delegates to that complete bundle pipeline;
+no community source or module origin is rewritten.
+
+
 Upstream v0.5.22 JIT-compiles the per-token-group quantization family from
 `sglang/kernels/jit/csrc/gemm/per_token_group_quant.cuh`. DTK's clang-based
 hipcc declares the plain warp vote `__all(pred)` (and 1-arg `__ballot`) but
@@ -33,11 +38,11 @@ _NEEDLE = "if (__all_sync(warp::kFullMask, skip)) return;"
 _REPL = "if (__all(skip)) return;  // HCU: DTK hipcc has no __all_sync"
 
 
-def install():
-    import sglang.kernels.jit as _jit_root
+def _apply(root, register):
+    """Transform adapter-owned staging files; never pass a community root."""
     import hcu_adapter.registry as _reg
 
-    csrc = pathlib.Path(_jit_root.__file__).parent / "csrc"
+    csrc = root / "csrc"
     p = csrc / _RELPATH
     if not p.exists():
         LOG.info("jit_ptgq: %s absent (tree predates the module)", _RELPATH)
@@ -53,7 +58,7 @@ def install():
 
         atomic_write(p, text.replace(_NEEDLE, _REPL))
 
-    _reg.register(
+    register(
         "per_token_quant",
         "dtk-hipcc-no-all-sync",
         target=f"text:sglang/kernels/jit/csrc/{_RELPATH}",
@@ -64,3 +69,10 @@ def install():
         "HCU adapter: JIT per_token_group_quant portability patch installed"
         " (__all_sync(kFullMask, skip) -> __all(skip))"
     )
+
+
+def install():
+    """Compatibility entry: prepare the complete immutable JIT input bundle."""
+    from .jit_sources import install as install_inputs
+
+    return install_inputs()

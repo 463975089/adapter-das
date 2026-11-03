@@ -1,81 +1,117 @@
-"""tvm-ffi fp8 dtype aliasing for the DSV4 JIT MoE activation kernels.
+"""Zero-copy FP8 output storage at the narrow tvm-ffi kernel boundary.
 
-``silu_and_mul_masked_post_quant`` / ``silu_and_mul_contig_post_quant``
-(the between-GEMMs SiLU+per-token-group-quant for the DeepEP fp8 route)
-declare their fp8 output tensor as ``uint8`` in the tvm-ffi signature.
-On CUDA torch fp8 tensors present as uint8 through DLPack; on this DTK
-stack they present as ``float8_e4m3fn`` and tvm-ffi's type match rejects
-them ("Dtype value [float8_e4m3fn] not in the allowed options: [uint8]",
-DSV4F fp8 dp8ep8 graph capture, nmz16 2026-10-21). Viewing fp8 args as
-uint8 before ``module.run`` is byte-identical: the kernel writes raw fp8
-bit patterns and the caller keeps consuming its fp8 view of the same
-storage.
+Community kernels use uint8 storage for OCP e4m3 output. DTK DLPack exposes
+Torch float8_e4m3fn as its nominal dtype, so only that output is viewed as
+uint8 when entering FFI. Public Python/custom-op interfaces, dtype selection,
+scales, input tensors and cache_once factory aliases retain their semantics.
 """
 
-from __future__ import annotations
-
+import functools
+import importlib
+import inspect
 import logging
+import threading
+import types
 
 import torch
 
-logger = logging.getLogger("hcu.adapter")
-
-_FP8_DTYPES = (
-    torch.float8_e4m3fn,
-    torch.float8_e4m3fnuz,
-    torch.float8_e5m2,
-    torch.float8_e5m2fnuz,
+LOG = logging.getLogger("hcu.adapter")
+_LOCK = threading.RLock()
+_MARKER = "_hcu_fp8_output_cache"
+_TARGETS = (
+    ("sglang.kernels.ops.quantization.per_token_group_quant", "_jit_module",
+     "per_token_group_quant"),
+    ("sglang.kernels.ops.quantization.per_token_group_quant_8bit_v2", "_jit_module",
+     "per_token_group_quant_8bit_v2"),
+    ("sglang.kernels.ops.moe.dsv4", "_jit_silu_mul_quant_varlen_module", "run"),
+    ("sglang.kernels.ops.moe.dsv4", "_jit_silu_mul_quant_contig_module", "run"),
 )
 
 
-def _as_uint8(t):
-    if torch.is_tensor(t) and t.dtype in _FP8_DTYPES:
-        return t.view(torch.uint8)
-    return t
+class _OutputStorage:
+    def __init__(self, module, entry):
+        self._module = module
+        self._entry = entry
+        function = getattr(module, entry)
+
+        def call(*args, **kwargs):
+            # FFI exports use positional arguments; accepting a named output
+            # also keeps the view boundary explicit in protocol tests.
+            if len(args) > 1:
+                output = args[1]
+                if torch.is_tensor(output) and output.dtype == torch.float8_e4m3fn:
+                    args = (args[0], output.view(torch.uint8), *args[2:])
+            else:
+                for name in ("output_q", "output"):
+                    output = kwargs.get(name)
+                    if torch.is_tensor(output) and output.dtype == torch.float8_e4m3fn:
+                        kwargs[name] = output.view(torch.uint8)
+            return function(*args, **kwargs)
+
+        setattr(self, entry, call)
+
+    def __getattr__(self, name):
+        return getattr(self._module, name)
 
 
-def _wrap(orig):
-    def inner(*args, **kwargs):
-        args = tuple(_as_uint8(a) for a in args)
-        kwargs = {k: _as_uint8(v) for k, v in kwargs.items()}
-        return orig(*args, **kwargs)
-
-    inner._hcu_fp8_ffi = True
-    return inner
+def _storage(module, entry):
+    if isinstance(module, _OutputStorage):
+        if module._entry != entry:
+            raise RuntimeError("jit_fp8_ffi: cached export changed")
+        return module
+    return _OutputStorage(module, entry)
 
 
-def install() -> None:
-    from . import hcu_env as _env
+def _install_factory(factory, entry):
+    """Keep the original community cache_once wrapper and all its aliases.
 
-    if not _env.enabled("HCU_JIT_FP8_FFI"):
+    Its validated fn/result_map cells are the cache interface. Existing cached
+    modules are adapted, so early cache hits cannot bypass the storage view.
+    No public function or registered Torch op is replaced or re-registered.
+    """
+    with _LOCK:
+        if not isinstance(factory, types.FunctionType):
+            raise RuntimeError("jit_fp8_ffi: expected cache_once factory")
+        cells = dict(zip(factory.__code__.co_freevars, factory.__closure__ or ()))
+        if set(cells) != {"fn", "result_map"}:
+            raise RuntimeError("jit_fp8_ffi: community cache_once layout changed")
+        cached = cells["result_map"].cell_contents
+        fn = cells["fn"].cell_contents
+        marker = getattr(factory, _MARKER, None)
+        if marker:
+            if (marker[0] != entry or marker[1] is not fn
+                    or marker[2] is not cached or not isinstance(cached, dict)):
+                raise RuntimeError("jit_fp8_ffi: factory changed after installation")
+            return factory
+        if (not isinstance(cached, dict) or not isinstance(fn, types.FunctionType)
+                or inspect.unwrap(factory) is not fn or fn.__closure__
+                or "load_jit" not in fn.__code__.co_names):
+            raise RuntimeError("jit_fp8_ffi: community factory contract changed")
+        # Build every existing view before changing either cell. A missing
+        # export must not leave a partially adapted cache.
+        adapted = {key: _storage(module, entry) for key, module in cached.items()}
+
+        @functools.wraps(fn)
+        def load(*args, **kwargs):
+            return _storage(fn(*args, **kwargs), entry)
+
+        cells["fn"].cell_contents = load
+        cells["result_map"].cell_contents = adapted
+        setattr(factory, _MARKER, (entry, load, adapted))
+        return factory
+
+
+def install():
+    from . import hcu_env, registry
+
+    if not hcu_env.enabled("HCU_JIT_FP8_FFI") or torch.version.hip is None:
         return
-
-    import sglang.kernels.ops.moe.dsv4 as m
-
-    names = (
-        "silu_and_mul_masked_post_quant",
-        "silu_and_mul_contig_post_quant",
-    )
-    patched = []
-    for name in names:
-        orig = getattr(m, name, None)
-        if orig is None or getattr(orig, "_hcu_fp8_ffi", False):
-            continue
-        wrapped = _wrap(orig)
-        setattr(m, name, wrapped)
-        patched.append(name)
-        # modules that already did `from ...dsv4 import <name>` keep the
-        # ORIGINAL binding (e.g. the moe_runner deep_gemm module imported
-        # earlier in the adapter chain); rebind every existing holder so
-        # the alias does not depend on import order
-        import sys
-
-        for mod in list(sys.modules.values()):
-            if getattr(mod, name, None) is orig:
-                setattr(mod, name, wrapped)
-
-    logger.warning(
-        "HCU jit fp8 ffi alias installed (%s: fp8 args viewed uint8 for "
-        "tvm-ffi); HCU_JIT_FP8_FFI=0 disables",
-        ", ".join(patched) or "nothing to patch",
-    )
+    for module_name, name, entry in _TARGETS:
+        module = importlib.import_module(module_name)
+        _install_factory(getattr(module, name), entry)
+        registry.register(
+            "per_token_quant", "jit-fp8-output-storage",
+            target=module_name + "." + name, mechanism=registry.MECH_REBIND,
+            detail="retain factory/cache aliases; only e4m3fn output viewed as uint8 at FFI",
+        )
+    LOG.warning("HCU adapter: JIT FP8 output storage views installed (generic, v2, DSV4)")

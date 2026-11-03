@@ -1,5 +1,10 @@
 """JIT DSV4-family portability needles — DTK hipcc vs CUDA-isms.
 
+Compiler-input transformation: _apply operates only on private adapter staging
+assets via jit_sources. install() delegates to that complete bundle pipeline;
+no community source or module origin is rewritten.
+
+
 Upstream v0.5.22 JIT-compiles the DeepSeek-V4 attention/indexer/MoE kernel
 family from `sglang/kernels/jit/csrc/deepseek_v4/`. On DTK gfx938 several
 CUDA-isms kill the hipcc build. Failure classes (all with landed precedents
@@ -435,11 +440,11 @@ _PATCHES = {
 }
 
 
-def install():
-    import sglang.kernels.jit as _jit_root
+def _apply(root, register):
+    """Transform adapter-owned staging files; never pass a community root."""
     import hcu_adapter.registry as _reg
 
-    csrc = pathlib.Path(_jit_root.__file__).parent / "csrc"
+    csrc = root / "csrc"
     for relpath, needles in _PATCHES.items():
         p = csrc / relpath
         if not p.exists():
@@ -467,7 +472,7 @@ def install():
 
         target = f"text:sglang/kernels/jit/csrc/{relpath}"
         for needle, _ in needles:
-            _reg.register(
+            register(
                 "platform_detect",
                 "dtk-hipcc-portability",
                 target=target,
@@ -479,3 +484,10 @@ def install():
             relpath,
             len(needles),
         )
+
+
+def install():
+    """Compatibility entry: prepare the complete immutable JIT input bundle."""
+    from .jit_sources import install as install_inputs
+
+    return install_inputs()
