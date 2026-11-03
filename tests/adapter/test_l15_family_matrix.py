@@ -124,8 +124,9 @@ def test_artifact_failure_cleans_temporary_and_preserves_previous_file(tmp_path,
     output.write_text("previous artifact\n", encoding="utf-8")
     result = matrix.subprocess.CompletedProcess([], 0, "", "")
     target, method = (matrix.json, "dump") if failure == "write" else (matrix.os, "replace")
-    with patch.object(matrix, "preflight", return_value={}):
-        with patch.object(matrix.subprocess, "run", return_value=result):
+    with patch.object(matrix, "preflight", return_value={"upstream": {"commit": "fixture"}}):
+        with patch.object(matrix, "audit_source", return_value={"passed": True}), \
+                patch.object(matrix.subprocess, "run", return_value=result):
             with patch.object(target, method, side_effect=OSError("disk failure")):
                 with pytest.raises(OSError, match="disk failure"):
                     matrix.run(document, tmp_path, tmp_path, {"dense"}, output)

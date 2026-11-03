@@ -15,6 +15,14 @@
 
 ## 0. 目标终态（薄入口 + 宿主分发 + 双仓边界）
 
+**当前 SGLang 迭代优先级（2026-11-03 用户要求）**：社区源码文件保持原样，
+以多模型功能与精度为验收标准，性能不设门槛；每日追新在其余优化完成后
+再启动。具体范围、证据要求与实施记录见
+[l15-readiness-plan.md](l15-readiness-plan.md#当前迭代目标2026-11-03)。
+下文历史 text-patch 白名单不是向社区文件新增磁盘写回的授权；
+现存磁盘补丁须逐项迁移并保留数值/集成回归，不能先删修复再宣称零修改。
+运行时 seam、函数换绑与进程内适配仍可用于恢复上游行为。
+
 - `sitecustomize.py` 固定为三行自动加载入口，只调用
   `hcu_adapter.bootstrap.install()`；宿主探测和 common/host 顺序由
   `bootstrap.py` 负责，宿主实现位于 `hcu_adapter/bridges/`。
@@ -133,6 +141,8 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
    内部模块。fallback 通过 call-time 路由选择，并记录一次性 DEBUG 路由，
    以便区分 vendor 与兼容路径。
 3. **text-patch（源码文本替换+重编译，adapter 仓内）**：断言放宽类。
+   这是历史机制说明；当前 SGLang 目标禁止改写社区源码文件。
+   如仍有进程内文本适配，须与磁盘补丁区分登记，优先迁移为接口适配。
    **白名单制**：每个 needle 必须登记在 `registry.py` 的
    `TEXT_PATCH_ALLOWLIST`（含 op 与上游原文），新增条目 = 治理评审 =
    MR 说明"为何 1/2 不可行"。L0 `text-patch` 规约扫全部 routing glue 里的

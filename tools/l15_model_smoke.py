@@ -6,9 +6,10 @@ import argparse
 import json
 import math
 from pathlib import Path
+import subprocess
 import sys
 
-from tools.l15_runtime import preflight, run_job, test_env, write_json
+from tools.l15_runtime import audit_source, preflight, run_job, test_env, write_json
 
 
 def tiny_config(family):
@@ -189,6 +190,9 @@ def run(args):
                 and evidence.get("mode") == mode
                 and evidence.get("family") == family
             )
+            integrity = audit_source(args.up_tree.resolve(), runtime["upstream"]["commit"])
+            job["source_integrity_after"] = integrity
+            job["passed"] = job["passed"] and integrity["passed"]
             jobs.append(job)
             write_json(output, {
                 "artifact": "l15-model-smoke", "runtime": runtime,
@@ -197,6 +201,8 @@ def run(args):
                 "families": families, "modes": modes, "jobs": jobs,
             })
             print(f"model smoke: {family}/{mode} {'PASS' if job['passed'] else 'FAIL'}", flush=True)
+            if not integrity["passed"]:
+                return False  # do not launch further models on mutated source
     return all(job["passed"] for job in jobs)
 
 
@@ -222,9 +228,10 @@ def main():
         if args.up_tree is None or args.timeout <= 0:
             raise ValueError("--up-tree and positive --timeout are required")
         return 0 if run(args) else 1
-    except (OSError, ValueError, RuntimeError) as exc:
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         write_json(args.out, {"artifact": "l15-model-smoke", "passed": False,
-                             "complete": False, "error": str(exc), "jobs": []})
+                             "complete": False, "error": str(exc), "jobs": [],
+                             "source_integrity": getattr(exc, "report", None)})
         print(str(exc), file=sys.stderr)
         return 2
 

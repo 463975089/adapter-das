@@ -13,6 +13,27 @@ import tempfile
 import time
 
 
+def audit_source(tree, expected_commit=None):
+    try:
+        from tools.upstream_source import audit
+    except ModuleNotFoundError:
+        from upstream_source import audit
+    report = audit(tree)
+    if expected_commit is not None and report["commit"] != expected_commit:
+        report["passed"] = False
+        report["expected_commit"] = expected_commit
+    return report
+
+
+class UpstreamSourceError(ValueError):
+    def __init__(self, report):
+        self.report = report
+        super().__init__(
+            f"community source is not pristine: {len(report['changes'])} changed/unverified "
+            f"files, {len(report['added_sources'])} added source files; run tools.upstream_source"
+        )
+
+
 def run_job(argv, *, cwd, env, timeout, log):
     """Bound a Linux test job and all descendants in its own process group."""
     if os.name != "posix":
@@ -106,6 +127,9 @@ def git_stamp(root):
 
 def preflight(up_tree, adapter_root, binding_manifest):
     """Verify the exact source binding and allocate on one real HIP device."""
+    integrity = audit_source(up_tree)
+    if not integrity["passed"]:
+        raise UpstreamSourceError(integrity)
     manifest = json.loads(Path(binding_manifest).read_text(encoding="utf-8"))
     hashes = {}
     for relative, expected in manifest["upstream"]["binding_files"].items():
@@ -151,7 +175,7 @@ print('L15_RUNTIME ' + json.dumps({
     for name, root in expected_roots.items():
         Path(runtime["origins"][name]).resolve().relative_to(root.resolve())
     runtime.update(adapter=git_stamp(adapter_root), upstream=git_stamp(up_tree),
-                   binding_files=hashes)
+                   binding_files=hashes, source_integrity=integrity)
     return runtime
 
 

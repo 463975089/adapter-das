@@ -234,16 +234,12 @@ REGISTRY = {
     },
     "HCU_DSV4_WQKV_SCALE": {
         "env": "HCU_DSV4_WQKV_SCALE", "default": "1",
-        "about": "DSV4 wqkv_a CT-int8 scale 融合针脚（dsv4_wqkv_scale_patch."
-                 "py）：v0522 load_weights 融合分支抓 .weight/.weight_"
-                 "scale_inv/.qweight 但漏 CT INT8 per-channel .weight_"
-                 "scale——DAS w4a8 检查点的 wq_a/wkv int8 scale 被 'not "
-                 "found in params_dict' 丢弃，wqkv_a.weight_scale（W8A8Int8 "
-                 "create_weights 所建）拿不到数据=注意力投影带未初始化 "
-                 "scale 反量化（boot 正常、数值垃圾；nmz16 2026-10-26）。"
-                 "针脚幂等补两个 endswith；关融合不是绕法（mapper 后的组 "
-                 "targets 只认融合名 wqkv_a）。上游各平台同病，PR 前由本"
-                 "针脚顶住；=0 跳过",
+        "about": "DSV4 wqkv_a CT-int8 scale 运行时兼容：原融合分支漏 "
+                 ".weight_scale，导致 per-channel scale 未加载。扩展两处 "
+                 "str.endswith 参数为 suffix 元组，保留社区原加载字节码、"
+                 "过滤与异步流程及已有别名，不读写或重编译 deepseek_v4.py。"
+                 "关融合不是绕法（mapper 后的组 targets 只认融合名）；"
+                 "=0 跳过安装。",
     },
     # custom all-reduce
     "HCU_AITER_AR": {
@@ -291,12 +287,11 @@ REGISTRY = {
     },
     "HCU_SPEC_H2D_PIN": {
         "env": "HCU_SPEC_H2D_PIN", "default": "1",
-        "about": "spec-decode prepare_for_decode KV-lens H2D pinned ring："
-                 "torch 对 pageable 内存的 non_blocking 是无效参数仍同步拷贝，"
-                 "且流序排在上一步 forward 之后（WAR 链）= 每个投机步 host "
-                 "干等整条流水线（py-spy 12/12 钉死 eagle_utils 两行 .to）。"
-                 "持久 pinned 8 深环使其成为真异步 DMA enqueue，int 元数据"
-                 "零数值面。文本桥写 eagle_utils seam；=0 关闭安装。",
+        "about": "spec-decode KV-lens 使用 Torch 管理的 pinned CPU 分配"
+                 "和异步 H2D，避免 pageable 复制阻塞 scheduler。"
+                 "原函数私有运行时分配接口保留已有别名，不写回 eagle_utils；"
+                 "不以固定 ring 深度推测 DMA 完成。pin 不可用时告警并"
+                 "回退社区 pageable 行为；=0 关闭安装。",
     },
     "HCU_MOE_ALIGN_FUSED": {
         "env": "HCU_MOE_ALIGN_FUSED", "default": "2048",
@@ -443,6 +438,13 @@ REGISTRY = {
                  "graph capture 期间自动静默防 D2H 崩溃）",
     },
     # disaggregation / EP transfer
+    "SGLANG_HCU_EP_BF16": {
+        "env": "SGLANG_HCU_EP_BF16", "default": "0",
+        "about": "显式 =1 时，将 FP4 routed experts 经社区 FP8 cast 及"
+                 "128x128 block 反量化转成 BF16，供 DeepEP BF16 dispatcher；"
+                 "配合 --deepep-dispatcher-output-dtype bf16。默认不转换；"
+                 "运行时接口适配，不写回社区 fp8.py。",
+    },
     "HCU_DEEPEP_BRIDGE": {
         "env": "HCU_DEEPEP_BRIDGE", "default": "1",
         "about": "deep_ep API 桥：sglang v0.5.21 low_latency_dispatch(use_fp8)"

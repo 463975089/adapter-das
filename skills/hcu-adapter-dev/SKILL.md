@@ -12,6 +12,29 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 
 ## 黄金法则（历史 bug 换来的，违反必踩坑）
 
+当前 SGLang 迭代（2026-11-03 用户要求）：社区源码文件不改写；
+以功能和精度为验收标准，性能不设门槛；每日追新推迟到其余优化完成后。
+历史磁盘 text/JIT 补丁逐项迁移，不能把运行时写回源码称为“零修改”。
+迁移函数绑定需测试已缓存别名和 spawn 子进程；仅换 module 属性可能遗漏
+早先的 `from ... import ...`。`dist_bc` 已以保留函数对象和私有 numpy
+facade 的运行时桥替代磁盘补丁；不可重新引入 common.py 写回。
+`moe_dualstream_gate` 同样已迁移为保留函数对象的运行时分支适配；
+仅作用于 MoE forward 的私有 capture predicate，不能改全局 capture 状态
+或临时改实例的 alt_stream；保留 skip_shared_experts 与 DeepEP 等分支。
+`spec_h2d_pin` 通过原函数私有 Torch facade 分配 pinned KV-lens，
+保留函数对象与已有别名，不写回 eagle_utils.py。不能以固定 ring 深度
+推测 DMA 已结束；使用 Torch 管理的 pinned 分配并验证多流异步复制。
+`fp4_expert_load` 保留社区权重加载函数与已有别名，以私有 cast 接口
+对齐 FP4→FP8 的 128×128 block 配置，并支持显式 DeepEP BF16 反量化；
+不写回 fp8.py。block 元数据必须同时用于当前加载和后续 runner，
+不能只改 method.weight_block_size 而让 quant_config 仍为 32×32，
+也不能修改其他层共享的 checkpoint config。
+`dsv4_wqkv_scale_patch` 仅扩展原加载函数两处 `name.endswith`
+的参数常量，以 tuple 接纳 CT-int8 `.weight_scale`，保留原函数对象、
+指令字节及 PP/MTP、异步加载、流式 buffer 与原融合路径，不写回
+`deepseek_v4.py`；签名或调用位置漂移须拒绝，不能重写权重流绕开原过滤。
+完整目标与证据见 `docs/l15-readiness-plan.md`。
+
 1. **同名 ≠ 同语义**：每个垫片必须对拍参考实现（cos/rel 断言），不能只测
    "能跑不崩"。案例：rope GPT-J cache 恒为半分 [cos|sin] 布局（fbc540c）。
 2. **eager 对 ≠ graph 对**：凡进 decode 链路的算子必须过 capture-replay

@@ -81,6 +81,7 @@ def install() -> None:
                 "HCU adapter: platform semantics seam not installed", exc_info=True
             )
         # TP init-broadcast payload fix (torch2.11 dlpack readonly BufferError);
+        # runtime binding retains imported aliases without source writes;
         # needs sglang.srt.utils.common importable -- after the seam above.
         try:
             from hcu_adapter import dist_bc
@@ -167,38 +168,6 @@ def install() -> None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: dsa topk v2 fusion not installed", exc_info=True
             )
-        # DSV2/V4 capture-mode dual-stream MoE gate: the captured cross-stream
-        # (alt_stream shared expert) graph replays as deterministic garbage on
-        # DTK/ROCm gfx938 while eager stays perfect. Capture-only branch, so the
-        # gate costs nothing outside graphs. Gate tests torch.version.hip (the
-        # platform seam flips sglang's _is_hip to False). DSV4-Flash nmz16
-        # 2026-10-21; full fingerprint account in docs/models.md.
-        try:
-            from hcu_adapter import moe_dualstream_gate
-
-            moe_dualstream_gate.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: dual-stream MoE capture gate not installed",
-                exc_info=True,
-            )
-        # DSV4-Flash DeepEP bf16 experts: under --moe-a2a-backend deepep the
-        # expert compute must go through the DTK deepgemm fork, whose fp8
-        # grouped GEMMs are per-channel-scale-only (R-04) while DSV4F experts
-        # are 128x128 block-scaled. SGLANG_HCU_EP_BF16=1 dequantizes the fp4->
-        # fp8 experts one step further to bf16 so the runner's weight-dtype
-        # branch takes the validated bf16 masked/contiguous arms; pair with
-        # --deepep-dispatcher-output-dtype bf16. TP-only servers (env unset)
-        # are untouched.
-        try:
-            from hcu_adapter import dsv4_ep_bf16
-
-            dsv4_ep_bf16.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: dsv4_ep_bf16 (DeepEP bf16 experts) not installed",
-                exc_info=True,
-            )
         # tvm-ffi fp8 dtype aliasing for the DSV4 JIT MoE activation kernels
         # (silu_and_mul_{masked,contig}_post_quant): the kernels declare the
         # fp8 output as uint8; CUDA torch fp8 tensors present as uint8 through
@@ -212,23 +181,6 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: jit fp8 ffi alias not installed", exc_info=True
-            )
-        # Speculative-decode prepare H2D pinned ring: eagle_prepare_for_decode
-        # ships the per-request KV-lens CPU tensors with .to(non_blocking=True),
-        # which torch silently downgrades to a blocking copy for pageable
-        # memory -- stream-ordered behind the WAR-chained previous forward, the
-        # scheduler host thread stalls a full pipeline per spec decode step
-        # (DSV4F MTP nmz16: py-spy 12/12 at eagle_utils.py:1150, 1.29 s/step at
-        # bs1 vs ~0.4 s GPU, linear in batch). A pinned 8-deep ring makes the
-        # copy a true async DMA. Integer metadata only; HCU_SPEC_H2D_PIN=0 off.
-        try:
-            from hcu_adapter import spec_h2d_pin
-
-            spec_h2d_pin.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: spec_h2d_pin (spec H2D pinned ring) not installed",
-                exc_info=True,
             )
         # JIT build progress reporter: one stderr/journal line per real ninja
         # compile (compiling/built/FAILED) so a cold 35-module JIT storm is
@@ -397,18 +349,6 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: jit fp8-quant patch not installed", exc_info=True
-            )
-        # DSV4 fp4->fp8 expert dequant: cast_e2m1fn_to_e4m3fn keeps the (1,32)
-        # scale grid while weight_block_size stays [32,32] -- align the MoE's
-        # advertised block shape so the W8A8 block path doesn't assert.
-        try:
-            from hcu_adapter import dsv4_fp4_dequant_blockshape
-
-            dsv4_fp4_dequant_blockshape.install()
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: fp4-dequant block-shape patch not installed",
-                exc_info=True,
             )
         # R-09(2/3): aiter per-token fp8 quant vendor tier -- rowwise wrapper
         # NameError fix (HIP has no sgl_per_token_quant_fp8), group plain arm
@@ -2748,27 +2688,6 @@ def install() -> None:
                 exc_info=True,
             )
 
-        # 10.9. DSV4 wqkv_a CT-int8 scale fuse (2026-10-26, nmz16 dsv41f
-        #      Channel-INT4-w4a8): the v0522 load_weights fuse branch catches
-        #      .weight / .weight_scale_inv / .qweight but NOT the CT INT8
-        #      per-channel .weight_scale -- the DAS w4a8 attn scales are
-        #      dropped ("not found in params_dict") and wqkv_a dequantizes
-        #      with an uninitialized scale (boot-fine, numerics-garbage).
-        #      Idempotent needle; disabling the fuse is NOT a workaround (the
-        #      name-mapped group targets only match the fused wqkv_a name).
-        #      Knob: HCU_DSV4_WQKV_SCALE = 1 (default) | 0.
-        try:
-            from hcu_adapter import dsv4_wqkv_scale_patch as _dwsp
-
-            _dwsp.install()
-        except ImportError:
-            pass
-        except Exception:
-            logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: dsv4 wqkv_a scale-fuse patch not installed",
-                exc_info=True,
-            )
-
         # 11. Prefill context-parallel bridge (2026-10-12): stock v0.5.21
         #     validate_prefill_cp_platform rejects HIP outright; HCU_PREFILL_CP=1
         #     (opt-in) opens the gate so the upstream CP machinery (zigzag/
@@ -3159,3 +3078,49 @@ def install() -> None:
                     "HCU adapter: spec-loc safe routing not installed",
                     exc_info=True,
                 )
+
+        # DSV4 CT-int8 q/kv scales must use the existing fused loader arm.
+        # Extend its endswith arguments at runtime after operator/vendor setup.
+        try:
+            from hcu_adapter import dsv4_wqkv_scale_patch
+
+            dsv4_wqkv_scale_patch.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: DSV4 CT scale loader not installed", exc_info=True,
+            )
+
+        # Import quantization only after operator/vendor setup. The original
+        # loader receives a private cast interface; community files stay intact.
+        try:
+            from hcu_adapter import fp4_expert_load
+
+            fp4_expert_load.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: FP4 expert runtime loader not installed", exc_info=True,
+            )
+
+        # Import speculative scheduling only after operator/vendor setup.
+        # Private metadata allocation preserves community source and aliases.
+        try:
+            from hcu_adapter import spec_h2d_pin
+
+            spec_h2d_pin.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: speculative pinned metadata not installed", exc_info=True,
+            )
+
+        # Install the model-method binding only after operator/vendor bridges
+        # are ready. This imports the community class and retains existing
+        # aliases of forward; no early model scan or disk patch is needed.
+        try:
+            from hcu_adapter import moe_dualstream_gate
+
+            moe_dualstream_gate.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: dual-stream MoE capture gate not installed",
+                exc_info=True,
+            )

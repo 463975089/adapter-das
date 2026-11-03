@@ -13,9 +13,9 @@ import tempfile
 from typing import Any, Mapping
 
 try:
-    from tools.l15_runtime import check_outcomes, preflight, test_env, write_json
+    from tools.l15_runtime import audit_source, check_outcomes, preflight, test_env, write_json
 except ModuleNotFoundError:
-    from l15_runtime import check_outcomes, preflight, test_env, write_json
+    from l15_runtime import audit_source, check_outcomes, preflight, test_env, write_json
 
 SCHEMA_VERSION = 1
 FAMILIES = {"dense", "mla", "moe", "quantization", "mamba"}
@@ -176,7 +176,9 @@ def run(document: Mapping[str, Any], up_tree: Path, adapter_root: Path, selected
             all_passed = all_passed and passed
             results.append({"family": family["id"], "case_id": case["id"], "kind": kind, "argv": argv, "returncode": returncode, "timed_out": timed_out, "passed": passed, "stdout": stdout, "stderr": stderr, "outcomes": outcomes, "coverage": case.get("coverage", "gpu-contract")})
             print(f"L1.5 matrix: {family['id']}/{case['id']} {'PASS' if passed else 'FAIL'}")
-    artifact = {"schema_version": 1, "artifact": "l15-family-matrix-run", "manifest_id": document["manifest_id"], "runtime": runtime, "families": sorted(selected), "passed": all_passed, "results": results}
+    integrity = audit_source(up_tree, runtime["upstream"]["commit"])
+    all_passed = all_passed and integrity["passed"]
+    artifact = {"schema_version": 1, "artifact": "l15-family-matrix-run", "manifest_id": document["manifest_id"], "runtime": runtime, "families": sorted(selected), "passed": all_passed, "results": results, "source_integrity_after": integrity}
     out.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{out.name}.", dir=str(out.parent))
     try:
@@ -221,6 +223,7 @@ def main() -> int:
             write_json(args.out.resolve(), {
                 "schema_version": 1, "artifact": "l15-family-matrix-run",
                 "passed": False, "error": str(exc), "results": [],
+                "source_integrity": getattr(exc, "report", None),
             })
         print(f"L1.5 family matrix ERROR: {exc}", file=sys.stderr)
         return 2

@@ -1,74 +1,83 @@
-"""TP init-broadcast payload fix — on-disk text patch (governance §3 tier-3,
-allowlisted entry "dist_broadcast").
+"""Writable TP broadcast buffers without changing community source files.
 
-`common.broadcast_pyobj` wraps `np.frombuffer(serialized_data, ...)` in
-`torch.ByteTensor(...)`. torch 2.11 routes numpy inputs through DLPack;
-numpy 1.25's buffers are read-only and cannot signal that flag ->
-`BufferError: Cannot export readonly array...`. In-memory module rebinds
-(exec'd fresh module objects) proved racy against spawn'd scheduler
-children whose tp_worker binds the function before install runs, so — like
-the JIT kernel-source patches — this edits the source file on disk once and
-lets every subsequent import (main process + all children) compile the
-patched body. The writable `.copy()` is exactly what NVIDIA's torch/numpy
-combos do implicitly (their numpy build hands torch a copy).
+Torch's numpy/DLPack path cannot consume numpy's read-only view of pickle
+bytes. Give only broadcast_pyobj a private numpy facade which copies such
+views. Keep the community function body and distributed protocol unchanged.
 
-Idempotent: re-running finds the patched marker and skips.
+The function object itself is retained: common's package re-export and any
+earlier ``from ... import broadcast_pyobj`` aliases see the repair as well.
+Each spawned interpreter installs its own bridge during normal bootstrap.
 """
 
+import inspect
 import logging
-import pathlib
-import py_compile
+import threading
+import types
 
 LOG = logging.getLogger("hcu.adapter")
+_LOCK = threading.RLock()
+_DISPATCH = "_hcu_dist_broadcast_impl"
+_MARKER = "_hcu_dist_broadcast_original"
 
-_NEEDLE = (
-    "torch.ByteTensor(\n"
-    "                np.frombuffer(serialized_data, dtype=np.uint8)\n"
-    "            )"
-)
-_REPLACE = (
-    "torch.ByteTensor(\n"
-    "                np.frombuffer(serialized_data, dtype=np.uint8).copy()\n"
-    "            )"
-)
+
+class _WritableBuffers:
+    def __init__(self, numpy):
+        self._numpy = numpy
+
+    def __getattr__(self, name):
+        return getattr(self._numpy, name)
+
+    def frombuffer(self, *args, **kwargs):
+        array = self._numpy.frombuffer(*args, **kwargs)
+        return array if array.flags.writeable else array.copy()
+
+
+def _broadcast(*args, **kwargs):
+    # Installed on the original function, whose globals hold this dispatch
+    # binding. No process-wide numpy/Torch patching or source recompilation.
+    return _hcu_dist_broadcast_impl(*args, **kwargs)
+
+
+def _install_function(function):
+    """Retain cached aliases, defaults and introspection of a Python entry."""
+    with _LOCK:
+        if not isinstance(function, types.FunctionType) or function.__closure__:
+            raise RuntimeError("dist_bc: expected a closure-free Python broadcast_pyobj")
+        if hasattr(function, _MARKER):
+            if (function.__code__ is not _broadcast.__code__
+                    or function.__globals__.get(_DISPATCH) is not getattr(function, _MARKER)):
+                raise RuntimeError("dist_bc: broadcast binding changed after installation")
+            return function
+        names = function.__code__.co_names
+        numpy = function.__globals__.get("np")
+        if "np" not in names or "frombuffer" not in names or numpy is None:
+            raise RuntimeError("dist_bc: broadcast numpy buffer contract changed upstream")
+        if _DISPATCH in function.__globals__:
+            raise RuntimeError("dist_bc: private broadcast dispatch binding already exists")
+        signature = inspect.signature(function)
+        namespace = dict(function.__globals__, np=_WritableBuffers(numpy))
+        original = types.FunctionType(
+            function.__code__, namespace, function.__name__,
+            function.__defaults__, function.__closure__,
+        )
+        original.__kwdefaults__ = function.__kwdefaults__
+        function.__globals__[_DISPATCH] = original
+        function.__signature__ = signature
+        setattr(function, _MARKER, original)
+        function.__code__ = _broadcast.__code__
+        return function
 
 
 def install():
-    import hcu_adapter.registry as _reg
+    from hcu_adapter import registry
+    import sglang.srt.utils.common as common
 
-    import sglang.srt.utils.common as _probe  # locate the source file
-
-    src_path = pathlib.Path(_probe.__file__)
-    src = src_path.read_text(encoding="utf-8")
-    if "np.frombuffer(serialized_data, dtype=np.uint8).copy()" in src:
-        pass  # already patched
-    else:
-        if _NEEDLE not in src:
-            raise RuntimeError(
-                "dist_bc: needle not found in common.py -- upstream changed; "
-                "re-derive the patch point (governance §3)"
-            )
-        from hcu_adapter.atomic_io import atomic_write
-
-        atomic_write(src_path, src.replace(_NEEDLE, _REPLACE, 1))
-        # invalidate the cached bytecode so children recompile
-        pyc = src_path.with_suffix(".pyc")
-        cache_dir = src_path.parent / "__pycache__"
-        if cache_dir.exists():
-            for p in cache_dir.glob(src_path.stem + ".*.pyc"):
-                p.unlink(missing_ok=True)
-        try:
-            py_compile.compile(str(src_path), doraise=True)
-        except py_compile.PyCompileError:
-            pass  # compile-at-import will surface real errors if any
-
-    _reg.register(
+    _install_function(common.broadcast_pyobj)
+    registry.register(
         "dist_broadcast",
-        _REPLACE,
-        target=f"text:{src_path}::broadcast_pyobj",
-        mechanism=_reg.MECH_TEXT,
-        detail=_NEEDLE,
+        "writable-numpy-broadcast-buffer",
+        target="sglang.srt.utils.common.broadcast_pyobj",
+        mechanism=registry.MECH_REBIND,
+        detail="private numpy facade; existing function aliases retained; no source writes",
     )
-    LOG.warning(
-        "HCU adapter: broadcast_pyobj frombuffer copy on-disk patch ensured"
-    )
+    LOG.warning("HCU adapter: broadcast_pyobj writable buffer runtime bridge installed")

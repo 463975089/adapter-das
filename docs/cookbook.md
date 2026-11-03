@@ -1,5 +1,12 @@
 # HCU sglang 启动 Cookbook（已验证配方）
 
+后续模型启动验证优先参考 [HYGON-AI/inference-cookbook-das](https://github.com/HYGON-AI/inference-cookbook-das)
+中的对应模型、框架及 HCU 卡型配方（用户于 2026-11-03 指定）。
+验证时记录所用 cookbook commit、脚本路径、镜像/框架版本与实际参数；
+结合当前社区 SGLang 源码 + adapter 环境调整路径和资源配置，以实际启动、
+生成结果判定是否通过。cookbook 的已验证标记不直接作为当前 adapter 组合的通过证据。
+下文保留本仓库历史配方与环境记录。
+
 所有配方均在 **nmz26 验证容器（容器名仅作环境记录）+ 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（主线）** 实测通过（GLM-5-W4A8 在 nmz18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
 
 ## 0. 公共环境（每个配方都带）

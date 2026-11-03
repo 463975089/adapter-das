@@ -17,92 +17,91 @@ WeigthsMapper rewrites the group targets to ``self_attn.(?:wqkv_a|wq_b)``
 so the unfused names have no scheme either — disabling the fuse does NOT
 dodge this, it makes wq_a/wkv fully unquantized instead).
 
-Platform-independent upstream gap (CUDA serves this checkpoint family
-with the same dropped scales); this needle holds the line until an
-upstream PR lands. Gate: ``HCU_DSV4_WQKV_SCALE=0`` skips.
+Platform-independent upstream gap. The runtime bridge extends only the two
+existing str.endswith arguments to tuples accepted by that same API. The
+original bytecode, lazy weight iterator, filtering, fusion and parameter
+loading stay in use. No source reads, recompilation or file writes.
+Gate: HCU_DSV4_WQKV_SCALE=0 skips installation.
 """
 
+import dis
+import inspect
 import logging
-import os
-import pathlib
-import tempfile
+import threading
+import types
 
 LOG = logging.getLogger("hcu.adapter")
-
-_NEEDLE = (
-    '                                    or name.endswith(".wq_a.weight_scale_inv")\n'
-    '                                    or name.endswith(".wkv.weight")\n'
-    '                                    or name.endswith(".wkv.weight_scale_inv")'
-)
-
-_REPL = (
-    '                                    or name.endswith(".wq_a.weight_scale_inv")\n'
-    '                                    or name.endswith(".wq_a.weight_scale")  # HCU dsv4_wqkv_scale: CT int8 per-channel scale\n'
-    '                                    or name.endswith(".wkv.weight")\n'
-    '                                    or name.endswith(".wkv.weight_scale_inv")\n'
-    '                                    or name.endswith(".wkv.weight_scale")  # HCU dsv4_wqkv_scale: CT int8 per-channel scale'
-)
-
-_DETAIL = "dsv4 wqkv_a fuse: accept CT int8 per-channel .weight_scale shards"
+_LOCK = threading.RLock()
+_MARKER = "_hcu_ct_wqkv_scale_codes"
+_SUFFIXES = {
+    ".wq_a.weight_scale_inv": ".wq_a.weight_scale",
+    ".wkv.weight_scale_inv": ".wkv.weight_scale",
+}
 
 
-def _atomic_write(path: pathlib.Path, text: str) -> None:
-    d = tempfile.mkdtemp(dir=str(path.parent), prefix=".dsv4_ws_")
-    try:
-        tmp = pathlib.Path(d) / path.name
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(str(tmp), str(path))
-    finally:
-        try:
-            os.rmdir(d)
-        except OSError:
-            pass
+def _check_suffix(code, suffix):
+    instructions = list(dis.get_instructions(code))
+    sites = [i for i, op in enumerate(instructions)
+             if op.opname == "LOAD_CONST" and op.argval == suffix]
+    if len(sites) != 1:
+        raise RuntimeError("dsv4_wqkv_scale: upstream suffix site changed")
+    i = sites[0]
+    if (i < 2 or instructions[i - 1].opname not in ("LOAD_METHOD", "LOAD_ATTR")
+            or instructions[i - 1].argval != "endswith"
+            or instructions[i - 2].opname != "LOAD_FAST"
+            or instructions[i - 2].argval != "name"):
+        raise RuntimeError("dsv4_wqkv_scale: suffix is no longer a name.endswith argument")
+    call = instructions[i + 1]
+    if call.opname not in ("CALL_METHOD", "PRECALL", "CALL") or call.arg != 1:
+        raise RuntimeError("dsv4_wqkv_scale: upstream endswith call arguments changed")
 
 
-def _apply(text: str) -> str:
-    """Pure transform (test surface): idempotent needle patch.
-
-    Already-patched or upstream-refactored-around-marker -> input
-    unchanged; genuine needle drift -> RuntimeError (governance §3).
-    """
-    if _REPL in text:
-        return text
-    if _NEEDLE not in text:
-        if "HCU dsv4_wqkv_scale" in text:
-            return text  # our marker present: upstream PR landed / refactored
-        raise RuntimeError(
-            "dsv4_wqkv_scale_patch: needle missing in deepseek_v4.py --"
-            " upstream changed; re-derive (governance §3)"
-        )
-    return text.replace(_NEEDLE, _REPL, 1)
+def _install_function(function):
+    with _LOCK:
+        if not isinstance(function, types.FunctionType) or function.__closure__:
+            raise RuntimeError("dsv4_wqkv_scale: expected closure-free load_weights")
+        if hasattr(function, _MARKER):
+            original, adapted = getattr(function, _MARKER)
+            if function.__code__ is not adapted:
+                raise RuntimeError("dsv4_wqkv_scale: loader changed after installation")
+            return function
+        parameters = inspect.signature(function).parameters
+        if (list(parameters) != ["self", "weights", "is_nextn"]
+                or parameters["is_nextn"].default is not False
+                or any(p.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD
+                       for p in parameters.values())
+                or any(parameters[n].default is not inspect.Parameter.empty
+                       for n in ("self", "weights"))):
+            raise RuntimeError("dsv4_wqkv_scale: upstream loader signature changed")
+        original = function.__code__
+        replacements = {}
+        for old, extra in _SUFFIXES.items():
+            _check_suffix(original, old)
+            if extra in original.co_consts:
+                _check_suffix(original, extra)  # community may already support it
+            else:
+                replacements[old] = (old, extra)
+        adapted = original.replace(co_consts=tuple(
+            replacements.get(value, value) if isinstance(value, str) else value
+            for value in original.co_consts
+        )) if replacements else original
+        setattr(function, _MARKER, (original, adapted))
+        function.__code__ = adapted
+        return function
 
 
 def install():
-    from hcu_adapter import hcu_env
+    from . import hcu_env, registry
 
     if not hcu_env.enabled("HCU_DSV4_WQKV_SCALE"):
         return
+    import sglang.srt.models.deepseek_v4 as model
 
-    import sglang.kernels.jit as _jit_root
-    import hcu_adapter.registry as _reg
-
-    pkg_root = pathlib.Path(_jit_root.__file__).parents[2]
-    p = pkg_root / "srt" / "models" / "deepseek_v4.py"
-    if not p.exists():
-        LOG.info("dsv4_wqkv_scale_patch: deepseek_v4.py absent; skip")
-        return
-    text = p.read_text(encoding="utf-8")
-    new = _apply(text)
-    if new != text:
-        _atomic_write(p, new)
-        LOG.warning(
-            "HCU adapter: dsv4 wqkv_a scale-fuse patch installed (CT int8 "
-            ".weight_scale shards now fused; HCU_DSV4_WQKV_SCALE=0 to skip)"
-        )
-    _reg.register(
-        "platform_detect",
-        "dsv4-wqkv-scale-fuse",
-        target="text:sglang/srt/models/deepseek_v4.py",
-        mechanism=_reg.MECH_TEXT,
-        detail=_DETAIL,
+    _install_function(model.DeepseekV4ForCausalLM.load_weights)
+    registry.register(
+        "platform_detect", "dsv4-wqkv-scale-fuse",
+        target="sglang.srt.models.deepseek_v4.DeepseekV4ForCausalLM.load_weights",
+        mechanism=registry.MECH_REBIND,
+        detail="extend two str.endswith argument tuples; original loader and aliases retained; no source writes",
     )
+    LOG.warning("HCU adapter: DSV4 CT-int8 wqkv scale loading adapted at runtime")

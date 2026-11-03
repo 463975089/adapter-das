@@ -54,11 +54,6 @@ TEXT_PATCH_ALLOWLIST = {
     # portable equivalents at JIT-source-read time.
     ("rotary_embedding", "  __syncwarp();  // to avoid warp divergence"),
     ("rotary_embedding", "      const auto [x0, x1] = cast<fp32x2_t>(input_vec_x[j]);"),
-    # torch2.11 exports numpy arrays through DLPack; numpy 1.25 cannot signal
-    # the read-only flag, so the frombuffer payload must be a writable copy
-    # before ByteTensor construction (source-level: every import path binds
-    # the patched body).
-    ("dist_broadcast", "torch.ByteTensor(\n                np.frombuffer(serialized_data, dtype=np.uint8)\n            )"),
     # JIT per-token-group-quant fp8: the CUDA DTypeTrait<fp8>::kFloatMax
     # member is compiled out under USE_ROCM; the HIP-side packed convert is
     # not the CUDA intrinsic. Repoint the clamp constant at the literal
@@ -172,52 +167,6 @@ TEXT_PATCH_ALLOWLIST = {
     # per the tree's own lora JIT convention) — DSV4-Flash decode graph
     # capture, nmz16 gfx938 2026-10-20. See hcu_adapter/jit_dpskmeta.py.
     ("platform_detect", "#include <cub/block/block_scan.cuh>"),
-    # python-tree text patches (needle == register detail, governance §3):
-    # capture-mode dual-stream MoE HIP gate (deepseek_v2.py, eebddcb; the
-    # file patch applies before this register call, so a missing allowlist
-    # entry only costs the banner -- fixed retroactively here) and the
-    # DSV4F DeepEP bf16 experts dequant hook (fp8.py, method-top guard).
-    ("platform_detect", "capture-mode dual-stream MoE gated off on real HIP"),
-    # dsv4 wqkv_a fuse branch (deepseek_v4.py load_weights) catches fp8
-    # .weight_scale_inv + GGUF .qweight but not the compressed-tensors INT8
-    # per-channel .weight_scale: DAS w4a8 attn scales dropped, wqkv_a
-    # dequantizes with uninitialized scale. nmz16 2026-10-26; upstream gap
-    # on every platform. See hcu_adapter/dsv4_wqkv_scale_patch.py.
-    (
-        "platform_detect",
-        "dsv4 wqkv_a fuse: accept CT int8 per-channel .weight_scale shards",
-    ),
-    (
-        "platform_detect",
-        "SGLANG_HCU_EP_BF16=1: fp4 routed experts dequantized to "
-        "bf16 at load (DTK deepgemm fork fp8 grouped GEMMs are "
-        "per-channel-scale-only per R-04); pair with "
-        "--deepep-dispatcher-output-dtype bf16.",
-    ),
-    # DSV4.1-Flash SGLANG_DSV4_FP4_DEQUANT route: cast_e2m1fn_to_e4m3fn
-    # requantizes the mxfp4 experts into [128,128] fp8 blocks, but the
-    # plain-else dequant arm leaves weight_block_size at the checkpoint
-    # [32,32], so the triton/aiter W8A8 block path asserts on scale rows
-    # (gfx938 nmz26 2026-10-21, V4.1-Flash dp8ep8+dspark a2a=none). Op is
-    # platform_detect to share the fp8.py target with the bf16 sibling
-    # above (one target, one op). See
-    # hcu_adapter/dsv4_fp4_dequant_blockshape.py.
-    (
-        "platform_detect",
-        "weight_block_size=[128,128] after FP4->FP8 expert dequant",
-    ),
-    # spec-decode prepare H2D pinned ring (eagle_utils.py): pageable
-    # non_blocking .to() blocks the host behind the WAR-chained forward, a
-    # full-pipeline stall per spec decode step (DSV4F MTP nmz16, py-spy
-    # 12/12 at eagle_utils.py:1150).
-    (
-        "platform_detect",
-        "spec-decode prepare_for_decode KV-lens H2D via persistent pinned "
-        "ring: torch non_blocking is a no-op for pageable memory, so the "
-        "stock .to() blocks the host behind the WAR-chained previous "
-        "forward -- a full-pipeline stall per spec decode step (py-spy "
-        "12/12, DTK 2026-10-21).",
-    ),
     # same file, Phase-1/2 hand scans: mask-form shuffles undeclared on DTK;
     # width=32 HIP forms keep the exact CUDA 32-lane warp segmentation.
     ("platform_detect", "uint32_t y = __shfl_up_sync(0xffffffff, v, o);"),
