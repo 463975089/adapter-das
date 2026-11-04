@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Route sglang v0.5.22 layernorm JIT faces to adapter-owned HCU kernels."""
 
 from __future__ import annotations

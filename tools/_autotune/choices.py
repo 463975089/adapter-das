@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Per-op tier judge map + ladder-descent semantics for --autotune.
 
 This module is the tool's OPINION layer: for every catalog op it declares

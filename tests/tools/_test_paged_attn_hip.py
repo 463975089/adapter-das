@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HIP C++ paged-decode kernel: numerics + A/B vs the triton decode face.
 
 Same contract/tests as _test_paged_attn_triton.py decode rows:

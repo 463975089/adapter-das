@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Triton w8a8 block-scaled fp8 grouped GEMMs for the DeepEP layouts.
 
 The DTK deepgemm fork's fp8 grouped kernels are per-channel-scale-only with

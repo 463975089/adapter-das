@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Sampling ops for the §0.5 is_cuda semantics — torch reference tier.
 
 On the is_cuda route upstream sglang imports its sampler from

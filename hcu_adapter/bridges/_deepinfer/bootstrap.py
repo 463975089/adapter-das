@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """One explicit HCU installer and lazy propagation to spawned CP workers.
 
 The import hook itself imports only stdlib/glue. Heavy providers are installed

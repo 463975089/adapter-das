@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """DSV4 MoE silu-clamp x per-token-group-128 fp8 quant, fused in ONE triton kernel.
 
 Production pair on HIP (dsv41f decode, triton fused_moe route): adapter triton

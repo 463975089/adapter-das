@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Sampler verification kernels for the pinned tilelang_ops sampler/sum_smaller_probs contracts.
 
 Anchors: deepinfer tilelang_ops/sampler.py::{prepare_verification_metadata,expand_sampling_params,

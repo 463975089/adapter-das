@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Explicit CPU QDQ reference for the validated CT channel-FP8 Qwen3 format.
 
 Use the independent Transformers/compressed-tensors implementation, checking

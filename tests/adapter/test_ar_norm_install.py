@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """AR+RMSNorm install idempotence for legacy and v0.5.22 seams."""
 
 import sys

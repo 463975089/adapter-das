@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Patch flashinfer math.cuh PTX bodies for GCN (HCU/DTK) builds.
 
 The pinned flashinfer commit (bc29697b) ships exactly ten `asm volatile`

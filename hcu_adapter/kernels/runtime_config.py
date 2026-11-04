@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Host-side DeepGEMM/TileKernels runtime knobs with the pinned vendor contract.
 
 No numerics. Anchors: DeepGEMM csrc/runtime/runtime.hpp:78-87 (num SMs),

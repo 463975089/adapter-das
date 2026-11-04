@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """`fast_hadamard_transform` (NVIDIA CUDA extension) adapter for HCU.
 
 sglang's DSA indexer (`dsa_indexer.py: rotate_activation`, the NSA core)

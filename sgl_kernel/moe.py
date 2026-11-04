@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """MoE routing and dispatch ops mirroring sgl_kernel's moe API.
 
 v1 strategy: topk_softmax / topk_sigmoid / moe_fused_gate / moe_align_block_size /

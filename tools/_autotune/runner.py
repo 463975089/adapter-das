@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """--autotune runner: three-gate tier picking + the two artifacts.
 
 Per op, backends walk the op's ladder (choices.py) through three gates:

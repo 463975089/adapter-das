@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # GLM-5.3-Flash Phase A baseline: TP8, sglang v0.5.21 + adapter 67176fc
 # Model: native fp8 (dynamic), hybrid mamba/NSA-MQA + MoE, page 256
 export PYTHONPATH=/work/hcu_t2:/work/sglang-v0521/python

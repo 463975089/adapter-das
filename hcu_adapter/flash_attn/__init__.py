@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """`flash_attn` / FA3 (flash-attention package) adapter for HCU.
 
 sglang's FA3 loading path (`sglang.kernels.ops.attention.flash_attention_v3`)

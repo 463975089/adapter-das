@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Cross-framework bootstrap guard ordering and isolation.
 
 Run: python3 -m pytest -q tests/adapter/test_common_bridge.py

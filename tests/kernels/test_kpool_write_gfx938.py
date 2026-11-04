@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Regression gate for the DSA kpool index-K write path (gfx938).
 
 The 2026-10-15 wave around these kernels ended with the *probe* being wrong:

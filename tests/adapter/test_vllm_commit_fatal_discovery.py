@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Real built fixture metadata and official plugin lifecycle; CPU only.
 
 Run from an environment with this Adapter wheel's entry point installed.

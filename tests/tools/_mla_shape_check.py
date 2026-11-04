@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """One-token MLA forward parity: dequant-to-bf16 reference vs real weights.
 
 Loads layer-7 attention weights from GLM-5-W4A8_V2_6 (q_a/q_b/kv_a/kv_b/o_proj,

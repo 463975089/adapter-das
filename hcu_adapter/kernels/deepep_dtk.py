@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HCU DeepEP v1 communication with the pinned v2 expanded-token contract.
 
 Numerical transforms live here, independent of deepinfer. Only an explicitly

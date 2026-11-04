@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """fp8_utils.bmm_fp8 bridge — MLA absorb fp8 batched GEMM without flashinfer.
 
 Upstream `gemm.bmm_fp8` KernelSpec targets

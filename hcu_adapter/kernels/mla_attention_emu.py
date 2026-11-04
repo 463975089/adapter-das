@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """FlashMLA fused norm + RoPE + sparse attention + O-RoPE + FP8 cast (prefill) on HCU.
 
 Contract: vendor FlashMLA flash_mla/fused_norm_rope_attn_rope_cast.py::prefill and

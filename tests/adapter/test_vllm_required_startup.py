@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Exercise the real runtime callback and extension host with injected discovery."""
 from dataclasses import dataclass
 import os

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # EP low_latency (DeepEP deepep_ll) is_cuda form on bw7 gfx936.
 # Validated 2026-10-13 (Qwen3-30B-A3B TP2+EP2 GPU6+7, :30197, 5/5 anchors +
 # 6/6 concurrent zero cross-talk).

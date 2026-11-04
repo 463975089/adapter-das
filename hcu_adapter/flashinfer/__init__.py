@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """`flashinfer` (NVIDIA attention/decoding library) adapter for HCU.
 
 sglang imports flashinfer eagerly behind `is_flashinfer_available()` checks in

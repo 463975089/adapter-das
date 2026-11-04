@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """DeepGEMM's existing switches must reach the real installer.
 
 CPU plumbing only: a clean interpreter with fake vendor/kernel providers

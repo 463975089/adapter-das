@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """flash_mla (HCU emu) contract tests against a dense einsum reference.
 
 The emu must agree with a plain masked-GEMM reference for:

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Multi-backend staged execution facade（门面） for attention-row transform + paged KV store, mirroring the pinned CUDA kernel.
 
 Stage semantics follow tilelang_ops/cuda/fused_transform.py @774ce24: each

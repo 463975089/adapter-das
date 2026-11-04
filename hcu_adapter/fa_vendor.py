@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """fa3 attention -> DTK flash_attn wheel router (§0.5 route tier-② vendor).
 
 The bw7/bw6 images ship the DTK-maintained ``flash_attn`` wheel (2.8.4,

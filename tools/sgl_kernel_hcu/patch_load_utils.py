@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Patch the aot python wrapper's op loader for our top-level .so layout.
 
 The stock `_load_architecture_specific_ops` in

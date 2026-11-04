@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Gate for the config-file backend layer (hcu_adapter.yaml).
 
 Covers: discovery, precedence (env > config > auto > default), loud

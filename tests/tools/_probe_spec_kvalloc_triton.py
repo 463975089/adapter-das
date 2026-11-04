@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Probe: do the spec KV-alloc triton kernels miscompile on DTK/gfx938?
 
 The sglang-das fork ships C++ hcu_ ports of exactly these kernels with

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # PD RDMA decode (GPU7, port 30196)
 python3 -c "import resource; resource.setrlimit(resource.RLIMIT_MEMLOCK, (-1,-1))" 2>/dev/null
 export PYTHONPATH=/root/hcu_t2:/root/sglang-v0521-src/python

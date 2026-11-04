@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Tombstone (2026-10-19): the HCU homegrown custom all-reduce is RETIRED.
 
 This module used to re-export the triton custom AR implementation

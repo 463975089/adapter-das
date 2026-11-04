@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """moe_c W4A16 vendor tier (2026-10-26, box16 dsv41f-INT4): regression pins.
 
 Pinned here at the pure-logic layer (torch tensors, no aiter / no sglang /

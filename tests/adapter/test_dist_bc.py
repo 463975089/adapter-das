@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Broadcast compatibility must preserve aliases, protocol and source bytes."""
 
 import importlib.util

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """serving 形状 fused MoE decode 微基准（GLM-5.3-Flash TP4 分片，stock triton）。
 
 E=288/N1=1024(shard 512)/N2=4096/K=4096/topk=8/block=128 —— 该形状不在 aiter

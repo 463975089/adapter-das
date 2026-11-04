@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Task73: Qwen3.5-4B MTP probe - semantic anchors + accept-length + throughput.
 
 Run inside the container against the MTP server (default :30082, pass a

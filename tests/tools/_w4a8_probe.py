@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Stage-by-stage error decomposition for fused_experts_w4a8.
 
 A) gemm1 (packed int4 x int8-a) vs fp32 dequant ref: gate half / up half

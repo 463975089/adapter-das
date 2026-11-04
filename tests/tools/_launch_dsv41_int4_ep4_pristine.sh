@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # DeepSeek-V4.1 INT4 W4A8 -> W4A16 DeepEP EP4 launch recipe.
 #
 # This script performs the pristine-source check before starting SGLang.

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Unified micro-bench harness for --autotune.
 
 One timing idiom for every op-tier pair (the repo's established

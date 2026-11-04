@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """causal_conv1d_update torch-emulator gate — §3.4b.
 
 The gfx938 triton kernel returns correlation noise (cos 0.26 vs the W=4

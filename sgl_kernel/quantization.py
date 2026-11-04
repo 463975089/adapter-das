@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """sgl_kernel.quantization — GGUF kernel surface (import closure, gap-listed).
 
 Upstream `sglang.srt.layers.quantization.gguf` imports these five symbols

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """MHC fused-stats HIP needle (needle-ized from the 2026-10-22 manual tree
 patches, four-gates-verified on nmz26 that night; tree pins kept the win but
 must not stay manual divergences).

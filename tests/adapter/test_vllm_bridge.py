@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """vLLM custom-op compatibility bridge used by the sglang host chain.
 
 Run: python3 -m pytest -q tests/adapter/test_vllm_bridge.py

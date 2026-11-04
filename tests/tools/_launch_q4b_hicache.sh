@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Task73: Qwen3.5-4B MTP + hicache (hierarchical KV cache) on HCU.
 # Small max-total-tokens forces LRU eviction so re-sent long prompts must be
 # fetched back from the host-memory pool (get_device_accessible_ptr path).

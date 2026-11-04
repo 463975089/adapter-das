@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Self-written triton paged-MQA logits (R-02 homegrown tier).
 
 Pool layout (2026-10-18 R-02 audit, final — writer census, nmz26 GPU4):

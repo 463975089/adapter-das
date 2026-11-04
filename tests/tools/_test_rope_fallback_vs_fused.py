@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Compare the three rope paths on HCU for qwen3 (neox) params:
   A) fused HIP kernel path (fused_qk_rope_reshape_and_cache) -- production
   B) plain fallback kernel (sgl_kernel.rotary_embedding, DTK triton) --

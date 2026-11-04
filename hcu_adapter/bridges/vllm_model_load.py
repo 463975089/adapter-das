@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Public vLLM lifecycle facade: resolved Worker coverage and admission only.
 
 The callback registry and synchronization live in framework-free model_load.

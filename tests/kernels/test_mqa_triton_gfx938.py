@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-02 parity gate: homegrown triton paged-MQA logits + the emu layout fix.
 
 Pool layout census (2026-10-18, nmz26 GPU4): GLM-5.3 (IndexerKPool,

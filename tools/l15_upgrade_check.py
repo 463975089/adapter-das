@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Serial upgrade workflow: static drift, strict components, real model smoke."""
 
 from __future__ import annotations

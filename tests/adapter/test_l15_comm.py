@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """CPU-only contract tests for tools/l15_comm.py."""
 
 from __future__ import annotations

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # GLM-5.3-Flash TP8 + MTP only (no dp-attention, no EP) — bisection arm:
 # dp8ep8+MTP serving was RED (garbage + accept 0.01-0.03). This run adds
 # ONLY MTP over the green TP4 recipe family (tp8 was green in Phase A).

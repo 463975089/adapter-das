@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Attention-backend availability gates at the registry seam.
 
 Two v0.5.21 backends construct fine but die on first use on HCU, and the

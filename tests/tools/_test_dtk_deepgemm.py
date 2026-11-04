@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """DTK deepgemm kernel-semantics regression probe (EP bridge triage).
 
 Run on a single GPU inside the DTK container:

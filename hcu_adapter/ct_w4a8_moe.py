@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """CT W4A8 MoE scheme 路由桥（nmz26 dsv41f Channel-INT4-w4a8，2026-10-26）。
 
 上游事实（v0522 compressed_tensors.py，nmz26 实树核对）：

@@ -3,6 +3,10 @@
 > 团队仓库：adapter-das（内网私仓；克隆地址与凭据走团队流程）。
 > 从镜像到跑通的手工部署看 [docs/bootstrap.md](docs/bootstrap.md)。
 
+**许可证与第三方声明**：本仓库以 Apache-2.0 发布（[LICENSE](LICENSE)）；
+引入的外部开源源码（flash-linear-attention、vLLM、causal-conv1d）与内部
+仓库移植清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 让宿主框架（**sglang / vLLM**）官方代码的 **python 部分零修改**、直接跑在
 海光 HCU（HCU/DTK，HIP 路径）上的适配层（adapter）。
 

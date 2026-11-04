@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-12: automatic bootstrap install-sequence regression pins（总装入口回归防护）.
 
 三行 sitecustomize 自动调用 hcu_adapter.bootstrap，后者先装 common 守卫，

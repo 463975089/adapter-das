@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-09 (3): aiter-backed per-token quant family for sglang fp8_kernel.
 
 Vendor tier behind ``HCU_QUANT_IMPL`` (auto/aiter/stock; auto = aiter on

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Real Adapter registration -> official FP8 family -> quantizer -> GEMM/Graph.
 
 No model, no forced kernel, no architecture/predicate changes. Prepared official

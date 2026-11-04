@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """GSM8K-100 concurrent eval against a live sglang server (HCU adapter).
 
 Reads the parquet test split, takes the first N=100 items, fires 16-way

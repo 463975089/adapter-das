@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """JIT dsa/fused_store_index_cache.cuh portability patch — HIP arm.
 
 Compiler-input transformation: _apply operates only on private adapter staging

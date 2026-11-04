@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """sgl_kernel.utils — architecture helper surface (§0.5 is_cuda route).
 
 Upstream modules import small arch predicates from the CUDA sgl-kernel

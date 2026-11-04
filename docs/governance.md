@@ -264,6 +264,14 @@ sglang 符号面，shim 妥协不进契约。
 历史豁免：本节生效前已合入的 merge commit 不追改；生效首个观察点是
 #27/#26。
 
+**源码文件头义务（2026-11-04 定，HYGON 开源合规 v1.7）**：新增源码文件
+（.py/.sh/.h/.cuh）一律带 HYGON 文件头两行（`Copyright (c) 2026 Hygon
+Information Technology Co., Ltd.` + `SPDX-License-Identifier: Apache-2.0`，
+shebang 之后）；移植/借源文件不加水头，改为登记
+[THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)（固定 commit + 许可证）。
+存量由 `tools/compliance/add_hygon_headers.py` 幂等补齐，复查口径见
+[docs/compliance/hygon-oss-v1.7.md](compliance/hygon-oss-v1.7.md)。
+
 ### 5.1 plugin 的演进轨迹（接入 → 上游化 → 退役）
 
 plugin 承载的"上游没有的新能力"（自研量化格式、新算子、新后端）不是终点

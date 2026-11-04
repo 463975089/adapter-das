@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """ct_w4a8_moe 路由桥契约（CPU 单测，任何机器；sglang 树不需要在场）。
 
 契约面：

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Performance grid: GDN aiter route vs the upstream triton fla kernels.
 
 Non-graph wall time per call (sync + perf_counter), the two rebind faces:

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """JIT per_token_group_quant.{cuh} HIP fp8 portability patch.
 
 Compiler-input transformation: _apply operates only on private adapter staging

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Atomic file write shared by the text-patch adapters.
 
 Every install() runs in up to 9 processes at once (parent + 8 TP scheduler

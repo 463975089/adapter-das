@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Numerics gate: GDN aiter route vs the upstream triton fla kernels.
 
 Findings baked in (2026-10-13): h and v_new are bit-exact (dh=dv=0) at

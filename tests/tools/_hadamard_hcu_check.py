@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Standalone check: fast_hadamard_transform stub vs slow torch reference."""
 import torch
 import sgl_kernel  # registers the meta-path stub

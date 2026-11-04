@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """fa3 varlen prefill face — homegrown triton kernel vs fp32 hand math + emu.
 
 sglang's fa3 backend routes ragged dense K/V (prefill extend, target

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """flash_attn (HCU emu, fa3 backend) contract tests against a dense CPU
 reference.
 

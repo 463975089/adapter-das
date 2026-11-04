@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """RMSNorm-family kernels (rmsnorm / gemma / fused-add), GPU contracts.
 
 Run on a node with a working GPU: `pytest tests/kernels/test_layernorm.py -v`.

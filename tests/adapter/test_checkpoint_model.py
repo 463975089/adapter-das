@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Composite checkpoint vocabulary must come from the actual text decoder."""
 
 from types import SimpleNamespace

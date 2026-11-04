@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """torch paged-MQA logits for the v0.5.21 DSA indexer (is_cuda semantic branch).
 
 Upstream call site (dsa_indexer.py, ``deep_gemm.fp8_paged_mqa_logits`` arm):

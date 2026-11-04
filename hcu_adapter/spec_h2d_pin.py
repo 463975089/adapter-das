@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Pinned speculative-decode metadata without changing community source.
 
 Only eagle_prepare_for_decode receives a private Torch facade. Its original

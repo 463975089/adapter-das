@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """W4A16 MoE bridge, moe_c tier: DTK aiter moe_c w4a16 marlin vendor GEMMs
 under the stock triton ``fused_experts`` face (box16 dsv41f-INT4, 2026-10-26).
 

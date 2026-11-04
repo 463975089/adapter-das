@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # MTP rig on bw7: Qwen3.5-27B (qwen3_5, 64L GDN hybrid, mtp_num_hidden_layers=1
 # draft embedded in the main shards -- no separate draft repo needed). TP2.
 # Validated 2026-10-13 (GPU4/5, :30199, 8/8 anchors, three CUDA graphs).

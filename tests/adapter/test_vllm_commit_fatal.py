@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Public activation/runtime contracts; CPU doubles and controlled actual fork."""
 
 import builtins

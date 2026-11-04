@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # L1 GPU gate -- numeric/kernel tier, runs INSIDE the HCU container
 # (torch + DTK stack + aiter/lightop wheels present).
 #

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Public two-hook transaction contracts, without importing torch or vLLM."""
 
 from functools import partial

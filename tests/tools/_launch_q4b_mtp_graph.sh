@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Task73: Qwen3.5-4B MTP (EAGLE) + cuda graph ON variant of _launch_q4b_mtp.sh
 # (chain spec keeps per-phase shapes static: 3x1-token draft, 4-token verify).
 export PYTHONPATH=/root/hcu_t2:/root/sglang-v0521-src/python

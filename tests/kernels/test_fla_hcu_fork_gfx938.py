@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Vendored sglang-das hcu kernels vs adapter emus — green gate (gfx938).
 
 Source: hcu_adapter/fla_hcu/* (fork maxiaobetter/sglang-das

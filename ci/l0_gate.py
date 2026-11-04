@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """L0 structural gate -- the no-GPU, no-deps, seconds-fast CI tier.
 
 Runs on any machine (cloud runner, laptop, container). Verifies

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Run the unmodified official CLI, then record its public Adapter reports.
 
 The test-only probe distribution is installed exclusively in the review venv.

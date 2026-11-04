@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """DSA top-k v2 fusion enablement for DeepSeek-V4.1 decode (HIP arms).
 
 2026-10-22 trace attribution (nmz26, torch-profiler decode20): the indexer

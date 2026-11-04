@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Four-gate all live servers: short-gen / semantic anchor / long-context.
 LOGD=/root/logs/model_suite
 probe() {  # $1 name, $2 port

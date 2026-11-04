@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Pytest plugin used by L1.5 runs to emit machine-readable per-node outcomes.
 
 Loaded explicitly with ``-p tools.l15_pytest_report``.  The output path is

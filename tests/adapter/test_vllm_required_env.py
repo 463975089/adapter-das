@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """CPU required-startup env governance; no model, device or provider execution.
 
 Run with HCU_ADAPTER_HOST=none and empty GPU visibility:

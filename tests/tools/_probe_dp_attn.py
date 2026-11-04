@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """DP-attention probe battery for the 30198 server (run INSIDE container).
 
 Judges: 4 semantic anchors, determinism rerun, 6-way concurrent

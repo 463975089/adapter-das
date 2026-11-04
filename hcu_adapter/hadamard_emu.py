@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """torch Hadamard transform for the DSA indexer rotate_activation (is_cuda arm).
 
 Upstream CUDA JIT kernel (sglang.kernels.ops.quantization.hadamard) compiles

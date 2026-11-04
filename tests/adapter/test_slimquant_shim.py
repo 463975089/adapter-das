@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Regression: the slimquant loader shim must stay format-gated.
 
 Commit 2685ffc root cause: `_SlimquantShard` dequantized every '.weight'

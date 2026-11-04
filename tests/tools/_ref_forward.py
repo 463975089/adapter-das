@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Pure-torch reference forward of GLM-5-W4A8_V2_6 on ONE GPU (TP1).
 
 Streams weights from NFS per layer, dequant on the fly:

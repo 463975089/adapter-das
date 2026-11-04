@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Paged attention (decode + wide-window prefill) — triton kernels
 (fa3-facing, tier-③ triton-first).
 

@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Import a cache payload produced by ci/cache_export.sh into this (cold)
 # container: instant JIT/triton hits instead of a full first-compile storm
 # (R-17 CI init-time control; bootstrap.md 4d). Keying rules live with the

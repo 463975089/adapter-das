@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Generic paged MLA attention (torch emulation) for the flashmla backend.
 
 `--attention-backend flashmla` tops out at

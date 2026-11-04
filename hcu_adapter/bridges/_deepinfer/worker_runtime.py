@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Explicit HIP worker policy, with opt-in graph capture and no NVIDIA PDL."""
 
 from functools import partial

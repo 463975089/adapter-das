@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Serve-time probe: which fp8 GEMM path + shapes does Qwen3-4B-Channel-FP8
 actually take? Run server with HCU_FP8_TRACE=1 in env via this wrapper's
 sitecustomize-level trace, then send one request and read /tmp/fp8_trace.log.

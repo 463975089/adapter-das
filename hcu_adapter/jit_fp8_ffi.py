@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Zero-copy FP8 output storage at the narrow tvm-ffi kernel boundary.
 
 Community kernels use uint8 storage for OCP e4m3 output. DTK DLPack exposes

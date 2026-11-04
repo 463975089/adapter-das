@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # launch_g53f_tp4_pinned.sh — NUMA 绑核变体（2026-10-16）
 # 映射经 torch PCI 总线 + 宿主 sysfs 核实（drm 卡号≠GPU 号！）：
 #   TP0 GPU4(bus e8) -> node7 112-127 | TP1 GPU5(bus c1) -> node5 80-87

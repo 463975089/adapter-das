@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Writable TP broadcast buffers without changing community source files.
 
 Torch's numpy/DLPack path cannot consume numpy's read-only view of pickle

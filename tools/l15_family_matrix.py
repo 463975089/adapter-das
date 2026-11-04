@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Validate and run the no-weight L1.5 Dense/MLA/MoE/Quant/Mamba matrix."""
 
 from __future__ import annotations

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # GLM-5.3-Flash bf16 TP8: wait for all-8-card window, launch + four-gate.
 # Priority insert per user: runs as soon as 8 cards are free. Single-card
 # validations on cards 0-3 (par suite) are expected to finish well before.

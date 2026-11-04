@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # prefill CP (attn-cp-size 2, zigzag) validated recipe -- nmz26 pr418_test
 # model: Qwen3-30B-A3B on GPU6,7; baseline = same model TP2 without CP.
 # 排查时可加: export HCU_PREFILL_CP_DEBUG=1 HCU_FA_EMU_DEBUG=1

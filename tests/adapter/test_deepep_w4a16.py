@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """DeepEP low-latency W4A16 routing contract.
 
 These tests stay on CPU and fake only the upstream class seam.  Numeric

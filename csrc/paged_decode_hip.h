@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+// SPDX-License-Identifier: Apache-2.0
+
 // Paged attention decode kernel (fa3-facing) — HIP C++ v3, token-serial.
 //
 // ONE workgroup (64 lanes) per (batch, kv-head); all G QA heads served from

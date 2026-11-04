@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """JIT build progress reporter pins (observability, no GPU / no sglang).
 
 The gate's cold-JIT storms must never look like a wedge again (2026-10-20

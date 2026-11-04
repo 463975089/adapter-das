@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """JIT patch correctness gates — gfx938 hipcc text-patch products.
 
 §3.4b hard gate: every operator/math-class text patch gets a ref-parity

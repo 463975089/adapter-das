@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Operator kill switches for fast precision triage (HCU adapter).
 
 High-risk vendor ops (custom all-reduce, flash attention, ...) fail in ways

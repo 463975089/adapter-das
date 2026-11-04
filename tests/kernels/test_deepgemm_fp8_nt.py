@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """fp8_gemm_nt DTK wrapper correctness gate — §3.4b.
 
 The DTK fork's ``fp8_gemm`` only honors per-row scales ([rows, 1]); given

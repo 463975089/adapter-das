@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """DSV4.1 sparse indexer triton-gate needle (nmz26/gfx938, 2026-10-22).
 
 ``sglang/srt/layers/attention/dsv4/dsv41_sparse.py`` gates its two fused

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Portable contracts for the vLLM optimization extension host.
 
 Run: HCU_ADAPTER_HOST=none python3 -m pytest -q \

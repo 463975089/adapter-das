@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Diff graph-arm vs eager-arm side-probe dumps (run inside container).
 
 Pairs the verify session replays (g7_r*) with the eager arm's verify call

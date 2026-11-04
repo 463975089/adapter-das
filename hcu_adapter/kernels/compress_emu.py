@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """KV compression state kernels for the pinned tilelang_ops/compress.py contracts.
 
 Anchor: deepinfer tilelang_ops/cuda/compress.py @774ce24. For each compressed

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Gated-activation kernels (silu/gelu family), GPU: contract vs torch ref.
 
 Run on a node with a working GPU: `pytest tests/kernels/test_elementwise.py -v`.

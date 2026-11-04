@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Vendor (DTK deepgemm wheel) paged MQA-logits bridge (R-02).
 
 The paged MQA logits path is a decode hot spot; the vec-emu (e70f45e) is

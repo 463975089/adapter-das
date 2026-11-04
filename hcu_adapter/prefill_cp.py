@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HCU prefill context-parallel (CP) bridge.
 
 sglang v0.5.21 ships full prefill-CP machinery (``srt/layers/cp``:

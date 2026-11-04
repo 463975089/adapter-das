@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Installed test provider exercising actual metadata, general plugins and spawn.
 
 Only HCU admission/platform selection are CPU doubles. Discovery, factories,

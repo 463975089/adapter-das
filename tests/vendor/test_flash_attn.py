@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Flash-attention vendor stress across the scenario matrix (HCU adapter).
 
 FA kernels break on FLEXIBLE shapes, not on the vendor's own unit-test

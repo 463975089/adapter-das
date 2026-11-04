@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """flash_mla_sparse_fwd emu numerical parity test (DSA decode sparse path).
 
 Builds a reference: for each query row pick topk token ids, gather from a

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Rotary embedding (neox layout), GPU contract vs elementwise reference.
 
 Layout regression fbc540c lived here: the cache split is half/half

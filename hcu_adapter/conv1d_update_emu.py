@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """causal_conv1d_update torch emulator — gfx938 stopgap.
 
 Third broken triton kernel found on DTK/gfx938 (after chunk_kda prefill):

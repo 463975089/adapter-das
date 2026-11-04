@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Offline C4 publication/failure contracts, separate from GPU acceptance.
 
 Run with HCU_ADAPTER_HOST=none HIP_VISIBLE_DEVICES='' and this checkout on

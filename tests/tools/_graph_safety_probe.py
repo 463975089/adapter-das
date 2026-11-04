@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """CUDA-graph safety probe for HCU bridge kernels (decode-shaped).
 
 For each bridge fn: capture a graph around it, then overwrite the INPUT

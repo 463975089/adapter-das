@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Environment detection and small shared helpers for the HCU sgl_kernel port.
 
 The package targets HCU (Hygon HCU, DTK/ROCm stack), where torch reports

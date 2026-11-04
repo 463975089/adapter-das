@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """LightOp MQA math with explicit V4.1 scale/cache and sparse-index bridges.
 
 Qualified MXFP4 layouts use the packed LightOp paged/sparse kernels found in

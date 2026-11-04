@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Full-model test: 8 greedy tokens with top-9 logprobs per position."""
 import json
 import sys

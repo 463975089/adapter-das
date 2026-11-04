@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 /* HCU/DTK build shim — flashinfer's utils_hip.cuh includes
  * <cuda_device_runtime_api.h> (CUDA dynamic-parallelism device API).

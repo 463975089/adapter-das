@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """CPU FP32 reference for real-checkpoint generation evidence.
 
 Run with HCU_ADAPTER_HOST=none and all GPUs hidden. This reports sampled-token

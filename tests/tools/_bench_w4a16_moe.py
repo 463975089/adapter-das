@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-05 bench: the deepgemm w4a16 MoE bridge vs the stock moe_wna16
 triton arm, same tensors, eager, single card.
 

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Compare community source bytes with an immutable Git commit.
 
 Unlike git status, this reads every tracked file and does not trust the index,

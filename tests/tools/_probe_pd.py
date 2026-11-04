@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """PD disaggregation probe: semantic anchors + determinism + long-prompt transfer.
 
 Usage: python _probe_pd.py [base_url]   (default http://127.0.0.1:30090)

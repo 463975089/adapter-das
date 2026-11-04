@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """W4A16 MoE bridge: DTK deepgemm masked w4a16 grouped GEMM under the
 stock ``MoeWNA16`` (moe_wna16) runner (R-05 implementation segment).
 

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Native UE8M0 weight-scale layout, matching tile-kernels 2.1.0 GPU ABI.
 
 This is a loading-time candidate, not a GEMM implementation. Four exponent

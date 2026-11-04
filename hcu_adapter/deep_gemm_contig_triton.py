@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Triton contiguous-layout grouped GEMM for DeepEP normal mode (bf16).
 
 The DTK deepgemm fork's ``m_grouped_bf16_gemm_nt_contiguous`` is broken on

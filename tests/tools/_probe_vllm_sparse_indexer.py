@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Bounded V4 indexer public-OOT experiment with real official metadata.
 
 Run from a matching v0.33 environment with HIP_VISIBLE_DEVICES=7,

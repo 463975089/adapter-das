@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """The scoped capture gate must preserve community forward dispatch semantics."""
 
 import ast

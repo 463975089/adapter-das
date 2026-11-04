@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 _probe_: same sweep on wide-context / narrow-extend shapes (long-ctx
 (512,4096),(256,2048) and fp8kv-extend (64,520),(1,33)). Census: the

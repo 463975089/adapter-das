@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-08 A-tier platform env defaults: semantics pin.
 
 platform_seam.platform_env_defaults() is pure os.environ.setdefault calls —

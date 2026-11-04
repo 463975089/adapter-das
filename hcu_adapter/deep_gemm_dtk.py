@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Alias the DTK ``deepgemm`` wheel as upstream ``deep_gemm`` (EP bridge).
 
 The DTK stack ships Hygon's deepgemm fork (2.1.0+dtk2604) under the

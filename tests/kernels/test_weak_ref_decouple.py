@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """weak_ref_tensor route + decoupling contract, run on a GPU node.
 
 The breakable prefill-graph capture path re-exports this symbol into

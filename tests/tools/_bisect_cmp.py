@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Layer-by-layer parity bisect: server dump vs reference dump.
 
 Server rows are (layer_idx, T, tensor); reference rows are plain tensors

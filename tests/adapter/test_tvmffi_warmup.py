@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """tvmffi_warmup 递归断路契约（CPU 单测，任何机器）。
 
 R-18 背景：tvm_ffi 冷缓存派构建子进程，子进程继承 PYTHONPATH 重进

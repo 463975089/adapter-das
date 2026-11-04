@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """CPU FP32/BF16 attribution on frozen, byte-bound HCU accuracy requests.
 
 This diagnostic does not change or replace the FP32 accuracy gate. Run in a

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Installed public mHC lifecycle/cache probe with CPU hardware-admission double.
 
 Run from outside the checkout using the candidate installed Python:

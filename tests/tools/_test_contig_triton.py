@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Unit gate for the triton contiguous grouped GEMM (DeepEP normal, bf16).
 
 Contract: d[m,:] = a[m,:] @ b[m_indices[m]].T with fp32 accumulate, bf16 io.

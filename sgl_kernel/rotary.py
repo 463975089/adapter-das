@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Rotary embedding kernel mirroring sgl_kernel.rotary_embedding (pos_enc.cu).
 
     rotary_embedding(positions, query, key, head_size, cos_sin_cache, is_neox)

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """KDA prefill (chunk_kda) CPU/GPU-torch emulator — gfx938 stopgap.
 
 The triton ``chunk_kda`` pipeline computes a wrong Aqk on gfx938 (noise

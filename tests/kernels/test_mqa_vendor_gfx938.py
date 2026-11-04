@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-02 watchtower: DTK deepgemm paged_mqa_logits vs the emu gold standard.
 
 Probe campaign 2026-10-18 (nmz26 GPU4, deterministic across repeats) pinned

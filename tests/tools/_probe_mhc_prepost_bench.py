@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """mHC pre/post 链 serving 形状计时 + dispatch 路径计数（HCU_MHC_UNFUSE 配套）。
 
 背景（2026-10-16）：mHC 融合已被 HCU_MHC_UNFUSE 关掉（gfx938 上 aiter 融合

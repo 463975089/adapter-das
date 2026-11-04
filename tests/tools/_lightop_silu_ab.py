@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """lightop silu vs adapter triton path: A/B parity + perf on HCU.
 
 Run inside the compute container (needs lightop + HCU):

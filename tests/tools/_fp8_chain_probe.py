@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """FP8 chain stage probe: quant -> scaled_mm vs fp32 reference (HCU).
 
 Mirrors Qwen3-4B-Channel-FP8 shapes (hidden 2560, inter 9728, heads 32);

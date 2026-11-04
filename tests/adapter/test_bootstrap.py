@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Multi-host bootstrap selection contracts.
 
 Run: python3 -m pytest -q tests/adapter/test_bootstrap.py

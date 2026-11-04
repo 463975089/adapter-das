@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """v4: plain 4D flash_attn_func vs varlen — isolate which path is broken."""
 import torch
 import torch.nn.functional as F

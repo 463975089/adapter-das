@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """setup_hcu.py — build sglang-kernel (sgl_kernel) for HCU/DTK.
 
 Derived from the das tree's setup_hip.py (the proven DTK recipe: no ROCm

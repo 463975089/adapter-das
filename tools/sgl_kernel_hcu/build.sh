@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Build sglang-kernel (sgl_kernel) for HCU/DTK from the official v0.5.22 aot
 # tree — no source-tree modification: everything happens in a workspace copy.
 #

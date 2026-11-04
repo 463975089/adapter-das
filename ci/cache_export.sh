@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Export warm sglang-JIT + triton caches from this container for cold-
 # container seeding (R-17 CI init-time control; bootstrap.md 4d). Caches
 # are ISA-keyed (gfx93x dir names) and tree-hash-keyed (build-<hash>), so

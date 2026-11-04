@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """int8_scaled_mm (per-token x per-channel INT8 GEMM), GPU contracts.
 
 Reference math: fp32 dequant (matmul in int8->i32 then scale) — same style

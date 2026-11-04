@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """gfx938-safe torch emulations for the DSA kpool index-K write kernels.
 
 The DTK triton stock mis-compiles the int64 scalar loads inside the real

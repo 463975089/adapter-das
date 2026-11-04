@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """moe_align_block_size: padding/cumsum contract + capture-safety on GPU.
 
 Capture/replay regression (527ad97, Qwen3.6-35B crash) is pinned by

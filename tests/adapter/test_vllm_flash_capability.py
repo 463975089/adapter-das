@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Explicit Flash must use a unique active process-local capability owner."""
 
 from types import ModuleType, SimpleNamespace

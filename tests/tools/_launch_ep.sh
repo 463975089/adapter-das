@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # EP (expert parallel) validation - DeepEP backend, Qwen3-30B-A3B (128 experts), EP2 on GPU6+7
 # Usage: _launch_ep.sh <normal|low_latency|auto> [port]
 MODE=$1

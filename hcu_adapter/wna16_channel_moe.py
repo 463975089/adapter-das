@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Channel-wise W4A16 packed MoE: kwarg rewrite so the stock triton GPTQ
 branch engages (box16 dsv41f-INT4 bring-up, 2026-10-24).
 

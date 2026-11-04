@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Factory manifest pinned to deepinfer 774ce24; missing kernels fail on call."""
 
 from hcu_adapter.bridges._deepinfer.tilelang_ops import (  # noqa: F401

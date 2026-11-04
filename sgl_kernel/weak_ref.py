@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """weak_ref_tensor — breakable-graph capture support (behavior restoration).
 
 Upstream sglang's `compilation.weak_ref_tensor` imports this symbol from

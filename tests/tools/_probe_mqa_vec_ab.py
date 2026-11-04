@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """MQA logits emu 对拍：loop（tile 循环参考）vs vec（全窗口单遍）。
 
 2026-10-17 图瘦身第一刀：decode 图 72% 节点来自 loop 形态的 32×~12 aten

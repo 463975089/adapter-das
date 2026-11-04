@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """JIT DSV4-family portability needles — DTK hipcc vs CUDA-isms.
 
 Compiler-input transformation: _apply operates only on private adapter staging

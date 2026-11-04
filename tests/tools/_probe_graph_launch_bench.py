@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """hipGraphLaunch 发射开销微基准（platform 诊断，无模型依赖）。
 
 背景（2026-10-16 nmz26 GLM-5.3-Flash TP4 decode 0.43s/步定性）：py-spy 实锤

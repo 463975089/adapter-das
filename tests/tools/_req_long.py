@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Long-prompt decode test: >index_topk(2048) tokens flips the DSA decode
 graph to the sparse variant. If long-prompt decode is coherent while the
 5-token prompt is not, the dense k-only decode graph is the culprit."""

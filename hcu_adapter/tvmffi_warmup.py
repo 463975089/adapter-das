@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """tvm-ffi torch dlpack 首编自递归 breaker（R-18 自动化；nmz26 2026-10-26）。
 
 tvm_ffi 首次 import 时若缓存缺失会派一个 python 构建子进程

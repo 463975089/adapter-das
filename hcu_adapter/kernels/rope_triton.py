@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Rotary embedding with the pinned TileKernels arithmetic (no deepinfer imports).
 
 Anchor: tile_kernels 2.1.0 transform/rope_cuda.py and deepinfer

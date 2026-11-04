@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Torch implementation of the existing norm contract."""
 
 def norm(x, out, weight, residual, residual_out, sf, extra_sf, origin, *,

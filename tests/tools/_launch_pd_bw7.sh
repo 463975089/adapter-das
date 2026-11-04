@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # PD disaggregation (mooncake_tcp, node-internal) is_cuda form on bw7 gfx936.
 # Validated 2026-10-13 (Qwen3-0.6B, GPU6=P 30190 / GPU7=D 30191 / mini-LB 30090,
 # 8/8 distinct-prompt zero cross-talk).

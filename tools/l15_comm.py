@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Run the adapter-owned L1.5-comm two-rank communication manifest.
 
 The runner accepts no arbitrary command fragments.  Every argv comes from a

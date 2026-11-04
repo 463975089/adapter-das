@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Probe: what does sglang.kernels selector see as platform on HCU?"""
 import torch
 

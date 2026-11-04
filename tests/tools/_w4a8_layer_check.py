@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Single-layer w4a8 MoE parity on HCU: packed-int4 kernel vs bf16 dequant ref.
 
 Loads one expert's real checkpoint tensors, runs:

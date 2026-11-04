@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Installed C4 lifecycle/cache contract with a CPU hardware-admission double.
 
 Run outside the checkout, using the installed candidate Python:

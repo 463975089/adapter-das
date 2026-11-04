@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """torch-native DSA top-k functions for sgl_kernel stub (HCU).
 
 sglang's DSA indexer defaults to the sgl-kernel topk backend; only

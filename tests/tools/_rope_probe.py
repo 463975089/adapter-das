@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Standalone rope parity: sglang RotaryEmbedding (is_neox=False) vs ref math.
 
 Uses the same config as GLM-5-W4A8: rope dim 64, interleave (neox off),

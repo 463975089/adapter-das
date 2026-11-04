@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Triton GCN PDL stripper — gfx936 assembler compatibility.
 
 is_cuda semantics let upstream kernels enable Programmatic Dependent Launch

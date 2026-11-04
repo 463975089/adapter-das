@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """rmsnorm bridge sanity: sgl_kernel.rmsnorm + our fused_add bridge vs torch."""
 import os
 import sys

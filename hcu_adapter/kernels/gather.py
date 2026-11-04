@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Backend facade（门面）: Validation and backend selection for gather; no numerical implementation."""
 
 from .gather_emu import gather as _torch_gather

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """tests/adapter/test_registry.py -- registry + dump unit tests (CPU, no GPU).
 
 Covers docs/governance.md §2/§4 machine-side contracts:

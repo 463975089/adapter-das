@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """2-rank NCCL all_gather_into_tensor sanity on HCU (torch.distributed).
 
 Mimics zigzag._all_gather_reorganized shapes: rank0 sends 4 rows, rank1

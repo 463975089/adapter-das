@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Channel-wise int4 MoE kwarg rewrite (2026-10-25): regression pins.
 
 box16 dsv41f-INT4 bring-up conviction: compressed-tensors pack-quantized

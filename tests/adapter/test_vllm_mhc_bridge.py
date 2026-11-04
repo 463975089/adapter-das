@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Offline mHC publication/failure contracts; real installed/GPU probes separate.
 
 Run: HIP_VISIBLE_DEVICES='' HCU_ADAPTER_HOST=none python -m pytest

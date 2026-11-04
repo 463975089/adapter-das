@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """W8 linear-layer scale semantics probe (GLM-5-W4A8_V2_6).
 
 Q1 (internal): dequant'd W8 weights must be bounded like a quantized tensor —

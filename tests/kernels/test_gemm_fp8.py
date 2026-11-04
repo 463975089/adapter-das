@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """fp8_scaled_mm (row-scaled A x col-scaled B FP8 GEMM), GPU contracts.
 
 Official-op parity reference follows sglang/kernels/aot/tests/test_fp8_gemm.py

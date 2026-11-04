@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """EP low_latency 6-way concurrent zero-cross-talk battery (run INSIDE container).
 
 Validated 2026-10-13: 6/6 against the :30197 LL rig.

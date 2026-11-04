@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-09 (1): aiter fused all-reduce + RMSNorm seam for sglang layernorm.
 
 Upstream v0.5.21 carries the whole fused AR+RMSNorm machinery, but its

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Route KDA prefill / conv1d to the vendored sglang-das hcu triton kernels.
 
 Parity vs the adapter emus (gfx938, T=2048/8192 serving shapes, gate:

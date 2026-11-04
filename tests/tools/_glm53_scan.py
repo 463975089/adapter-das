@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 import json
 
 p = ("/models/GLM-5.3-Flash-CHANNEL-INT4-w4a8-v3-same-as-iter_0033200/"

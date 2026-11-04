@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # PD RDMA prefill (GPU6, port 30195) - mooncake RDMA transport (RoCE)
 # MUST be started via `docker exec --privileged`: CAP_IPC_LOCK exempts RDMA
 # memlock accounting (container default memlock=64MB otherwise ENOMEM on CQ).

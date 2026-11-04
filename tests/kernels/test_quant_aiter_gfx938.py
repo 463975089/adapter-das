@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-09(2/3) gate: aiter per-token fp8 quant tier (quant_aiter bridge).
 
 Pins, through the UPSTREAM module surface (what real consumers call):

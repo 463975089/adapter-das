@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Bounded real official FP8 provider/changed-input Graph validation, no model.
 
 Run with HIP_VISIBLE_DEVICES=3, PYTHONPATH empty, prepared official vLLM venv.

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HCU draft router, matching SGLang's V4.1 Triton score/selection path.
 
 Reference: sglang 7b91060ae3ef5e112048988da6f4f673cf4b6a89,

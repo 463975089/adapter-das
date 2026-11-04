@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Greedy 12-token generation with the pure-torch reference forward.
 Reuses _ref_forward.py's machinery by importing it in a controlled way.
 """

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Request-boundary state snapshot probe (R-01/R-06 carrier localization).
 
 2026-10-18 forensics: eager prefill non-determinism is CROSS-REQUEST state

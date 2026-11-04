@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Probe 2: does per-token-GROUP activation quant rescue w4a8 accuracy?
 
 Simulates the quantized chain in pure torch (same math as the kernel):

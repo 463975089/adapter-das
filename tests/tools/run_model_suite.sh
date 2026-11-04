@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Model-suite batch runner: wait for a free HCU, then validate each model in
 # docs/models.md, one at a time, four-gate each (launch/generation/precision/
 # long-context). State + logs under /root/logs/model_suite.

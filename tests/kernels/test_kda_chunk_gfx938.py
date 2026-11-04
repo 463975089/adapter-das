@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """chunk_kda (KDA/Glm5Next linear-attention PREFILL) gfx938 parity gate — §3.4b.
 
 FAILING GATE (kept red until the kernel is fixed — do not skip).

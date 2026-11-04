@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 /* HCU/DTK build shim — flashinfer's _hip headers (vec_dtypes_hip.cuh)
  * #include <cuda_fp8.h> and use the CUDA spellings. DTK has no standalone

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Strict L1.5 HCU gate. Run inside the designated container on one visible GPU.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

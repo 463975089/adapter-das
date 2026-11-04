@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """INT8 scaled GEMM: `int8_scaled_mm` triton port of the official sgl-kernel op.
 
 Contract (mirrors torch.ops.sgl_kernel.int8_scaled_mm as called by

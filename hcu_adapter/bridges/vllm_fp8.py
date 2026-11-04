@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Register the existing official dense FP8 fallback on validated HCU hosts.
 
 No math, quantization, model or architecture impersonation lives here. Keep

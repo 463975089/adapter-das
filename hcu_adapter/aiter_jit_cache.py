@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """aiter JIT cache observability (boot line; new-env prewarm hookup).
 
 The DTK vendor wheel ships every aiter op prebuilt -- the JIT cache IS the

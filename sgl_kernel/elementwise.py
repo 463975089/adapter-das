@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Gated activation kernels: silu_and_mul / gelu_and_mul / gelu_tanh_and_mul.
 
 Mirrors the official sgl_kernel API so `sglang.kernels.ops.activation`

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """group-quant uint8 output bridge (sitecustomize) contract tests, run on a
 node with sglang importable and a working GPU.
 

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HCU adapter: gate DSV2/V4 capture-mode dual-stream MoE off on real HIP.
 
 ``DeepseekV2MoE.forward`` selects ``forward_normal_dual_stream`` ONLY under

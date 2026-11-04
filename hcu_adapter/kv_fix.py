@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """KV-pool stride tensor fix — text-patch (governance §3 tier-3, allowlisted).
 
 `memory_pool.py::_init_data_ptrs_and_strides` builds

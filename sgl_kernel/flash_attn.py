@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Paged MHA/GQA flash-attention emulation for the fa3 backend.
 
 sglang v0.5.21's ``--attention-backend fa3`` resolves to

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Render BACKEND_CATALOG into docs/tier-matrix.md (the tier panorama).
 
 Answers "which op has which tier, which tier is missing, at what status"

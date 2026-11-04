@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Vendor-stub registration entry — the only torch-importing package front.
 
 Importing this module loads the aiter / flashinfer / flash_attn / hadamard

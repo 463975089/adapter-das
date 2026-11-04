@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Interactive config builder for the HCU adapter.
 
 Prompts op by op, lists each selectable backend with its gate status,

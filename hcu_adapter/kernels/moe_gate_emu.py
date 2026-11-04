@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """MoE routing gate (sqrtsoftplus top-k) per the pinned TileKernels / DeepGEMM contracts.
 
 Anchors: tile_kernels 2.1.0 torch/topk.py::moe_topk_gate_forward (reference) and

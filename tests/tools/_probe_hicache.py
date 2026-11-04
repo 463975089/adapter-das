@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Task73: hicache eviction/reload probe.
 
 Fill the small GPU pool (max-total-tokens 2048) with four ~600-token stories

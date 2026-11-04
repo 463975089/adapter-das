@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Packed Indexer bridges to the LightOp kernels observed in SGLang traces.
 
 Q/K stay MXFP4 here. Only byte layout and logical-to-physical indices change.

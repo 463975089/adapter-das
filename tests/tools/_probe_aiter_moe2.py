@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Kernel gate: DTK aiter fused-MoE entry points vs torch reference.
 
 Lines:

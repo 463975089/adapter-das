@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """vendored sglang-das hcu 内核 vs adapter emu —— A/B 对拍 + 微基准（gfx938）。
 
 参考侧（gfx938 已知正确）：

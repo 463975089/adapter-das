@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Generic health ABI/lifecycle regressions; no Torch, provider or GPU work."""
 from dataclasses import asdict, fields, replace
 import functools

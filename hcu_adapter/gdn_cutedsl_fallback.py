@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HCU compatibility route for CuTeDSL GDN MTP verify kernels.
 
 The CuTeDSL kernels currently fail in the HCU toolchain during lowering

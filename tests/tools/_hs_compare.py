@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Compare server per-layer hidden states vs reference dump.
 
 Mode inspect: send request, print structure of hidden_states field.

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """EP low_latency / PD / single-stream probe battery for bw7 rigs.
 
 Anchors stop at 5 for the LL 30B rig (:30197); pass a different base URL for

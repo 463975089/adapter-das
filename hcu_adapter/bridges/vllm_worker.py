@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Thin official Worker subclass; runner/loader bodies remain upstream-owned."""
 
 from vllm.config import set_current_vllm_config

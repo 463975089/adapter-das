@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Sampling kernels for the pinned tilelang_ops fused_sample / random_sampling contracts.
 
 Anchors: deepinfer tilelang_ops/fused_sample.py::fused_sample_ref and

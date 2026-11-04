@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Runtime implementation registry — who is actually serving each op.
 
 # The catalog (hcu_config.BACKEND_CATALOG) declares what CAN be selected;

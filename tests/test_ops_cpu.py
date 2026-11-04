@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Sanity tests that pass on any machine (CPU-only included).
 
 They exercise the non-triton (pure torch) paths and the packaging surface;

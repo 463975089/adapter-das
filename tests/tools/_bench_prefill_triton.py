@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Performance probe: paged prefill, triton kernel vs the emu.
 
 Non-graph wall time per call, bs=4/H=16/Hk=4/D=128 (GQA-4, close to the

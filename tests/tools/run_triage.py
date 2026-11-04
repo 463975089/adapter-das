@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Four-stage precision triage for the HCU adapter (fast op localization).
 
 When a run shows precision symptoms (garbled decode, divergence vs eager,

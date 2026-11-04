@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """EP auto-mode probe battery for the 30193 server (run INSIDE container).
 
 auto = prefill DeepEP normal (triton contiguous grouped GEMM) + decode

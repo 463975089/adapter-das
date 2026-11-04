@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """CLI evidence driver import is inert; no official CLI, model or GPU is run.
 
 Run: HCU_ADAPTER_HOST=none python -m pytest -q tests/adapter/test_required_cli_probe_import.py

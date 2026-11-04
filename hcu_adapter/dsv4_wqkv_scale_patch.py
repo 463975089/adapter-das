@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HCU adapter: fuse the CT int8 per-channel scales into wqkv_a (DSV4).
 
 v0522 ``deepseek_v4.py`` load_weights fuses checkpoint ``wq_a``/``wkv``

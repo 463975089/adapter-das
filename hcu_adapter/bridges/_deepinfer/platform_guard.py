@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """SM100-only platform answers that HCU must replace (governance §0.5 guardrail list).
 
 deep_cluster.hardware.get_bf16_tflops_limit raises for anything but SM100 /

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # GLM-5.3-Flash TP8 watchdog: wait until ALL 8 HCUs have >=40GiB free, then
 # launch (bf16 306G, page_size=256 recipe from nmz18 rounds) + four-gate.
 export LD_LIBRARY_PATH=/opt/dtk/.hyhal/rocm_smi/lib:$LD_LIBRARY_PATH

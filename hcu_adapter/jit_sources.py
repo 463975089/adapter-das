@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Immutable HIP compiler inputs, outside the community SGLang source tree.
 
 Only csrc/include assets are staged, never SGLang Python modules. Portability

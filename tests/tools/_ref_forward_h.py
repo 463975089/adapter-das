@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Reference forward with per-layer hidden-state dump (for server bisect).
 
 NL_OVERWRITE env: truncate num_hidden_layers (user-endorsed fast iteration).

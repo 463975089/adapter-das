@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """
 _probe_: fa_varlen_triton BLOCK_M/BLOCK_N/num_warps sweep on the serving
 shape (bs8 Lq512 Lk4096 H32 Hk8 D128). Census: BM=64/BN=64/W=4 optimal;

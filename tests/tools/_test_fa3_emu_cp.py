@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Standalone CP-shape test for the HCU fa3 emu flash_attn_with_kvcache.
 
 Mimics exactly what sglang v0.5.21 zigzag CP does per attention layer

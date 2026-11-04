@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """New public pair at actual Worker/runner boundaries; CPU provider doubles."""
 
 from types import SimpleNamespace as NS

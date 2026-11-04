@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Determinism deep-dive for 30193 EP-auto: where exactly do reruns diverge,
 and is the long-prompt answer stable across reruns?"""
 

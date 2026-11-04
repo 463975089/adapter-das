@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """R-20 parity gate: homegrown triton RAGGED MQA logits vs the torch emu.
 
 The C4 nonpaged plan (dsv4/indexer.py:_nonpaged_mqa_logits ->

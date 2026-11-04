@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """triton extra.cuda libdevice -> hcu/hip redirect (is_cuda semantics gap).
 
 With §0.5 is_cuda semantics, upstream kernels import

@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # bisection: R1-L4 WITHOUT speculative decoding, same mixed attention pair
 # (prefill=fa3 emu incl. MLA qv path, decode=flashmla emu). If output is
 # garbage -> the qv prefill math is wrong; if clean -> spec plumbing.

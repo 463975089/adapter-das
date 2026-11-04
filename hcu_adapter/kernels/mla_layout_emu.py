@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Byte-preserving FlashMLA projection permutations, pinned to vendor 2e5429f."""
 
 import torch

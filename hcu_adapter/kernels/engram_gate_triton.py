@@ -1,4 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
+# Modified by HYGON (adapter-das): see module docstring for the port source.
 """SGLang HCU Engram inference gate, with DeepInfer's pre-fused FP32 weight.
 
 Adapted from HYGON-AI/sglang-das at 7b91060ae3ef5e112048988da6f4f673cf4b6a89,

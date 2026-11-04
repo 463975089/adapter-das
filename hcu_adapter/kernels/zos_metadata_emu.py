@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Decode-step metadata kernels for the pinned ZOS tilelang_ops contracts (device-only).
 
 Anchors: deepinfer tilelang_ops/{prepare_v4_decode_metadata,gather_input_ids_zos,

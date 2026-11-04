@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """box16 bring-up env guards (2026-10-25): regression pins.
 
 Three auto-adaptations born from the box16 stall-campaign bring-up, each

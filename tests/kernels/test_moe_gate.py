@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """MoE gate kernels (topk_softmax / moe_fused_gate), GPU contracts vs torch.
 
 Run on a node with a working GPU: `pytest tests/kernels/test_moe_gate.py -v`.

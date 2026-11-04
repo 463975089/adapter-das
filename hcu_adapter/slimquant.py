@@ -1,3 +1,7 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+# Contains a Triton kernel ported from HYGON's internal lmslim operator
+# library (see THIRD_PARTY_NOTICES.md).
 """slimquant_w4a8 checkpoint support (GLM-5-W4A8_V2_6, GLM-5.2-Channel-INT4-w4a8).
 
 Checkpoint format, reverse-engineered from weight headers under /public/share

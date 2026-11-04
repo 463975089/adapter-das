@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Explicit installation at the upstream CUDA backend package seam.
 
 The official ops dispatcher and interface modules execute unchanged. This is

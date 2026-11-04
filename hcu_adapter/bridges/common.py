@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Cross-framework guards that must run before a host imports GPU stacks."""
 
 from __future__ import annotations

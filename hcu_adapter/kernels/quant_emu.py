@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Finite FP8/FP4 inference subset of the pinned tile-kernels cast contracts.
 
 Anchors (tile_kernels 2.1.0): quant/common.py::get_sf_and_inv (UE8M0 bin via

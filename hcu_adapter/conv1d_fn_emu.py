@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """causal_conv1d_fn torch emulator — gfx938 stopgap (prefill varlen arm).
 
 The DTK triton `_causal_conv1d_fwd_kernel` miscompiles on gfx938: with

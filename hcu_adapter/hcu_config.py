@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Config-file backend selection for the HCU adapter (deployment tier).
 
 The adapter exposes several operators from more than one source (our

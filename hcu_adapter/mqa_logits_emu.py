@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """torch emulation of the aiter fp8 MQA-logits kernels (HCU gfx936-class).
 
 The DTK aiter wheel's paged/ragged MQA-logits triton kernels hard-gate on

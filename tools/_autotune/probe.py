@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Target-machine platform probe for --autotune.
 
 Builds the machine picture the tier picker reasons over. Reuses the

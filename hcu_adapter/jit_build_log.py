@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """JIT build progress reporter — one line per real ninja compile.
 
 A cold JIT storm (35 modules, ~5 min each, retry x3 on the broken ones)

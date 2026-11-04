@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Correctness-first import surface for optional sparse FlashAttention.
 
 Community attention test kits import this module while enumerating backends,

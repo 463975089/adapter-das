@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """RMSNorm family: rmsnorm / fused_add_rmsnorm / gemma variants.
 
 Mirrors the official sgl_kernel signatures consumed by sglang's layernorm

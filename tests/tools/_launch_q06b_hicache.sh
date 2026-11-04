@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Task73: dense-model hicache isolation test - Qwen3-0.6B has no GDN layers,
 # so a PASS here means the FULL-component host write-back/read-back is correct
 # and any Qwen3.5-4B (GDN hybrid) drift is pinned to the MAMBA state fallback.

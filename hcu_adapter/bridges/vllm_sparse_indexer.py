@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """C4 indexer ABI glue over public vLLM metadata and official numerical helpers.
 
 Opt-in compatibility for real gfx936/v0.33. Imports stay framework-free until

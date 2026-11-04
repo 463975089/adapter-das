@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """NCCL_TOPO_FILE card-count mismatch guard (box16 4-proc fatality, 2026-10-25).
 
 Team images preset NCCL_TOPO_FILE to the box's full-8-card topology XML

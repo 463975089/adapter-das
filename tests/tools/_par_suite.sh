@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # Parallel single-card suite v2: official v0.5.21 + adapter, version logged.
 # Lineup follows user guidance: fp8/int8/int4 first (bf16 only as small anchor).
 export LD_LIBRARY_PATH=/opt/dtk/.hyhal/rocm_smi/lib:$LD_LIBRARY_PATH

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """sgl_kernel — HCU triton port of the sgl_kernel AOT kernel backend.
 
 Drop-in replacement for the official sgl-kernel wheel on HCU (Hygon HCU,

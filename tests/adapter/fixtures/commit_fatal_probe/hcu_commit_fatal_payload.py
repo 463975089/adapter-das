@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """A real quant-config pickle payload; never creates weights or a model."""
 
 from vllm.model_executor.layers.quantization.base_config import QuantizationConfig

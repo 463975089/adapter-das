@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Community FP4 expert loading through runtime interfaces, without writes.
 
 The DTK DeepEP grouped-FP8 path accepts per-channel scales, while the DSV4

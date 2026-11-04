@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Distributed aiter custom-all-reduce stress worker (HCU adapter).
 
 Run by tests/vendor/test_allreduce.py via torchrun (>=2 ranks), with

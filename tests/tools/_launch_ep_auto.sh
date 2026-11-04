@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # EP auto mode (prefill normal contiguous + decode low_latency) - Qwen3-30B-A3B
 # TP2+EP2 on GPU4+5, triton contiguous grouped GEMM via HCU_TRITON_CONTIG=1 (default)
 export PYTHONPATH=/root/hcu_t2:/root/sglang-v0521-src/python

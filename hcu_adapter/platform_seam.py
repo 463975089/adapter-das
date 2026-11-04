@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Platform-semantics seam — governance §0.5 is_cuda 路线的落地点.
 
 adapter 统一以 CUDA 语义回答上游 sglang 的平台判定，让新模型/新功能

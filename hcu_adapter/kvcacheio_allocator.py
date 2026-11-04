@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """HCU paged allocator routing and SGLang Triton compatibility fallbacks.
 
 The shadow ``sgl_kernel`` package owns the public import surface.  This

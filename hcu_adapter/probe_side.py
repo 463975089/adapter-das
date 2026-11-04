@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """In-graph side-buffer probe for the fa3 emu boundary in serving CUDA graphs.
 
 Motivation (2026-10-18, GLM-5.3-Flash TP8+MTP): prefill-verify spec mode

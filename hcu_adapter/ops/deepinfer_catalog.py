@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Combined catalog for the DeepInfer host bridge."""
 
 from .deepinfer_compute_catalog import BACKEND_CATALOG as COMPUTE_CATALOG

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """vec 形态 graph-replay 病理复现：eager vs 图内 replay vs 预分配 out= 版。
 
 serving 现象：vec 在图内 replay 时最大 aten 算子 ~124-130ms，eager 仅

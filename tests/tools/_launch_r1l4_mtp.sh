@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # R1-L4-MTP NEXTN speculative decoding on nmz26 GPU6
 # target: prefill=fa3 emu (attempt), decode/verify=flashmla emu; draft=nextn layer4
 # fallback if fa3-MLA prefill fails: --prefill-attention-backend triton

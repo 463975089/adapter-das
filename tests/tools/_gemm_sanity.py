@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """GEMM accuracy sanity on current DTK/torch stack.
 
 Checks bf16 and fp32 matmul rel error vs fp64 CPU reference for shapes

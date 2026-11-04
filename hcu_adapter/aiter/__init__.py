@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """`aiter` (AMD ROCm kernel library) adapter for HCU.
 
 The DTK vendor wheel ports most triton kernels to HCU, so `_base.LibStubFinder`

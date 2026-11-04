@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Single-HCU real Engine startup/generation, dummy and checkpoint evidence split."""
 
 from __future__ import annotations

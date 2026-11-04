@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Real v0.32/v0.33 Worker/Wrapper/executor/runner APIs, CPU provider doubles.
 
 No copied method bodies, GPU initialization, checkpoints, or engine compilation.

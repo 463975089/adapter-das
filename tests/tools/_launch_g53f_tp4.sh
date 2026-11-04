@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # GLM-5.3-Flash (/models/glm53f) TP4 production recipe — nmz26 container
 # g53-tp8, GPU4-7, port 30187, log /root/logs/srv_g53f_tp4.log
 # stack: dtk26041 + torch 2.11 + official sglang v0.5.21 + adapter (hcu_t2)

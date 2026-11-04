@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """sglang-das HCU fla kernels, vendored for the adapter (gfx938).
 
 Source: maxiaobetter/sglang-das branch main_glm53_flash_feature_cleanup_tx.

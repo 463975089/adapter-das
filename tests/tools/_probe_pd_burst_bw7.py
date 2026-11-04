@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """PD zero-cross-talk battery (bw7 is_cuda form, run INSIDE the container).
 
 Fire 8 concurrent requests through the mini-LB (:30090), each asking a

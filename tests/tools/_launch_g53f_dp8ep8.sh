@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 # GLM-5.3-Flash dp8ep8 + dp-attention, NO MTP — deliver the dp/EP perf arm.
 # MTP red on stock v0.5.21 (accept 0.01, hidden drift; das env-gated spec
 # cache-loc patches absent here) — filed separately, do not mix variables.

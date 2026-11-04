@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Wave10 parity gate: single-CTA fused small-shape moe_align vs the quartet.
 
 The decode step calls moe_align_block_size 44x (40 main layers + 4 draft)

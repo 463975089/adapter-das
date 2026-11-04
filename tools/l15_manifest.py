@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Versioned L1.5 upstream-test manifest tooling.
 
 The tool never edits the upstream tree.  It validates adapter-owned JSON,

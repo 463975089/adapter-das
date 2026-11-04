@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Kernel gate v2: DTK aiter fused-MoE at REAL model shapes (Qwen3-30B-A3B
 per-rank dims) vs vectorized torch reference.
 

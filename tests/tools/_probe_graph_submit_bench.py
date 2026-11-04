@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """graph 提交路径微基准（DTK runtime 诊断，单卡，~2 分钟）。
 
 回答四个问题（2026-10-16 nmz26 gfx938 dtk26041 实测结论写在每节）：

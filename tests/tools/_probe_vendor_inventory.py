@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Inventory the operator surfaces of the three backend sources on HCU:
 our sgl_kernel (triton), vendor aiter (DTK), vendor lightop (DTK 0.6.0).
 

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+# SPDX-License-Identifier: Apache-2.0
+
 """Sparse FlashMLA forward (torch emulation) for the DSA backends.
 
 `dsa_backend._forward_flashmla_sparse` (decode/extend sparse attention over
