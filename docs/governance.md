@@ -174,7 +174,7 @@ sglang 符号面，shim 妥协不进契约。
 1. **具体实现文件 = `<op>[_<变体>]_<tier>`**，tier 词表封闭：
    `emu`（torch 直算/仿真臂）· `triton`（自研 triton）· `cpp`（C++ JIT）·
    `fork`（vendor 源码 fork 承接）· `ref`（诊断参照，位置约束见 §2）；
-   vendor 库绑定安装器用**库名**：`aiter` / `lightop` / `dtk` / `rccl`（通信库）。
+   vendor 库绑定安装器用**库名**：`aiter` / `lightop` / `boltops` / `dtk` / `rccl`（通信库）。
    例：`conv1d_update_emu` · `mqa_logits_triton` · `paged_attn_cpp` ·
    `quant_aiter` · `deep_gemm_dtk`。**平台词（hip/cuda/rocm）不算档位**，
    禁作实现后缀。
