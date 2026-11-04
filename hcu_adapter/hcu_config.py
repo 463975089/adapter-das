@@ -56,6 +56,14 @@ class HcuConfigError(RuntimeError):
 # backends   selectable backend -> {status, note}
 
 BACKEND_CATALOG = {
+    "vllm_mhc": {
+        "var": "HCU_VLLM_MHC_IMPL",
+        "summary": "vLLM 0.33 mHC compatibility; official Torch math via public OOT",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Default unchanged upstream; diagnostic rollback, known gfx936 pre/fused failures"},
+            "torch": {"status": "candidate", "note": "Opt-in gfx936 official pre/post and public IR RMS; post/head unchanged; installed/model gates pending"},
+        },
+    },
     "vllm_fp8_linear": {
         "var": None,
         "summary": "vLLM official dense FP8 fallback via public linear registration",

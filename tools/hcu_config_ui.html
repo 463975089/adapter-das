@@ -208,6 +208,7 @@
 /*==PURE-BEGIN*/
 // ---- BACKEND_CATALOG snapshot (hcu_config.py, 2026-10-14). default = first prod entry.
 const CATALOG = {
+  "vllm_mhc": {"var": "HCU_VLLM_MHC_IMPL", "summary": "vLLM 0.33 official Torch mHC via public OOT", "backends": {"stock": {"s": "candidate", "n": "Default unchanged upstream; known gfx936 failures"}, "torch": {"s": "candidate", "n": "Opt-in gfx936 official pre/post + IR RMS; model/installed gates pending"}}},
   "vllm_fp8_linear": {"var": null, "summary": "vLLM official dense FP8 fallback via public linear registration", "backends": {"official-triton": {"s": "validated", "n": "gfx936 only: official TritonFP8ScaledMMLinearKernel last priority; nonunit tensor/token/channel scales, BF16/FP16 bias and changed-input Graph; native Torch remains unsupported; gfx938 unvalidated. Disable with VLLM_DISABLED_KERNELS=TritonFP8ScaledMMLinearKernel."}}},
   "silu_and_mul": {"var": "HCU_SILU_MUL_IMPL", "summary": "gated activation out = silu(x[:,:d]) * x[:,d:]", "backends": {"triton": {"s": "production", "n": "default (auto); fp32 accumulate"}, "lightop": {"s": "validated", "n": "lightop.fuse_silu_and_mul (input, output, mask_m, expect_m)"}, "torch": {"s": "production", "n": "reference path, eager debug"}}},
   "rms_norm": {"var": "HCU_RMS_NORM_IMPL", "summary": "RMSNorm; fused_add_rmsnorm/gemma variants stay triton", "backends": {"triton": {"s": "production", "n": "default"}, "aiter": {"s": "candidate", "n": "aiter.rmsnorm_forward(x,w,eps,training) -> (out, ..); plain rmsnorm only"}, "torch": {"s": "production", "n": "reference path"}}},

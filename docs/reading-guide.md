@@ -130,3 +130,6 @@ moe_align capture 崩（527ad97）。金索引法：docs/models.md 备注列 + c
   规则↔governance）由 L0 兜底，其余靠 review。
 - 每份文档表头的"失效信号"列即自查清单：改到相关代码时顺手核对。
 - 本导读的"30 秒路由"表新增文档时必须加行。
+
+
+vLLM 0.33 mHC 行为适配候选：`docs/frameworks/vllm033-mhc.md`；数学委托官方 Torch，公开 OOT 注册归宿主桥，post/head 保留，完整四维及模型门禁未闭合。

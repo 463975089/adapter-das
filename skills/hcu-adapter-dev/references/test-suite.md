@@ -27,6 +27,17 @@ API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug
 
 ## 四质量维度
 
+vLLM mHC 安装态生命周期探针为 `tests/tools/_probe_vllm_mhc_lifecycle.py`，
+其 CPU 身份 double 与真实 native/GPU 门禁分开。官方 Torch 复用仍须数值、
+同地址变输入 Graph、长/短/空批次和 layer/e2e golden。capture 不执行 Graph；
+先 replay 核对原输入基线，空 Graph 单列。原门槛下 vendor 大 batch 舍入
+失败保留，不得用另一参考或另一实现追认原 fused 通过。
+
+vLLM 0.33 的 draft-weight-update 真实路径会遍历 draft model 来恢复 source
+LM heads。CPU runner 夹具须返回空 `torch.nn.Module`，namespace 不满足
+官方契约；保留真实遍历，不把它 mock 掉。多次 spawn 的整文件预算与
+每个子进程 timeout 分开计算，截断后须保留原日志，以独立完整运行补证。
+
 vLLM dense FP8官方fallback接线探针：`tests/tools/_probe_vllm_fp8_linear.py`
 直接验证既有官方provider；`_probe_vllm_fp8_family.py` 验证runtime正式注册、
 官方选型、QuantFP8及apply_weights完整链路。非单位tensor/token/channel尺度、
@@ -155,3 +166,12 @@ def test_xxx(...):
 - 容差选型速查：fp32 数学 rel≤1e-3~5e-3；bf16 kernel cos≥0.999 或
   1-ULP 单舍入差；量化路径按既有同类（int8 rel~0.02 / fp8 逐位或 8e-3）；
 - 形状矩阵必含：最小 M(=1)、graph pad 桶、奇数(2 的幂 ±1)、TP 切片维。
+## 宿主与源码来源
+
+混合门禁的 SGLang 桥探针使用完整 SGLang 依赖及显式
+`HCU_ADAPTER_HOST=sglang`；vLLM 的真实 general-plugin 回归在独立进程
+选择对应宿主。不得把 SGLang 六参数 RMS 桥装到 vLLM 进程。
+从 `ci/`、`tools/` 或 `tests/tools/` 启动源码检查时，启动前把目标 checkout
+放入 `PYTHONPATH`，并核对 `hcu_adapter.__file__` 与 catalog 来源。
+`HOST=none` 只关闭桥安装，不阻止 sitecustomize 提前导入已安装的 Adapter；
+脚本运行后再改 sys.path 可能混用已缓存包。缺桥的 skip 单列，不能算设备通过。

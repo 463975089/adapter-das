@@ -4,6 +4,17 @@
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
+## vllm_mhc
+
+vLLM 0.33 mHC compatibility; official Torch math via public OOT
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Opt-in gfx936 official pre/post and  |
+| stock | candidate Default unchanged upstream; diagnost |
+
+路由变量：`HCU_VLLM_MHC_IMPL`
+
 ## vllm_fp8_linear
 
 vLLM official dense FP8 fallback via public linear registration

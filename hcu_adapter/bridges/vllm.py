@@ -245,6 +245,9 @@ def require_runtime_healthy() -> None:
     Reports remain available after failure for diagnosis.
     """
     _RUNTIME_ACTIONS.require_runtime_healthy()
+    from hcu_adapter.bridges.vllm_mhc import require_healthy
+
+    require_healthy()
 
 
 def require_extension_healthy(capability: str) -> None:
@@ -271,6 +274,7 @@ def _hcu_platform_class() -> type:
 
         @classmethod
         def check_and_update_config(cls, vllm_config) -> None:
+            require_runtime_healthy()
             # Upstream owns config validation/defaults, including worker choice.
             super().check_and_update_config(vllm_config)
             from hcu_adapter.bridges.vllm_model_load import (
@@ -352,7 +356,9 @@ def _ensure_hcu_platform_selected() -> None:
 
 def hcu_runtime_plugin() -> None:
     """Apply the required vLLM runtime guards once in each HCU process."""
-    require_runtime_healthy()
+    # A healthy fork must first activate/adopt its inherited mHC registration;
+    # the full read-only owner check runs after this process's runtime action.
+    _RUNTIME_ACTIONS.require_runtime_healthy()
     if not detect_hcu().detected:
         return None
 
@@ -368,6 +374,9 @@ def hcu_runtime_plugin() -> None:
         from hcu_adapter.bridges.vllm_fp8 import install as install_fp8_fallback
 
         install_fp8_fallback()
+        from hcu_adapter.bridges.vllm_mhc import install as install_mhc_fallback
+
+        install_mhc_fallback()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,
@@ -384,6 +393,7 @@ def hcu_runtime_plugin() -> None:
         _RUNTIME_ACTIONS.record_extension_reports(reports)
 
     _RUNTIME_ACTIONS.run_once("vllm-runtime", initialize)
+    require_runtime_healthy()
 
 
 def _required_names(variable: str) -> frozenset[str]:

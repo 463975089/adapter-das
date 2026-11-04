@@ -61,3 +61,6 @@ metadata、官方 general-plugin loader 与 config spawn/unpickle 共 17 项检�
 耗时约 397 秒。此前 240 秒总时限的中断结果保留，不计为通过。required
 启动策略与 runtime ABI 共 30 项安装态检查通过；CPU 替身显式隔离无关
 前置条件，runtime ABI 的真实官方 loader/无效库负控继续执行。
+
+
+mHC 行为适配候选、启动配置、缓存/生命周期及未闭合门禁见 [v0.33 mHC](vllm033-mhc.md)。默认仍为原始官方，不代表已知 gfx936 TileLang 分支通过。

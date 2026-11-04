@@ -8,6 +8,9 @@ from hcu_adapter.bridges.vllm_model_load import dispatch_model_mutation, dispatc
 
 class Worker(OfficialWorker):
     def load_model(self, *, load_dummy_weights: bool = False) -> None:
+        from hcu_adapter.bridges.vllm import require_runtime_healthy
+
+        require_runtime_healthy()
         super().load_model(load_dummy_weights=load_dummy_weights)
         with set_current_vllm_config(self.vllm_config):
             dispatch_post_model_load(self, load_dummy_weights=load_dummy_weights)
