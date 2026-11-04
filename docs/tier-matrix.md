@@ -1,6 +1,6 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-10-31）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-04）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
@@ -28,7 +28,7 @@ gated activation out = silu(x[:,:d]) * x[:,d:]
 
 ## rms_norm
 
-RMSNorm; fused_add_rmsnorm/gemma variants stay triton
+RMSNorm (plain); the fused-add family is its own op below
 
 | 档位 | 状态 / 备注 |
 |---|---|
@@ -37,6 +37,18 @@ RMSNorm; fused_add_rmsnorm/gemma variants stay triton
 | torch | production reference path |
 
 路由变量：`HCU_RMS_NORM_IMPL`
+
+## fused_add_rms_norm
+
+residual += input; input = rmsnorm(residual)*w, in-place
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | production default (auto) |
+| lightop | validated lightop.fused_add_rms_norm(x, residu |
+| torch | production reference path |
+
+路由变量：`HCU_FUSED_ADD_RMS_IMPL`
 
 ## allreduce
 

@@ -14,6 +14,7 @@ Schema (hcu_adapter.yaml, first hit wins in discovery order):
     ops:
       silu_and_mul: triton      # triton | lightop | torch
       rms_norm: aiter           # triton | aiter | torch
+      fused_add_rms_norm: triton  # triton | lightop | torch
       allreduce: aiter          # aiter | nccl (custom AR retired 2026-10-19)
       paged_mqa_logits: triton   # triton (DEFAULT, R-13 #4) | emu | vendor
 
@@ -81,12 +82,29 @@ BACKEND_CATALOG = {
     },
     "rms_norm": {
         "var": "HCU_RMS_NORM_IMPL",
-        "summary": "RMSNorm; fused_add_rmsnorm/gemma variants stay triton",
+        "summary": "RMSNorm (plain); the fused-add family is its own op below",
         "backends": {
             "triton": {"status": "production", "note": "default"},
             "aiter": {"status": "candidate",
                       "note": "aiter.rmsnorm_forward(x,w,eps,training) "
                               "-> (out, ..); plain rmsnorm only"},
+            "torch": {"status": "production",
+                      "note": "reference path"},
+        },
+    },
+    "fused_add_rms_norm": {
+        "var": "HCU_FUSED_ADD_RMS_IMPL",
+        "summary": "residual += input; input = rmsnorm(residual)*w, in-place",
+        "backends": {
+            "triton": {"status": "production", "note": "default (auto)"},
+            "lightop": {"status": "validated",
+                        "note": "lightop.fused_add_rms_norm(x, residual, w, "
+                                "eps, limit=-1) in-place; gemma variant "
+                                "gemma_fused_add_rmsnorm; parity + cuda-graph "
+                                "replay passed 2026-11-03 (dtk2610/BW200, "
+                                "py3.10 wheel has both fns too); perf 0.76x "
+                                "vs triton @4096x7168 bf16 — triton stays "
+                                "default; one-strike fallback on a raise"},
             "torch": {"status": "production",
                       "note": "reference path"},
         },

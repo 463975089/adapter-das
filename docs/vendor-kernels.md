@@ -12,7 +12,7 @@
 | 库 | wheel 版本（git 后缀=分叉点） | 定位 | sglang 树接入 | adapter 接入 | 一句话机会 |
 |---|---|---|---|---|---|
 | aiter | 0.1.7+dtk2604.**ga76f3d** | AMD/HCU 通用算子+通信大库（51 预编 .so 零编译） | 174 处（深度集成） | AR/AR+Norm/quant/moe 桥在用 | MHC×AR 融合、qknorm-AR-rope 三融、QR 小 AR、moe_c marlin fp4 |
-| lightop | 0.6.0+dtk2604.gaa4a34 | HCU 专属全家桶，**带 dsv41 命名算子** | **0 处** | 仅 silu_and_mul candidate 档 | norm+rope+quant 前融合、silu_clamp×quant、moe gate v41、fp4 mqa logits |
+| lightop | 0.6.0+dtk2604.gaa4a34 | HCU 专属全家桶，**带 dsv41 命名算子** | **0 处** | silu_and_mul + fused_add_rms_norm（含 gemma）candidate 档 | norm+rope+quant 前融合、silu_clamp×quant、moe gate v41、fp4 mqa logits |
 | boltops | 0.1.0+dtk2604.g1f36f1 | HCU 新核库（14 子包，覆盖 mhc/ihc/dsa/mqa/gemm/moe） | **0 处（全未接入）** | 0 处 | MHC vendor 链、step4_dsa 全链、conv1d、a8w8/afp4wfp4 gemm |
 | flash_mla | 1.2.0+dtk2604.g29ff42 | MLA decode/稀疏 attention（DeepSeek 系） | 10 处 | dsa decode 档在用 | fp8 变体、q_nope_pe 变体 |
 | flash_attn | 2.8.4+dtk2604.g007e38 | FA2 全家 + sparse_gqa/fa_sparse 扩展 | sgl-kernel 内 fa3 emu 桥 | HCU_FA_IMPL vendor 档 | sparse_gqa fp8、fa_sparse fp8 变体 |
@@ -75,9 +75,14 @@ adapter 侧：AR GraphSafe（HCU_AITER_AR auto）、fused AR+RMSNorm
 | **dsv41 族** | **`dsv41_gather_index_k_fp4`** **`dsv41_mqa_prefill_metadata`** **`dsv41_mqa_query_lens`** **`fp8_fp4_mqa_logits`** `page_mqa_logits_sparse_mask` `mqa_logits` | V4.1-Flash indexer/MQA 的厂商原生路（现走我们 mqa_logits_triton 自研档） |
 | 杂项 | `apply_rotary_pos_emb_index_fused` `rotary_embedding_fuse` `ds_cat` `fill_zeros` `batch_linear_assignment` `grid_sample_forward/backward` `bilinear_upsample(_backward)` `destindex_copy/dequantize_int8_cuda` `sum/mean/topk` + 大量 nn.Module 类（RMSNorm/RotaryEmbedding/FuseBiasSwiGLU/FusedScaleMaskSoftmax…） | vision/训练侧为主 |
 
-**集成现状**：sglang 树 0 处；adapter 仅 `HCU_SILU_MUL_IMPL=lightop`（candidate
-档，`lightop.fuse_silu_and_mul(input, output, mask_m, expect_m)`，未过图重放
-矩阵前不转正）。
+**集成现状**：sglang 树 0 处；adapter 接入两处——
+`HCU_SILU_MUL_IMPL=lightop`（candidate 档，`lightop.fuse_silu_and_mul(input,
+output, mask_m, expect_m)`，未过图重放矩阵前不转正）与
+`HCU_FUSED_ADD_RMS_IMPL=lightop`（**validated 档 2026-11-03**：`lightop.
+fused_add_rms_norm` / `gemma_fused_add_rmsnorm` 原地核，fp32 累加同 triton
+数值契约，parity + cuda-graph 重放双过、py3.10/py3.12 双轮皆有此函数；perf
+0.76x 慢于 triton @4096×7168 bf16，默认保持 auto=triton；一次异常即降级；
+门禁 `tests/tools/_lightop_fused_add_ab.py`）。
 
 **机会（热点直击，V4.1-Flash bs16 trace 排序）**：
 1. `fused_rms_norm_rope_contiguous` / `split_qkv_rms_rotary_embedding_fuse_with_kv_store_quant`——对第一大核族 `fused_k_norm_rope_flashmla`（1165ms/490 次）与 `apply_rotary_emb_triton`（211ms）的深度融合位；

@@ -65,3 +65,108 @@ def test_fused_add_rmsnorm_gpu(dtype):
     tol = (1e-3, 1e-3) if dtype != torch.bfloat16 else (1.0, 0.5)
     torch.testing.assert_close(residual.float(), rf, rtol=tol[0], atol=tol[1])
     torch.testing.assert_close(x.float(), ref, rtol=tol[0], atol=tol[1])
+
+
+# --------------------------------------------------------------- lightop ----
+
+def _reset_fused_add_cache(ln):
+    ln._FUSED_ADD_IMPL = None
+    ln._LIGHTOP_FUSED_ADD = None
+
+
+def test_fused_add_backend_default_is_triton(monkeypatch):
+    """auto (=default) must stay on the triton path — the lightop vendor
+    tier is opt-in until it passes the contract + graph-replay matrix."""
+    monkeypatch.delenv("HCU_FUSED_ADD_RMS_IMPL", raising=False)
+    import sgl_kernel.layernorm as ln
+
+    _reset_fused_add_cache(ln)  # re-probe with the cleaned env
+    try:
+        assert ln._resolve_fused_add_impl() == "triton"
+        assert ln._LIGHTOP_FUSED_ADD is None
+    finally:
+        _reset_fused_add_cache(ln)
+
+
+def test_fused_add_backend_unknown_value_falls_to_triton(monkeypatch):
+    monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", "wat")
+    import sgl_kernel.layernorm as ln
+
+    _reset_fused_add_cache(ln)
+    try:
+        assert ln._resolve_fused_add_impl() == "triton"
+    finally:
+        _reset_fused_add_cache(ln)
+
+
+@requires_gpu
+@pytest.mark.parametrize("gemma", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_fused_add_lightop_parity(gemma, dtype, monkeypatch):
+    """HCU_FUSED_ADD_RMS_IMPL=lightop: same in-place contract as the triton
+    path (2D and 3D leading dims; fp32 falls back by design and is covered
+    by test_fused_add_rmsnorm_gpu above)."""
+    monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", "lightop")
+    import sgl_kernel.layernorm as ln
+
+    _reset_fused_add_cache(ln)
+    try:
+        if ln._resolve_fused_add_impl() != "lightop":
+            pytest.skip(
+                "lightop backend not active (no wheel on this host "
+                "or probe failed — traceback printed to stderr)")
+        for shape in ((9, 512), (3, 5, 1024), (4096, 7168)):
+            torch.manual_seed(4)
+            N = shape[-1]
+            x = torch.randn(*shape, device="cuda").to(dtype)
+            residual = torch.randn(*shape, device="cuda").to(dtype)
+            w = torch.randn(N, device="cuda").abs().to(dtype)
+            x0, r0 = x.clone(), residual.clone()
+
+            fn = (sgl_kernel.gemma_fused_add_rmsnorm if gemma
+                  else sgl_kernel.fused_add_rmsnorm)
+            assert fn(x, residual, w, eps=1e-6) is None
+
+            rf = r0.float() + x0.float()
+            ref = rf * torch.rsqrt(rf.pow(2).mean(-1, keepdim=True) + 1e-6)
+            ref = ref * (w.float() + (1.0 if gemma else 0.0))
+            tol = (1e-3, 1e-3) if dtype != torch.bfloat16 else (1.0, 0.5)
+            torch.testing.assert_close(
+                residual.float(), rf, rtol=tol[0], atol=tol[1])
+            torch.testing.assert_close(
+                x.float(), ref, rtol=tol[0], atol=tol[1])
+    finally:
+        _reset_fused_add_cache(ln)
+
+
+@requires_gpu
+def test_fused_add_lightop_one_strike_fallback(monkeypatch):
+    """A raising vendor call must not escape: tier disabled for the process,
+    this call (and later ones) run on triton."""
+    import sgl_kernel.layernorm as ln
+
+    _reset_fused_add_cache(ln)
+    try:
+        saved = ln._LIGHTOP_FUSED_ADD
+        ln._FUSED_ADD_IMPL = "lightop"  # force the vendor branch armed
+        ln._LIGHTOP_FUSED_ADD = (
+            lambda x, r, w, e: (_ for _ in ()).throw(RuntimeError("boom")),
+            lambda x, r, w, e: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        torch.manual_seed(5)
+        x = torch.randn(8, 256, device="cuda", dtype=torch.bfloat16)
+        residual = torch.randn(8, 256, device="cuda", dtype=torch.bfloat16)
+        w = torch.randn(256, device="cuda", dtype=torch.bfloat16).abs()
+        x0, r0 = x.clone(), residual.clone()
+
+        ln._do_fused_add(x, residual, w, 1e-6, False)  # must not raise
+
+        assert ln._LIGHTOP_FUSED_ADD is None  # one strike → disabled
+        rf = r0.float() + x0.float()
+        ref = rf * torch.rsqrt(rf.pow(2).mean(-1, keepdim=True) + 1e-6) * w.float()
+        torch.testing.assert_close(
+            residual.float(), rf, rtol=1.0, atol=0.5)
+        torch.testing.assert_close(x.float(), ref, rtol=1.0, atol=0.5)
+        ln._LIGHTOP_FUSED_ADD = saved
+    finally:
+        _reset_fused_add_cache(ln)
