@@ -170,6 +170,13 @@ metadata/OOT，不能用伪架构或全局 helper 重绑准入。Graph padding �
 metadata 边界并同步打包 query/weights；便利 pack/unpack wrapper 的 GPU
 长度读回不可带进 capture。默认 stock；native 显式 opt-in，快关优先。
 源码、安装态、spawn/fork、两层缓存和完整模型结果分别记录，不以组件晋级。
+C4 缓存须遵守官方物理页 pitch：8448-byte payload 可位于8640-byte对齐页，
+BLHNC/BLNHC 还可在物理块间交错其他层。只要求页内 block-flat payload
+稠密、页间不重叠且 FP32 scale 对齐；不得以整张 tensor 的 is_contiguous
+拒绝官方视图，也不得复制 cache 来绕过布局。设备探针覆盖官方
+create_kv_cache_views 的 aligned/packed 视图、填充/其他层不变和变输入
+Graph；metadata 的动态长度探针仅支持其原始 MTP1 配方。
+
 vLLM 0.33 mHC 先读 `docs/frameworks/vllm033-mhc.md`：恢复官方既有行为归
 Adapter，优先 public OOT 委托官方 Torch pre/post 和公开 IR RMS；原生签名
 接受 norm 参数不证明执行了 RMS。保留已通过的官方 post/head，vendor

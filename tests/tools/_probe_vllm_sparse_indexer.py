@@ -32,6 +32,8 @@ def main():
     parser.add_argument('--compile', action='store_true', help='real fullgraph dynamic Torch compilation')
     parser.add_argument('--dynamic-lens', action='store_true', help='change padding positions and causal lengths at fixed addresses')
     parser.add_argument('--empty', action='store_true', help='zero-token metadata/Graph control; no numerical work')
+    parser.add_argument('--cache-storage', choices=('dense', 'aligned', 'packed'), default='dense',
+                        help='official cache views with page padding and optional interleaved layers')
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(exist_ok=False)
@@ -84,7 +86,7 @@ def main():
             target_model_config=model, target_parallel_config=parallel) if args.mtp else None)
         config = VllmConfig(model_config=model,
             parallel_config=parallel, speculative_config=speculative,
-            cache_config=CacheConfig(block_size=256),
+            cache_config=CacheConfig(block_size=256, cache_dtype='fp8_ds_mla'),
             scheduler_config=SchedulerConfig(max_num_seqs=4, max_num_batched_tokens=128,
                 max_model_len=8192, enable_chunked_prefill=True,
                 is_encoder_decoder=model.is_encoder_decoder),
@@ -92,7 +94,7 @@ def main():
                 cudagraph_capture_sizes=[1, 2, 4], max_cudagraph_capture_size=4,
                 inductor_compile_config={'combo_kernels': False}))
         # Layout is resolved after construction in v0.33, not an init argument.
-        config.cache_config.kv_cache_layout = 'LBNHC'
+        config.cache_config.kv_cache_layout = 'BLHNC'
         record['config'] = dict(model_architectures=model.architectures,
             max_model_len=model.max_model_len, indexer_heads=64, dim=128, topk=512,
             compress_ratio=4, manager_page=256, indexer_page=64,
@@ -114,7 +116,30 @@ def main():
             pages = 110
             base_values = (torch.randn(pages, 64, 128) * .5).to(current_platform.fp8_dtype())
             base_scales = torch.exp2(torch.randint(-2, 2, (pages, 64)).float())
-            cache = torch.empty(pages, 64, 132, dtype=torch.uint8, device='cuda')
+            if args.cache_storage == 'dense':
+                cache = torch.empty(pages, 64, 132, dtype=torch.uint8, device='cuda')
+                cache_storage = None
+                untouched = None
+            else:
+                from vllm.v1.kv_cache_interface import (
+                    create_kv_cache_views, KVCacheTensor, KVCacheLayout)
+                layer_count = 2 if args.cache_storage == 'packed' else 1
+                page_bytes = spec.page_size_bytes
+                block_stride = layer_count * page_bytes
+                cache_storage = torch.full((pages * block_stride,), 91,
+                                           dtype=torch.uint8, device='cuda')
+                tensor = KVCacheTensor(size=cache_storage.numel(),
+                    layers=[prefix] + (['other_layer'] if layer_count == 2 else []),
+                    layer_stride=page_bytes, block_stride=block_stride)
+                cache = create_kv_cache_views(cache_storage, spec, pages,
+                    KVCacheLayout.BLHNC, tensor)[0].squeeze(1)
+                assert cache.shape == (pages, 64, 132) and not cache.is_contiguous()
+                untouched = torch.ones_like(cache_storage, dtype=torch.bool)
+                untouched.as_strided(cache.shape, cache.stride()).fill_(False)
+            record['cache_storage'] = dict(kind=args.cache_storage,
+                shape=list(cache.shape), stride=list(cache.stride()),
+                spec_page_bytes=spec.page_size_bytes,
+                no_payload_copy=cache.view(pages, -1).data_ptr() == cache.data_ptr())
             unbound_cache = cache_layer.kv_cache
             cache_layer.bind_kv_cache(cache)
             topk = torch.full((128, 512), -7, dtype=torch.int32, device='cuda')
@@ -303,6 +328,10 @@ def main():
                     previous_ids = got.clone()
                     save()
                 case['status'] = 'GRAPH_COMPONENT_PASS' if args.graph else 'EAGER_COMPONENT_PASS'
+            if cache_storage is not None:
+                assert torch.equal(cache_storage[untouched],
+                                   torch.full_like(cache_storage[untouched], 91))
+                record['padding_and_other_layers_unchanged'] = True
             status = ('PUBLIC_OOT_NATIVE_C4_CONTEXT_GRAPH_COMPONENT_PASS' if args.graph and args.native_provider
                       else 'PUBLIC_OOT_OFFICIAL_CONTEXT_EAGER_COMPONENT_PASS')
             record.update(status=status,

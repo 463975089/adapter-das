@@ -58,3 +58,24 @@ prefill 保留官方 BF16 dot 舍入边界，另存 pure FP64 诊断。top-k 顺
 
 本桥与 mHC 候选独立开发；完整 V4 需组合验证，两者组件通过不证明组合可用。
 官方真实 gfx936 路径通过同门禁后删除本桥并归还原始 dispatch。
+
+## 官方页对齐与交错层视图（0.33 后续修订）
+
+完整 V4 Flash TP4 已读完46片原始权重，随后在 Graph 内存预估阶段被
+旧的整张 cache `is_contiguous()` 检查拒绝。官方 C4 payload 为64×132
+=8448字节，但 `fp8_ds_mla` 的576字节对齐产生8640字节页；BLHNC/
+BLNHC 还可在同一物理块中交错其他层。官方 gather 和 paged-logits 已
+接收外层 page stride，不能以全局 contiguous 限制其原有布局。
+
+检查改为页内 stride=(132,1)、page stride≥8448且可被4整除、storage
+起点可被4整除，保留原 shape/dtype/device 限制。非连续外层视图直接
+交给官方 helper，不复制 cache，也不修改 compressor、metadata 或数学。
+离线负控覆盖重叠页、页/起点未对齐及页内空洞，拒绝发生在输出写入前。
+GPU 探针的 `--cache-storage aligned|packed` 用官方
+`create_kv_cache_views` 构造，核对 Graph replay 数值和未用填充/其他层字节。
+原 `dense` 对照仍保留。填充 metadata 的 `--dynamic-lens` 仅适用于探针
+原有 MTP1 配方，MTP5 使用独立 padding 配方。
+
+该修订仍为显式 opt-in 的 Adapter ABI 兼容，不新增 Plugin 算法。
+组件通过不代表完整 V4、cache compressor/write 或 HumanEval32 通过；
+完整模型记录与 Quark 原生产物/JIT 校验单独保存。

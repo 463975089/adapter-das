@@ -316,3 +316,52 @@ def test_failure_is_inherited_during_exception_formatting(seams):
     assert children == [0] and len(s.calls) == 1
     with pytest.raises(s.m.SparseIndexerCompatibilityError):
         s.m.require_healthy()
+
+
+@pytest.mark.parametrize('page_stride,row_stride,byte_stride,offset,valid', [
+    (8448, 132, 1, 0, True),
+    (8640, 132, 1, 0, True),  # official 576-byte page alignment
+    (17280, 132, 1, 8640, True),  # packed layers between blocks
+    (8640, 132, 1, 4, True),
+    (8444, 132, 1, 0, False),  # overlapping pages
+    (8641, 132, 1, 0, False),  # FP32 scale view is unaligned
+    (8640, 132, 1, 2, False),
+    (9000, 133, 1, 0, False),  # holes inside block-flat payload
+    (18000, 264, 2, 0, False),
+])
+def test_block_flat_page_stride_contract_before_output_write(
+        monkeypatch, page_stride, row_stride, byte_stride, offset, valid):
+    # CPU layout-only reproduction: no simulated GPU or numerical acceptance.
+    # Official create_kv_cache_views emits padded/interleaved page pitches.
+    import torch
+    m = importlib.reload(module)
+    monkeypatch.setattr(m, 'require_healthy', lambda: None)
+    metadata = SimpleNamespace(prefill=None, decode=None, num_decode_tokens=0)
+    common = SimpleNamespace(PackSeqTritonKernel=lambda: None,
+                             UnpackSeqTritonKernel=lambda: None)
+    context = SimpleNamespace(get_forward_context=lambda:
+                              SimpleNamespace(attn_metadata={'cache': metadata}))
+    indexer, _, _ = m._declare(type('Original', (), {}), object(), common,
+                               object(), object(), context)
+    storage = torch.full((60000,), 37, dtype=torch.uint8)
+    cache = storage.as_strided((3, 64, 132),
+                              (page_stride, row_stride, byte_stride), offset)
+    query = torch.empty((1, 64, 128))
+    output = torch.full((1, 512), -7, dtype=torch.int32)
+    before = storage.clone()
+    if valid:
+        indexer(torch.empty((1, 128)), 'cache', cache, query,
+                torch.empty((1, 64)), output, 2048, 8192)
+        assert torch.equal(output, torch.full_like(output, -1))
+        flat = cache.view(3, -1)
+        assert flat.data_ptr() == cache.data_ptr()
+        assert flat.stride(0) == page_stride
+        # Both official helpers reinterpret scales as FP32 without a copy.
+        scales = flat.view(torch.float32)
+        assert scales.data_ptr() == cache.data_ptr()
+    else:
+        with pytest.raises(m.SparseIndexerCompatibilityError, match='physical cache ABI'):
+            indexer(torch.empty((1, 128)), 'cache', cache, query,
+                    torch.empty((1, 64)), output, 2048, 8192)
+        assert torch.equal(output, torch.full_like(output, -7))
+    assert torch.equal(storage, before)

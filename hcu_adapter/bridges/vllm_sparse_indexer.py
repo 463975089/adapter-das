@@ -123,7 +123,13 @@ def _declare(original, official, common, workspace, platform, context):
             return None
         metadata = metadata_map[prefix]
         if (cache.ndim != 3 or cache.shape[1:] != (64, 132)
-                or cache.dtype != torch.uint8 or not cache.is_contiguous()
+                or cache.dtype != torch.uint8
+                # Official packed-layer and aligned caches have padding between
+                # pages. The upstream gather/logits helpers take page strides;
+                # only each page's block-flat payload must remain dense.
+                or cache.stride(1) != 132 or cache.stride(2) != 1
+                or cache.stride(0) < 64 * 132 or cache.stride(0) % 4
+                or cache.storage_offset() % 4
                 or cache.device != query.device):
             raise SparseIndexerCompatibilityError('unsupported C4 physical cache ABI')
         output[:hidden.shape[0]].fill_(-1)
