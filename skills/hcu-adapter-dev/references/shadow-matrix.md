@@ -30,6 +30,13 @@ DeepInfer 契约实现按算子族和档位放入 `hcu_adapter/kernels/`，文�
 须逐项验证。vendor 的响亮 stub 可让 import / `hasattr` / `callable` 成功，
 这些检查不能证明所需 provider 的 ABI 或计算可用。
 
+FlashInfer shadow 的 norm 转发在调用时导入既有 `sgl_kernel.layernorm`
+实现；不能在模块顶层先导入它，否则 shadow-first 顺序会经
+`sgl_kernel` 的 stub 注册重入尚未定义 `register()` 的模块。
+注册仍在启动期完成，不延迟换绑。新解释器回归覆盖 shadow-first、
+kernel-first、公开入口及原 `out=`/原位 ABI；这是 import/转发证据，
+不能替代 GPU 数值、Graph 或模型门禁。
+
 **flash_attn wheel 兼容性现状**（2026-10-10 实测）：共享盘
 `/public/share/dtk_fa_whl/*/flash_attn-2.6.1+das.opt1.dtk2604-cp310`
 只匹配 torch2.5 栈；dtk26041/torch2.11 上 `c10::hip` 符号不匹配，需

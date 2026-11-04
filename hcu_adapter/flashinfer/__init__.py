@@ -34,17 +34,20 @@ Per-subtask #229/#234 findings, the main import surfaces covered:
 """
 
 from hcu_adapter._base import ABSENT, LibStubFinder, is_registered
-from sgl_kernel.layernorm import (
-    fused_add_rmsnorm as _sgl_fused_add_rmsnorm,
-    rmsnorm as _sgl_rmsnorm,
-)
 
 
 def rmsnorm(input, weight, eps=1e-6, out=None, enable_pdl=None):
+    # Importing sgl_kernel registers this shadow package. Resolve its kernel
+    # at call time so importing the shadow first does not recurse into a
+    # partially initialized module. Registration itself stays at startup.
+    from sgl_kernel.layernorm import rmsnorm as _sgl_rmsnorm
+
     return _sgl_rmsnorm(input, weight, eps=eps, out=out, enable_pdl=enable_pdl)
 
 
 def fused_add_rmsnorm(input, residual, weight, eps=1e-6, enable_pdl=None):
+    from sgl_kernel.layernorm import fused_add_rmsnorm as _sgl_fused_add_rmsnorm
+
     return _sgl_fused_add_rmsnorm(
         input, residual, weight, eps=eps, enable_pdl=enable_pdl
     )
