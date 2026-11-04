@@ -30,8 +30,8 @@ LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
-    "vllm_mhc": ("vLLM official Torch mHC compatibility registration (startup only)", None),
-    "deep_ep": ("DeepInfer DeepEP compatibility surface", None),
+    "vllm_sparse_indexer": ("vLLM C4 indexer public OOT compatibility; fresh-process stock fallback", "HCU_VLLM_SPARSE_INDEXER_IMPL"),
+    "vllm_mhc": ("vLLM official Torch mHC compatibility registration (startup only)", None),    "deep_ep": ("DeepInfer DeepEP compatibility surface", None),
     "worker.runtime": ("DeepInfer worker lifecycle adaptation", None),
     "deep_gemm": ("DeepInfer GEMM/MQA/mHC compatibility surface", None),
     "flash_attn.cute.interface._flash_attn_fwd": ("DeepInfer ViT attention", None),

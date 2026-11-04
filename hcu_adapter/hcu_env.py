@@ -117,10 +117,14 @@ def _auto_mqa_emu():
 
 
 REGISTRY = {
+    "HCU_VLLM_SPARSE_INDEXER_IMPL": {
+        "env": "HCU_VLLM_SPARSE_INDEXER_IMPL", "default": "stock",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33/gfx936 C4 indexer candidate: stock or native; startup policy, fresh process required to change",
+    },
     "HCU_VLLM_MHC_IMPL": {
         "env": "HCU_VLLM_MHC_IMPL", "default": "stock",
-        "about": "vLLM 0.33/gfx936 mHC candidate: stock or official Torch via public OOT; startup only",
-    },
+        "about": "vLLM 0.33/gfx936 mHC candidate: stock or official Torch via public OOT; startup only",    },
     "HCU_CONFIG": {"env": "HCU_CONFIG", "default": "", "about": "Deployment configuration path; shared across hosts"},
     "HCU_WORKER_CONTEXT": {"env": "HCU_WORKER_CONTEXT", "default": "", "about": "DeepInfer inherited worker context; internal", "hosts": ("deepinfer",)},
     "HCU_BF16_TFLOPS": {"env": "HCU_BF16_TFLOPS", "default": "0", "about": "DeepInfer optional MFU calibration", "hosts": ("deepinfer",)},

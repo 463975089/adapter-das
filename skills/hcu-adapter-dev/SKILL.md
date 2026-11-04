@@ -114,13 +114,18 @@ CPU FP32 Transformers eager 对拍真实 checkpoint smoke 的所选 token 概率
 
 ## 任务路由（做某类事之前先读对应参考文档）
 
+vLLM 0.33/gfx936 的 C4 indexer 候选见
+`docs/frameworks/vllm033-sparse-indexer.md`。复用官方 logits/top-k 和 public
+metadata/OOT，不能用伪架构或全局 helper 重绑准入。Graph padding 取 host
+metadata 边界并同步打包 query/weights；便利 pack/unpack wrapper 的 GPU
+长度读回不可带进 capture。默认 stock；native 显式 opt-in，快关优先。
+源码、安装态、spawn/fork、两层缓存和完整模型结果分别记录，不以组件晋级。
 vLLM 0.33 mHC 先读 `docs/frameworks/vllm033-mhc.md`：恢复官方既有行为归
 Adapter，优先 public OOT 委托官方 Torch pre/post 和公开 IR RMS；原生签名
 接受 norm 参数不证明执行了 RMS。保留已通过的官方 post/head，vendor
 小批次通过不覆盖大 prefill 舍入差异。capture 后须先 replay 建立基线，
 空 Graph 与非空分开。候选默认 stock；注册、两层缓存、late drift、
 spawn/fork 和四质量维度须留证，CPU lifecycle 不能作为模型/设备通过。
-
 共享机制在**调用时**也必须 framework-free，不能用惰性 `from vllm import
 envs` 隐藏宿主决策。模型 lifecycle 的声明/上下文/同步留在 `model_load`；
 vLLM worker/executor/env-cache 覆盖查询归 `bridges.vllm_model_load`，薄 Worker

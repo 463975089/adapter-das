@@ -56,6 +56,14 @@ class HcuConfigError(RuntimeError):
 # backends   selectable backend -> {status, note}
 
 BACKEND_CATALOG = {
+    "vllm_sparse_indexer": {
+        "var": "HCU_VLLM_SPARSE_INDEXER_IMPL",
+        "summary": "vLLM 0.33 C4 sparse indexer through public OOT and official helpers",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Default upstream dispatch; gfx936 architecture guard remains"},
+            "native": {"status": "candidate", "note": "Opt-in gfx936 C4 H64/D128/top512; official logits/top-k, public padded metadata; integration gates pending"},
+        },
+    },
     "vllm_mhc": {
         "var": "HCU_VLLM_MHC_IMPL",
         "summary": "vLLM 0.33 mHC compatibility; official Torch math via public OOT",

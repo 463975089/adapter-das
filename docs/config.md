@@ -40,6 +40,11 @@ ops:
 
 ## 后端目录（BACKEND_CATALOG）
 
+vLLM 0.33/gfx936 的 C4 indexer 候选通过 `ops.vllm_sparse_indexer: native`
+显式选择；默认 `stock` 保留官方行为。配置文件、调试 env 与快关遵循同一
+裁决链；注册后改变策略须新进程。限制与验证见
+[vLLM C4 indexer](frameworks/vllm033-sparse-indexer.md)，不表示完整 V4 已通过。
+
 `hcu_adapter/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
 后端 → 状态与备注。向导和未来的 Web UI 都从它渲染，新后端接线后自动出现在选择项里。
 **实现归籍与角色（active/ref）规约见 [governance.md](governance.md)**：算子数学

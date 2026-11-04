@@ -32,6 +32,11 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     from hcu_adapter.bridges import vllm_fp8
     monkeypatch.setattr(vllm_fp8, "install", lambda: False)
+    # Required-policy CPU fixtures isolate operator activation. The real C4
+    # publication, health and startup paths have their own contracts/probes.
+    from hcu_adapter.bridges import vllm_sparse_indexer
+    monkeypatch.setattr(vllm_sparse_indexer, "install", lambda: False)
+    monkeypatch.setattr(vllm_sparse_indexer, "require_healthy", lambda: None)
     # Keep this CPU required-policy fixture independent of optional mHC
     # startup policy and its real publication/cache/health tests.
     from hcu_adapter.bridges import vllm_mhc
