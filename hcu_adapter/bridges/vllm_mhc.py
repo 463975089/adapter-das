@@ -162,7 +162,12 @@ def install() -> bool:
     global _publication
     if _failure is not None:
         raise MhcCompatibilityError(_failure)
-    mode = selected_mode()
+    try:
+        mode = selected_mode()
+    except BaseException as error:
+        if _publication is not None:
+            _refuse('mHC policy invalid after registration; start a fresh process', error)
+        raise
     if mode == 'stock' and _publication is None:
         return False
 

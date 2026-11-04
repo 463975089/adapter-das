@@ -30,6 +30,8 @@ ops:
 健康检查发生在宿主 config/选型/load 边界和 opaque op 执行时；constructor
 替换、cache getter 替换、启动策略变化均拒绝且锁存，恢复原对象不自动解锁。
 发布及部分导入失败先锁存，再安全格式化异常，重试不修复已污染进程。
+直接重试安装时也须检查配置解析失败：已注册后遇到非法策略先锁存再抛错，
+恢复原策略仍拒绝；首次注册前的纯配置错误不发布注册，也不污染进程。
 
 既有 framework-free `ProcessLocalLifecycle` 管理注册与 fork 边界；宿主桥
 保留 vLLM 导入与身份准入。成功 fork 后经 child runtime 激活重新确认继承
@@ -100,3 +102,12 @@ offload 后在首次 profile 被官方 sparse-attention indexer 的 gfx936 能�
 
 官方 gfx936 路径修复并过同门禁后，在同 MR 删除适配并恢复官方 dispatch；
 仅升级版本号或 import 成功不是退出证据。
+
+策略重试补证（2026-11-04）：注册后的非法策略直接重试先锁存失败，恢复
+配置仍拒绝；注册前的纯配置错误可修正后首次激活。新增两项离线回归，
+mHC 合计24项通过；受影响的 mHC/启动策略/native ABI/共享生命周期/
+bootstrap 合计101项通过。独立 mHC 候选包的全部206个 Adapter 与2991个 Core
+Python 文件均匹配源码和 wheel；安装态独立 spawn 验证直接非法策略及
+恢复后拒绝。真实 gfx936 再跑 pre/fused 共64 cases/256 states，保留
+原始容差、64次初始 replay、144次非空变输入及48次空 Graph replay。
+完整节点、layer/e2e、模型和性能门禁仍保持上述限制。

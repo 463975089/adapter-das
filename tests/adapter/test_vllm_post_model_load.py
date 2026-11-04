@@ -160,7 +160,8 @@ def make_runner(monkeypatch, cfg, version, events, fail_at=None):
                 draft_load(target_model)
                 # v0.33's real draft update traverses modules to restore the
                 # source LM head. Use an empty CPU module rather than skipping
-                # that official path or replacing its traversal helper.                from torch.nn import Module
+                # that official path or replacing its traversal helper.
+                from torch.nn import Module
                 return Module()
             def init_cudagraph_manager(self, *args): pass
             def capture(self): pass

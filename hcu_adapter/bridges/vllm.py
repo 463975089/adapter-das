@@ -245,9 +245,11 @@ def require_runtime_healthy() -> None:
     Reports remain available after failure for diagnosis.
     """
     _RUNTIME_ACTIONS.require_runtime_healthy()
-    from hcu_adapter.bridges.vllm_mhc import require_healthy
-    from hcu_adapter.bridges.vllm_sparse_indexer import require_healthy
-    require_healthy()
+    from hcu_adapter.bridges.vllm_mhc import require_healthy as require_mhc_healthy
+    from hcu_adapter.bridges.vllm_sparse_indexer import require_healthy as require_indexer_healthy
+
+    require_mhc_healthy()
+    require_indexer_healthy()
 
 
 def require_extension_healthy(capability: str) -> None:

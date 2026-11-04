@@ -176,6 +176,10 @@ Adapter，优先 public OOT 委托官方 Torch pre/post 和公开 IR RMS；原�
 小批次通过不覆盖大 prefill 舍入差异。capture 后须先 replay 建立基线，
 空 Graph 与非空分开。候选默认 stock；注册、两层缓存、late drift、
 spawn/fork 和四质量维度须留证，CPU lifecycle 不能作为模型/设备通过。
+注册后直接重试遇到非法策略也须锁存失败；恢复配置不得重新准入。
+多个内置 owner 组合时，宿主健康边界须逐个检查；同名函数导入必须独立绑定，
+避免后一次覆盖前一次。回归同时覆盖各 owner 失败和全健康路径。
+
 共享机制在**调用时**也必须 framework-free，不能用惰性 `from vllm import
 envs` 隐藏宿主决策。模型 lifecycle 的声明/上下文/同步留在 `model_load`；
 vLLM worker/executor/env-cache 覆盖查询归 `bridges.vllm_model_load`，薄 Worker

@@ -136,6 +136,27 @@ def test_late_drift_refuses_read_and_retry_without_repair(seams,monkeypatch,muta
     assert len(s.calls)==2
 
 
+def test_invalid_policy_direct_retry_latches_before_restoring_mode(seams,monkeypatch):
+    s=seams
+    s.m.install()
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL','invalid')
+    with pytest.raises(s.m.MhcCompatibilityError,match='policy invalid'):
+        s.m.install()
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL','torch')
+    for action in (s.m.require_healthy,s.m.install):
+        with pytest.raises(s.m.MhcCompatibilityError):action()
+    assert len(s.calls)==2
+
+
+def test_invalid_policy_before_publication_does_not_poison_process(seams,monkeypatch):
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL','invalid')
+    with pytest.raises(ValueError):seams.m.install()
+    assert not seams.calls and not seams.records
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL','torch')
+    assert seams.m.install()
+    seams.m.require_healthy()
+
+
 @pytest.mark.parametrize('format_error',[AssertionError,SystemExit])
 def test_partial_publication_latches_before_bad_exception_format(seams,format_error):
     s=seams

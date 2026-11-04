@@ -33,6 +33,13 @@ bindings, while incomplete or failed runtime/health state remains refused.
 All selector routes check the runtime latch. Public registry writes have no
 CAS: these checks do not promise atomicity against arbitrary concurrent writers.
 
+The host also checks each built-in mHC and sparse-indexer owner separately.
+Importing both `require_healthy` callables into one local name loses the first
+check; use distinct bindings. Regress both owner failures and the all-healthy
+path (`tests/adapter/test_vllm_builtin_health.py`), plus real installed public
+constructor drift and restored-policy refusal. A healthy indexer cannot attest
+to the mHC owner's registration or process health.
+
 The Plugin prepares predictable dependencies before public FLASH_ATTN
 registration, refuses foreign overrides, and exposes its own health callback.
 Registry drift must fail through the actual official selector, even if the

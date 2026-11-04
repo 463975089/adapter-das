@@ -14,11 +14,30 @@ import os
 from pathlib import Path
 
 
-def _child(queue):
+def _child(queue, policy_only=False):
     try:
-        queue.put(_exercise())
+        queue.put(_exercise_invalid_policy() if policy_only else _exercise())
     except BaseException as error:
         queue.put(dict(error=type(error).__name__+': '+str(error)))
+
+
+def _exercise_invalid_policy():
+    from hcu_adapter.bridges import vllm as host, vllm_mhc as m
+    host.detect_hcu=lambda:host.HcuDetection(True,'gfx936','CPU lifecycle probe double')
+    os.environ['HCU_VLLM_MHC_IMPL']='torch'
+    assert m.install()
+    os.environ['HCU_VLLM_MHC_IMPL']='invalid'
+    try:m.install()
+    except m.MhcCompatibilityError:pass
+    else:raise AssertionError('invalid policy did not latch a publication failure')
+    os.environ['HCU_VLLM_MHC_IMPL']='torch'
+    for action in (m.require_healthy,m.install):
+        try:action()
+        except m.MhcCompatibilityError:pass
+        else:raise AssertionError('restored policy recovered after a publication failure')
+    return dict(status='CPU_INSTALLED_INVALID_POLICY_LATCH_PASS',pid=os.getpid(),
+        module_sha256=hashlib.sha256(Path(m.__file__).read_bytes()).hexdigest(),
+        invalid_direct_retry_latched=True,restored_policy_refused=True)
 
 
 def _exercise():
@@ -99,8 +118,12 @@ def main():
     ctx=multiprocessing.get_context('spawn');queue=ctx.Queue();process=ctx.Process(target=_child,args=(queue,))
     process.start();child=queue.get(timeout=60);process.join(timeout=60)
     assert process.exitcode==0 and child.get('status')=='CPU_INSTALLED_LIFECYCLE_PASS',child
+    policy_queue=ctx.Queue();policy_process=ctx.Process(target=_child,args=(policy_queue,True))
+    policy_process.start();policy=policy_queue.get(timeout=60);policy_process.join(timeout=60)
+    assert policy_process.exitcode==0 and policy.get('status')=='CPU_INSTALLED_INVALID_POLICY_LATCH_PASS',policy
     parent=_exercise();assert parent['factor']==child['factor'] and parent['module']==child['module']
-    record=dict(status='CPU_INSTALLED_SPAWN_FORK_CACHE_DRIFT_PASS',parent=parent,spawn=child,
+    assert policy['module_sha256']==parent['module_sha256']
+    record=dict(status='CPU_INSTALLED_SPAWN_FORK_CACHE_DRIFT_PASS',parent=parent,spawn=child,invalid_policy=policy,
         production_changed=False,gpu_or_model_acceptance=False)
     (a.output/'result.json').write_text(json.dumps(record,indent=2)+'\n')
     (a.output/'driver.py').write_bytes(Path(__file__).read_bytes())
