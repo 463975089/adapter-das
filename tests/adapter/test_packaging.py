@@ -3,8 +3,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tomllib
 import zipfile
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9/3.10, supported by the package.
+    import tomli as tomllib
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

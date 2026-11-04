@@ -490,6 +490,18 @@ BACKEND_CATALOG = {
                                  "bench vs triton + e2e pending."},
         },
     },
+    "int8_linear_gemm": {
+        "var": None,
+        "summary": "SGLang CT and explicit W8A8 INT8 linear scaled GEMM",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "Existing sgl_kernel.gemm_int8 ABI; both official consumer "
+                        "globals bound without replacing methods or source writes. "
+                        "Functional/numeric probes required; no performance promotion.",
+            },
+        },
+    },
     "per_token_quant": {
         "var": "HCU_QUANT_IMPL",
         "summary": "per-token fp8/int8 quant (dynamic)",

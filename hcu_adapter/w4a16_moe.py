@@ -56,6 +56,7 @@ _CACHE_ATTR = "_hcu_w4a16_marlin_cache"
 _GROUP_OK = (32, 64, 128)
 _miss_log_once: set = set()
 _engaged_log: set = set()
+_deepep_installed = False
 
 
 def _mode() -> str:
@@ -68,6 +69,153 @@ def _mode() -> str:
 def _dbg(reason: str):
     if os.environ.get("HCU_W4A16_MOE_DEBUG", ""):
         LOG.warning("HCU w4a16 moe: %s", reason)
+
+
+def deepgemm_w4a16_deepep_ll(
+    hidden_states: torch.Tensor,
+    w1: torch.Tensor,
+    w2: torch.Tensor,
+    w1_scale: torch.Tensor,
+    w2_scale: torch.Tensor,
+    masked_m: torch.Tensor,
+    expected_m: int | None = None,
+) -> torch.Tensor:
+    """Run the W4A16 expert-major path after DeepEP low-latency dispatch.
+
+    DeepEP low-latency dispatch already places tokens in
+    ``[expert, capacity, hidden]`` order and returns one valid-row count per
+    local expert.  The regular ``fused_experts`` bridge cannot be reused here:
+    it performs its own token sort/dispatch and would destroy the dispatcher
+    layout.  This function therefore keeps the expert-major layout through
+    both masked grouped GEMMs and returns the same layout for DeepEP combine.
+    """
+    if hidden_states.ndim != 3:
+        raise ValueError(
+            "DeepEP W4A16 expects expert-major hidden states [E, M, K], "
+            f"got shape={tuple(hidden_states.shape)}"
+        )
+    if masked_m.ndim != 1 or masked_m.numel() != hidden_states.shape[0]:
+        raise ValueError(
+            "DeepEP W4A16 masked_m must contain one count per local expert"
+        )
+    if w1.shape[0] != hidden_states.shape[0] or w2.shape[0] != hidden_states.shape[0]:
+        raise ValueError("DeepEP W4A16 expert count does not match weights")
+    capacity = hidden_states.shape[1]
+    counts = masked_m.to(device=hidden_states.device, dtype=torch.int32)
+    if bool(torch.any(counts < 0)) or bool(torch.any(counts > capacity)):
+        raise ValueError(
+            f"DeepEP W4A16 masked_m must be within [0, {capacity}]"
+        )
+
+    b1, s1 = _prepare(w1, w1_scale)
+    b2, s2 = _prepare(w2, w2_scale)
+    c1 = _grouped_gemm(
+        hidden_states.contiguous(),
+        b1,
+        s1,
+        counts,
+        capacity,
+        w1.shape[1],
+        hidden_states.dtype,
+    )
+    intermediate = torch.nn.functional.silu(c1[..., : w1.shape[1] // 2])
+    intermediate = intermediate * c1[..., w1.shape[1] // 2 :]
+    c2 = _grouped_gemm(
+        intermediate.contiguous(),
+        b2,
+        s2,
+        counts,
+        capacity,
+        w2.shape[1],
+        hidden_states.dtype,
+    )
+    return c2
+
+
+def _is_deepep_w4a16_layer(layer) -> bool:
+    """Identify the CT-W4A8 -> W4A16 layer without depending on class names."""
+    return bool(
+        getattr(layer, "w13_weight", None) is not None
+        and getattr(layer.w13_weight, "dtype", None) == torch.uint8
+        and getattr(layer, "w2_weight", None) is not None
+        and getattr(layer, "w13_weight_scale", None) is not None
+        and getattr(layer, "w2_weight_scale", None) is not None
+        and not bool(getattr(layer, "use_w4afp8", False))
+    )
+
+
+def install_deepep_w4a16():
+    """Add the adapter W4A16 branch to the upstream DeepEP LL seam.
+
+    The patch is intentionally narrow: it only handles dispatch objects with
+    ``masked_m``/``expected_m`` and only layers whose loaded weights are the
+    uint8 W4A16 face.  BF16, FP8/W4AFP8, normal dispatch, and all other
+    upstream routes retain their original implementation.
+    """
+    global _deepep_installed
+    if _deepep_installed:
+        return
+    from sglang.srt.layers.moe.ep_moe.layer import DeepEPMoE
+
+    original = DeepEPMoE.run_moe_core
+    if getattr(original, "_hcu_w4a16_deepep", False):
+        _deepep_installed = True
+        return
+
+    def run_moe_core(self, dispatch_output):
+        if (
+            hasattr(dispatch_output, "masked_m")
+            and hasattr(dispatch_output, "expected_m")
+            and _is_deepep_w4a16_layer(self)
+        ):
+            try:
+                output = deepgemm_w4a16_deepep_ll(
+                    dispatch_output.hidden_states,
+                    self.w13_weight,
+                    self.w2_weight,
+                    self.w13_weight_scale,
+                    self.w2_weight_scale,
+                    dispatch_output.masked_m,
+                    dispatch_output.expected_m,
+                )
+                from sglang.srt.layers.moe.token_dispatcher.deepep import (
+                    DeepEPLLCombineInput,
+                )
+
+                return DeepEPLLCombineInput(
+                    hidden_states=output,
+                    topk_ids=dispatch_output.topk_ids,
+                    topk_weights=dispatch_output.topk_weights,
+                )
+            except Exception:
+                LOG.warning(
+                    "HCU w4a16 moe: DeepEP LL path failed; preserving "
+                    "the upstream error contract",
+                    exc_info=True,
+                )
+                raise
+        return original(self, dispatch_output)
+
+    run_moe_core._hcu_w4a16_deepep = True
+    DeepEPMoE.run_moe_core = run_moe_core
+    _deepep_installed = True
+    try:
+        from hcu_adapter import registry
+
+        registry.register(
+            "w4a16_moe",
+            "hcu_adapter.w4a16_moe.deepgemm_w4a16_deepep_ll",
+            "sglang.srt.layers.moe.ep_moe.DeepEPMoE.run_moe_core",
+            registry.MECH_REBIND,
+            detail="CT W4A8->W4A16 DeepEP low-latency expert-major branch",
+        )
+    except Exception:
+        # The route remains functional in minimal/fake test interpreters where
+        # the full runtime catalog is intentionally absent.
+        LOG.debug("HCU w4a16 moe: registry entry unavailable", exc_info=True)
+    LOG.info(
+        "HCU w4a16 moe: DeepEP low-latency expert-major branch installed"
+    )
 
 
 def _prepare(experts_qweight: torch.Tensor, scales: torch.Tensor):

@@ -8,8 +8,8 @@ export LD_LIBRARY_PATH=/opt/dtk/.hyhal/rocm_smi/lib:$LD_LIBRARY_PATH
 PORT=30036
 LOGD=/root/logs/model_suite
 mkdir -p $LOGD
-SGLANG_V0521=$HOME/sglang-v0521/python
-ADAPTER=/root/hcu_t2
+SGLANG_V0521="${SGLANG_V0521:-$HOME/sglang-v0521/python}"
+ADAPTER="${ADAPTER:-/root/hcu_t2}"
 export PYTHONPATH=$ADAPTER:$SGLANG_V0521
 export SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python
 export SGLANG_RUST_BUILD_MODE=never
@@ -105,8 +105,10 @@ judge_model() {  # $1 id, $2 model-path
     echo "G2-generation FAIL" >> $res
   fi
 
-  # G3 precision: semantic anchor via /v1/chat/completions
-  local chat chat_tail
+  # G3 precision: two independent semantic anchors via /v1/chat/completions.
+  # A single geography answer can pass while a broken decode path stops on
+  # arithmetic, so require both a knowledge and a compositional answer.
+  local chat chat_tail arithmetic arithmetic_tail
   chat=$(curl -s --max-time 120 http://127.0.0.1:$PORT/v1/chat/completions \
     -H 'Content-Type: application/json' \
     -d '{"model": "x", "messages": [{"role": "user", "content": "What is the capital of France? Answer in one word."}], "max_tokens": 16, "temperature": 0}')
@@ -116,7 +118,22 @@ try:
 except Exception as e:
     print("parse-err:", e)' 2>/dev/null)
   echo "CHAT: $chat_tail" >> $res
-  if echo "$chat" | grep -qi paris; then
+  arithmetic=$(curl -s --max-time 120 http://127.0.0.1:$PORT/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{"model": "x", "messages": [{"role": "user", "content": "A box has 12 apples. Five are removed. How many apples remain? Answer with only the number."}], "max_tokens": 8, "temperature": 0}')
+  arithmetic_tail=$(echo "$arithmetic" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin)["choices"][0]["message"]["content"][-80:])
+except Exception as e:
+    print("parse-err:", e)' 2>/dev/null)
+  echo "ARITHMETIC: $arithmetic_tail" >> $res
+  if echo "$chat" | grep -qi paris && \
+     echo "$arithmetic" | python3 -c 'import json,re,sys
+try:
+    text = json.load(sys.stdin)["choices"][0]["message"]["content"]
+    sys.exit(0 if re.search(r"(?<![0-9])7(?![0-9])", text) else 1)
+except Exception:
+    sys.exit(1)' 2>/dev/null; then
     echo "G3-precision PASS" >> $res
   else
     echo "G3-precision FAIL" >> $res

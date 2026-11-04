@@ -1,0 +1,24 @@
+{
+  "iteration": 52,
+  "date": "2026-11-04",
+  "node": "nmz21",
+  "container": "sglang_liph_adapter",
+  "adapter_commit": "5fb6eec6",
+  "sglang_tree": "/home/lipenghui/lph-adapter/sglang-0.5.22-pristine-iter7",
+  "sglang_commit": "baa9befa381511cd4d56f83980951e5a45fffc6d",
+  "command": "python -m tools.upstream_source --up-tree /home/lipenghui/lph-adapter/sglang-0.5.22-pristine-iter7",
+  "result": {
+    "status": "pass",
+    "changed_or_unverified_files": 0,
+    "added_sources": 0
+  },
+  "resource_check": {
+    "hcu_count": 8,
+    "memory_used_percent": [88, 89, 89, 89, 89, 89, 89, 88],
+    "compute_utilization_percent": [0, 0, 0, 0, 0, 0, 0, 0],
+    "blocking_container": "tianby_glm52",
+    "blocking_command": "sglang serve --tp-size 8 --dp-size 8 --ep-size 8",
+    "gpu_test_started": false
+  },
+  "scope": "Pristine source verification only; no claim of real EP4 model execution."
+}

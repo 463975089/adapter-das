@@ -32,6 +32,7 @@ def _mkbuf(pages, dev):
 
 class _Pool:
     page_size = PAGE
+    index_page_size = PAGE
     index_head_dim = D
     index_kpool = POOL
     slots_per_page = PAGE

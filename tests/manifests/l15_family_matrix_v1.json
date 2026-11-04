@@ -36,6 +36,7 @@
       "intent": "MoE routing, alignment, expert up/activation/down/combine and fresh-input graph replay",
       "cases": [
         {"id": "moe-expert-chain", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_l15_execution_chains.py::test_triton_moe_expert_chain"},
+        {"id": "moe-int8-expert-chain", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_l15_execution_chains.py::test_w8a8_int8_moe_chain"},
         {"id": "moe-topk", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_gate.py::test_topk_softmax_gpu_matches_cpu"},
         {"id": "moe-grouped-gate", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_gate.py::test_moe_fused_gate_gpu_grouped"},
         {"id": "moe-align-reference", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_moe_align.py::test_moe_align_block_size_gpu_matches_torch"},
@@ -45,8 +46,10 @@
     },
     {
       "id": "quantization",
-      "intent": "FP8 row/group/fused quantization, scale contracts and correctness-preserving fallback",
+      "intent": "FP8 row/group/fused quantization, CT channel FP8 linear, grouped expert GEMM scale and padding contracts with fresh-input graph replay",
       "cases": [
+        {"id": "fp8-grouped-expert-contract", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_gemm_fp8.py::test_fp8_grouped_expert_contract"},
+        {"id": "quant-w8a8-linear", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_gemm_int8.py::test_official_w8a8_linear_chain"},
         {"id": "quant-linear-chain", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_l15_execution_chains.py::test_quantized_linear_chain"},
         {"id": "fp8-gemm-replay", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_gemm_fp8.py::test_fp8_scaled_mm_graph_replay_tracks_fresh_inputs"},
         {"id": "int8-gemm-replay", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_gemm_int8.py::test_int8_scaled_mm_graph_replay_tracks_fresh_inputs"},
@@ -59,8 +62,9 @@
     },
     {
       "id": "mamba",
-      "intent": "Mamba2 prefill/decode, fragmented layout, replay metadata, hybrid dispatch and Conv1D varlen state",
+      "intent": "Mamba2 prefill/decode, fragmented layout, real fresh-input graph replay with remapped recurrent states, hybrid dispatch and Conv1D varlen state",
       "cases": [
+        {"id": "mamba-fresh-input-graph", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_l15_execution_chains.py::test_mamba2_decode_fresh_input_graph"},
         {"id": "gdn-state-ring-replay", "kind": "adapter-pytest", "nodeid": "tests/kernels/test_l15_execution_chains.py::test_gdn_state_ring_and_graph"},
         {"id": "mamba-prefill-decode", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mamba/test_mamba2.py::TestTritonMamba2BackendCorrectness::test_projected_mamba2_attention_cases"},
         {"id": "mamba-layout", "kind": "upstream-pytest", "nodeid": "test/registered/attention/unittests/mamba/test_mamba2.py::TestTritonMamba2BackendCorrectness::test_layout_robustness_cases"},

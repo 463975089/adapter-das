@@ -99,3 +99,67 @@ def test_int8_scaled_mm_graph_replay_tracks_fresh_inputs():
         assert not torch.allclose(previous.float(), ref.float(), rtol=5e-2, atol=2e-2)
         torch.testing.assert_close(out.float(), ref.float(), rtol=5e-2, atol=2e-2)
         previous = out.clone()
+
+
+@requires_gpu
+@pytest.mark.parametrize("tokens", [1, 17, 33])
+@pytest.mark.parametrize("with_bias", [False, True])
+def test_official_w8a8_linear_chain(tokens, with_bias):
+    """Exercise the public method that previously missed its GEMM global."""
+    from sglang.srt.layers.quantization.w8a8_int8 import (
+        W8A8Int8Config, W8A8Int8LinearMethod,
+    )
+    from sglang.test.test_utils import published_topology
+
+    torch.manual_seed(1211 + tokens)
+    hidden, output = 128, 256
+    layer = torch.nn.Module()
+    method = W8A8Int8LinearMethod(W8A8Int8Config())
+    with torch.device("cuda"):
+        method.create_weights(layer, hidden, [output], hidden, output, torch.bfloat16)
+    weights = torch.randint(-20, 21, (output, hidden), device="cuda", dtype=torch.int8)
+    scales = torch.linspace(.003, .02, output, device="cuda").view(-1, 1)
+    layer.weight.copy_(weights)
+    layer.weight_scale.copy_(scales)
+    method.process_weights_after_loading(layer)
+    bias = torch.randn(output, device="cuda", dtype=torch.bfloat16) if with_bias else None
+    x = torch.empty(tokens, hidden, device="cuda", dtype=torch.bfloat16)
+
+    def update():
+        # Each row has an exact max of 127/16, hence scale=1/16 and exact
+        # integer quantization. This isolates the linear load/GEMM contract
+        # from the quantizer's approximate reciprocal at half-integer ties.
+        x.copy_(torch.randint(-126, 127, x.shape, device="cuda").float() / 16)
+        x[:, -1] = 127 / 16
+
+    def reference():
+        value = (x.float() * 16) @ weights.float().t()
+        value = value * (1 / 16) * scales.view(1, -1)
+        if bias is not None:
+            value = value + bias.float()
+        return value.to(x.dtype)
+
+    def run():
+        return method.apply(layer, x, bias)
+
+    with published_topology():
+        update()
+        torch.testing.assert_close(run(), reference(), rtol=.05, atol=.02)
+        for _ in range(2):
+            run()
+        torch.cuda.synchronize()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            result = run()
+        previous = reference()
+        for _ in range(3):
+            update()
+            expected = reference()
+            assert not torch.allclose(previous, expected, rtol=.05, atol=.02)
+            graph.replay()
+            torch.cuda.synchronize()
+            torch.testing.assert_close(result, expected, rtol=.05, atol=.02)
+            cosine = torch.nn.functional.cosine_similarity(
+                result.float().flatten(), expected.float().flatten(), dim=0)
+            assert cosine.item() >= .9999
+            previous = expected

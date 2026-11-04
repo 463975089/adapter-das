@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import os
 import types
 import subprocess
 
@@ -158,6 +159,7 @@ def test_shadow_import_does_not_import_sglang():
         check=False,
         capture_output=True,
         text=True,
+        env=dict(os.environ, HCU_ADAPTER_HOST="none", VLLM_PLUGINS="none"),
     )
     assert result.returncode == 0, result.stderr
 

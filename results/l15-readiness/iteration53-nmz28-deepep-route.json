@@ -1,0 +1,33 @@
+{
+  "iteration": 53,
+  "date": "2026-11-04",
+  "node": "nmz28",
+  "container": "sglang_liph_adapter",
+  "adapter_commit": "69c44dd4",
+  "sglang_tree": "/home/lipenghui/lph-adapter/sglang-0.5.22-pristine-iter7",
+  "sglang_import": "/home/lipenghui/lph-adapter/sglang-0.5.22-pristine-iter7/python/sglang/__init__.py",
+  "environment": {
+    "PYTHONPATH": [
+      "/home/lipenghui/lph-adapter/sglang-0.5.22-pristine-iter7/python",
+      "/home/lipenghui/lph-adapter/adapter-das"
+    ],
+    "HCU_ADAPTER_HOST": "sglang"
+  },
+  "command": "python -m pytest -q tests/adapter/test_deepep_w4a16.py tests/adapter/test_ct_w4a8_moe.py",
+  "result": {
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "status": "pass",
+    "gpu_model_execution": false
+  },
+  "scope": [
+    "DeepEP W4A16 route selection and fallback contract",
+    "CT W4A8 expert-major shape and masking contract",
+    "DeepEP combine input ABI"
+  ],
+  "evidence_policy": {
+    "unqualified_container_test": "not counted: without explicit pristine PYTHONPATH it imported the container-installed SGLang",
+    "real_ep4": "not verified; nmz28 cards remained occupied by an existing TP8/EP8 service"
+  }
+}

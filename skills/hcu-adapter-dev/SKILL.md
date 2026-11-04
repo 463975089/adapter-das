@@ -50,11 +50,61 @@ exp8=15 过早饱和；不扩大到未验证架构或改变 gfx942/FNUZ 分支�
 此类编译成功后的错误必须以独立数值和变输入 graph 回归识别。
 `tools.l15_checkpoint_reference` 在隐藏 GPU、HOSTnone 的独立进程用
 CPU FP32 Transformers eager 对拍真实 checkpoint smoke 的所选 token 概率。
-它目前是短输入探针，不输出精度验收 passed；历史 smoke 缺少执行时权重
-字节绑定，参考时的 fingerprint 不能倒推补齐该证据。后续精度门禁必须先
-补同轮权重绑定、输入/长度/分布和模型族覆盖，不能把 top1 或有限 logprob
+它目前是短输入探针，不输出精度验收 passed；新 smoke 在 controller 与
+worker 加载/执行前后绑定实际 checkpoint 字节，参考执行也必须匹配此清单。
+历史 smoke 的缺失绑定不能靠参考时 fingerprint 倒推补齐，须明确标记
+legacy-unbound。精度门禁还须补输入/长度/分布和模型族覆盖，不能把 top1 或有限 logprob
 单独当成完整模型精度。
+checkpoint 哈希结束还须重新读取资产字节确认一致；同 tick 的等长写入可能
+保持相同 stat 元数据，不能仅依赖时间戳判断已读文件是否变化。
+固定 `--profile accuracy` 另覆盖双语、512/2048 token、复用/变输入，
+以 CPU FP32 的所选概率与 top-20+tail 合并分布按版本化策略验收；
+必须匹配 HCU 权重字节并执行完整 eager/graph，不能把合并分布称为
+全词表散度，也不能外推为其他模型/长度通过。聊天模板明确请求 list，
+并在 Engine 前校验 token IDs，避免 Transformers 返回映射时误传字符串 key。
+复合 checkpoint 的文本词表从 text_config 获取，不能读外层/视觉词表；
+独立参考通过公开条件生成 AutoModel 入口加载并记录实际类。Qwen3.5 的
+纯文本验证不外推为图像/NEXTN/量化或多卡通过，家族 cookbook 配方与
+较小 checkpoint 的参数差异必须单独记录。
 完整目标与证据见 `docs/l15-readiness-plan.md`。
+输出层归因可显式使用 smoke 的 `--enable-fp32-lm-head`，它只转发社区
+公开选项；controller、worker、实际 server info 和 CPU 参考报告必须一致。
+默认保持社区默认配置，不能因局部指标改善而启用为 adapter 默认或改精度阈值。
+`tools.l15_checkpoint_dtype_probe` 在隐藏 GPU 的 HOSTnone 进程，对已绑定
+accuracy 请求固定同一 prompt/输出序列，比较独立 CPU FP32/BF16 eager
+及 HCU 概率；记录具体输出位置、token 和三方 logprob。CPU BF16 包含
+BF16 输出层，不等价于 SGLang/HCU 实现；报告仅作诊断，不输出 passed，
+不能用 CPU 自身的 dtype 差异豁免原 FP32 精度门禁。
+smoke 的 `--dtype float32` 仅是显式整模型精度诊断，默认仍为 BF16；
+controller/worker/server 与参考报告须绑定同一执行 dtype。历史缺失字段
+只能按原 BF16 默认解释。FP32 配置在原 V1 阈值内不代表 BF16 通过，
+也不等同于建立了更严格的 FP32 数值策略，不能用改默认 dtype 替代定位。
+真实量化启动须核对实际执行路径：config 声明或 server 的未显式设置
+`quantization=None` 不足以判断路由。可用社区公开 profiler 接口获得
+scheme/量化/scaled-mm/设备内核调用证据，报告绑定原始 trace 字节摘要。
+CT-FP8 的组件回归必须经过真实 scheme、加载后处理与默认 padding；
+仅 `apply_fp8_linear` 的非 CT、显式关闭 padding 分支不能代替。
+CPU BF16 参考也受 CPU 架构/内核实现影响；跨节点比较需保留环境，
+不能把不同 CPU 的 BF16 数值差异直接归因 HCU。
+smoke 的 `--quantization` 只转发社区公开选项，默认仍按 checkpoint 自动检测；
+controller/worker/server 及参考报告必须绑定同一显式选项。配置未声明量化
+但显式在线量化的执行也须拒绝普通 CPU FP32/dtype 参考，不能据此绕过量化限制。
+INT8 MoE 合成对拍须保留原地 runner 的输入副本；量化先用 FP64 检查整数与
+尺度契约，FP32 reciprocal 的误差界内半整数可取相邻整数，其余须精确取整。
+再用已验证整数/尺度做独立 GEMM 参考，不把浮点除法在半整数的差异误判为
+graph 错误；最终输出阈值保持原样，routing 在 down-GEMM 存 BF16 前相乘。
+显式 `w8a8_int8` 和自动 CT 的 Linear 都需绑定既有 `int8_scaled_mm`；
+只修 CT 模块不能覆盖前者。`int8_linear` 在验证两个原方法的全局符号契约后
+补 module global，保留方法和已有别名，不新增 GEMM 或改社区源码。
+退役自研 all-reduce 后，vendor 拒绝门不得再引用其旧安装状态；
+`HCU_DISABLE_OPS=aiter_ar` 必须在新解释器真实 bootstrap 中拒绝并回退 NCCL。
+CPU 参考工具的单测也必须在干净 HOSTnone/隐藏 GPU 的进程执行；
+GPU 全套已加载宿主时，以独立进程复测，不能放宽生产工具的隔离守卫。
+量化 CPU 参考默认拒绝；显式 `--quantized-reference ct-fp8-token-channel`
+仅支持已验证的 Dense Qwen3 CT channel-FP8 权重与动态 token-FP8 输入。
+必须匹配 HCU 绑定字节，逐个检查全部加载 tensor 与完整 Linear 量化参数，
+并观察每层实际激活 QDQ；只反量化权重不足以建立参考。保留原精度策略，
+greedy 一致不能豁免分布 FAIL，不能绕过社区 CT 对整模型 FP32 的拒绝。
 
 1. **同名 ≠ 同语义**：每个垫片必须对拍参考实现（cos/rel 断言），不能只测
    "能跑不崩"。案例：rope GPT-J cache 恒为半分 [cos|sin] 布局（fbc540c）。

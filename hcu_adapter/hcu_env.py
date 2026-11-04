@@ -478,7 +478,8 @@ REGISTRY = {
         "env": "HCU_DEEPGEMM_BRIDGE", "default": "0",
         "about": "DeepGEMM 桥（EP 显式开启）：DTK deepgemm 别名为 deep_gemm +"
                  " wrapper ENABLE_JIT_DEEPGEMM 翻转，解锁 deepep MoE runner"
-                 "（bf16 grouped GEMM 已验；fp8 scale 布局未验会响亮报错）；"
+                 "（FP8 Triton 单卡合同已验，多卡 EP 仍待验；关闭 FP8"
+                 " Triton 时保留未验证布局的响亮拒绝）；"
                  "=1 开 =0 关",
     },
     "HCU_TRITON_CONTIG": {
@@ -487,6 +488,19 @@ REGISTRY = {
                  " triton 内核（DTK w16a16 contiguous 内核坏：2D VMFault/3D"
                  " 全错；同时补 mk-alignment get/set API）；=0 退回 DTK 原核"
                  "（会崩）作对照",
+    },
+    "HCU_TRITON_MASKED": {
+        "env": "HCU_TRITON_MASKED", "default": "1",
+        "about": "既有 DeepGEMM BF16 masked 路由开关：使用 adapter Triton"
+                 " 原生权重布局；=0 在安装桥时保留 DTK packed-weight"
+                 " ABI 包装，仅作诊断对照，不提供运行期撤销。",
+    },
+    "HCU_TRITON_MASKED_FP8": {
+        "env": "HCU_TRITON_MASKED_FP8", "default": "1",
+        "about": "既有 DeepGEMM FP8 grouped masked/contiguous 路由开关："
+                 "使用 adapter Triton 的 DeepSeek 128x128 block-scale"
+                 " 合同与逻辑 scale 布局；=0 在安装桥时保留 vendor 入口"
+                 "及未验证布局拒绝，仅作诊断对照，不代表 vendor 数值通过。",
     },
     "HCU_KDA_PREFILL_IMPL": {
         "env": "HCU_KDA_PREFILL_IMPL", "default": "fork",

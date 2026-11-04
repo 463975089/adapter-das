@@ -649,19 +649,12 @@ def install() -> None:
                 "HCU adapter: capability HIP bridge not installed", exc_info=True
             )
 
-        # compressed-tensors INT8 w8a8: the scheme's `_is_cuda` gate skips
-        # `from sgl_kernel import int8_scaled_mm` on HIP -> NameError at first
-        # apply. Re-bind the module attribute to our triton port (same name,
-        # same contract). Same treatment for any sibling scheme module already
-        # in sys.modules (import order is not guaranteed).
+        # Both CT and explicit w8a8_int8 consumers can miss the CUDA-gated
+        # GEMM import. Bind the existing implementation in their own globals.
         try:
-            import sglang.srt.layers.quantization.compressed_tensors.schemes.\
-                compressed_tensors_w8a8_int8 as _cti8
+            from hcu_adapter import int8_linear
 
-            from sgl_kernel import int8_scaled_mm as _sk_i8mm
-
-            if getattr(_cti8, "int8_scaled_mm", None) is not _sk_i8mm:
-                _cti8.int8_scaled_mm = _sk_i8mm
+            int8_linear.install()
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: int8_scaled_mm bridge not installed", exc_info=True
@@ -1568,7 +1561,7 @@ def install() -> None:
             if _ks and _ks.op_disabled("aiter_ar")
             else f"{_ar_val} [{_ar_src}]"
         )
-        if _ar_refuse and not _tar_installed:
+        if _ar_refuse:
             try:
                 import sglang.srt.distributed.device_communicators.\
                     custom_all_reduce as _car

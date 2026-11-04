@@ -5,6 +5,139 @@ import torch
 import torch.nn.functional as F
 
 
+def _mamba2_decode_reference(mixer, case, hidden, conv, ssm, slots):
+    """CPU FP32 recurrence, with BF16 storage at the public layer boundaries.
+
+    No production projection, convolution, scan or normalization function is
+    called. Return the entire updated pools so writes to unrelated slots can
+    be checked independently of the model output.
+    """
+    def cpu(tensor):
+        return tensor.detach().cpu().float()
+
+    projected = F.linear(cpu(hidden), cpu(mixer.in_proj.weight)).bfloat16()
+    width = case.intermediate_size
+    conv_width = width + 2 * case.n_groups * case.state_size
+    gate, xbc, dt = projected.split([width, conv_width, case.num_heads], -1)
+    conv = conv.clone()
+    ssm = ssm.clone()
+    outputs = []
+    for row, slot in enumerate(slots):
+        window = torch.cat([conv[slot].float(), xbc[row].float()[:, None]], -1)
+        preactivation = (
+            window * cpu(mixer.conv1d.weight).squeeze(1)
+        ).sum(-1) + cpu(mixer.conv1d.bias)
+        convolved = F.silu(preactivation).bfloat16().float()
+        conv[slot] = window[:, 1:].to(conv.dtype)
+        x, b, c = convolved.split(
+            [width, case.n_groups * case.state_size,
+             case.n_groups * case.state_size]
+        )
+        x = x.reshape(case.num_heads, case.head_dim)
+        b = b.reshape(case.n_groups, case.state_size)
+        c = c.reshape(case.n_groups, case.state_size)
+        delta = F.softplus(dt[row].float() + cpu(mixer.dt_bias))
+        y = torch.empty_like(x)
+        for head in range(case.num_heads):
+            group = head * case.n_groups // case.num_heads
+            state = ssm[slot, head] * torch.exp(delta[head] * cpu(mixer.A)[head])
+            state = state + delta[head] * torch.outer(x[head], b[group])
+            ssm[slot, head] = state
+            y[head] = state @ c[group] + cpu(mixer.D)[head] * x[head]
+        # The SSM output is stored in activation dtype before gated RMSNorm.
+        gated = y.flatten().bfloat16().float() * F.silu(gate[row].float())
+        grouped = gated.reshape(case.n_groups, -1)
+        normalized = grouped * torch.rsqrt(
+            grouped.square().mean(-1, keepdim=True) + mixer.norm.variance_epsilon
+        )
+        normed = (normalized.flatten() * cpu(mixer.norm.weight)).bfloat16()
+        outputs.append(F.linear(normed.float(), cpu(mixer.out_proj.weight)).bfloat16())
+    return torch.stack(outputs), conv, ssm
+
+
+@pytest.mark.parametrize("batch,page_size,groups", [(1, 1, 1), (3, 16, 2)])
+def test_mamba2_decode_fresh_input_graph(runtime, batch, page_size, groups):
+    """Real MambaMixer2 eager/graph; three changing inputs and remapped state slots."""
+    from sglang.srt.model_executor.forward_batch_info import ForwardMode
+    from sglang.srt.model_executor.forward_context import ForwardContext, forward_context
+    from sglang.test.kits.attention_unittest.attention_methods.mamba2_attention import (
+        Mamba2AttentionCase, _conv_states, _ssm_states,
+        build_mamba2_attention_fixture,
+    )
+
+    class RequiredBackend:
+        def skipTest(self, reason):
+            pytest.fail(f"required Mamba2 backend unavailable: {reason}")
+
+    case = Mamba2AttentionCase(
+        name="adapter_mamba2_fresh_graph", backend="triton",
+        forward_mode=ForwardMode.DECODE, num_heads=2, head_dim=16,
+        state_size=16, n_groups=groups, conv_kernel=4,
+        mamba_chunk_size=16, hidden_size=32, page_size=page_size,
+        prefix_lens=(14, 15, 16)[:batch],
+    )
+    fixture = build_mamba2_attention_fixture(
+        RequiredBackend(), case, disable_cuda_graph=False, runner_batch_size=8,
+    )
+    backend, fb = fixture.backend, fixture.forward_batch
+    conv, ssm = _conv_states(fixture), _ssm_states(fixture)
+    assert conv.shape[-1] == case.conv_kernel - 1
+    assert ssm.shape[1:] == (case.num_heads, case.head_dim, case.state_size)
+    conv.copy_(torch.randn_like(conv) * 0.1)
+    ssm.copy_(torch.randn_like(ssm) * 0.1)
+    initial_conv, initial_ssm = conv.clone(), ssm.clone()
+    expected_conv, expected_ssm = conv.cpu().clone(), ssm.cpu().clone()
+    backend.init_cuda_graph_state(max_bs=batch, max_num_tokens=batch)
+    backend.init_forward_metadata_out_graph(fb, in_capture=True)
+
+    def run():
+        with torch.no_grad(), forward_context(ForwardContext(attn_backend=backend)):
+            return fixture.actual_module(fb, fixture.hidden_states)
+
+    for _ in range(3):
+        run()
+    torch.cuda.synchronize()
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        captured = run()
+    conv.copy_(initial_conv)
+    ssm.copy_(initial_ssm)
+    mapping = fixture.runner.req_to_token_pool.req_index_to_mamba_index_mapping
+    previous = None
+    for wave in range(3):
+        # The captured graph must read refreshed metadata rather than the slots
+        # used at capture. Selected slots are unique, non-monotonic and nonzero.
+        slots = [(2 * row + wave) % 7 + 1 for row in range(batch)][::-1]
+        mapping[fb.req_pool_indices] = torch.tensor(slots, device="cuda", dtype=torch.int32)
+        fixture.hidden_states.copy_(torch.randn_like(fixture.hidden_states) * (wave + 1) * 0.3)
+        backend.init_forward_metadata_out_graph(fb)
+        before_conv, before_ssm = conv.clone(), ssm.clone()
+        expected, expected_conv, expected_ssm = _mamba2_decode_reference(
+            fixture.actual_module.mixer, case, fixture.hidden_states,
+            expected_conv, expected_ssm, slots,
+        )
+        if previous is not None:
+            assert not torch.allclose(expected.float(), previous.float(), atol=0.02, rtol=0.05)
+        previous = expected.clone()
+        eager = run()
+        check(eager.cpu(), expected)
+        eager_conv, eager_ssm = conv.clone(), ssm.clone()
+        conv.copy_(before_conv)
+        ssm.copy_(before_ssm)
+        graph.replay()
+        torch.cuda.synchronize()
+        check(captured.cpu(), expected)
+        # Both output and recurrent state are checked; an output-only oracle
+        # misses corruption that first becomes visible on the next token.
+        torch.testing.assert_close(conv, eager_conv, rtol=0, atol=0)
+        torch.testing.assert_close(ssm, eager_ssm, rtol=0, atol=0)
+        torch.testing.assert_close(conv.cpu(), expected_conv, rtol=0.05, atol=0.002)
+        torch.testing.assert_close(ssm.cpu(), expected_ssm, rtol=0.05, atol=0.002)
+        untouched = [slot for slot in range(conv.shape[0]) if slot not in slots]
+        assert torch.equal(conv[untouched], before_conv[untouched])
+        assert torch.equal(ssm[untouched], before_ssm[untouched])
+
+
 @pytest.fixture
 def runtime():
     if not torch.cuda.is_available():
@@ -80,7 +213,84 @@ def test_triton_moe_expert_chain(runtime, tokens, topk):
     replay_three(run, [x, logits], reference)
 
 
-@pytest.mark.parametrize("kind", ["int8", "fp8"])
+@pytest.mark.parametrize("tokens,topk", [(1, 1), (7, 2), (33, 2)])
+def test_w8a8_int8_moe_chain(runtime, tokens, topk):
+    from sglang.kernels.ops.quantization.int8_kernel import per_token_quant_int8
+    from sglang.srt.layers.moe import MoeRunnerConfig
+    from sglang.srt.layers.moe.token_dispatcher import StandardDispatchOutput
+    from sglang.srt.layers.moe.topk import TopKConfig, select_experts
+    from sglang.srt.layers.quantization.w8a8_int8 import W8A8Int8Config, W8A8Int8MoEMethod
+
+    torch.manual_seed(983 + tokens)
+    experts, hidden, intermediate = 4, 128, 128
+    x = torch.randn(tokens, hidden, device="cuda", dtype=torch.bfloat16) * .3
+    logits = torch.randn(tokens, experts, device="cuda", dtype=torch.float32)
+    layer = torch.nn.Module()
+    layer.moe_tp_size = layer.moe_ep_size = 1
+    layer.moe_tp_rank = layer.moe_ep_rank = 0
+    method = W8A8Int8MoEMethod(W8A8Int8Config())
+    with torch.device("cuda"):
+        method.create_weights(layer, experts, hidden, intermediate, x.dtype)
+    for weight in (layer.w13_weight, layer.w2_weight):
+        weight.copy_(torch.randint(-20, 21, weight.shape, device="cuda", dtype=torch.int8))
+    for scale in (layer.w13_weight_scale, layer.w2_weight_scale):
+        scale.copy_(torch.linspace(.003, .02, scale.numel(), device="cuda").reshape_as(scale))
+    method.process_weights_after_loading(layer)
+    method.create_moe_runner(layer, MoeRunnerConfig(
+        num_experts=experts, num_local_experts=experts, hidden_size=hidden,
+        intermediate_size_per_partition=intermediate, top_k=topk, params_dtype=x.dtype,
+        inplace=True, gate_up_interleaved=False, routed_scaling_factor=1., layer=layer,
+    ))
+
+    def run():
+        routing = select_experts(x, logits, TopKConfig(top_k=topk, renormalize=True))
+        # The runner writes its output in-place; preserve the oracle inputs
+        # and the storage mutated between graph replays.
+        dispatch = StandardDispatchOutput(x.clone(), None, routing)
+        return method.apply(layer, dispatch).hidden_states
+
+    def quantize(value):
+        # Validate the public quantizer independently in FP64, then use its
+        # validated integers for the two independent GEMM/activation oracles.
+        # Triton's approximate reciprocal can straddle exact half-integers;
+        # require exact half-away rounding everywhere outside that FP32 bound.
+        quantized, scale = per_token_quant_int8(value.contiguous())
+        maximum = value.double().abs().amax(-1, keepdim=True).clamp_min(1e-10)
+        scaled = value.double() * (127 / maximum)
+        rounded = scaled.sign() * torch.floor(scaled.abs() + .5)
+        uncertainty = 4 * torch.finfo(torch.float32).eps * 127
+        ambiguous = (scaled.abs().frac() - .5).abs() <= uncertainty
+        assert torch.all(ambiguous | (quantized.double() == rounded))
+        assert torch.all((quantized.double() - scaled).abs() <= .5 + uncertainty)
+        torch.testing.assert_close(scale.double(), maximum / 127, rtol=5e-7, atol=0)
+        return quantized.float(), scale
+
+    def reference():
+        routing_weights, ids = torch.topk(logits.float().softmax(-1), topk, dim=-1)
+        routing_weights = routing_weights / routing_weights.sum(-1, keepdim=True)
+        quantized, input_scale = quantize(x)
+        outputs = []
+        for expert in range(experts):
+            gate_up = ((quantized @ layer.w13_weight[expert].float().t())
+                       * (input_scale * layer.w13_weight_scale[expert].view(1, -1)))
+            gate, up = gate_up.to(x.dtype).float().chunk(2, -1)
+            activated = (F.silu(gate) * up).to(x.dtype)
+            act_quantized, act_scale = quantize(activated)
+            down = ((act_quantized @ layer.w2_weight[expert].float().t())
+                    * (act_scale * layer.w2_weight_scale[expert].view(1, -1)))
+            outputs.append(down)
+        all_outputs = torch.stack(outputs, 1)
+        selected = all_outputs.gather(1, ids[..., None].expand(-1, -1, hidden))
+        # The down-GEMM epilogue applies routing in FP32 before storing each
+        # expert contribution in BF16, then the combine sums those values.
+        weighted = (selected * routing_weights[..., None]).to(x.dtype)
+        return weighted.float().sum(1).to(x.dtype)
+
+    check(run(), reference())
+    replay_three(run, [x, logits], reference)
+
+
+@pytest.mark.parametrize("kind", ["int8", "fp8", "ct-fp8"])
 @pytest.mark.parametrize("tokens", [1, 17, 33])
 def test_quantized_linear_chain(runtime, monkeypatch, kind, tokens):
     from compressed_tensors.quantization import QuantizationStrategy
@@ -105,6 +315,22 @@ def test_quantized_linear_chain(runtime, monkeypatch, kind, tokens):
 
         def run():
             return scheme.apply_weights(layer, x, bias)
+    elif kind == "ct-fp8":
+        from compressed_tensors.quantization import QuantizationArgs
+        from sglang.srt.layers.quantization.compressed_tensors.schemes.compressed_tensors_w8a8_fp8 import (
+            CompressedTensorsW8A8Fp8,
+        )
+
+        # The real checkpoint route: channel weights, dynamic token
+        # activations, process-after-loading and default output padding.
+        scheme = CompressedTensorsW8A8Fp8(
+            QuantizationArgs(num_bits=8, type="float", strategy="channel"),
+            is_static_input_scheme=False,
+        )
+        scheme.process_weights_after_loading(layer)
+
+        def run():
+            return scheme.apply_weights(layer, x, bias)
     else:
         # Keep the real platform dispatch: claiming CUTLASS support on HIP
         # would exercise an unreachable NVIDIA branch.
@@ -125,6 +351,8 @@ def test_quantized_linear_chain(runtime, monkeypatch, kind, tokens):
             values = values.sign() * torch.floor(values.abs() + 0.5)
         q = values.to(dtype).float()
         result = (q @ weight.float().t()) * activation_scale * scale.view(1, -1)
+        if kind == "ct-fp8":
+            return (result + bias.float()).to(x.dtype)
         return result.to(x.dtype) + bias
 
     check(run(), reference())

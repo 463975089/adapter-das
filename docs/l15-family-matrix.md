@@ -29,7 +29,7 @@ python tools/l15_family_matrix.py run \
 | MLA | Tiny DeepSeek MLA 构造、compressed KV prefill/decode、碎片布局、graph contract、sparse virtual sink | 上游 MLA Triton 三项 + adapter sparse FlashMLA |
 | MoE | Top-K 权重、grouped gate、block alignment、EP `-1` sentinel、capture-safe metadata | adapter MoE gate/align 五项 |
 | Quantization | FP8 row/group/fused/scaled quant、scale 语义、异形 fallback | adapter Aiter quant 五项 |
-| Mamba | Mamba2 prefill/decode、碎片布局、replay metadata、hybrid dispatch、Conv1D varlen state | 上游 Mamba2 四项 + adapter Conv1D |
+| Mamba | Mamba2 prefill/decode、碎片布局、真实变输入 graph、状态槽位隔离、hybrid dispatch | 上游 Mamba2 四项 + adapter Mamba2/GDN 计算链与 Conv1D |
 
 ## 裁决口径
 
@@ -69,9 +69,11 @@ python tools/l15_family_matrix.py run \
 
 ## 当前明确缺口
 
-1. Mamba 真实 CUDAGraph fresh-input replay；
-2. FP8 grouped expert GEMM 的小形状数值合同；
-3. INT8 MoE 两段 GEMM 的端到端合成合同；
+1. Mamba2 组件级真实 CUDAGraph fresh-input replay 已补齐（见下）；纯
+   Mamba2 真实 checkpoint、更多形状及 speculative/graph padding 仍未覆盖；
+2. FP8 grouped expert GEMM 已增加小形状数值合同（见下），但真实 DeepEP
+   多卡路由及模型精度仍未由此验证；
+3. INT8 MoE 两段 GEMM 的端到端合成合同已增加，完整真实 checkpoint 精度仍缺；
 4. INT4/W4A8 在 HCU 上主要是 correctness-first W4A16 降级，不能宣称原生 CUTLASS 行为；
 5. v0.5.22 部分候选路径在本地后续快照已重命名，必须以 manifest 指纹绑定的目标树 collect 为准；
 6. 该组件矩阵仍不覆盖权重加载、scheduler、HTTP serving 和真实模型生成；
@@ -83,6 +85,40 @@ python tools/l15_family_matrix.py run \
 连续三轮变输入对拍。FP8 Linear 保留实际平台默认 dispatch；不伪报
 CUTLASS 支持。独立 GEMM 用例验证 adapter 的 Triton 实现。
 Conv1D emu 项与 sparse emu 一样明确标为 CPU 契约，不计 GPU 覆盖。
+
+2026-11-03 真实 Channel-FP8 模型 trace 确认了社区 CT W8A8-FP8 →
+dynamic token quant → fallback scaled-mm 路径。`quant-linear-chain`
+补充 `ct-fp8` 参数：使用真实 scheme、channel scale、加载后处理和默认
+padding，在 1/17/33 token 下独立 FP32 对拍并做三轮变输入 graph replay，
+没有强制 CUTLASS 或替换平台路由。该 case 下现在收集 9 个参数化节点。
+nmz7 GPU5 的量化家族严格门 **8/8 case PASS**，包括这 9 个节点，
+各执行后社区源码完整性通过；报告
+`results/l15-readiness/iteration21-quantization-family.json`。
+这不是重跑全部五家族，也不替代真实量化模型的独立数值验收。
+
+新增 `moe-int8-expert-chain`：真实官方
+`W8A8Int8MoEMethod` 的权重创建、加载后处理、Triton runner、
+top1/top2 路由及两段 GEMM/SiLU/combine，在 1/7/33 token 下验证。
+量化整数先以独立 FP64 契约校验，仅在 FP32 reciprocal 的舍入误差界内
+允许半整数两侧取整；尺度误差也单独断言，再以已验证的整数/尺度执行
+独立 FP32 GEMM 参考。最终输出沿用原数值阈值和 cosine ≥ 0.9999，
+并进行三轮变输入 graph replay。nmz21 GPU3 的组件回归 **3 passed**，
+见 `results/l15-readiness/iteration30-int8-moe-chain.log`；
+这不是全部 29 case 的整轮证据。
+
+严格 MoE 家族增量验证 **7/7 case PASS**（零 skip/xfail，执行后社区源码
+完整性通过），见 `iteration30-moe-family.json`。显式 W8A8 Linear 另增加
+`quant-w8a8-linear`，矩阵现在为 30 case；公开权重创建、加载后转置、
+per-token 量化与 scaled GEMM 覆盖 1/17/33 token、bias 两态及三轮变输入
+graph，共 6 个参数化节点。输入设为可精确量化的二进制格点，隔离前述
+半整数不确定性；独立 FP32 GEMM/尺度/bias 对拍保持原输出阈值。
+nmz21 GPU4 的原始 INT8 GEMM 与该新链路合计 **20 passed**，
+见 `iteration31-int8-linear-gpu.log`；完整 30 case 尚待整轮验证。
+
+2026-11-04 nmz7 GPU4 的量化家族严格门 **9/9 case PASS**，包含新增
+W8A8 Linear 的 6 个节点及 CT-FP8 等 9 个 quant-linear 节点，零 skip/xfail，
+执行后社区源码完整性通过；报告 `iteration34-quantization-family.json`。
+这是量化家族整轮证据，与 MoE 7/7 的独立报告分别保留。
 
 新目录组合在 nmz28 单卡 GPU 0 的严格矩阵实测为 **27/27 PASS**，
 原始报告 `results/l15-readiness/phase2-all.json`。其中 25 个 GPU case，
@@ -97,6 +133,44 @@ Conv1D emu 项与 sparse emu 一样明确标为 CPU 契约，不计 GPU 覆盖�
 原 27 case 的整轮报告与新增 case 的增量报告分别保留，没有将两次执行
 描述成一次完整 28 case 运行。模型级 Mamba graph 也已通过，但不替代
 上述组件级 Mamba 独立变输入数值对拍缺口。
+
+2026-11-04 新增 `mamba-fresh-input-graph`，固定清单增至 31 case。
+用社区 fixture 构造真实 `MambaMixer2`，执行官方投影、causal Conv1D、
+SSM、gated RMSNorm 和输出投影。CPU FP32 参考独立计算上述数学，
+仅在公开的激活/状态存储边界转 BF16，不调用生产算子或其参考 forward。
+batch1/page1/group1 与 batch3/page16/group2 各捕获一次真实 CUDAGraph，
+三轮改变输入及非连续状态槽位；独立参考状态连续递推，
+检查输出、卷积与 SSM 状态、eager/graph 一致性及未使用槽位不被改写。
+这不替代 scheduler 图回放、纯 Mamba2 模型或 speculative 验收。
+
+nmz7 GPU4 的整个计算链文件 **25 passed**；严格 Mamba 家族
+**7/7 case PASS**（包含 2 个新参数节点，零 skip/xfail），矩阵工具
+回归 **32 passed**，执行后社区源码完整性通过。证据：
+`results/l15-readiness/iteration39-chains.log`、
+`iteration39-mamba-family.json`、`iteration39-matrix-cpu.log`、
+`iteration39-mamba-runtime.json`。该报告仅覆盖 Mamba 家族，
+不是完整 31 case 的一次整轮运行。
+
+2026-11-04 新增 `fp8-grouped-expert-contract`，清单增至 32 case。
+masked 与 contiguous 两种 DeepEP 布局各覆盖 K/N=128 和 256，
+128×128 权重 block scale、per-token-group 激活 scale、有符号 FP8，
+以及非连续 scale view。masked 覆盖空专家、1/17/32 个有效 token
+及 padding 禁写；contiguous 按 64-row expert alignment，覆盖 129 行
+的尾 tile。每项独立 FP32 反量化对拍，保持 cosine ≥0.9999、
+maxrel ≤0.05，真实 graph 三轮改变输入、权重、尺度和设备端
+counts/expert IDs。这些是 adapter Triton 实现的直接合同，
+不宣称已经覆盖分布式 dispatch/combine 或默认 DeepEP 选型。
+
+nmz7 GPU5 整个 FP8 GEMM 文件 **17 passed**（含新增 4 个参数节点），
+执行后社区源码完整性通过，见
+`results/l15-readiness/iteration40-fp8-grouped.log` 和
+`iteration40-fp8-grouped-runtime.json`。
+接入后的严格量化家族 **10/10 case PASS**，零 skip/xfail，矩阵工具
+**32 passed**，执行后社区源码完整性通过；分别见
+`iteration41-quantization-family.json`、`iteration41-matrix-cpu.log` 和
+`iteration41-quantization-runtime.json`。L0 **GREEN（31 warn）**、纯
+CPU 算子 **38 passed**，见 `iteration41-l0.log`、`iteration41-ops-cpu.log`。
+Mamba 7/7 与量化 10/10 是分别执行的家族报告，不拼接为整轮 32 case。
 
 ## DoD
 

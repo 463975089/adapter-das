@@ -25,6 +25,13 @@ selector、实际 fork 格式化窗口均需断言。public registry clear/forei
 目标：**adapter API 全绿 ⇒ 官方 sglang 在 HCU 上无大问题**。为此每个出口
 API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug 背书）：
 
+CT-FP8 CPU 参考回归见 `test_checkpoint_quantization_reference.py`：
+真实小型 Qwen3 safetensors、官方加载器、独立 Linear QDQ 数学对拍、
+逐个 tensor 核对及实际逐层 QDQ 观察；缺层 QDQ、错误反量化、
+加载缺失、未绑定权重和格式不符必须拒绝。与
+`test_l15_checkpoint_reference.py` 一起在 HOSTnone/隐藏 GPU 的干净进程运行，
+不得用取消量化或放宽原模型精度阈值来使参考通过。
+
 ## 四质量维度
 
 vLLM mHC 安装态生命周期探针为 `tests/tools/_probe_vllm_mhc_lifecycle.py`，
@@ -124,6 +131,26 @@ kernel）时，以下矩阵是最低要求：
 探针类（包一层把统一入参翻译成该后端 ABI），矩阵自动全量跑一遍。
 
 ## 新增算子的最低测试配置
+
+既有开关也须验证 `hcu_env.resolve` 的值和来源，再经真实 installer
+验证路由。DeepGEMM 的 masked BF16/FP8 曾漏登 REGISTRY，
+`enabled` 将未知键的 `None` 当作开启，导致显式 0 被忽略；
+回归见 `tests/adapter/test_deepgemm_env.py`，默认、配置、显式覆盖分开验证。
+该 CPU provider 替身测试只证明接线，不为 vendor 数值背书。
+
+FP8 grouped GEMM 小形状门见 `test_gemm_fp8.py` 的
+`test_fp8_grouped_expert_contract`：反量化参考分别展开 per-token-group
+与 128×128 block scale；覆盖有符号输入、非单位尺度、strided scale、
+空专家/padding 禁写及 64-row aligned contiguous 尾 tile。graph 必须
+同时更新输入/权重/尺度与 counts/expert IDs。该直接内核合同不能
+代替真实 DeepEP 分布式 dispatch/combine 或模型精度证据。
+
+Mamba2 graph 数值门见 `test_l15_execution_chains.py` 的
+`test_mamba2_decode_fresh_input_graph`：独立 CPU FP32 计算投影、卷积、
+SSM 与门控归一化，保留激活存储 dtype。捕获后连续三轮改变输入与
+映射槽位，参考状态独立递推；同时检查输出、卷积/SSM 状态和其他槽位
+不被改写。仅 replay metadata、同输入 replay 或仅检查输出不足以覆盖
+状态链路；组件通过也不能外推为 scheduler/speculative/真实权重模型通过。
 
 契约测试（维度 1）必带；进 decode 链路的加维度 2（参照
 `_graph_safety_probe.py` 模式）；vendor 档再加维度 3 压测 + 快关。

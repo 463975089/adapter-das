@@ -181,6 +181,21 @@ def install():
             "__init__ drops int4-group input_activations -> WNA16TritonMoE"
             " (ROCm) route"
         )
+        # The normal WNA16 route is enough for TP/EP1.  DeepEP low-latency
+        # dispatch uses expert-major masked tensors and bypasses the regular
+        # fused_experts seam, so install its adapter-owned W4A16 branch too.
+        try:
+            from hcu_adapter import w4a16_moe
+
+            w4a16_moe.install_deepep_w4a16()
+            detail += "; DeepEP LL expert-major W4A16 branch"
+        except ImportError:
+            pass
+        except Exception:
+            LOG.warning(
+                "HCU adapter: DeepEP LL W4A16 branch not installed",
+                exc_info=True,
+            )
     _installed = True
     LOG.warning("HCU adapter: CT W4A8 MoE bridge installed (%s)", detail)
 

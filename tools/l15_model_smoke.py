@@ -10,6 +10,8 @@ import subprocess
 import sys
 
 from tools.l15_runtime import audit_source, preflight, run_job, test_env, write_json
+from tools.checkpoint_files import audit as audit_checkpoint, fingerprint
+from tools.checkpoint_model import text_configuration, vocabulary_size
 
 
 def tiny_config(family):
@@ -96,28 +98,74 @@ def validate_mode(info, mode):
             raise ValueError("eager smoke unexpectedly captured decode graphs")
 
 
+def validate_lm_head_option(info, requested):
+    if info.get("enable_fp32_lm_head", False) is not requested:
+        raise ValueError("runtime FP32 LM-head option differs from requested configuration")
+
+
+def validate_execution_dtype(info, requested):
+    if requested not in ("bfloat16", "float32") or info.get("dtype", "bfloat16") != requested:
+        raise ValueError("runtime dtype differs from requested configuration")
+
+
+def validate_quantization_option(info, requested):
+    if info.get("quantization") != requested:
+        raise ValueError("runtime quantization option differs from requested configuration")
+
+
 def worker(args):
+    checkpoint = None
+    if args.family == "checkpoint":
+        if args.checkpoint_manifest is None:
+            raise ValueError("checkpoint worker requires controller byte manifest")
+        checkpoint = json.loads(args.checkpoint_manifest.read_text())
+        if not audit_checkpoint(args.model, checkpoint)["passed"]:
+            raise ValueError("checkpoint changed before model loading")
     import sglang as sgl
 
     config = json.loads((args.model / "config.json").read_text())
+    vocab_size = vocabulary_size(config)
+    profile = getattr(args, "profile", "smoke")
+    fp32_head = getattr(args, "enable_fp32_lm_head", False)
+    dtype = getattr(args, "dtype", "bfloat16")
+    quantization = getattr(args, "quantization", None)
+    accuracy_cases = None
+    if profile == "accuracy":
+        if args.family != "checkpoint":
+            raise ValueError("accuracy profile requires a real checkpoint")
+        from transformers import AutoTokenizer
+        from tools.checkpoint_accuracy import cases, validate_cases
+
+        accuracy_cases = cases(AutoTokenizer.from_pretrained(str(args.model), local_files_only=True))
+        validate_cases(accuracy_cases)
     options = dict(
-        model_path=str(args.model), dtype="bfloat16", random_seed=42,
+        model_path=str(args.model), dtype=dtype, random_seed=42,
         tp_size=1, attention_backend="triton", max_total_tokens=512,
         context_length=128, max_running_requests=4, mem_fraction_static=0.25,
         cuda_graph_max_bs_decode=2, disable_cuda_graph=args.mode == "eager",
     )
     if args.family != "checkpoint":
         options.update(load_format="dummy", skip_tokenizer_init=True)
+    if accuracy_cases is not None:
+        options.update(context_length=4096, max_total_tokens=16384)
+    if fp32_head:
+        options["enable_fp32_lm_head"] = True
+    if quantization is not None:
+        options["quantization"] = quantization
     with sgl.Engine(**options) as engine:
         generations = []
         # Two batches test fresh inputs and cache reuse through the real
         # tokenizer/scheduler/prefill/decode path, rather than a model mock.
-        for wave in range(2):
+        for wave in range(3 if accuracy_cases is not None else 2):
             generation_args = dict(
                 sampling_params=dict(temperature=0, max_new_tokens=8, ignore_eos=True),
                 return_logprob=True, logprob_start_len=0,
             )
-            if args.family == "checkpoint":
+            if accuracy_cases is not None:
+                generation_args["input_ids"] = [
+                    list(case["input_ids"]) for case in accuracy_cases[wave]]
+                generation_args["top_logprobs_num"] = 20
+            elif args.family == "checkpoint":
                 generation_args["prompt"] = (
                     ["The capital of France is", "2 + 2 ="] if wave == 0 else
                     ["The capital of China is", "3 + 3 ="]
@@ -127,14 +175,26 @@ def worker(args):
                     [1, 7 + wave, 12, 9], [1, 18, 17 + wave, 6, 5],
                 ]
             result = engine.generate(**generation_args)
-            validate_generation(result, config["vocab_size"])
+            validate_generation(result, vocab_size)
             generations.append(result)
         info = engine.get_server_info()
         validate_mode(info, args.mode)
+        validate_lm_head_option(info, fp32_head)
+        validate_execution_dtype(info, dtype)
+        validate_quantization_option(info, quantization)
+    if checkpoint is not None and not audit_checkpoint(args.model, checkpoint)["passed"]:
+        raise ValueError("checkpoint changed during model execution")
     write_json(args.out, {
         "artifact": "l15-model-worker", "passed": True, "family": args.family,
         "mode": args.mode, "model": str(args.model),
         "weight_evidence": "real-checkpoint" if args.family == "checkpoint" else "dummy",
+        "checkpoint_files_sha256": checkpoint,
+        "generation_profile": profile, "accuracy_cases": accuracy_cases,
+        "enable_fp32_lm_head": fp32_head,
+        "dtype": dtype,
+        "quantization": quantization,
+        "model_type": config.get("model_type"),
+        "text_model_type": text_configuration(config).get("model_type"),
         "generations": generations, "server_info": info,
     })
 
@@ -146,6 +206,14 @@ def run(args):
     work.mkdir(parents=True, exist_ok=True)
     families = args.families.split(",")
     modes = args.modes.split(",")
+    profile = getattr(args, "profile", "smoke")
+    fp32_head = getattr(args, "enable_fp32_lm_head", False)
+    dtype = getattr(args, "dtype", "bfloat16")
+    quantization = getattr(args, "quantization", None)
+    if dtype not in ("bfloat16", "float32"):
+        raise ValueError("select bfloat16 or float32 execution")
+    if profile == "accuracy" and families != ["checkpoint"]:
+        raise ValueError("accuracy profile requires only the real checkpoint family")
     if not modes or len(set(modes)) != len(modes) or set(modes) - {"eager", "graph"}:
         raise ValueError("select distinct eager/graph modes")
     if not families or len(set(families)) != len(families):
@@ -161,20 +229,29 @@ def run(args):
         else:
             tiny_config(family)
     runtime = preflight(args.up_tree.resolve(), root, args.binding_manifest.resolve())
+    checkpoint_inputs = fingerprint(args.checkpoint.resolve()) if "checkpoint" in families else None
     jobs = []
     for family in families:
         if family == "checkpoint":
             model = args.checkpoint.resolve()
+            checkpoint = checkpoint_inputs
+            runtime.setdefault("checkpoints", {})[str(model)] = checkpoint
+            manifest = work / "checkpoint-files.json"
+            write_json(manifest, checkpoint)
         else:
             model = work / ("tiny-" + family)
             write_json(model / "config.json", tiny_config(family))
+            checkpoint = None
         for mode in modes:
             report = work / f"{family}-{mode}.json"
             report.unlink(missing_ok=True)
             job = run_job(
                 [sys.executable, "-m", "tools.l15_model_smoke", "--worker",
                  "--model", str(model), "--family", family, "--mode", mode,
-                 "--out", str(report)],
+                 "--out", str(report), "--profile", profile, "--dtype", dtype]
+                + (["--checkpoint-manifest", str(manifest)] if checkpoint is not None else [])
+                + (["--enable-fp32-lm-head"] if fp32_head else [])
+                + (["--quantization", quantization] if quantization is not None else []),
                 cwd=root, env=test_env(args.up_tree.resolve(), root),
                 timeout=args.timeout, log=work / f"{family}-{mode}.log",
             )
@@ -189,7 +266,19 @@ def run(args):
                 and evidence.get("passed") is True
                 and evidence.get("mode") == mode
                 and evidence.get("family") == family
+                and evidence.get("model") == str(model)
+                and evidence.get("weight_evidence") == (
+                    "real-checkpoint" if checkpoint is not None else "dummy")
+                and evidence.get("generation_profile", "smoke") == profile
+                and evidence.get("enable_fp32_lm_head", False) is fp32_head
+                and evidence.get("dtype", "bfloat16") == dtype
+                and evidence.get("quantization") == quantization
             )
+            if checkpoint is not None:
+                binding = audit_checkpoint(model, checkpoint)
+                job["checkpoint_integrity_after"] = binding
+                job["passed"] = (job["passed"] and binding["passed"]
+                                 and evidence.get("checkpoint_files_sha256") == checkpoint)
             integrity = audit_source(args.up_tree.resolve(), runtime["upstream"]["commit"])
             job["source_integrity_after"] = integrity
             job["passed"] = job["passed"] and integrity["passed"]
@@ -199,10 +288,16 @@ def run(args):
                 "passed": len(jobs) == len(families) * len(modes) and all(j["passed"] for j in jobs),
                 "complete": len(jobs) == len(families) * len(modes),
                 "families": families, "modes": modes, "jobs": jobs,
+                "generation_profile": profile,
+                "enable_fp32_lm_head": fp32_head,
+                "dtype": dtype,
+                "quantization": quantization,
             })
             print(f"model smoke: {family}/{mode} {'PASS' if job['passed'] else 'FAIL'}", flush=True)
-            if not integrity["passed"]:
-                return False  # do not launch further models on mutated source
+            if not integrity["passed"] or (
+                checkpoint is not None and not job["checkpoint_integrity_after"]["passed"]
+            ):
+                return False  # preserve failure and stop using changed inputs
     return all(job["passed"] for job in jobs)
 
 
@@ -211,6 +306,13 @@ def main():
     parser.add_argument("--up-tree", type=Path)
     parser.add_argument("--families", default="dense,moe,mla,mamba,hybrid,checkpoint")
     parser.add_argument("--modes", default="eager,graph")
+    parser.add_argument("--profile", choices=("smoke", "accuracy"), default="smoke")
+    parser.add_argument("--dtype", choices=("bfloat16", "float32"), default="bfloat16",
+                        help="official model compute dtype; float32 is an opt-in diagnostic")
+    parser.add_argument("--quantization",
+                        help="official quantization override; default is checkpoint auto-detection")
+    parser.add_argument("--enable-fp32-lm-head", action="store_true",
+                        help="use the official FP32 output-layer option for precision attribution")
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--binding-manifest", type=Path,
                         default=Path("tests/manifests/l15_v0522.json"))
@@ -220,6 +322,7 @@ def main():
     parser.add_argument("--model", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--family", help=argparse.SUPPRESS)
     parser.add_argument("--mode", choices=("eager", "graph"), help=argparse.SUPPRESS)
+    parser.add_argument("--checkpoint-manifest", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
         worker(args)

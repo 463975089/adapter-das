@@ -156,10 +156,19 @@ def _pytest(stage, name, args, timeout=900):
     except subprocess.TimeoutExpired:
         record(stage, name, "FAIL", f"timeout after {timeout}s")
         return
-    m = re.search(r"([0-9]+) passed.*?([0-9]+) skipped", p.stdout)
-    summ = f"{m.group(0)}" if m else " | ".join(
-        (p.stdout + p.stderr).strip().splitlines()[-2:])
+    output = p.stdout + p.stderr
+    # Preserve the whole pytest summary: a substring beginning at "passed"
+    # drops preceding failures, making a real FAIL look like a green suite.
+    summaries = re.findall(
+        r"^\s*(?:=+\s*)?\d+ (?:failed|passed|skipped|error|deselected|xfailed|xpassed)"
+        r"\b[^\n]*", output, flags=re.MULTILINE,
+    )
+    summ = summaries[-1].strip(" =\r") if summaries else " | ".join(
+        output.strip().splitlines()[-2:])
     record(stage, name, "PASS" if p.returncode == 0 else "FAIL", summ)
+    if p.returncode:
+        # Keep the traceback and exact failing node IDs in the triage log.
+        print(output, flush=True)
 
 
 # ------------------------------------------------------------- layers ----

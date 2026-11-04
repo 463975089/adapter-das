@@ -263,6 +263,16 @@ W4A16 fused MoE experts (moe_wna16 AWQ/GPTQ-int4 line)
 
 路由变量：`HCU_W4A16_MOE_IMPL`
 
+## int8_linear_gemm
+
+SGLang CT and explicit W8A8 INT8 linear scaled GEMM
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Existing sgl_kernel.gemm_int8 ABI; b |
+
+路由变量：（auto）
+
 ## per_token_quant
 
 per-token fp8/int8 quant (dynamic)

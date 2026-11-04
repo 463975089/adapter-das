@@ -27,6 +27,7 @@
 
 | 日期 | 模型 | 规模/卡 | 节点/栈 | 参数要点 | 启动 | 生成 | 精度 | 长文 | 备注 |
 |---|---|---|---|---|---|---|---|---|---|
+| 2026-11-04 | **DeepSeek-V4.1-Flash-Channel-INT4-w4a8 真实 TP4/EP1 启动闭环** | 460GB/4卡 | **nmz7 `sglang_liph_adapter`**，社区 SGLang 0.5.22 `baa9befa` + adapter `d1df244` | `--tp-size 4 --ep-size 1 --moe-a2a-backend none --moe-runner-backend triton --mem-fraction-static 0.90 --max-running-requests 16 --chunked-prefill-size 8192 --cuda-graph-max-bs-decode 16 --language-model-only`；prefill graph 关闭，decode graph bs `[1,2,4,8,12,16]`；`SGLANG_DSV4_FP4_DEQUANT=1 SGLANG_HCU_EP_BF16=1`，TileLang mHC pre/post 关闭 | ✅ 权重加载；decode graph 捕获约67s | ✅ 两次 `/generate` HTTP 200、请求码 0；巴黎/埃菲尔铁塔请求连贯 | ⚠️ 算术请求立即 stop，需补强语义断言 | 已确认 L1.5→真实模型的 TP4/EP1 闭环。最低实测 `mem-fraction-static≈0.8683`；EP4 仍失败于社区 dispatcher 的 deprecated `forward_deepgemm_masked`，不计入通过。证据：`results/l15-readiness/iteration51-dsv41-int4.json`
 | 2026-10-26 | **DeepSeek-V4.1-Flash-Channel-INT4-w4a8（461G DAS 转 compressed-tensors：路由专家 int4 channel+稠密 wq_a/wkv int8 per-channel+双 ~91.5GiB engram FP8 表）nmz26 tp4-ep4 精度首达 + overlap 重开**（两 adapter 针+三运行时病灶连修） | 461G/4卡 | **nmz26 debug 容器**（nmz18 起手遭外来 8 卡任务 ~100GB/卡 挤压 OOM 迁场）v0522 树 + adapter rel | `--tp-size 4 --ep-size 4`（**dp-attention 撤下=dp1**）、page 64、mem 0.86、chunked-prefill 8192、max-running 16、graph-max-bs-decode 16、**`--skip-server-warmup`（病灶①）**、watchdog 1800、dsa-topk torch/prefill fa3/decode flashmla_sparse、engram 宿主表 `SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE=1`（2×91.5GiB 走 host 内存）、HSA_KERNARG_POOL_SIZE=8388608、MHC_PRE=false、unset NCCL_TOPO_FILE/ROCR；port 30000（scripts/adapter_deepseekv4.1_channel_int4_dp4ep4.sh） | ✅（冷串行 ~92min=网络盘 4×183G；热页缓存+热 JIT **8min**） | ✅ graph ON（r11 起 overlap ON） | ✅ 算术 3/3（391/4005/144）+连贯+/v1/chat/completions+streaming（裸文本不走模板=秒 EOS 属预期，`<｜begin▁of▁sentence｜>…<｜Assistant｜>` 模板串正确） | —（长文门未单列） | **双 adapter 针（本批 feat(w4a8)）**：①ct_w4a8_moe——DAS w4a8 config_groups 全 regex targets → target_scheme_map 无 "Linear" 桶 → 上游 CompressedTensorsW4AFP8MoE 构造期 KeyError('Linear') 模型建不过 → HCU_W4A8_MOE=w4a16（默认）把 int4 组 input_activations 置 None → WNA16TritonMoE ROCm 臂（channel 改写 10.6 收口；激活 int8 忽略=MoE 跑 bf16，上游 nvfp4 w4a4→w4a16 同款降级模式）；heal 档保 stock 语义备将来 W4A8 内核；②dsv4_wqkv_scale_patch——v0522 load_weights 融合分支漏 CT INT8 per-channel `.weight_scale`，wq_a/wkv scale 被 "not found in params_dict" 丢弃 → 注意力投影未初始化 scale 反量化（**boot 正常、数值垃圾=精度役真凶**；关融合非绕法：WeightsMapper 后组 targets 只认融合名 wqkv_a）。**三运行时病灶**：①**mm warmup 自毁**——config `image_token_id=1029428572`（>vocab 129280）+vision_config → sglang 判多模态 → boot warmup 经 OpenAI 端点给自己发 png → 图占位 id 落 text embedding OOB → NCCL 楔死 watchdog 杀树；修=`--skip-server-warmup`；**客户端发图仍会杀服（运营红线）**；②**dp-attention idle/real RCCL 死锁**——--enable-dp-attention 下 1 real+3 idle forward 全 rank 永久阻塞 all_reduce（py-spy：DP0 `_execute_extend→dp_gather_replicate→librccl asyncJobLaunch`，余 `_execute_idle`）→ 撤 dp 落 tp4ep4dp1，根因未修（深水项）；③**overlap 首请求 desync**——event_loop_overlap 令 rank 分叉（TP0 `ingest_requests→broadcast_pyobj` vs TP2 `run_batch→clamp_position_cuda` 圆等）→ r9 关 overlap 保精度；r11 热缓存重开成功，但 **boot 后首请求 ~600s 危险窗**（客户端断开+abort 可恢复）。**/health 语义教训**：health 做**真生成**（HEALTH_CHECK rid），detokenizer 20s 超时→UnHealthy 误判、last_receive_tstamp 只在真实响应推进——非 detokenizer 病；"Device-side assertion tracking was not enabled"=multimem 探针失败消息一部分，非设备故障。**perf**：基线（无 overlap）decode c1 11.2/c4 17.4/c16 91.9 tok/s、prefill 232；overlap 重开 c4 32.1（+84%）、prefill 416（+79%）、c16 88-103（tuner CPU 争用噪声）；首 prefill JIT 编译风暴 465.7s（一次/容器，watchdog 1800 装得下）。**MoE tuner 战役（暂停位，state 可续）**：缺 `E=96,N=1152,device_name=BW1102,dtype=int4_w4a16.json`(+`_down`) 配置；ray 离线不可用→自写无 ray 分片 driver v7（坑：hycu 驱动级静默杀 GPU 坏配置→smem 预算守卫 ≤60000 估值+num_stages≤3；benchmark_config 必须 `torch.cuda.device(0)` 上下文否则 CPU 后端 NotImplementedError 炸；get_config 每 call 重读模型配置 ~15s→memoize）；**N=1152=packed w2.shape[2]（K/2）、tuner 逻辑 N=2304→merge 时手写精确文件名**；decode 3 切片+prefill 1 进程已跑、用户叫停未落地。**运维坑**：debug 容器 容器遭外部 SIGKILL(137) 杀健康服务（docker restart 保 fs=JIT 缓存存活）；SIGKILL 后显存释放 2-3min，等 hy-smi 见空再拉起 |
 | 2026-10-23 | **dsv41f 减核役第三夜：MoE combine emu→triton 直改（5.7×）+ silu 针 v3 挂点修正 + 「拍」根因再定性=GPU 全局时间片切割（环境级，非跨 rank 等待）** | 236GB/8卡 | **nmz18 dsv41f-dspark**（adapter 6ef8b3e/6866d2f，nmz26 树同步） | B 臂配方同 10-22（四门绿基线 975ms）+ silu v3 正臂 + combine triton 化 | ✅ | ✅ graph ON | ✅ 四门 4/4 | ✅ p50 975→925ms（bench_step，DP0 每 40 步间隔） | **combine 直改**：trace in-graph `reduce_kernel<128,4>` 467µs×40 层/prefill 步+8×116ms 巨怪=自家 emu `sgl_kernel/moe.py` aten 三连(sum→mul→copy)；e2e probe（publish(server_args,role,ranks) 前置+真链 inplace_fused_experts）实证 T>32 全走它；换 `_moe_sum_scale_kernel`（fp32 acc×rsf 单舍入）rsf=0 bitwise/≠0 ≤1ulp，M=1024 422→74µs、M=8192 3257→563µs(895GB/s)。**silu v3**：错挂 filter_expert 臂修正（routed arm 走 act_and_mul_triton else），ENGAGED 日志+四门绿复验。**拍再定性（推翻 10-22"等跨 rank 缓冲"说）**：①B trace 8 rank 全部 119×~116.0ms 停摆、时间戳跨卡对齐 ±2.6ms、每 ~181ms 一次（duty 损失 64%）——但 ②空载 server（零请求）单卡探测器仍见量子化 25.3/45.3ms 停摆（duty 48.6%）——无跨 rank 数据流也停=非缓冲等待；③无 server 驻留时单测时序干净；④CPU 探测器零 gap+cpu.max=-1=非 cgroup/非 CPU 冻结；⑤空载功耗 157W/27-36°C 正常、Perf=auto。结论：**serving 栈驻留即触发的 GPU 全局时间片切割（kernarg 池全局锁/管理面/固件级候选）**，量化时长=调度量子。【10-23 再收窄+修正：同盒 6 外来容器驻留（vllm0.28/0.29+sglang0.5.18）探测器 0 gap=拍非盒级、唯我方栈触发；eager/graph 风暴与 5G 驻留单因素不复现 ⇒ 需完整服务构成；~~健康者全 dtk2604x~~ dsv41f 容器亦 dtk26041/torch2.11 同代（das 亦在 nmz 调试）⇒ 残余差分=env+代码构成；expandable_segments 平台不支持/das PD 配方无抗拍钮 ⇒ 可测残余=HSA_FORCE_FINE_GRAIN_PCIE=1 与 HSA_KERNARG_POOL_SIZE=8M，四臂 /root/launch_ab1023_{A,B,C,D}.sh staged】`HSA_KERNARG_POOL_SIZE=8388608`（10-22 队列项）A/B 待 8 卡空窗（nmz18/26 皆客满）；hy-smi=`/opt/hyhal/bin/hy-smi`（rocm-smi 空壳）；主机 hfm/hymgr 常驻但 ptrace 禁。**停摆不除一切 kernel 优化只兑现在 ~36% 占空比内**（干净盒子理论 decode ~350ms/步 vs 现 925ms）。profiler 30s 后 watchdog 300s 超时崩（08:32 复现，prof 后别留长跑） |
 | 2026-10-22 | **dsv41f 减核役第二夜：mbtopk 57/步真凶定案 + DSA topk v2 融合接通（B 臂四门绿）+ 批量单测工作流定向**（nmz18 复活三障→换场 nmz26；adapter 新针 dsa_topk_v2） |
@@ -176,6 +177,32 @@
 - **修复（容器 /sglang-v0522/.../engram.py 四处）**：指针翻译改以 **libamdhip64 可加载性**为准（find_loaded_library→CDLL soname 兜底）+ 翻译回显 host 即 raise；注册前整段写脏 0xAB（脏页无写回目标免疫页缓存churn 回收，das 不崩的同款护身符）；注册后永不 MADV_COLLAPSE；地址常驻日志。cut8 config 配平 vocab=250000/num_embeddings=[6003388,6013872]。
 - **实证**：boot→load→dummy→prefill→DSPARK decode 全通 0 fault；dev≠host 重定位在案；TPOT host=21.2-21.9s vs device=21.4-21.8s（256tok，持平）。**生产化缺口：per_rank 23.6G 单次注册>12G 必败 → 需分块注册（12G×N 已证 48G/进程过）；8 卡 matched-dose 消拍=下一空窗首项。**
 - 方法论增补：dmesg fault VA 与映射区间做**区间归属判定**（两 VA 之差=w_bytes 即 weight/scale 指针对）；canary 对照实验（已知好路径 S 组 vs 待验路径同进程同刻）分离"注册机制坏"与"指针翻译坏"。
+
+### 2026-11-04 社区 0.5.22 真实 Qwen3 0.6B Channel-FP8 精度门
+
+nmz7 卡4，真实原始 FP8 checkpoint、BF16、TP1、triton、page1，
+固定双语、512/2048 token、复用/变输入的 eager/graph 生成均通过。
+显式 `--quantized-reference ct-fp8-token-channel` 使用独立官方
+Transformers/compressed-tensors CPU FP32 执行；核对全部 507 个 tensor，
+并逐次观察 196 个 Linear 的动态 token FP8 激活 QDQ。
+原 V1 分布门 **FAIL**：top20 logprob 最大误差 2.673436，
+top20+tail JSD 0.016584；greedy regret 为 0 不能代替分布通过。
+社区 compressed-tensors 加载器拒绝整模型 FP32 诊断配置；未放宽其限制。
+默认 CPU 参考仍拒绝量化，此显式入口不支持 INT8/MoE 或其他 FP8 格式。
+源码完整性通过；配方差异、环境与证据见
+[启动就绪记录](l15-readiness-plan.md#真实-ct-fp8-的独立-cpu-qdq-参考2026-11-04)。
+
+### 2026-11-03 社区 0.5.22 真实 Qwen3 30B Channel-INT8（nmz7 卡4）
+
+原始 checkpoint `/model/hygon/Qwen3-30B-A3B-Channel-INT8-w8a8`，
+公开 `--quantization w8a8_int8`、BF16、TP1，真实 Engine eager/graph
+两模式短输入生成通过。16 项资产字节绑定、执行前后社区源码完整性通过，
+decode graph 分配 0.021 GB；报告
+`results/l15-readiness/iteration31-qwen3-moe-int8.json`。
+修复为补齐显式 W8A8 Linear 缺失的既有 scaled GEMM 全局符号，
+未写回社区源码。CPU FP32 工具仍拒绝量化模型参考，此项未完成完整精度/
+语义验收。cookbook 固定 commit、参数差异与实际 dirty adapter 戳见
+[启动就绪记录](l15-readiness-plan.md#真实-30b-channel-int8-模型启动与生成)。
 
 ### 10-24 nmz18 单测三连（P1.1/1.2/1.3，卡 7）
 - **1.1 topk_v2 ragged 转正**：96 例 parity 集合语义 0 错（rem/topk/L/offsets 正交扫，4 reps）；非确定性=atomicAppend 发射到达序（topk_impl.cuh 612/617，paged 臂同源同在跑）；2.2-2.9× 快过 legacy；`HCU_TOPK_V2_RAGGED` 默认翻 1（nmz18 容器 dsa_topk_backend.py 已改）。**方法论：topk parity 一律比排序后集合，双跑分离"错"与"序"。**

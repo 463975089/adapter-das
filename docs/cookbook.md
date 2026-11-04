@@ -7,6 +7,25 @@
 生成结果判定是否通过。cookbook 的已验证标记不直接作为当前 adapter 组合的通过证据。
 下文保留本仓库历史配方与环境记录。
 
+## 0.1 pristine 源码模型套件入口
+
+真实模型验证使用 `tests/tools/run_pristine_model_suite.sh`，它会先执行
+`tools.upstream_source` 的逐文件完整性检查，再以显式的社区源码和 adapter
+路径启动 `run_model_suite.sh`。只做启动前检查时追加
+`--preflight-only`，不会启动模型或申请 GPU：
+
+```bash
+export SGLANG_TREE=/home/lipenghui/lph-adapter/sglang-0.5.22-pristine-iter7
+export ADAPTER_TREE=/home/lipenghui/lph-adapter/adapter-das
+bash "$ADAPTER_TREE/tests/tools/run_pristine_model_suite.sh" --preflight-only
+
+# 资源预检通过后再选择模型；脚本会沿用同一套 PYTHONPATH 和源码门禁。
+bash "$ADAPTER_TREE/tests/tools/run_pristine_model_suite.sh" q3-30b-a3b
+```
+
+未显式提供 `SGLANG_TREE`、`ADAPTER_TREE`，或未通过源码完整性检查时，
+入口直接退出；未通过预检的启动结果不计入模型验收。
+
 所有配方均在 **nmz26 验证容器（容器名仅作环境记录）+ 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（主线）** 实测通过（GLM-5-W4A8 在 nmz18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
 
 ## 0. 公共环境（每个配方都带）

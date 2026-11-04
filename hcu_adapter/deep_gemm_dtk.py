@@ -11,9 +11,10 @@ runners besides aiter/npu ones) are unreachable.
 builds a ``deep_gemm`` module in ``sys.modules`` backed by the DTK package
 plus the ``deep_gemm.utils.layout`` helper module the wrapper imports at
 module load. The utils.layout scale transforms have no verified DTK
-equivalent — they raise loudly instead of silently computing wrong
-numbers, which keeps fp8 DeepEP off the table until validated (bf16
-grouped GEMM needs no scales).
+equivalent and raise loudly. The adapter's existing Triton grouped FP8
+route instead reads logical scales and installs an identity layout
+transform; its single-device numerical/graph contracts do not validate
+distributed DeepEP. Disabling that route retains the layout refusal.
 
 fp8 contiguous verdict (R-04 probe campaign, 2026-10-18, nmz26 GPU4,
 wheel 2.1.0+dtk2604): NOT unlockable from this wheel, for three

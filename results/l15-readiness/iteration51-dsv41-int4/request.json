@@ -1,0 +1,8 @@
+INFO 11-04 03:32:33 [__init__.py:44] Available plugins for group vllm.platform_plugins:
+INFO 11-04 03:32:33 [__init__.py:46] - hcu -> vllm_hcu:hcu_platform_plugin
+WARNING 11-04 03:32:33 [rocm.py:123] Using CUDA_VISIBLE_DEVICES on ROCm is deprecated and support will be removed in vLLM v0.26.0. Please use HIP_VISIBLE_DEVICES instead.
+[HCU kprd] read-emu installed
+[HCU mhcunfuse] SGLANG_OPT_FUSE_MHC_POST_PRE forced false (aiter triton mhc_post_pre wrong on gfx938)
+[HCU specloc] get_last_loc -> torch (EAGLE+page>1 out-of-range last_loc guard)
+{"text":" Paris.\nThe Eiffel Tower is in Paris.\nThe Louvre is in Paris.\nThe Notre-Dame is in Paris.\nThe Seine is in Paris.\nThe","output_ids":[11111,603,671,446,4280,317,36788,344,295,11111,603,671,125089,344,295,11111,603,671,53893,6897,691,344,295,11111,603,671,96727,344,295,11111,603,671],"meta_info":{"id":"8c7ad970d04c466ebf0a8777924f3880","finish_reason":{"type":"length","length":32},"prompt_tokens":5,"weight_version":"default","num_retractions":0,"reasoning_tokens":0,"completion_tokens":32,"cached_tokens":0,"weight_versions":[{"version":"default","start":0,"end":32}],"cached_tokens_details":null,"dp_rank":null,"e2e_latency":2.2028519893065095,"response_sent_to_client_ts":1793734356.0572474}}
+{"text":"","output_ids":[1],"meta_info":{"id":"eb7717e85d7f4a10ada0399a9139c24d","finish_reason":{"type":"stop","matched":1},"prompt_tokens":8,"weight_version":"default","num_retractions":0,"reasoning_tokens":0,"completion_tokens":1,"cached_tokens":0,"weight_versions":[{"version":"default","start":0,"end":1}],"cached_tokens_details":null,"dp_rank":null,"e2e_latency":0.2013805452734232,"response_sent_to_client_ts":1793734356.2599201}}
