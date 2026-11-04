@@ -4,6 +4,47 @@
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
+## qsa_prefill
+
+QSA sparse prefill launch geometry on HCU
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate gfx936 uses 64/1 through 64 rows and |
+
+路由变量：（auto）
+
+## qsa_mqa
+
+QSA indexer MQA on HCU
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Official Torch reference for unsuppo |
+| boltops | candidate gfx936 BF16 QSA indexer with four 12 |
+
+路由变量：（auto）
+
+## qsa_scatter
+
+QSA state and compressed-key row stores on HCU
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate No host sync; duplicate destination  |
+
+路由变量：（auto）
+
+## mapped_host_view
+
+DTK mapped CPU allocation exposed as a device tensor
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| dtk | candidate INT8/BF16/FP8 live-ID Graph replay p |
+
+路由变量：（auto）
+
 ## vllm_sparse_indexer
 
 vLLM 0.33 C4 sparse indexer through public OOT and official helpers

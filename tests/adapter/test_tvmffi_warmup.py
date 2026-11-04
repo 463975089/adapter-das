@@ -22,6 +22,7 @@ import pytest
 
 from hcu_adapter import hcu_env
 from hcu_adapter import tvmffi_warmup as tw
+from hcu_adapter.bootstrap import detect_host
 
 
 @pytest.fixture()
@@ -58,6 +59,8 @@ def test_gate_off_is_noop(cache_dir, monkeypatch):
 
 def test_cold_build_strips_pythonpath(cache_dir, tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", "/adapter:/sglang-tree")
+    monkeypatch.setenv("HCU_ADAPTER_HOST", "sglang")
+    monkeypatch.setenv("_HCU_ADAPTER_ACTIVE_HOST", "sglang")
     helper = tmp_path / "_build_optional_torch_c_dlpack.py"
     helper.write_text("# helper stub\n")
     monkeypatch.setattr(tw, "_helper_script", lambda: helper)
@@ -73,6 +76,8 @@ def test_cold_build_strips_pythonpath(cache_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert tw.install() is True
     assert "PYTHONPATH" not in captured["env"], "R-18: 构建子进程不得继承 PYTHONPATH"
+    assert detect_host(captured["cmd"], (), {"sglang", "vllm"}, captured["env"]) is None
+    assert os.environ["HCU_ADAPTER_HOST"] == "sglang"
     assert "--build-with-rocm" in captured["cmd"]
     assert any("libtorch_c_dlpack_addon_torch211-rocm.so" in a for a in captured["cmd"])
 
@@ -100,6 +105,28 @@ def test_clean_env_popen_window(monkeypatch):
         assert "PYTHONPATH" not in seen["env"]
         assert seen["env"]["HCU_PROBE"] == "1"
     assert subprocess.Popen is fake_orig, "窗口外必须还原 Popen"
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_build_window_disables_installed_editable_bootstrap(monkeypatch, explicit):
+    captured = {}
+    def fake_orig(*args, **kwargs):
+        captured["env"] = kwargs["env"]
+        return "child"
+    monkeypatch.setattr(subprocess, "Popen", fake_orig)
+    parent = dict(PYTHONPATH="/adapter", HCU_ADAPTER_HOST="auto",
+                  _HCU_ADAPTER_ACTIVE_HOST="sglang", PATH="/usr/bin", HCU_PROBE="keep")
+    for name, value in parent.items():
+        monkeypatch.setenv(name, value)
+    with tw._CleanEnvPopen():
+        kwargs = dict(env=parent) if explicit else {}
+        assert subprocess.Popen([sys.executable, "helper.py"], **kwargs) == "child"
+    assert detect_host([sys.executable, "helper.py"], (), {"sglang", "vllm"}, captured["env"]) is None
+    assert "PYTHONPATH" not in captured["env"]
+    assert captured["env"]["HCU_PROBE"] == "keep"
+    assert parent["HCU_ADAPTER_HOST"] == os.environ["HCU_ADAPTER_HOST"] == "auto"
+    assert parent["PYTHONPATH"] == os.environ["PYTHONPATH"] == "/adapter"
+    assert subprocess.Popen is fake_orig
 
 
 def test_tvmffi_absent_is_silent_skip(cache_dir, monkeypatch):

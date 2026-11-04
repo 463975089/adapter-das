@@ -112,7 +112,8 @@ import tvm_ffi → 缓存缺失 → 再派构建进程，**形成 122 个构建�
 **解法**：启动任何服务前，在干净环境手工预编译一次（<1 分钟）：
 
 ```bash
-env -u PYTHONPATH python3 $(python3 -c \
+env -u PYTHONPATH HCU_ADAPTER_HOST=none _HCU_ADAPTER_ACTIVE_HOST=none python3 \
+  $(env -u PYTHONPATH HCU_ADAPTER_HOST=none _HCU_ADAPTER_ACTIVE_HOST=none python3 -c \
   "import tvm_ffi, os; print(os.path.join(os.path.dirname(tvm_ffi.__file__), 'utils', '_build_optional_torch_c_dlpack.py'))") \
   --output-dir /root/.cache/tvm-ffi \
   --libname libtorch_c_dlpack_addon_torch211-rocm.so \
@@ -148,6 +149,13 @@ nmz26 g53-tp8 ← nmz18 nsa-tp8，md5 b1fb7b35 校验一致）：
 PYTHONPATH）」的等效变体已失效**——10-24 起 dsa_topk_v2 eager import 使带
 PYTHONPATH 的裸 import 在 sitecustomize 阶段即触发自递归；手工预热一律
 `env -u PYTHONPATH`（命令替换里查路径的那一步也要）。
+
+**editable 安装补充（2026-11-03）**：安装态 `sitecustomize` 可由 site-packages
+找到，仅移除 `PYTHONPATH` 仍会继承宿主并再次进入预热，子进程等待父进程
+持有的同一把锁。构建子进程必须同时设置 `HCU_ADAPTER_HOST=none` 和
+`_HCU_ADAPTER_ACTIVE_HOST=none`；直接 helper 和兜底 Popen 均使用复制后的
+隔离环境，父进程及其他环境键保持原值。环境消费回归见
+`tests/adapter/test_tvmffi_warmup.py`；此项构建隔离不改变服务后端选择。
 
 ## 4. 运行时库路径补丁
 
@@ -270,6 +278,13 @@ HCU_L1_TIMEOUT_SCALE=3 bash ci/l1_gpu_gate.sh <gpu> --up-tree /sglang-v0522
 | 全系 | rust TreeCore 无预编译扩展、cargo 半残编不了 | 恒带 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`（cookbook §0） |
 
 ## 6. Bootstrap 完成自检（四条全绿再起服务）
+
+sglang 的 AITER 拒用分支必须在 `HCU_DISABLE_OPS=aiter_ar` 下实际检查
+dispatch；不能仅检查环境摘要。2026-11-04 修复了自研 AR 退役后遗留的
+`_tar_installed` 引用：旧分支抛 NameError 并跳过拒用接线，新分支直接
+按当前拒用判定安装 NCCL 回退。回归入口为
+`pytest tests/vendor/test_allreduce.py -k gate_disable_list`；该接线检查
+不代表 AITER 数学与 Graph 压测已通过。
 
 ```bash
 cd /work && PYTHONPATH=/work:/work/official-sglang/python python3 - <<'PY'

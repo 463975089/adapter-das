@@ -3030,3 +3030,6 @@ def install() -> None:
                 "HCU adapter: dual-stream MoE capture gate not installed",
                 exc_info=True,
             )
+
+        from hcu_adapter import qsa_pool
+        qsa_pool.install()

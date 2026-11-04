@@ -24,6 +24,7 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 | `vllm_sparse_indexer` | vLLM 0.33/gfx936 C4 public OOT | 启动时优先 stock；注册后改变须新进程，不能撤销 dispatcher 或清除失败 |
 | `vllm_mhc` | vLLM 0.33 mHC Torch/OOT 适配候选 | 启动时跳过注册，保留原始官方；已注册后改变策略拒绝，须新进程。原始已知 TileLang 失败仍保留，不是功能回退通过。 || `aiter_ar` | AiterCustomAllreduce dispatch | 拒绝 → sglang 回退 NCCL（优雅降级） |
 | `aiter_fa` | aiter FA 入口（真包已有属性也拦） | 调用时响亮报错（换 `--attention-backend triton`） |
+| `qsa_mqa` | QSA MQA BoltOPs prefill/decode | 回退当前官方 Torch reference，保留原输入/输出与 decode keyword 参数 |
 
 优先级：`HCU_DISABLE_OPS` > arch 自动规则 > 单算子 opt-in env。
 `aiter_ar` 的自动规则（hcu_env.py）区分新旧 aiter 布局：gfx93\* +

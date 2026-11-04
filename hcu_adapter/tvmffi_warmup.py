@@ -18,9 +18,9 @@ bootstrap.md §3 记录的 122 进程/50 分钟案；nmz26 dsv41f 冷容器 2026
 1. 探温快路径：``~/.cache/tvm-ffi/**.so`` 任一存在 → 直接返回（幂等秒过）；
 2. 冷则 flock 排他（TP spawn 风暴下只放一个构建者，防 §3 标题的「JIT
    竞争死锁」），锁内复检后再动手；
-3. 以 **剥掉 PYTHONPATH 的干净 env** 亲跑 tvm_ffi 自带构建脚本
+3. 以 **剥掉 PYTHONPATH 并禁用宿主 bootstrap 的 env** 亲跑 tvm_ffi 自带构建脚本
    （``utils/_build_optional_torch_c_dlpack.py``，参数照 §3 配方）——
-   子进程无 PYTHONPATH → sitecustomize 不加载 → 单层走完落缓存；
+   子进程即使找到 editable sitecustomize 也不再进入宿主桥，单层走完落缓存；
 4. 兜底：若 helper 缺席/失败，退化为窗口内 ``import tvm_ffi`` 让加载器
    自己派构建子进程，``_CleanEnvPopen`` 窗口给每个子进程注入同款干净
    env（递归物理断路，不依赖脚本名/libname 版本对齐），窗口结束还原。
@@ -76,8 +76,15 @@ def _helper_script():
     return helper if helper.exists() else None
 
 
+def _build_env(environment):
+    env = {k: v for k, v in environment.items() if k != "PYTHONPATH"}
+    env["HCU_ADAPTER_HOST"] = "none"
+    env["_HCU_ADAPTER_ACTIVE_HOST"] = "none"
+    return env
+
+
 def _build_with_clean_env(helper, cache_dir):
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env = _build_env(os.environ)
     cmd = [
         sys.executable,
         str(helper),
@@ -89,7 +96,7 @@ def _build_with_clean_env(helper, cache_dir):
     ]
     LOG.warning(
         "HCU adapter: tvm-ffi dlpack cache cold -> one-time build "
-        "(~20-40s; recursion-safe env, no PYTHONPATH)"
+        "(~20-40s; recursion-safe env, no PYTHONPATH, host=none)"
     )
     subprocess.run(cmd, env=env, check=False, capture_output=True, timeout=900)
 
@@ -107,10 +114,8 @@ class _CleanEnvPopen:
         self._orig = subprocess.Popen
 
         def patched(*args, **kwargs):
-            if kwargs.get("env") is None:
-                kwargs["env"] = {
-                    k: v for k, v in os.environ.items() if k != "PYTHONPATH"
-                }
+            environment = kwargs.get("env")
+            kwargs["env"] = _build_env(os.environ if environment is None else environment)
             return self._orig(*args, **kwargs)
 
         subprocess.Popen = patched
