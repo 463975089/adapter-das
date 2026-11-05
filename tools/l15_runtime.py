@@ -106,12 +106,20 @@ def write_json(path, value):
             os.unlink(name)
 
 
-def test_env(up_tree, adapter_root):
+def test_env(up_tree, adapter_root, host="adapter"):
     env = dict(os.environ)
     # Do not inherit an older source tree or a disabled/different host.
     env["PYTHONPATH"] = os.pathsep.join((str(adapter_root), str(up_tree / "python")))
     env["HCU_ADAPTER_HOST"] = "sglang"
     env["VLLM_PLUGINS"] = "none"
+    if host == "adapter+plugin":
+        # Whitelist-only load of the installed hcu-sglang-plugin dist.
+        env["SGLANG_PLUGINS"] = "hcu"
+    else:
+        # Sentinel whitelist with no real name: skips every discovered
+        # plugin, so an hcu-sglang-plugin installed into the image can
+        # never silently contaminate the adapter-only baseline.
+        env["SGLANG_PLUGINS"] = "none"
     env["PYTHONUNBUFFERED"] = "1"
     return env
 
@@ -128,7 +136,7 @@ def git_stamp(root):
             "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
 
 
-def preflight(up_tree, adapter_root, binding_manifest):
+def preflight(up_tree, adapter_root, binding_manifest, host="adapter"):
     """Verify the exact source binding and allocate on one real HIP device."""
     integrity = audit_source(up_tree)
     if not integrity["passed"]:
@@ -142,7 +150,7 @@ def preflight(up_tree, adapter_root, binding_manifest):
         if actual != expected:
             raise ValueError(f"upstream binding mismatch: {relative}")
         hashes[relative] = actual
-    env = test_env(up_tree, adapter_root)
+    env = test_env(up_tree, adapter_root, host=host)
     env["HCU_ADAPTER_HOST"] = "none"
     probe = """
 import importlib.util, json, os, socket, torch
@@ -153,12 +161,27 @@ x = torch.ones(1, device='cuda')
 assert x.add(1).item() == 2
 torch.cuda.synchronize()
 p = torch.cuda.get_device_properties(0)
+plugin_evidence = {'loaded': False}
+if os.environ.get('SGLANG_PLUGINS') == 'hcu':
+    import sglang.srt.plugins as _plugins
+    _plugins.load_plugins()
+    from sglang.srt.plugins.hook_registry import HookRegistry
+    sources = {src.plugin_name for hooks in HookRegistry._hooks.values()
+               for _, _, src in hooks if src is not None}
+    # load_plugins() swallows plugin exceptions to a log line, so an
+    # unloaded/broken plugin would otherwise read as a green run.
+    assert 'hcu' in sources, (
+        'hcu-sglang-plugin did not register any hook (sources=%s)' % sorted(sources))
+    plugin_evidence = {'loaded': True,
+                       'hook_targets': len(HookRegistry._hooks),
+                       'sources': sorted(sources)}
 print('L15_RUNTIME ' + json.dumps({
  'hostname': socket.gethostname(), 'torch': torch.__version__,
  'hip': torch.version.hip, 'device_count': torch.cuda.device_count(),
  'device': p.name, 'arch': getattr(p, 'gcnArchName', ''),
  'visibility': {k: os.environ.get(k) for k in
                 ('HIP_VISIBLE_DEVICES', 'CUDA_VISIBLE_DEVICES', 'ROCR_VISIBLE_DEVICES')},
+ 'plugin': plugin_evidence,
  'origins': {name: importlib.util.find_spec(name).origin for name in
              ('sglang', 'sgl_kernel', 'hcu_adapter')}}))
 """
@@ -177,8 +200,12 @@ print('L15_RUNTIME ' + json.dumps({
                       "sgl_kernel": adapter_root, "hcu_adapter": adapter_root}
     for name, root in expected_roots.items():
         Path(runtime["origins"][name]).resolve().relative_to(root.resolve())
+    # adapter+plugin: the plugin dist itself lives in site-packages by
+    # design; its load evidence is asserted in the probe instead of an
+    # origin-path check.
     runtime.update(adapter=git_stamp(adapter_root), upstream=git_stamp(up_tree),
                    binding_files=hashes, source_integrity=integrity)
+    runtime["host"] = host
     return runtime
 
 

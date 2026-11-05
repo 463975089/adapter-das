@@ -156,6 +156,18 @@ def worker(args):
     if quantization is not None:
         options["quantization"] = quantization
     with sgl.Engine(**options) as engine:
+        if getattr(args, "host", "adapter") == "adapter+plugin":
+            # load_plugins() swallows plugin failures into a log line; a
+            # silent non-load here would read as a green stacked run.
+            from sglang.srt.plugins.hook_registry import HookRegistry
+
+            sources = {src.plugin_name for hooks in HookRegistry._hooks.values()
+                       for _, _, src in hooks if src is not None}
+            if "hcu" not in sources:
+                raise ValueError(
+                    "hcu-sglang-plugin did not load in the engine process "
+                    f"(sources={sorted(sources)})"
+                )
         generations = []
         # Two batches test fresh inputs and cache reuse through the real
         # tokenizer/scheduler/prefill/decode path, rather than a model mock.
@@ -190,6 +202,7 @@ def worker(args):
     write_json(args.out, {
         "artifact": "l15-model-worker", "passed": True, "family": args.family,
         "mode": args.mode, "model": str(args.model),
+        "host": getattr(args, "host", "adapter"),
         "weight_evidence": "real-checkpoint" if args.family == "checkpoint" else "dummy",
         "checkpoint_files_sha256": checkpoint,
         "generation_profile": profile, "accuracy_cases": accuracy_cases,
@@ -231,7 +244,9 @@ def run(args):
                 raise ValueError("checkpoint must be a local config and safetensors weights")
         else:
             tiny_config(family)
-    runtime = preflight(args.up_tree.resolve(), root, args.binding_manifest.resolve())
+    host = getattr(args, "host", "adapter")
+    runtime = preflight(args.up_tree.resolve(), root, args.binding_manifest.resolve(),
+                        host=host)
     checkpoint_inputs = fingerprint(args.checkpoint.resolve()) if "checkpoint" in families else None
     jobs = []
     for family in families:
@@ -251,11 +266,12 @@ def run(args):
             job = run_job(
                 [sys.executable, "-m", "tools.l15_model_smoke", "--worker",
                  "--model", str(model), "--family", family, "--mode", mode,
-                 "--out", str(report), "--profile", profile, "--dtype", dtype]
+                 "--out", str(report), "--profile", profile, "--dtype", dtype,
+                 "--host", host]
                 + (["--checkpoint-manifest", str(manifest)] if checkpoint is not None else [])
                 + (["--enable-fp32-lm-head"] if fp32_head else [])
                 + (["--quantization", quantization] if quantization is not None else []),
-                cwd=root, env=test_env(args.up_tree.resolve(), root),
+                cwd=root, env=test_env(args.up_tree.resolve(), root, host=host),
                 timeout=args.timeout, log=work / f"{family}-{mode}.log",
             )
             try:
@@ -270,6 +286,7 @@ def run(args):
                 and evidence.get("mode") == mode
                 and evidence.get("family") == family
                 and evidence.get("model") == str(model)
+                and evidence.get("host", "adapter") == host
                 and evidence.get("weight_evidence") == (
                     "real-checkpoint" if checkpoint is not None else "dummy")
                 and evidence.get("generation_profile", "smoke") == profile
@@ -319,6 +336,10 @@ def main():
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--binding-manifest", type=Path,
                         default=Path("tests/manifests/l15_v0522.json"))
+    parser.add_argument("--host", choices=("adapter", "adapter+plugin"),
+                        default="adapter",
+                        help="load only the adapter, or also the installed "
+                             "hcu-sglang-plugin dist (SGLANG_PLUGINS=hcu)")
     parser.add_argument("--out", type=Path, default=Path("results/l15-readiness/models.json"))
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
