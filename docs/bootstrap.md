@@ -1,5 +1,10 @@
 # 新容器 Bootstrap 手册（镜像 → 可跑 adapter）
 
+> **新基底镜像走新册**：DTK 26.10 / py3.12 基线的 pip 态部署见
+> [image-dtk2610.md](image-dtk2610.md)；本册覆盖 dtk26041 系 / py3.10 现役栈
+> （PYTHONPATH 源码态）。Organization 开源库的问题先查
+> [hygon-oss-landscape.md](hygon-oss-landscape.md)。
+>
 > 本文回答：**拿到一个 DTK/sglang 基线镜像的新容器，要让 adapter + 官方
 > sglang v0.5.21 跑起来，需要手工做哪些事、为什么、顺序如何。**
 > 适用镜像：`10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk2604x-py3.10-*` 系
