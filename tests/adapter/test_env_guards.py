@@ -73,6 +73,20 @@ def test_bf16_forwarder_carries_nv_bfloat16():
     body = jit_compat._FORWARDS["cuda_bf16.h"]
     assert body[:2] == ["#pragma once", "#include <hip/hip_bf16.h>"]
     assert "using __nv_bfloat16 = __hip_bfloat16;" in body
+    # sglang main spells the CUDA names without underscores and calls the
+    # _rn intrinsics; DTK has neither natively (validated on box47 gfx936).
+    text = "\n".join(body)
+    for needle in (
+        "using nv_bfloat16 = __hip_bfloat16;",
+        "using nv_bfloat162 = __hip_bfloat162;",
+        "__float2bfloat16_rn(const float f) { return __float2bfloat16(f); }",
+        "__float2bfloat162_rn(const float f) { return __hip_bfloat162(f, f); }",
+        "__float2bfloat162_rn(const float x, const float y)",
+    ):
+        assert needle in text, needle
+    # re-declaring DTK-native intrinsics would be an overload error
+    for native in ("__bfloat162bfloat162", "__halves2bfloat162"):
+        assert not any(native in line and "inline" in line for line in body), native
 
 
 def test_forwarder_set_matches_supported_cuda_headers():

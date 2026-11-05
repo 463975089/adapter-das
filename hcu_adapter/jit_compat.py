@@ -23,6 +23,22 @@ _FORWARDS = {
         # csrc written for CUDA gets __nv_bfloat16 only via this header,
         # so the alias belongs here (same argument as the fp8 set below).
         "using __nv_bfloat16 = __hip_bfloat16;",
+        # sglang main (2026-11 jit tree) additionally spells the CUDA names
+        # without underscores (nv_bfloat16/nv_bfloat162, 500+ uses in csrc)
+        # and calls the _rn conversion intrinsics. DTK ships the unsuffixed
+        # __float2bfloat16 / __bfloat162bfloat162 / __halves2bfloat162 natively
+        # (do NOT re-declare those: overloading a __host__ __device__ original
+        # is a compile error), but no _rn variants and no bare nv_* types.
+        "using __nv_bfloat162 = __hip_bfloat162;",
+        "using nv_bfloat16 = __hip_bfloat16;",
+        "using nv_bfloat162 = __hip_bfloat162;",
+        "static __host__ __device__ inline __hip_bfloat16 "
+        "__float2bfloat16_rn(const float f) { return __float2bfloat16(f); }",
+        "static __host__ __device__ inline __hip_bfloat162 "
+        "__float2bfloat162_rn(const float f) { return __hip_bfloat162(f, f); }",
+        "static __host__ __device__ inline __hip_bfloat162 "
+        "__float2bfloat162_rn(const float x, const float y) "
+        "{ return __hip_bfloat162(x, y); }",
     ],
     "cuda_fp16.h": [
         "#pragma once",

@@ -116,6 +116,18 @@ _MHC_ASM = (
     "      inverse = rsqrtf(mean);  // HCU: rsqrt.approx.ftz -> rsqrtf",
 )
 
+# Needles whose NVIDIA-only construct may be absent from newer upstream
+# trees entirely (upstream self-healed, e.g. sglang main 2026-11 rewrote
+# topk_bf16_small.cuh to pass lane_id as a parameter). When the underlying
+# construct is verifiably gone from the file the patch has no object and is
+# skipped loudly; a changed-but-present construct still trips the §3 gate.
+_SELF_HEAL_ABSENT = {
+    "deepseek_v4/topk_bf16_small.cuh": {
+        '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));': "%%laneid",
+    },
+}
+
+
 _PATCHES = {
     "deepseek_v4/paged_mqa_metadata.cuh": [
         (
@@ -460,21 +472,33 @@ def _apply(root, register):
             if old_repl in text:
                 text = text.replace(old_repl, original)
 
+        applied = []
         for needle, repl in needles:
             if repl in text:
+                applied.append(needle)
                 continue
             if needle not in text:
+                marker = _SELF_HEAL_ABSENT.get(relpath, {}).get(needle)
+                if marker is not None and marker not in text:
+                    LOG.info(
+                        "jit_dpskmeta: %s self-healed upstream (no %r left);"
+                        " needle skipped",
+                        relpath,
+                        marker,
+                    )
+                    continue
                 raise RuntimeError(
                     f"jit_dpskmeta: needle missing in {relpath}:"
                     f" {needle[:60]!r} -- upstream changed; re-derive"
                     " (governance §3)"
                 )
             text = text.replace(needle, repl)
+            applied.append(needle)
 
         _atomic_write(p, text)
 
         target = f"text:sglang/kernels/jit/csrc/{relpath}"
-        for needle, _ in needles:
+        for needle in applied:
             register(
                 "platform_detect",
                 "dtk-hipcc-portability",

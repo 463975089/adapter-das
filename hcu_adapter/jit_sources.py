@@ -36,15 +36,33 @@ def _digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def _community_root(root):
+    """The community checkout root (nearest ancestor containing .git)."""
+    for candidate in (root, *root.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return root
+
+
 def _assets(root):
     result = {}
+    community = _community_root(root)
     for name in ("csrc", "include"):
         base = root / name
         if not base.is_dir() or base.is_symlink():
             raise RuntimeError("jit_sources: expected real csrc/include directories")
         for path in sorted(base.rglob("*")):
             if path.is_symlink():
-                raise RuntimeError(f"jit_sources: symbolic source asset rejected: {path}")
+                # Upstream organizes shared headers as in-repo symlinks (e.g.
+                # sglang main: include/sgl_kernel/quantization/gguf/* ->
+                # ../../../../../aot/...). Materialize those into the bundle
+                # verbatim; only symlinks escaping the community checkout are
+                # refused. read_bytes() below follows the link either way.
+                target = path.resolve()
+                if not (target == community or community in target.parents):
+                    raise RuntimeError(
+                        f"jit_sources: symbolic source asset escapes community tree: {path} -> {target}"
+                    )
             # Some csrc subprojects ship standalone Python generators. They
             # are not compiler inputs and must not become a shadow Python tree.
             if path.is_file() and path.suffix not in (".py", ".pyc", ".pyo"):

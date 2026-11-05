@@ -81,6 +81,43 @@ def _install_gfx_probe_guard(_common):
     )
 
 
+def _replace_version_gates(common, pkg):
+    """Rewrite the frozen lru_cache CUDA-version gates in BOTH namespaces.
+
+    The gates (is_sm90_supported / is_ampere_with_cuda_12_3 / is_blackwell /
+    ...) are lru_cache(partial(_check_cuda_device_version,...)) objects whose
+    original body ends in torch.version.cuda.split -- a hard AttributeError
+    with cuda=None on HCU. They are also re-exported frozen by the package
+    layer's `from .common import *`, and sglang main kernels call them at
+    module import time THROUGH that package namespace (e.g.
+    fused_sigmoid_gating_recurrent `_is_sm90 = is_sm90_supported()` via the
+    kda backend chain): patching common alone leaves the package copies
+    crashing (bw47 hybrid/eager, 2026-11-05). Semantics: these gates ask for
+    NVIDIA-version-specific features -- False on HCU, upstream then takes its
+    conservative fallbacks. `pkg=None` patches common only (tests / no-pkg
+    callers). Returns the replaced names.
+    """
+
+    def _false():
+        return False
+
+    check = getattr(common, "_check_cuda_device_version", None)
+    if check is None:
+        return []
+    import functools as _ft
+
+    names = []
+    for name in list(vars(common)):
+        inner = getattr(getattr(common, name), "__wrapped__", None)
+        if isinstance(inner, _ft.partial) and inner.func is check:
+            setattr(common, name, _false)
+            names.append(name)
+    if pkg is not None:
+        for name in names:
+            setattr(pkg, name, _false)
+    return names
+
+
 def platform_env_defaults():
     """HCU-stack platform defaults for sglang env vars (R-08 A-tier).
 
@@ -230,16 +267,20 @@ def install():
     # torch.version.cuda.split —— HCU 上是 None，直接 AttributeError。
     # 语义上这些门判定的是"NVIDIA 特定版本特性"，HCU 不该放行：统一 False，
     # 上游走保守回退路径。按 __wrapped__ 精确识别，未来新增探针自动覆盖。
-    import functools as _ft
+    # common 之外，`sglang.srt.utils/__init__` 的 `from .common import *`
+    # 冻结了同一批原对象，sglang main 的 kernels 在模块 import 时经包级
+    # re-export 调用它们（fused_sigmoid_gating_recurrent ->
+    # `_is_sm90 = is_sm90_supported()`，kda 后端链）——必须双命名空间替换。
+    import sglang.srt.utils as _pkg_utils
 
-    for _name in list(vars(_common)):
-        _v = getattr(_common, _name)
-        _inner = getattr(_v, "__wrapped__", None)
-        if (
-            isinstance(_inner, _ft.partial)
-            and _inner.func is getattr(_common, "_check_cuda_device_version", None)
-        ):
-            setattr(_common, _name, lambda: False)
+    _gates = _replace_version_gates(_common, _pkg_utils)
+    if _gates:
+        LOG.warning(
+            "HCU adapter: %d CUDA version gates -> False (common + utils"
+            " package namespaces; e.g. %s)",
+            len(_gates),
+            ", ".join(sorted(_gates)[:3]),
+        )
 
     # gcn 架构探针（is_gfx950_supported / is_gfx1250_supported，@lru_cache 无
     # __wrapped__）：原实现走 torch.version.hip 真值分支后裸调
@@ -270,9 +311,9 @@ def install():
     # first imported -- which happens as a side effect of our very own
     # `from sglang.srt.utils import common` above. The package namespace
     # therefore still holds the ORIGINAL callables; sync them (same for any
-    # other already-imported re-export layer).
-    import sglang.srt.utils as _pkg_utils
-
+    # other already-imported re-export layer). The lru_cache version gates
+    # were already synced inside _replace_version_gates above; these are the
+    # four hand-written seam symbols.
     _sync = {
         "is_cuda": _hcu_is_cuda,
         "is_hip": _hcu_is_hip,

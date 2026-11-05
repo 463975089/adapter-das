@@ -224,18 +224,77 @@ def test_spawn_concurrent_publish(source, tmp_path):
         queue.close()
 
 
-def test_symbolic_source_assets_are_refused(source, tmp_path):
+def test_in_tree_symlink_is_materialized(source, tmp_path):
+    # sglang main organizes shared headers as in-repo symlinks (e.g.
+    # include/sgl_kernel/quantization/gguf/* -> ../../../aot/...); those must
+    # be staged verbatim instead of aborting the whole compiler-input bundle.
     root, _ = source
     try:
         (root / "include/alias.cuh").symlink_to(root / "include/sgl_kernel/warp.cuh")
     except OSError:
         pytest.skip("host does not permit symlink creation")
-    with pytest.raises(RuntimeError, match="symbolic source asset"):
+    bridge.prepare(root, tmp_path / "cache")
+    bundles = list((tmp_path / "cache").iterdir())
+    assert len(bundles) == 1
+
+
+def test_out_of_tree_symlink_is_refused(source, tmp_path):
+    root, _ = source
+    try:
+        (root / "include/escape.cuh").symlink_to(tmp_path / "outside.h")
+    except OSError:
+        pytest.skip("host does not permit symlink creation")
+    with pytest.raises(RuntimeError, match="escapes community tree"):
         bridge.prepare(root, tmp_path / "cache")
 
 
 class _SpecCaptured(Exception):
     pass
+
+
+def test_dpskmeta_self_healed_needle_is_skipped(tmp_path):
+    # sglang main rewrote topk_bf16_small.cuh to pass lane_id as a parameter:
+    # the %%laneid asm patch has no object there and must be skipped loudly,
+    # while every still-present NVIDIA-only construct keeps its rewrite.
+    from hcu_adapter import jit_dpskmeta
+
+    root = tmp_path / "stage"
+    (root / "csrc/deepseek_v4").mkdir(parents=True)
+    p = root / "csrc/deepseek_v4/topk_bf16_small.cuh"
+    live = [
+        needle
+        for needle, _ in jit_dpskmeta._PATCHES["deepseek_v4/topk_bf16_small.cuh"]
+        if "laneid" not in needle
+    ]
+    p.write_text(
+        "uint32_t f(uint32_t x, uint32_t lane_id) {\n"
+        + "".join(needle + "\n" for needle in live)
+        + "}\n",
+        encoding="utf-8",
+    )
+    records = []
+    jit_dpskmeta._apply(root, lambda *a, **k: records.append((a, k)))
+    text = p.read_text(encoding="utf-8")
+    for needle in live:
+        assert needle not in text, needle
+    assert "get_lane_id" not in text  # self-healed needle left no object
+    assert len(records) == len(live), records
+
+
+def test_dpskmeta_drifted_construct_still_raises(tmp_path):
+    # The construct is still present but the needle text drifted: the
+    # governance §3 gate must fire, not silently skip.
+    from hcu_adapter import jit_dpskmeta
+
+    root = tmp_path / "stage"
+    (root / "csrc/deepseek_v4").mkdir(parents=True)
+    p = root / "csrc/deepseek_v4/topk_bf16_small.cuh"
+    p.write_text(
+        '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(id));\n',  # drifted: id
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match="needle missing"):
+        jit_dpskmeta._apply(root, lambda *a, **k: None)
 
 
 def _functions(root, tree):

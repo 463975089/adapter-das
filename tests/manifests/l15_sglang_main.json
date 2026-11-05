@@ -1,0 +1,22 @@
+{
+  "schema_version": "1",
+  "manifest_id": "sglang-main-20261104-l15-v1",
+  "layer": "L1.5-model-smoke",
+  "upstream": {
+    "project": "sglang",
+    "version": "main@fd19cfb (2026-11-04)",
+    "binding_files": {
+      "python/pyproject.toml": "53aa6decc9cdb9e86240b9747810e153f5cdfc477dcd1be37de97fabe14d18ef",
+      "python/sglang/version.py": "b10f7d9ea276972352b1e9de0eb0bbb47d8ebe64c29469e15ea016a12019bb22"
+    },
+    "tree_markers": ["python/sglang", "test/registered"]
+  },
+  "defaults": {
+    "device_count": 1,
+    "needs_server": false,
+    "needs_model_weights": false,
+    "external_network": false,
+    "classification": "L1.5",
+    "route_evidence": "family-matrix"
+  }
+}
