@@ -23,6 +23,7 @@
 | 配置后端 / 部署 | docs/config.md → hcu_adapter.example.yaml → docs/env-vars.md（调试覆盖） |
 | 部署 vLLM 0.32 | docs/frameworks/vllm032.md（组件职责、启动时序、wheel 锁定与验证） |
 | 迁移 vLLM 0.33 | docs/frameworks/vllm033.md（独立发布线、三仓定位、公开 attention/communicator 接口与验收边界） |
+| vLLM 官方 AR 的 HCU 兼容 / 快关 / 安装时序 | docs/frameworks/vllm032-allreduce.md（真实 runtime ABI → FP8 → AR → Plugin；registration 与 fusion pass、availability 与 selection 分开） |
 | 跑一个模型 | docs/cookbook.md（找配方）→ docs/models.md（看先例与坑）→ cookbook.md §4 平台约束 |
 | **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
@@ -59,6 +60,7 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | docs/test-route-implementation-plan.md | 上述目标态的执行计划：MR 依赖、代码布局、DoD、验收、资源与回滚 | 任务已落地但状态未回写，或实现布局/schema/门槛与计划不符 |
 | docs/config.md | hcu_adapter.yaml 部署配置 + BACKEND_CATALOG 状态语义 | catalog 键集与 hcu_config.py 不符 |
 | docs/frameworks/vllm032.md | vLLM 0.32、Adapter 与可选 Plugin 的职责、部署和组合验证口径 | entry-point 所有权或版本门与代码不符 |
+| docs/frameworks/vllm032-allreduce.md | vLLM 官方 AR 的 HCU ABI/策略兼容候选；不复制 collective，不继承 SGLang 生产证据 | runtime admission 次序、快关或公开注册 ABI 与代码不符 |
 | docs/vllm-commit-fatal.md | 公共显式 commit-fatal 与只读 runtime health；PR17 最小基线 | 锁存/fork/selector 行为或最小依赖与代码不符 |
 | docs/operator-requests.md | 算子需求提报标准（契约锚定上游 sglang、shm≠spec、验收判据、版本锚闭环） | 与 governance 判别问句/catalog 状态语义不符 |
 | docs/plugins.md | 须走 plugin/上游/镜像/专门窗口的需求登记表（P1-P9，判定规则+验收锚点） | 完成项未更新现状列 / 未过 §0 判定就收录 |

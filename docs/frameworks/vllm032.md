@@ -216,6 +216,8 @@ Plugin 跑通不能反向证明 Adapter 基线正确，性能提升也不能替�
 通用成功加载回调、worker 可用性判定以及 compile-policy freeze 的集成边界见
 [post-model-load 接口](vllm032-post-model-load.md)。此接口不激活 Plugin；foreign
 worker 仍由操作者配置，依赖 freeze 的 Plugin 选型必须显式检查接口可用性。
+官方已有 AR 的 HCU 兼容、快关、独立注册与 pass 分界见
+[AR 兼容](vllm032-allreduce.md)；不增加 Plugin owner，不继承 SGLang 生产证据。
 
 - 官方 vLLM 已支持且能在 HCU 正确运行的能力直接复用，不重复建设；
 - 官方已有行为的 HCU 缺口留在 Adapter；

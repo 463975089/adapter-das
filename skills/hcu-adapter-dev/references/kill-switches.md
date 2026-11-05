@@ -10,6 +10,12 @@
 "aiter 顶上后无生产位"否决，"修→废"）——教训沉淀：高危 vendor 面转正
 靠压测+serving 双证据，出问题先快关二分再定罪。
 
+上段生产结论仅指历史 **SGLang** 路径。**vLLM** AR 兼容仍为 candidate，
+auto 默认不选，不调用 SGLang provider 探测。`HCU_AITER_AR=1` 的 opt-in
+仍受 `HCU_DISABLE_OPS=aiter_ar` 和官方子开关的 veto；OFF 保留官方
+fallback 顺序，不保证纯 RCCL。注册 fused ops、实际 fusion pass、native
+数学、变输入 Graph 与模型须分项取证；见 `docs/frameworks/vllm032-allreduce.md`。
+
 ## HCU_DISABLE_OPS（快关总闸）
 
 ```bash

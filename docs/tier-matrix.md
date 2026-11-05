@@ -36,6 +36,27 @@ vLLM official dense FP8 fallback via public linear registration
 
 路由变量：（auto）
 
+## vllm_allreduce
+
+vLLM official AR constructor compatibility; separate from historical SGLang AR
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| official-aiter | candidate HCU ABI/copy-in/limits only; CPU con |
+| official-fallback | candidate AITER dispatch OFF; preserves offici |
+
+路由变量：`1`/`0`
+
+## vllm_allreduce_admission
+
+vLLM AR-only gate compatibility; global AITER and real architecture unchanged
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| official-aiter-gate | candidate Existing HCU kill/resolver policy; a |
+
+路由变量：（auto）
+
 ## silu_and_mul
 
 gated activation out = silu(x[:,:d]) * x[:,d:]

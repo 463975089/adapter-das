@@ -86,6 +86,19 @@ BACKEND_CATALOG = {
                         "Disable with VLLM_DISABLED_KERNELS=TritonFP8ScaledMMLinearKernel."},
         },
     },
+    "vllm_allreduce": {
+        "vars": {"official-aiter": {"HCU_AITER_AR": "1"},
+                 "official-fallback": {"HCU_AITER_AR": "0"}},
+        "summary": "vLLM official AR constructor compatibility; separate from historical SGLang AR",
+        "backends": {
+            "official-aiter": {"status": "candidate", "note": "HCU ABI/copy-in/limits only; CPU contracts, no new HCU/Graph/model validation; fused registration != fusion-pass admission"},
+            "official-fallback": {"status": "candidate", "note": "AITER dispatch OFF; preserves official fallback order, not a pure RCCL assertion"},
+        },
+    },
+    "vllm_allreduce_admission": {
+        "var": None, "summary": "vLLM AR-only gate compatibility; global AITER and real architecture unchanged",
+        "backends": {"official-aiter-gate": {"status": "candidate", "note": "Existing HCU kill/resolver policy; available != selected; official fusion pass remains globally gated"}},
+    },
     "silu_and_mul": {
         "var": "HCU_SILU_MUL_IMPL",
         "summary": "gated activation out = silu(x[:,:d]) * x[:,d:]",

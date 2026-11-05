@@ -256,6 +256,8 @@ REGISTRY = {
     "HCU_AITER_AR": {
         "env": "HCU_AITER_AR", "default": "0",
         "auto": _auto_aiter_ar, "auto_hosts": ("sglang", "vllm"),
+        # SGLang's historical source marker is not vLLM provider validation.
+        "auto_by_host": {"vllm": lambda: "refused(vllm-unvalidated)"},
         "about": "gfx93* 旧 aiter AR 自动拒用（图重放损坏）；=1 显式夺回",
     },
     "HCU_JIT_FP8_FFI": {
@@ -264,6 +266,28 @@ REGISTRY = {
                  "silu-mul 量化仅将 e4m3fn 输出零拷贝 view 为 uint8，"
                  "保留输入、scale、量化 dtype 选择、原 factory/cache 别名；"
                  "=0 跳过安装，不改写社区源码。",
+    },
+    # Existing official/provider inputs consumed by the vLLM AR compatibility
+    # boundary. These are not aliases or new enable switches.
+    "VLLM_ROCM_USE_AITER_CUSTOM_AR": {
+        "env": "VLLM_ROCM_USE_AITER_CUSTOM_AR", "default": "1", "hosts": ("vllm",),
+        "about": "Official AR child switch; 0 vetoes HCU_AITER_AR opt-in, without enabling global AITER",
+    },
+    "AITER_AR_MAX_SIZE_MB": {
+        "env": "AITER_AR_MAX_SIZE_MB", "default": "64", "hosts": ("vllm",),
+        "about": "Existing provider ordinary-AR admission MiB; staging >=128 MiB and >=2x admission",
+    },
+    "AITER_AR_TRANSPORT": {
+        "env": "AITER_AR_TRANSPORT", "default": "ipc", "hosts": ("vllm",),
+        "about": "Existing provider ipc/fabric/auto; explicit fabric requires native capability",
+    },
+    "AITER_AR_ENABLE_REG_CAPTURE": {
+        "env": "AITER_AR_ENABLE_REG_CAPTURE", "default": "0", "hosts": ("vllm",),
+        "about": "Existing AR compatibility graph-registration policy; 0 means IPC copy-in",
+    },
+    "AITER_AR_SMALL_MESSAGE": {
+        "env": "AITER_AR_SMALL_MESSAGE", "default": "off", "hosts": ("vllm",),
+        "about": "Existing provider small-message strategy off/ll/ll128/auto; no new implementation",
     },
     "HCU_QUANT_IMPL": {
         "env": "HCU_QUANT_IMPL", "default": "auto",
@@ -596,7 +620,18 @@ REGISTRY = {
 }
 
 
-def resolve(name):
+def environment_value(name):
+    """Registered raw process input, with its default only when UNSET.
+
+    For admission of external consumers which read their own environment and
+    cannot accept a resolved config value. This never exports/changes inputs;
+    unlike resolve(), an explicitly empty string is preserved.
+    """
+    spec = REGISTRY[name]
+    return os.environ.get(spec["env"], str(spec["default"]))
+
+
+def resolve(name, *, host=None):
     """-> (value, source) where source in {'explicit','auto','default'}.
 
     The returned value is the EFFECTIVE setting as a string ('1'/'0'/''
@@ -619,10 +654,11 @@ def resolve(name):
     if cv is not None:
         return str(cv), "config"
     auto_hosts = spec.get("auto_hosts")
-    active_host = os.environ.get("_HCU_ADAPTER_ACTIVE_HOST")
+    active_host = host or os.environ.get("_HCU_ADAPTER_ACTIVE_HOST")
     if "auto" in spec and (auto_hosts is None or active_host in (None, "none") or active_host in auto_hosts):
         try:
-            v = spec["auto"]()
+            auto = spec.get("auto_by_host", {}).get(active_host, spec["auto"])
+            v = auto()
             if v is not None:
                 return str(v), "auto"
         except Exception:

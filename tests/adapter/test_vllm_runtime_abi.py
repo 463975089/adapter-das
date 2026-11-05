@@ -35,12 +35,16 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "_ensure_vllm_compatible", lambda: "0.32.1+compatible")
     monkeypatch.setattr(bridge, "_ensure_hcu_platform_selected", lambda: None)
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: calls.append("configure"))
+    from hcu_adapter.bridges import vllm_allreduce, vllm_fp8
+    monkeypatch.setattr(vllm_fp8, "install", lambda: calls.append("fp8"))
+    monkeypatch.setattr(vllm_allreduce, "prepare_runtime", lambda: calls.append("ar-prepare"))
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "test")
     monkeypatch.setattr(bridge, "_RUNTIME_ACTIONS", bridge.ProcessLocalActions())
-    from hcu_adapter.bridges import vllm_fp8
     # Native admission remains real or explicitly injected below; optional FP8
-    # operator registration is outside this fixture's runtime-loader contract.
-    monkeypatch.setattr(vllm_fp8, "install", lambda: False)
+    # and other built-in operator registrations are outside this loader contract.
+    from hcu_adapter.bridges import vllm_mhc, vllm_sparse_indexer
+    monkeypatch.setattr(vllm_mhc, "install", lambda: False)
+    monkeypatch.setattr(vllm_sparse_indexer, "install", lambda: False)
 
     def activate(context, *, health_check_sink):
         assert callable(health_check_sink)
@@ -57,7 +61,7 @@ def test_runtime_admission_precedes_registrations_and_runs_once(startup):
     calls, _ = startup
     bridge.hcu_runtime_plugin()
     bridge.hcu_runtime_plugin()
-    assert calls == ["configure", "official-runtime-constructor", "extensions"]
+    assert calls == ["configure", "official-runtime-constructor", "fp8", "ar-prepare", "extensions"]
 
 
 @pytest.mark.parametrize("error", [
@@ -140,4 +144,21 @@ def test_official_loaded_library_precedence_is_preserved(startup, monkeypatch, t
     monkeypatch.setattr(bridge, "import_module", lambda name: official if name == official.__name__ else original(name))
     bridge.hcu_runtime_plugin()
     assert libraries == [selected]
-    assert calls == ["configure", "extensions"]
+    assert calls == ["configure", "fp8", "ar-prepare", "extensions"]
+
+
+def test_ar_prepare_failure_stops_extensions_and_runtime_retry(startup, monkeypatch):
+    """Public runtime refusal persists; no Plugin/AR math is executed."""
+    from hcu_adapter.bridges import vllm_allreduce
+    calls, _ = startup
+
+    def refuse():
+        calls.append("ar-prepare")
+        raise vllm_allreduce.AllReduceCompatibilityError("CPU AR preparation refusal")
+
+    monkeypatch.setattr(vllm_allreduce, "prepare_runtime", refuse)
+    for query in (bridge.hcu_runtime_plugin, bridge.require_runtime_healthy, bridge.hcu_runtime_plugin):
+        with pytest.raises(bridge.LatchedVllmRuntimeError, match="AR preparation refusal"):
+            query()
+    assert calls == ["configure", "official-runtime-constructor", "fp8", "ar-prepare"]
+    assert bridge.extension_reports() == ()

@@ -278,6 +278,37 @@ def _hcu_platform_class() -> type:
         device_name = "hcu"
 
         @classmethod
+        def use_custom_allreduce(cls) -> bool:
+            """Extend official admission only for healthy requested HCU AITER.
+
+            The worker consumes this before constructing its communicator.
+            Batch-invariant mode excludes AITER there; admitting it here would
+            instead allocate the unrelated native C++ custom-AR provider.
+            """
+            require_runtime_healthy()
+            from .vllm_allreduce import state
+
+            status = state()  # Read-only; fatal state/policy drift must refuse.
+            if super().use_custom_allreduce():
+                return True
+            from hcu_adapter import hcu_env
+            from vllm import envs
+
+            if (
+                hcu_env.resolve("HCU_AITER_AR", host="vllm")[1] not in ("explicit", "config")
+                or not status.installed
+                or status.available is not True
+                or not status.selected
+                or envs.VLLM_BATCH_INVARIANT
+            ):
+                return False
+            detection = detect_hcu()
+            return (
+                detection.detected
+                and detection.architecture in SUPPORTED_HCU_ARCHES
+            )
+
+        @classmethod
         def check_and_update_config(cls, vllm_config) -> None:
             require_runtime_healthy()
             # Upstream owns config validation/defaults, including worker choice.
@@ -381,6 +412,9 @@ def hcu_runtime_plugin() -> None:
         from hcu_adapter.bridges.vllm_fp8 import install as install_fp8_fallback
 
         install_fp8_fallback()
+        from hcu_adapter.bridges.vllm_allreduce import prepare_runtime
+
+        prepare_runtime()
         from hcu_adapter.bridges.vllm_mhc import install as install_mhc_fallback
 
         install_mhc_fallback()
