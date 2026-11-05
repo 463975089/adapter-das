@@ -1469,25 +1469,17 @@ def install() -> None:
 
 
         # DSA indexer rotate_activation: the upstream hadamard op is CUDA-only JIT
-        # (warp-shuffle intrinsics the DTK toolchain rejects); the HIP arm of the
-        # caller imports fast_hadamard_transform, which this wheel set lacks. Route
-        # the ops/quantization entry to the torch emu (rounding-neutral on
-        # the 128/256-wide indexer heads; capture-safe fixed shapes).
+        # (warp-shuffle intrinsics the DTK toolchain rejects); the HIP arm of
+        # the caller imports fast_hadamard_transform, which this wheel set
+        # lacks. Triton radix-2 butterfly by default (HCU_HADAMARD_IMPL),
+        # torch emu kept as the =emu reference arm.
         try:
-            import sglang.kernels.ops.quantization.hadamard as _had
+            from hcu_adapter import hadamard_triton
 
-            from hcu_adapter.hadamard_emu import hadamard_transform
-
-            _had.hadamard_transform = hadamard_transform
-            for _nm in ("hadamard_transform_12n", "hadamard_transform_20n",
-                        "hadamard_transform_28n", "hadamard_transform_40n"):
-                setattr(_had, _nm, hadamard_transform)
-            logging.getLogger("hcu.adapter").info(
-                "HCU adapter: hadamard_transform -> torch emu"
-            )
+            hadamard_triton.install()
         except Exception:
             logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: hadamard bridge not installed", exc_info=True
+                "HCU adapter: hadamard triton bridge not installed", exc_info=True
             )
 
         # DSA prefill/decode backend validator: the upstream constraint check

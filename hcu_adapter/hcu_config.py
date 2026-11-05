@@ -505,6 +505,25 @@ BACKEND_CATALOG = {
             },
         },
     },
+    "hadamard": {
+        "var": "HCU_HADAMARD_IMPL",
+        "summary": "SGLang DSA indexer rotate_activation Hadamard transform",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "Radix-2 butterfly (reshape/permute/split/join, no "
+                        "warp-shuffle — the class DTK rejects from the CUDA "
+                        "JIT); fp32 compute, 2^k contract, graph-capture "
+                        "safe. Oracle parity cos=1.0 fp32 n<=4096; bf16 "
+                        "bit-exact vs emu.",
+            },
+            "emu": {
+                "status": "candidate",
+                "note": "Torch Sylvester matrix multiply reference (A/B "
+                        "probe; 64MB streamed per call at n=4096).",
+            },
+        },
+    },
     "per_token_quant": {
         "var": "HCU_QUANT_IMPL",
         "summary": "per-token fp8/int8 quant (dynamic)",

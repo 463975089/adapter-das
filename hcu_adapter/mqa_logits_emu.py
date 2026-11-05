@@ -135,17 +135,85 @@ def _ragged_fp8_mqa_logits(
     return logits
 
 
+def _triton_or_emu_faces():
+    """(paged_fn, ragged_fn, impl_label) — triton arms first, emu per-call
+    fallback for the faces the triton tier refuses (fnuz convention,
+    non-132B rows, preshuffle pools): each refusal logs once, never silent.
+    HCU_MQA_EMU_IMPL=triton (default) | emu (golden / A-B probe)."""
+    from hcu_adapter import hcu_env
+
+    impl, src = hcu_env.resolve("HCU_MQA_EMU_IMPL")
+    if impl != "triton":
+        return _paged_mqa_logits, _ragged_fp8_mqa_logits, f"emu ({src})"
+    from .mqa_logits_triton import (
+        triton_paged_ps1_mqa_logits as _tp,
+        triton_ragged_mqa_logits as _tr,
+    )
+
+    warned = {"paged": 0, "ragged": 0}
+
+    def _paged(q, kv, w, lens, bt, msl, *, preshuffle, kv_block_size, **kw):
+        try:
+            return _tp(
+                q, kv, w, lens, bt, msl,
+                preshuffle=preshuffle, kv_block_size=kv_block_size, **kw
+            )
+        except NotImplementedError as e:
+            if warned["paged"] < 1:
+                logger.warning(
+                    "[hcu] MQA paged triton arm refused (%s) -> emu for this"
+                    " face (and subsequent)", e)
+                warned["paged"] += 1
+            return _paged_mqa_logits(
+                q, kv, w, lens, bt, msl,
+                preshuffle=preshuffle, kv_block_size=kv_block_size, **kw
+            )
+
+    def _ragged(q, kv, kv_scales, weights, ks, ke, **kw):
+        try:
+            return _tr(q, kv, kv_scales, weights, ks, ke)
+        except NotImplementedError as e:
+            if warned["ragged"] < 1:
+                logger.warning(
+                    "[hcu] MQA ragged triton arm refused (%s) -> emu for"
+                    " this face (and subsequent)", e)
+                warned["ragged"] += 1
+            return _ragged_fp8_mqa_logits(
+                q, kv, kv_scales, weights, ks, ke, **kw
+            )
+
+    return _paged, _ragged, f"triton, emu fallback ({src})"
+
+
 def install():
     import sglang.kernels.ops.attention.dsa as _dsa_pkg
 
-    if getattr(_dsa_pkg, "aiter_paged_mqa_logits", None) is not _paged_mqa_logits:
+    _paged_fn, _ragged_fn, _impl_label = _triton_or_emu_faces()
+
+    if getattr(_dsa_pkg, "aiter_paged_mqa_logits", None) is not _paged_fn:
         assert _dsa_pkg.aiter_paged_mqa_logits is not None
-        _dsa_pkg.aiter_paged_mqa_logits = _paged_mqa_logits
+        _dsa_pkg.aiter_paged_mqa_logits = _paged_fn
 
     import aiter.ops.triton.fp8_mqa_logits as _afml
 
-    if getattr(_afml, "fp8_mqa_logits", None) is not _ragged_fp8_mqa_logits:
-        _afml.fp8_mqa_logits = _ragged_fp8_mqa_logits
+    if getattr(_afml, "fp8_mqa_logits", None) is not _ragged_fn:
+        _afml.fp8_mqa_logits = _ragged_fn
+
+    try:
+        from hcu_adapter import registry as _reg
+
+        _reg.register(
+            "attention",
+            "mqa-logits-vllm-face",
+            target=(
+                "seam:sglang.kernels.ops.attention.dsa.aiter_paged_mqa_logits"
+                " + aiter.ops.triton.fp8_mqa_logits.fp8_mqa_logits"
+            ),
+            mechanism=_reg.MECH_SEAM,
+            detail=f"impl={_impl_label}",
+        )
+    except Exception:
+        pass
 
     if os.environ.get("HCU_DUMP_MQA") == "1":
         _log = {"n": 0}
@@ -160,7 +228,7 @@ def install():
 
         def _wrap_ragged(q_fp8, kv, kv_scales, weights, cu_starts, cu_ends,
                          **kw):
-            out = _ragged_fp8_mqa_logits(
+            out = _ragged_fn(
                 q_fp8, kv, kv_scales, weights, cu_starts, cu_ends, **kw)
             if _log["n"] < 4:
                 print(
@@ -175,7 +243,7 @@ def install():
 
         def _wrap_paged(q_fp8, kv_cache_fp8, weights, seq_lens, block_tables,
                         max_seq_len, **kw):
-            out = _paged_mqa_logits(
+            out = _paged_fn(
                 q_fp8, kv_cache_fp8, weights, seq_lens, block_tables,
                 max_seq_len, **kw)
             if _log["n"] < 4:
@@ -189,6 +257,7 @@ def install():
         _dsa_pkg.aiter_paged_mqa_logits = _wrap_paged
 
     logger.warning(
-        "[hcu] MQA-logits emu installed (paged -> torch gather-GEMM, ragged ->"
-        " torch GEMM); gfx936 has no fp8 matrix unit so this is the accurate path"
+        "[hcu] MQA-logits installed (impl=%s; paged/ragged triton arms with"
+        " torch-emu fallback; gfx936 has no fp8 matrix unit so exact decode"
+        " paths stay the numeric contract)", _impl_label
     )

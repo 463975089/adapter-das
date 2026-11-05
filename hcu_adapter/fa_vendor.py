@@ -609,23 +609,24 @@ def install():
 
     mode, _src = hcu_env.resolve("HCU_FA_IMPL")
     triton_mode = mode == "triton"
+    if mode == "auto":
+        # auto answers the best validated face: the in-tree triton route
+        # (paged decode/wide windows + ragged varlen prefill; numerics gate
+        # tests/tools/_test_paged_attn_triton.py ALL-PASS on gfx936+gfx938;
+        # L1.5 dense eager+graph green on it, 2026-11-05). The vendor wheel
+        # stays opted out of auto: its gfx936 paged kernel produced
+        # token-soup on live decode (2026-10-12 bw7, gap-listed) --
+        # HCU_FA_IMPL=vendor still forces it for A/B probes.
+        triton_mode = True
     if triton_mode:
         # tier-③ triton route: paged kvcache faces (L=1 decode windows +
-        # L>1 causal extend windows) -> in-tree triton kernels (numerics
-        # gate: tests/tools/_test_paged_attn_triton.py ALL-PASS on
-        # gfx936+gfx938); ragged/varlen faces stay on the emu. Vendor wheel
+        # L>1 causal extend windows + ragged varlen prefill) -> in-tree
+        # triton kernels; contract-exceed faces keep the emu. Vendor wheel
         # untouched (its paged path remains gap-listed).
         _install_triton_decode(_sk_fa, registry)
         return
     vendor_enabled = mode == "vendor"
-    if mode == "emu" or mode == "auto":
-        if mode == "auto":
-            # gfx936 vendor-wheel paged kernel produces token-soup on the
-            # real decode path (uniform-window A/B passes, live decode
-            # corrupts, 2026-10-12 bw7) -- gap-listed, awaiting DTK fix.
-            # auto therefore answers emu everywhere; HCU_FA_IMPL=vendor
-            # opts the wheel back in for A/B.
-            pass
+    if mode == "emu":
         LOG.warning(
             "HCU adapter: HCU_FA_IMPL=%s -- fa3 attention stays on the "
             "torch emulation (triton decode route available via =triton)", mode

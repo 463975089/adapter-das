@@ -266,6 +266,125 @@ if tl is not None:
         )
 
 
+if tl is not None:
+
+    @triton.jit
+    def _paged_ps1_mqa_logits_kernel(
+        q_ptr,  # (N, H, D) fp32, pre-decoded
+        w_ptr,  # (N, H) fp32
+        pool_ptr,  # (T, 132) uint8: 128B row-major k + 4B fp32 scale
+        sf_ptr,  # (T, 33) fp32 view of pool_ptr
+        bt_ptr,  # (N, bt_cols) int32 TOKEN ids (page_size=1 world)
+        lens_ptr,  # (N,) int32
+        out_ptr,  # (N, T_ALL) fp32, pre-zeroed (window-out = 0.0)
+        T_ALL,
+        BT_STRIDE,
+        H: tl.constexpr,
+        D: tl.constexpr,
+        TT: tl.constexpr,
+    ):
+        # PS=1 sibling of _paged_mqa_logits_kernel for the aiter
+        # paged-MQA face the vllm/emu world sees (mqa_logits_emu.
+        # _paged_mqa_logits contract): the pool is a flat (T, 132) token
+        # table -- k row-major per token with the fp32 scale INTERLEAVED at
+        # each row tail, unlike the page pools above whose scales sit
+        # gathered at the page tail. block_tables carry token ids
+        # directly, so no page/slot decomposition applies.
+        i = tl.program_id(0)
+        t0 = tl.program_id(1) * TT
+        L = tl.load(lens_ptr + i)
+        if t0 >= L:
+            return  # window-out stays at the pre-zeroed 0.0
+        t = t0 + tl.arange(0, TT)
+        tmask = t < L
+        tok = tl.load(bt_ptr + i * BT_STRIDE + t, mask=tmask, other=0)
+        d = tl.arange(0, D)
+        u = tl.load(
+            pool_ptr + tok.to(tl.int64)[:, None] * 132 + d[None, :],
+            mask=tmask[:, None],
+            other=0,
+        ).to(tl.int32)
+        # e4m3fn decode (same integer bit math as the paged kernel above)
+        sgn = (u >> 7) & 1
+        e = (u >> 3) & 15
+        m = u & 7
+        pw = tl.where(e == 0, -6, e - 7)
+        mant = tl.where(e == 0, m, m + 8).to(tl.float32) * 0.125
+        two = ((pw + 127) << 23).to(tl.float32, bitcast=True)
+        kf = tl.where(sgn == 1, -(mant * two), mant * two)
+        acc = tl.zeros((TT,), tl.float32)
+        for h in tl.static_range(H):
+            qv = tl.load(q_ptr + (i * H + h) * D + d)
+            wh = tl.load(w_ptr + i * H + h)
+            acc += wh * tl.sum(kf * qv[None, :], axis=1)
+        sf = tl.load(
+            sf_ptr + tok.to(tl.int64) * 33 + 32, mask=tmask, other=0.0
+        )
+        tl.store(
+            out_ptr + i.to(tl.int64) * T_ALL + t,
+            acc * sf,
+            mask=tmask & (t < T_ALL),
+        )
+
+
+def triton_paged_ps1_mqa_logits(
+    q_fp8,
+    kv_cache_fp8,
+    weights,
+    seq_lens,
+    block_tables,
+    max_seq_len,
+    *,
+    preshuffle,
+    kv_block_size,
+    **_ignored,
+):
+    """aiter paged-MQA face on the legacy page_size=1 pool (132B rows,
+    interleaved row-tail scales). Mirrors mqa_logits_emu._paged_mqa_logits
+    exactly (window-out = 0.0); e4m3fn-only -- the fnuz convention keeps
+    the emu (torch decode is convention-correct by construction)."""
+    from .dsa_mqa_logits_emu import _as_view, _fp8_view_dtype
+
+    if preshuffle or kv_block_size != 1:
+        raise NotImplementedError(
+            "ps1 triton arm is the legacy page_size=1 no-preshuffle pool only"
+        )
+    if _fp8_view_dtype() is not torch.float8_e4m3fn:
+        raise NotImplementedError("fnuz pool: ps1 triton arm is e4m3fn-only")
+    q_flat = (
+        q_fp8.reshape(-1, q_fp8.shape[-2], q_fp8.shape[-1])
+        if q_fp8.dim() == 4
+        else q_fp8
+    )
+    q_b = _as_view(q_flat, _fp8_view_dtype()).to(torch.float32).contiguous()
+    N, H, D = q_b.shape
+    pool = (
+        kv_cache_fp8.reshape(kv_cache_fp8.shape[0], -1).contiguous()
+    )
+    if pool.dtype == torch.int8:
+        pool = pool.view(torch.uint8)
+    if pool.shape[1] != 132:
+        raise NotImplementedError(
+            f"ps1 pool expects 132B rows, got {pool.shape[1]}"
+        )
+    sf = pool.view(torch.float32)  # (T, 33)
+    w = weights.reshape(N, H).to(torch.float32).contiguous()
+    ctx = seq_lens.to(torch.int32).reshape(-1).contiguous()
+    bt = block_tables.to(torch.int32).contiguous()
+    T_all = min(bt.shape[1], int(max_seq_len))
+    out = torch.zeros((N, int(max_seq_len)), dtype=torch.float32, device=q_b.device)
+    if N == 0 or T_all == 0:
+        return out
+    TT = 128
+    _paged_ps1_mqa_logits_kernel[(N, triton.cdiv(T_all, TT))](
+        q_b, w, pool, sf, bt, ctx, out,
+        T_all, bt.stride(0),
+        H=H, D=D, TT=TT,
+        num_warps=4,
+    )
+    return out
+
+
 def triton_ragged_mqa_logits(q_fp8, kv, kv_scales, weights, cu_starts, cu_ends):
     """deep_gemm.fp8_mqa_logits face (ragged): out [N,T] fp32, -inf outside
     each row's [ks, ke). Same contract as mqa_logits_emu._ragged_fp8_mqa_logits
