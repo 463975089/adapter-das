@@ -81,6 +81,11 @@ def _install_gfx_probe_guard(_common):
     )
 
 
+# anchor-baseline(①改名/移位→多候选): CUDA version gates(is_sm90_supported 等)
+#   — ≤v0.5.22: 冻结于 utils.common,patch common 单命名空间即够(包级
+#   from .common import * 拷贝两树皆有,但 0.5.22 无人 import 期经包调用);
+#   sglang main@fd19cfb(2026-11) 起 kda 后端链在模块 import 期经包命名空间
+#   调用 → common+pkg 双命名空间同补,两树通吃(governance §5.3)。
 def _replace_version_gates(common, pkg):
     """Rewrite the frozen lru_cache CUDA-version gates in BOTH namespaces.
 

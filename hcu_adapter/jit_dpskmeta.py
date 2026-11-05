@@ -116,6 +116,10 @@ _MHC_ASM = (
     "      inverse = rsqrtf(mean);  // HCU: rsqrt.approx.ftz -> rsqrtf",
 )
 
+# anchor-baseline(①自愈→双臂+fail-loud): %%laneid asm — v0.5.22: needle 在,
+#   需 patch;sglang main@fd19cfb(2026-11) 重写 topk_bf16_small.cuh 把
+#   lane_id 参数化 → 上游自愈,needle/marker 双消失即响亮跳过。退役判据:
+#   最低支持树自愈后,_PATCHES 该条与本表条目同笔删(governance §5.3)。
 # Needles whose NVIDIA-only construct may be absent from newer upstream
 # trees entirely (upstream self-healed, e.g. sglang main 2026-11 rewrote
 # topk_bf16_small.cuh to pass lane_id as a parameter). When the underlying

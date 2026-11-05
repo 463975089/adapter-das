@@ -58,6 +58,10 @@ def _assets(root):
                 # ../../../../../aot/...). Materialize those into the bundle
                 # verbatim; only symlinks escaping the community checkout are
                 # refused. read_bytes() below follows the link either way.
+                # anchor-baseline(②纯新增服务): symlink 资产形态 — v0.5.22:
+                #   无 symlink 资产(本臂 no-op);sglang main@fd19cfb(2026-11)
+                #   起 gguf 共享头组织为仓内 symlink → 解析目标实体化入
+                #   bundle,逃逸社区树拒绝(governance §5.3)。
                 target = path.resolve()
                 if not (target == community or community in target.parents):
                     raise RuntimeError(

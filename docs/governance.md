@@ -327,6 +327,50 @@ moe_c w4a16 档目前只有 CPU 契约单测（wiring/ABI），GPU 对比哨兵
 （parity vs stock triton 臂 + 逐 M 计时，box16 探针一次性数据在案未固化）
 为欠账，接入 serving 后补。
 
+### 5.3 锚点演进三分类（上游漂移处置与版本基线备注，2026-11-05 定）
+
+adapter 的桥/rebind/JIT 输入变换全部锚定上游符号（函数、类、模块属性、
+csrc/include 资产）。上游演进时锚点漂移分三类，**处置手法与备注义务不同**；
+分类错了要么白做分叉、要么静默丢功能：
+
+| 类 | 形态 | 处置 | 版本备注义务（载体=代码文件，见下） |
+|---|---|---|---|
+| ①改名/移位/自愈 | 旧树锚点 `A` 在，新树改名 `B`、挪走或干脆删除（上游自愈，不再需要该 patch） | **默认多候选**：双命名空间/在-不在双臂同压两树，配 fail-loud（候选构造还在而全部锚点失配 = raise，不许吞成日志）；单候选改锚 = review smell，须说明归②的理由 | **退役旧候选时**注明版本号基线：旧名存在区间（≤vX）、新名起点/自愈点（vY 或树@SHA）；退役判据 = 最低支持树不再含旧候选锚点 |
+| ②纯新增服务 | 锚点/情形只为新树存在（新树重构引入的新资产形态、新 csrc 写法） | 单候选即可：旧树路径缺席 = 无害 no-op/miss，**不补多候选** | **首次创建时**注明创建版本基线：目标树版本/SHA + 新树特有形态一句话 |
+| ③同名改语义 | 名字不变，签名/字段集/张量布局/返回结构变了 | **必须做兼容性处理，按框架版本号选分支**；版本号不可判别（fork 与官方同号、day-0 树未发版）时以**结构指纹**（inspect.signature / dataclasses.fields / 布局常量）为版本判别的等价物，按类缓存、fail-loud | 注明各树语义事实 + 判别方式；**触发 release 检查**（见下） |
+
+③比①②危险在于：锚点探测全绿、patch 照装、按旧语义调用——轻则 e2e
+TypeError（官方 0.5.22 `swa_reprefill_tail_tokens` 无参签名，plugin 仓
+PR#17 实证），重则不炸、出数值/维度错（KV 布局类语义）。多候选防不住③，
+只有版本/结构分支能防。
+
+**版本基线备注的载体是对应代码文件本身**，紧贴锚点/分支处，治理文档不
+代登。格式一行起：
+
+```python
+# anchor-baseline(①/②/③): <符号> — <树/版本>: <事实>; <树/版本>: <事实>
+```
+
+存量锚点增量补登，首批范本（本节落文同笔）：
+
+- `hcu_adapter/platform_seam.py::_replace_version_gates`（①双命名空间）：
+  版本门冻结于 utils.common，包级 `from .common import *` 拷贝两树皆有；
+  ≤v0.5.22 无人在 import 期经包命名空间调用（patch common 即够），
+  main@fd19cfb 起 kda 后端链经包拷贝调用 → common+pkg 双命名空间同补；
+- `hcu_adapter/jit_dpskmeta.py::_SELF_HEAL_ABSENT`（①在-不在双臂 +
+  fail-loud）：v0.5.22 `topk_bf16_small.cuh` 含 `%%laneid` asm 需 patch；
+  main 重写该文件把 lane_id 参数化，needle 与 marker 双双消失 = 上游自愈
+  → 响亮跳过；marker 在而 needle 漂移仍 raise（§3 语义不松）；
+- `hcu_adapter/jit_sources.py::_assets` symlink 臂（②）：main@fd19cfb 起
+  gguf 共享头组织为仓内 symlink；v0.5.22 无 symlink 资产，该臂 no-op。
+
+**与 release 纪律的联动**：release/<version> 只收 cherry-pick、不 merge
+main（既有模式）。①②类修复天然向下兼容，直接进 main，按需 backport
+（判据 = 该锚点在旧 release 树存在）；③类 PR 合并前必须核对 release 线
+覆盖——release 上当期 L1.5 / binding manifest（`tests/manifests/*.json`）
+验证过的组合不被破坏，必要时 release 分支同笔补兼容臂。漂移的发现面走
+[upstream-watch 巡检](upstream-watch.md)（对账工具的失配清单即本节输入）。
+
 ## 6. L0 静态规约速查（ci/l0_gate.py）
 
 | 检查名 | 级别 | 规则 |
