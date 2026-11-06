@@ -36,6 +36,19 @@ Every needle was derived from the live boot/capture chain or the
 PTX; wo_a takes the HIP streaming-dequant path instead) are intentionally
 NOT patched.
 
+K3/day-0 extension (nmz26 2026-11-05): the same structured-bind family
+extends to include/sgl_kernel/deepseek_v4/topk_impl.cuh (to_fp32 /
+coarse_bin_bounds; carried on the include/ channel, _PATCHES_INCLUDE),
+csrc/deepseek_v4/topk_v2.cuh and csrc/kimi_k3/situ_and_mul.cuh. Where the
+v0.5.22 tree and the K3 day-0 tree (sglang-k31-amd@4d82dd2) disagree on a
+site — kHistBits vs kCoarseBits template arg at the 8sp coarse site, and
+one extra 8sp impl:: site in topk_v2 — both candidates are carried
+(governance §5.3 ①) with _SELF_HEAL_ABSENT markers on the indent-agnostic
+bind form (the bind form never appears in a REPL, so one surviving after
+the common 6sp needle ran is genuine drift). New needles are "\n"-anchored
+so a shallower site can never tail-match a deeper occurrence of the same
+expression.
+
 Text-patch discipline per jit_ptgq: needle missing in an existing file
 raises loud (upstream changed); file absent skips quietly. Superseded REPLs
 are rolled back via _UNDO before re-applying. All writes atomic
@@ -128,6 +141,22 @@ _MHC_ASM = (
 _SELF_HEAL_ABSENT = {
     "deepseek_v4/topk_bf16_small.cuh": {
         '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));': "%%laneid",
+    },
+    # anchor-baseline(①跨树多候选): coarse_bin_bounds 8sp 档 — v0.5.22:
+    #   topk_impl@1013 = kHistBits;topk_v2 仅 @866 一处 6sp。day-0 树
+    #   (sglang-k31-amd@4d82dd2): topk_impl@1039 改 kCoarseBits、topk_v2
+    #   @804 多一个 8sp impl:: 位点。每树只落自己那支候选,另一支
+    #   needle 缺、marker(无缩进 bind 形)也缺 → 响亮跳过;6sp 公共
+    #   needle 先行替换后 bind 形仍残留 = 真漂移,§3 门 raise。
+    "deepseek_v4/topk_v2.cuh": {
+        "\n        const auto [v_lo, v_hi] = impl::coarse_bin_bounds<kHistBits>(threshold_bin);":
+            "const auto [v_lo, v_hi] = impl::coarse_bin_bounds<kHistBits>(threshold_bin);",
+    },
+    "sgl_kernel/deepseek_v4/topk_impl.cuh": {
+        "\n        const auto [v_lo, v_hi] = coarse_bin_bounds<kHistBits>(threshold_bin);":
+            "const auto [v_lo, v_hi] = coarse_bin_bounds<kHistBits>(threshold_bin);",
+        "\n        const auto [v_lo, v_hi] = coarse_bin_bounds<kCoarseBits>(threshold_bin);":
+            "const auto [v_lo, v_hi] = coarse_bin_bounds<kCoarseBits>(threshold_bin);",
     },
 }
 
@@ -456,6 +485,81 @@ _PATCHES = {
             "        RuntimeDeviceCheck(::hipMemcpy(dst, src, bytes, ::hipMemcpyHostToDevice));  // HCU",
         ),
     ],
+    # anchor-baseline(②新文件): topk_v2.cuh — v0.5.22: @866 一处 6sp;
+    #   day-0 树(sglang-k31-amd@4d82dd2)@804 多 8sp 位点、@1168 同 6sp →
+    #   6sp 公共 needle 先行,8sp 候选配 _SELF_HEAL_ABSENT(§5.3 ①)。
+    "deepseek_v4/topk_v2.cuh": [
+        (
+            "\n      const auto [v_lo, v_hi] = impl::coarse_bin_bounds<kHistBits>(threshold_bin);",
+            "\n      const float2 _cb = impl::coarse_bin_bounds<kHistBits>(threshold_bin);  // HCU: float2 bind\n"
+            "      const auto v_lo = _cb.x, v_hi = _cb.y;",
+        ),
+        (
+            "\n        const auto [v_lo, v_hi] = impl::coarse_bin_bounds<kHistBits>(threshold_bin);",
+            "\n        const float2 _cb8 = impl::coarse_bin_bounds<kHistBits>(threshold_bin);  // HCU: float2 bind\n"
+            "        const auto v_lo = _cb8.x, v_hi = _cb8.y;",
+        ),
+    ],
+    # anchor-baseline(②新文件): kimi_k3/situ_and_mul.cuh — v0.5.22@218/219/328
+    #   与 day-0@279/280/389 文本相同(仅行号漂移),三 needle 两树公共。
+    "kimi_k3/situ_and_mul.cuh": [
+        (
+            "\n  const auto [g0, g1] = cast<fp32x2_t>(gate);",
+            "\n  const fp32x2_t _sg = cast<fp32x2_t>(gate);  // HCU: float2 bind\n"
+            "  const auto g0 = _sg.x, g1 = _sg.y;",
+        ),
+        (
+            "\n  const auto [u0, u1] = cast<fp32x2_t>(up);",
+            "\n  const fp32x2_t _su = cast<fp32x2_t>(up);  // HCU: float2 bind\n"
+            "  const auto u0 = _su.x, u1 = _su.y;",
+        ),
+        (
+            "\n    const auto [x, y] = situ_and_mul(gate_vec[i], up_vec[i], beta, inv_beta, linear_beta, inv_linear_beta);",
+            "\n    const fp32x2_t _sm = situ_and_mul(gate_vec[i], up_vec[i], beta, inv_beta, linear_beta, inv_linear_beta);  // HCU: float2 bind\n"
+            "    const auto x = _sm.x, y = _sm.y;",
+        ),
+    ],
+}
+
+# anchor-baseline(②新通道): include/ 转装 — 首创于本 PR(main@b3f4bb0 后)。
+#   topk_impl.cuh 在 include/sgl_kernel/ 下(jit 编译含 -I include),此前
+#   _apply 只扫 csrc/ 无通道;通道创建即注(governance §5.3)。键为 include/
+#   根相对路径,_SELF_HEAL_ABSENT 同键,天然免与 csrc 键撞车。
+_PATCHES_INCLUDE = {
+    "sgl_kernel/deepseek_v4/topk_impl.cuh": [
+        # "\n"-anchored needles: 6sp/8sp same-expression sites stay
+        # indent-exact so the shallower needle cannot tail-match a deeper
+        # occurrence (see module docstring).
+        (
+            "\n  const auto [v_lo, v_hi] = to_fp32(keys);",
+            "\n  const fp32x2_t _tv = to_fp32(keys);  // HCU: float2 bind\n"
+            "  const auto v_lo = _tv.x, v_hi = _tv.y;",
+        ),
+        (
+            "\n  const auto [u_lo, u_hi] = to_fp32(keys - 0x00010001u);",
+            "\n  const fp32x2_t _tu = to_fp32(keys - 0x00010001u);  // HCU: float2 bind\n"
+            "  const auto u_lo = _tu.x, u_hi = _tu.y;",
+        ),
+        # common 6sp sites (v0.5.22 @724/@813, day-0 @743/@832); MUST run
+        # before the 8sp candidates below (they consume the bind-form
+        # markers those candidates rely on).
+        (
+            "\n      const auto [v_lo, v_hi] = coarse_bin_bounds<kHistBits>(threshold_bin);",
+            "\n      const float2 _cb = coarse_bin_bounds<kHistBits>(threshold_bin);  // HCU: float2 bind\n"
+            "      const auto v_lo = _cb.x, v_hi = _cb.y;",
+        ),
+        # 8sp candidates: v0.5.22@1013 = kHistBits; day-0@1039 = kCoarseBits
+        (
+            "\n        const auto [v_lo, v_hi] = coarse_bin_bounds<kHistBits>(threshold_bin);",
+            "\n        const float2 _cb8 = coarse_bin_bounds<kHistBits>(threshold_bin);  // HCU: float2 bind\n"
+            "        const auto v_lo = _cb8.x, v_hi = _cb8.y;",
+        ),
+        (
+            "\n        const auto [v_lo, v_hi] = coarse_bin_bounds<kCoarseBits>(threshold_bin);",
+            "\n        const float2 _cb8 = coarse_bin_bounds<kCoarseBits>(threshold_bin);  // HCU: float2 bind\n"
+            "        const auto v_lo = _cb8.x, v_hi = _cb8.y;",
+        ),
+    ],
 }
 
 
@@ -463,58 +567,66 @@ def _apply(root, register):
     """Transform adapter-owned staging files; never pass a community root."""
     import hcu_adapter.registry as _reg
 
-    csrc = root / "csrc"
-    for relpath, needles in _PATCHES.items():
-        p = csrc / relpath
-        if not p.exists():
-            LOG.info("jit_dpskmeta: %s absent (tree predates the module)", relpath)
-            continue
-        text = p.read_text(encoding="utf-8")
-
-        # self-heal trees carrying superseded patches
-        for old_repl, original in _UNDO.get(relpath, []):
-            if old_repl in text:
-                text = text.replace(old_repl, original)
-
-        applied = []
-        for needle, repl in needles:
-            if repl in text:
-                applied.append(needle)
+    # csrc/ needles keyed csrc-root-relative; include/ needles keyed
+    # include-root-relative (sgl_kernel/...) -- the register target and
+    # _SELF_HEAL_ABSENT keys follow the same channel-qualified spelling.
+    for base, table, channel in (
+        (root / "csrc", _PATCHES, "csrc"),
+        (root / "include", _PATCHES_INCLUDE, "include"),
+    ):
+        for relpath, needles in table.items():
+            p = base / relpath
+            if not p.exists():
+                LOG.info("jit_dpskmeta: %s absent (tree predates the module)", relpath)
                 continue
-            if needle not in text:
-                marker = _SELF_HEAL_ABSENT.get(relpath, {}).get(needle)
-                if marker is not None and marker not in text:
-                    LOG.info(
-                        "jit_dpskmeta: %s self-healed upstream (no %r left);"
-                        " needle skipped",
-                        relpath,
-                        marker,
-                    )
+            text = p.read_text(encoding="utf-8")
+
+            # self-heal trees carrying superseded patches
+            for old_repl, original in _UNDO.get(relpath, []):
+                if old_repl in text:
+                    text = text.replace(old_repl, original)
+
+            applied = []
+            for needle, repl in needles:
+                if repl in text:
+                    applied.append(needle)
                     continue
-                raise RuntimeError(
-                    f"jit_dpskmeta: needle missing in {relpath}:"
-                    f" {needle[:60]!r} -- upstream changed; re-derive"
-                    " (governance §3)"
+                if needle not in text:
+                    marker = _SELF_HEAL_ABSENT.get(relpath, {}).get(needle)
+                    if marker is not None and marker not in text:
+                        LOG.info(
+                            "jit_dpskmeta: %s self-healed upstream (no %r left);"
+                            " needle skipped",
+                            relpath,
+                            marker,
+                        )
+                        continue
+                    raise RuntimeError(
+                        f"jit_dpskmeta: needle missing in {relpath}:"
+                        f" {needle[:60]!r} -- upstream changed; re-derive"
+                        " (governance §3)"
+                    )
+                text = text.replace(needle, repl)
+                applied.append(needle)
+
+            _atomic_write(p, text)
+
+            target = f"text:sglang/kernels/jit/{channel}/{relpath}"
+            for needle in applied:
+                register(
+                    "platform_detect",
+                    "dtk-hipcc-portability",
+                    target=target,
+                    mechanism=_reg.MECH_TEXT,
+                    # strip the "\n" anchor: registry.TEXT_PATCH_ALLOWLIST
+                    # keys on the natural (indent-only) needle text
+                    detail=needle.removeprefix("\n"),
                 )
-            text = text.replace(needle, repl)
-            applied.append(needle)
-
-        _atomic_write(p, text)
-
-        target = f"text:sglang/kernels/jit/csrc/{relpath}"
-        for needle in applied:
-            register(
-                "platform_detect",
-                "dtk-hipcc-portability",
-                target=target,
-                mechanism=_reg.MECH_TEXT,
-                detail=needle,
+            LOG.warning(
+                "HCU adapter: JIT %s portability patch installed (%d needles)",
+                relpath,
+                len(needles),
             )
-        LOG.warning(
-            "HCU adapter: JIT %s portability patch installed (%d needles)",
-            relpath,
-            len(needles),
-        )
 
 
 def install():

@@ -48,6 +48,9 @@ def _synthetic(root):
     for name, pairs in jit_dpskmeta._PATCHES.items():
         for needle, _ in pairs:
             add("csrc/" + name, needle)
+    for name, pairs in jit_dpskmeta._PATCHES_INCLUDE.items():
+        for needle, _ in pairs:
+            add("include/" + name, needle)
     for name, needle, _ in jit_quant_fp8._PATCHES + jit_quant_fp8._PATCHES_V2:
         add("csrc/" + name, needle)
     for _, needle, _ in jit_quant_fp8._PATCHES_WARP:
@@ -293,6 +296,95 @@ def test_dpskmeta_drifted_construct_still_raises(tmp_path):
         '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(id));\n',  # drifted: id
         encoding="utf-8",
     )
+    with pytest.raises(RuntimeError, match="needle missing"):
+        jit_dpskmeta._apply(root, lambda *a, **k: None)
+
+
+def _write_stage(root, layout):
+    for rel, needles in layout.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("".join(n + "\n" for n in needles), encoding="utf-8")
+
+
+@pytest.mark.parametrize("variant", ["v0.5.22", "day-0"])
+def test_dpskmeta_topk_binding_shim_applies_per_tree(tmp_path, variant):
+    # The topk/situ structured binds carry dual candidates for the two
+    # supported trees (governance §5.3 ①): whichever variant a tree has,
+    # every needle it carries must land and no decomposable bind survives.
+    from hcu_adapter import jit_dpskmeta
+
+    impl = [n for n, _ in jit_dpskmeta._PATCHES_INCLUDE["sgl_kernel/deepseek_v4/topk_impl.cuh"]]
+    v2 = [n for n, _ in jit_dpskmeta._PATCHES["deepseek_v4/topk_v2.cuh"]]
+    situ = [n for n, _ in jit_dpskmeta._PATCHES["kimi_k3/situ_and_mul.cuh"]]
+
+    def eight_space(n):
+        return n.startswith("\n        ")
+
+    if variant == "v0.5.22":  # 8sp site is kHistBits; no 8sp site in topk_v2
+        impl = [n for n in impl if "kCoarseBits" not in n]
+        v2 = [n for n in v2 if not eight_space(n)]
+    else:  # day-0: 8sp site is kCoarseBits; topk_v2 gains an 8sp impl:: site
+        impl = [n for n in impl if not (eight_space(n) and "kHistBits" in n)]
+    layout = {
+        "include/sgl_kernel/deepseek_v4/topk_impl.cuh": impl,
+        "csrc/deepseek_v4/topk_v2.cuh": v2,
+        "csrc/kimi_k3/situ_and_mul.cuh": situ,
+    }
+    root = tmp_path / "stage"
+    _write_stage(root, layout)
+    records = []
+    jit_dpskmeta._apply(root, lambda *a, **k: records.append((a, k)))
+    assert len(records) == len(impl) + len(v2) + len(situ), records
+    for rel, needles in layout.items():
+        text = (root / rel).read_text(encoding="utf-8")
+        for needle in needles:
+            assert needle not in text, needle
+        assert "const auto [v_lo, v_hi]" not in text, rel
+        assert "const auto [x, y] = situ_and_mul" not in text, rel
+
+
+def test_dpskmeta_topk_phase3_site_self_heals(tmp_path):
+    # A tree that drops the 8sp coarse sites entirely (upstream self-healed
+    # the extra phase-3 bind) must skip those candidates loudly, not raise,
+    # while the common 6sp/to_fp32 needles keep landing.
+    from hcu_adapter import jit_dpskmeta
+
+    impl = [
+        n for n, _ in jit_dpskmeta._PATCHES_INCLUDE["sgl_kernel/deepseek_v4/topk_impl.cuh"]
+        if not n.startswith("\n        ")
+    ]
+    v2 = [
+        n for n, _ in jit_dpskmeta._PATCHES["deepseek_v4/topk_v2.cuh"]
+        if not n.startswith("\n        ")
+    ]
+    layout = {
+        "include/sgl_kernel/deepseek_v4/topk_impl.cuh": impl,
+        "csrc/deepseek_v4/topk_v2.cuh": v2,
+    }
+    root = tmp_path / "stage"
+    _write_stage(root, layout)
+    records = []
+    jit_dpskmeta._apply(root, lambda *a, **k: records.append((a, k)))  # no raise
+    assert len(records) == len(impl) + len(v2), records
+    text = (root / "include/sgl_kernel/deepseek_v4/topk_impl.cuh").read_text(encoding="utf-8")
+    assert "_cb8" not in text  # variant candidates left no object behind
+
+
+def test_dpskmeta_topk_impl_drifted_bind_still_raises(tmp_path):
+    # Drifted 6sp site in the include/ channel (argument renamed): the §3
+    # gate must fire for _PATCHES_INCLUDE exactly as it does for csrc/.
+    from hcu_adapter import jit_dpskmeta
+
+    root = tmp_path / "stage"
+    _write_stage(root, {
+        "include/sgl_kernel/deepseek_v4/topk_impl.cuh": [
+            "\n  const auto [v_lo, v_hi] = to_fp32(keys);",
+            "\n  const auto [u_lo, u_hi] = to_fp32(keys - 0x00010001u);",
+            # drifted 6sp site: argument renamed threshold_bin -> other_bin
+            "\n      const auto [v_lo, v_hi] = coarse_bin_bounds<kHistBits>(other_bin);",
+        ],
+    })
     with pytest.raises(RuntimeError, match="needle missing"):
         jit_dpskmeta._apply(root, lambda *a, **k: None)
 

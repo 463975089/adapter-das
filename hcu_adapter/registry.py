@@ -319,6 +319,39 @@ TEXT_PATCH_ALLOWLIST = {
         "platform_detect",
         "    const auto [b0, b1] = cast<fp32x2_t>(b[i]);",
     ),
+    # --- K3/day-0 batch (nmz26 2026-11-05): topk_impl (include/ channel) /
+    # --- topk_v2 / situ_and_mul structured binds. Same ABI class; the
+    # --- 6sp/8sp coarse pairs are the §5.3 ① dual candidates. The situ
+    # --- cast pair reuses the silu_and_mul entries above (identical text).
+    ("platform_detect", "  const auto [v_lo, v_hi] = to_fp32(keys);"),
+    (
+        "platform_detect",
+        "  const auto [u_lo, u_hi] = to_fp32(keys - 0x00010001u);",
+    ),
+    (
+        "platform_detect",
+        "      const auto [v_lo, v_hi] = coarse_bin_bounds<kHistBits>(threshold_bin);",
+    ),
+    (
+        "platform_detect",
+        "        const auto [v_lo, v_hi] = coarse_bin_bounds<kHistBits>(threshold_bin);",
+    ),
+    (
+        "platform_detect",
+        "        const auto [v_lo, v_hi] = coarse_bin_bounds<kCoarseBits>(threshold_bin);",
+    ),
+    (
+        "platform_detect",
+        "      const auto [v_lo, v_hi] = impl::coarse_bin_bounds<kHistBits>(threshold_bin);",
+    ),
+    (
+        "platform_detect",
+        "        const auto [v_lo, v_hi] = impl::coarse_bin_bounds<kHistBits>(threshold_bin);",
+    ),
+    (
+        "platform_detect",
+        "    const auto [x, y] = situ_and_mul(gate_vec[i], up_vec[i], beta, inv_beta, linear_beta, inv_linear_beta);",
+    ),
 }
 
 
