@@ -80,9 +80,9 @@ BACKEND_CATALOG = {
         "summary": "vLLM official dense FP8 fallback via public linear registration",
         "backends": {
             "official-triton": {"status": "validated",
-                "note": "gfx936 only: official TritonFP8ScaledMMLinearKernel last priority; "
+                "note": "gfx936 and gfx938: official TritonFP8ScaledMMLinearKernel last priority; "
                         "nonunit tensor/token/channel scales, BF16/FP16 bias and changed-input Graph; "
-                        "native Torch remains unsupported; gfx938 unvalidated. "
+                        "native support checks remain unchanged. "
                         "Disable with VLLM_DISABLED_KERNELS=TritonFP8ScaledMMLinearKernel."},
         },
     },

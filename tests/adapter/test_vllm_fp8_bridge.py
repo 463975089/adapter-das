@@ -11,8 +11,8 @@ from hcu_adapter.bridges import vllm_fp8 as fallback
 from hcu_adapter import registry
 
 
-@pytest.fixture
-def fake_seams(monkeypatch):
+@pytest.fixture(params=("gfx936", "gfx938"))
+def fake_seams(monkeypatch, request):
     calls = []
 
     class OfficialKernel:
@@ -31,7 +31,7 @@ def fake_seams(monkeypatch):
         'vllm.platforms': SimpleNamespace(PlatformEnum=SimpleNamespace(ROCM='rocm')),
     }
     monkeypatch.setattr(fallback, 'import_module', modules.__getitem__)
-    monkeypatch.setattr(bridge, 'detect_hcu', lambda: bridge.HcuDetection(True, 'gfx936', ''))
+    monkeypatch.setattr(bridge, 'detect_hcu', lambda: bridge.HcuDetection(True, request.param, ''))
     records = []
     monkeypatch.setattr(registry, 'register', lambda **kw: records.append(kw))
     return linear, native, OfficialKernel, calls, records
@@ -47,7 +47,7 @@ def test_registers_the_exact_official_class_last_once(fake_seams):
     assert records[0]['mechanism'] == registry.MECH_SEAM
 
 
-@pytest.mark.parametrize('arch,detected', [('gfx938',True),('gfx928',True),('gfx92a',True),('gfx942',False),('gfx950',False),(None,False)])
+@pytest.mark.parametrize('arch,detected', [('gfx928',True),('gfx92a',True),('gfx942',False),('gfx950',False),(None,False)])
 def test_unvalidated_architectures_do_not_import_or_register(monkeypatch, arch, detected):
     monkeypatch.setattr(bridge, 'detect_hcu', lambda: bridge.HcuDetection(detected,arch,''))
     monkeypatch.setattr(fallback, 'import_module', lambda name: pytest.fail('unvalidated host imported '+name))
