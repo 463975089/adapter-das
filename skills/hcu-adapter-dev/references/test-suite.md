@@ -82,6 +82,38 @@ graph 回归还须改变输入/counts/尺度，并保持原数值门槛。CPU �
 CPU doubles 不代替全新进程的真实 bootstrap、官方加载和 DeepEP LL ABI
 设备回归；手工构造 dispatch output 也不代替真实通信或整模型精度。
 
+社区默认 Triton MLA decode 的压缩缓存专项见
+`tests/kernels/test_sglang_mla_decode.py`：32 heads、K576/V512 共享存储、
+V 行间距576、非连续物理索引，长度33/437/460与split7的空尾分片；
+未引用缓存及scratch以NaN填充。对拍独立CPU FP32 dense softmax，
+另要求连续V与原视图输出逐位一致；Graph先replay基线，再同地址改变
+Q、缓存、索引、有效长度和split数。该组件测试由kernels段自动收集，
+不增加家族manifest计数，也不替代整模型精度验收。
+
+社区融合SiLU存储边界专项见 `tests/kernels/test_original_silu.py`：
+FP16/BF16各覆盖中间维度3072的2/47行，以及VL2 Dense中间维度12288的
+单行decode/437行prefill。独立CPU FP64参考在最终dtype存储前给出FP32
+算术误差区间，并要求提前存储激活的负控被拒绝；保留输入不变、输出
+前后哨兵及三组同地址新输入的eager/Graph逐位一致检查。扩大形状不放宽
+原容差，也不代表Dense两次GEMM、残差或整模型验收。
+
+完整Dense模块专项见 `tests/kernels/test_original_dense_mlp.py`：直接构造
+社区 `DeepseekV2MLP` 的公开replicated模式，hidden2560/intermediate12288，
+覆盖FP16/BF16、单行decode/437行prefill。CPU FP32参考保留gate/up、
+融合SiLU乘积及down投影的dtype存储；三个新输入分别检查eager/Graph逐位
+一致、输入存储不变，以及相对L2/cosine/归一化最大误差。replicated
+linear仍读取分配上下文，须用公开 `get_parallel().override(tp_group=None)`
+限定单测作用域，不能改写社区forward绕过该读取。合成权重模块通过不
+代表真实checkpoint、TP通信、残差链或模型分布验收。
+
+VL2实际形状的routed专家专项见 `tests/kernels/test_original_moe_experts.py`：
+直接执行社区 `fused_experts_impl`，使用72专家、hidden2560/intermediate1536、
+top6、BF16和1/437行。CPU FP32参考分别保留gate/up、融合激活、
+路由加权down的BF16存储，以及槽位求和后乘2的顺序。三组输入同时改变
+激活、专家ID和归一化权重，检查eager/Graph逐位一致及所有输入存储不变；
+始终未选中的专家权重填NaN，验证空专家与padding隔离。此专项提供合成
+权重的专家计算链证据，不执行gate、共享专家、TP通信或完整模型。
+
 ## 四质量维度
 
 MoE softmax 并列回归见 `tests/kernels/test_moe_gate.py`：CPU 与 HCU

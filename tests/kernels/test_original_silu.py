@@ -4,12 +4,14 @@ import pytest
 import torch
 
 
-def _batch(phase, tokens, dtype):
+def _batch(phase, tokens, intermediate, dtype):
     generator = torch.Generator().manual_seed(1731 + phase)
-    values = (torch.randn(tokens * 6144 + 32, generator=generator) * 3).to(dtype)
-    inputs = values[16:-16].view(tokens, 6144)
+    values = (
+        torch.randn(tokens * 2 * intermediate + 32, generator=generator) * 3
+    ).to(dtype)
+    inputs = values[16:-16].view(tokens, 2 * intermediate)
     inputs[0, :5] = torch.tensor([-20, -5, 0, 5, 20], dtype=dtype)
-    inputs[0, 3072:3077] = torch.tensor(
+    inputs[0, intermediate:intermediate + 5] = torch.tensor(
         [-7 + phase, 3, -2, 1 + phase, -4], dtype=dtype)
     return values
 
@@ -35,16 +37,20 @@ def _within_reference(actual, expected):
     reason="Requires a real HIP device",
 )
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize("tokens", [2, 47])
-def test_original_silu_fused_store_fresh_input_graph(dtype, tokens):
+@pytest.mark.parametrize(
+    "tokens,intermediate",
+    [(2, 3072), (47, 3072), (1, 12288), (437, 12288)],
+)
+def test_original_silu_fused_store_fresh_input_graph(dtype, tokens, intermediate):
     from sglang.kernels.ops.activation.activation import silu_and_mul
 
-    batches = [_batch(phase, tokens, dtype) for phase in range(3)]
+    # Include the real VL2 Dense width and its prefill / single-row decode.
+    batches = [_batch(phase, tokens, intermediate, dtype) for phase in range(3)]
     storage = batches[0].cuda()
-    inputs = storage[16:-16].view(tokens, 6144)
+    inputs = storage[16:-16].view(tokens, 2 * intermediate)
     output_storage = torch.full(
-        (tokens * 3072 + 32,), 29, dtype=dtype, device="cuda")
-    output = output_storage[16:-16].view(tokens, 3072)
+        (tokens * intermediate + 32,), 29, dtype=dtype, device="cuda")
+    output = output_storage[16:-16].view(tokens, intermediate)
     assert inputs.is_contiguous() and inputs.storage_offset() == 16
     assert output.is_contiguous() and output.storage_offset() == 16
 
@@ -60,7 +66,7 @@ def test_original_silu_fused_store_fresh_input_graph(dtype, tokens):
     torch.cuda.synchronize()
 
     for values in batches:
-        original = values[16:-16].view(tokens, 6144)
+        original = values[16:-16].view(tokens, 2 * intermediate)
         expected = _reference(original)
         # A deliberately premature activation store must be rejected by this
         # fixture, rather than merely comparing two implementations that agree.
