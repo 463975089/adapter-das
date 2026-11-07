@@ -1,0 +1,348 @@
+{
+  "scope": "Public HookRegistry method using real resolved decode ServerArgs, a recorded model-config KV fixture, no model construction or GPU execution",
+  "capacity_mib": 65520,
+  "budget_rows": [],
+  "budget_binding": {
+    "module": "sglang.srt.model_executor.pool_configurator",
+    "qualname": "DefaultPoolConfigurator._compute_dsa_indexer_cell_size",
+    "source_file": "/work/sglang/python/sglang/srt/plugins/hook_registry.py",
+    "wrapper_attributes": [
+      "__wrapped__"
+    ]
+  },
+  "pid": 363670,
+  "cuda_initialized_after_imports": false,
+  "init_attempts": [],
+  "metadata": [
+    {
+      "index": 0,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    },
+    {
+      "index": 1,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    },
+    {
+      "index": 2,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    },
+    {
+      "index": 3,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    },
+    {
+      "index": 4,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    },
+    {
+      "index": 5,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    },
+    {
+      "index": 6,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    },
+    {
+      "index": 7,
+      "name": "BW",
+      "arch": "gfx936",
+      "cu": 80,
+      "warp_size": 64,
+      "capability": [
+        9,
+        3
+      ]
+    }
+  ],
+  "audit": {
+    "triton.backends.driver.GPUDriver.__init__": {
+      "source": "/usr/local/lib/python3.12/site-packages/triton/backends/driver.py",
+      "sha256": "a311d5ea68458a7bfc14c302944d650fb7b15018aee35656843f9e58678eb974",
+      "calls": [
+        "torch.cuda.get_device_capability",
+        "torch.cuda.current_device"
+      ]
+    },
+    "sglang.srt.utils.common.is_hcu": {
+      "source": "/work/sglang/python/sglang/srt/utils/common.py",
+      "sha256": "205dd6ab303d07d5b5f6182556217e7ff76843a934bbc9449702d80fc1a832ae",
+      "calls": [
+        "torch.cuda.get_device_properties"
+      ]
+    },
+    "sglang.srt.utils.common.is_hcu_native_fp8_supported": {
+      "source": "/work/sglang/python/sglang/srt/utils/common.py",
+      "sha256": "f4795efb0124fbd14fa933975ee947e27e01a104f245c7a6c55604ba35884bd2",
+      "calls": []
+    },
+    "sglang.srt.utils.common.W8a8GetCacheJSON._initialize": {
+      "source": "/work/sglang/python/sglang/srt/utils/common.py",
+      "sha256": "9ea6c9e092ce5283797895c05b348f0b325f1ab694ce7572ffb5d104f9fb5ec6",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "sglang.srt.arg_groups.overrides": {
+      "source": "/work/sglang/python/sglang/srt/arg_groups/overrides.py",
+      "sha256": "30f818fc2457fb96271dbf9a21415e731965497ed14ce9a3449a86f0bb955f54",
+      "calls": [
+        "torch.cuda.get_device_capability",
+        "torch.cuda.get_device_capability",
+        "torch.cuda.get_device_capability"
+      ]
+    },
+    "lightop.envs": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/envs.py",
+      "sha256": "511b3d25e46d1dcb52b0733a2680547066b5f9b93eb3acc18536f05830bc07d5",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.quantize.utils.awq_gemm_get_best_template": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/quantize/utils/awq_gemm_get_best_template.py",
+      "sha256": "96f2d918baba9873ee1eda3222e2e6022da500e0506127eb81d4f31ebd5a5798",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device",
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.quantize.utils.template_v2": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/quantize/utils/template_v2.py",
+      "sha256": "4a3309820d015eaa7f8397c605434682f2636d71412807c401993b7511008dee",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.layers.fused_moe.fp8_marlin": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/layers/fused_moe/fp8_marlin.py",
+      "sha256": "b07ac9b741f2c6481392ee27157bf965b8a4c3dd0ed0bee96cebc22c7366c871",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.vllm_compat.w8a8_get_cache_json": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/vllm_compat/w8a8_get_cache_json.py",
+      "sha256": "2509ce7a568383bb2da19da73074fdc60688574b75a519276b51f7666d0a0b25",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.layers.fused_moe.int8_marlin": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/layers/fused_moe/int8_marlin.py",
+      "sha256": "cf3a89189301d4bb16a952a89b73d5daf3eeb38629ee8528579bb86bb6bac6ec",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.layers.fused_moe.int4": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/layers/fused_moe/int4.py",
+      "sha256": "de853dfd06fceb2a36787811351112cc2c2538bd23b4796b68981c96d7001681",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.layers.fused_moe.w4a16": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/layers/fused_moe/w4a16.py",
+      "sha256": "289d483980865d5973300ae48f9c1190a0a600270cba17b2299d1f59f99671cb",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.layers.fused_moe.w4a8": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/layers/fused_moe/w4a8.py",
+      "sha256": "c627a47445610da2477579ea32130e8d2788553df40f417a470b871f6ed2ff6f",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.layers.fused_moe.w4a8_marlin": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/layers/fused_moe/w4a8_marlin.py",
+      "sha256": "24fb1b172d8b54c4d15bfc26ff240ba0812f9923d91cfeeb8fe04cb660da8294",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "lightop._lmslim_native.layers.groupgemm.w4a8": {
+      "source": "/usr/local/lib/python3.12/site-packages/lightop/_lmslim_native/layers/groupgemm/w4a8.py",
+      "sha256": "49d88241c7d40ce40e9b03e4f78f4a830946aec7949fb35d9545f74df6586265",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "sglang.srt.layers.quantization.quark_int4fp8_moe": {
+      "source": "/work/sglang/python/sglang/srt/layers/quantization/quark_int4fp8_moe.py",
+      "sha256": "66776c95a700898738bbb717eeaea30d07df67f2af30d99049e241b5c378426d",
+      "calls": [
+        "torch.cuda.get_device_properties"
+      ]
+    },
+    "sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe": {
+      "source": "/work/sglang/python/sglang/srt/layers/moe/moe_runner/triton_utils/fused_moe.py",
+      "sha256": "2ad07b2f3391bc263a5375070ffcd3cb08af5b812921a86d5f30cbe47ae4aed2",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "sglang.kernels.ops.attention.prefill_attention": {
+      "source": "/work/sglang/python/sglang/kernels/ops/attention/prefill_attention.py",
+      "sha256": "eb158c4c03e69091eb95a1bce093c9b054ac1ca5aab12769063d2e84630ca7f3",
+      "calls": [
+        "torch.cuda.get_device_capability"
+      ]
+    },
+    "sglang.kernels.ops.attention.fla.utils": {
+      "source": "/work/sglang/python/sglang/kernels/ops/attention/fla/utils.py",
+      "sha256": "a68e3e5994426250e58fec33033647a8d5bb9cd64865dca4cb9d16f33c0155f8",
+      "calls": [
+        "torch.cuda.get_device_capability",
+        "torch.cuda.get_device_capability"
+      ]
+    },
+    "sglang.kernels.ops.attention.fused_qk_rmsnorm_rope_gate": {
+      "source": "/work/sglang/python/sglang/kernels/ops/attention/fused_qk_rmsnorm_rope_gate.py",
+      "sha256": "08d4004c2c015225335c21df4cf06a60e6746636db1a798ba7631bff1e0b256f",
+      "calls": [
+        "torch.cuda.get_device_capability"
+      ]
+    },
+    "sglang.srt.layers.moe.fused_moe_int8_marlin_for_minimax_m2": {
+      "source": "/work/sglang/python/sglang/srt/layers/moe/fused_moe_int8_marlin_for_minimax_m2.py",
+      "sha256": "eab41231704f14603f8d269df182a86b717aa5f7e2cda2d7e1d9154b0264173d",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "sglang.kernels.ops.attention.cutedsl_gdn_mtp_ring": {
+      "source": "/work/sglang/python/sglang/kernels/ops/attention/cutedsl_gdn_mtp_ring.py",
+      "sha256": "7449dcd2448ced22bcfbb11adbda52d0c63958af080648b096f758f635f5692f",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_capability"
+      ]
+    },
+    "hcu_sglang.utils.detection": {
+      "source": "/work/ownership-v1/site-main-20261107-v1/hcu_sglang/utils/detection.py",
+      "sha256": "248c4d3d4ef22b91842e5bb61cd16572946df5ee1e13dea770c8b37292635380",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_properties",
+        "torch.cuda.get_device_properties"
+      ]
+    },
+    "hcu_sglang.quick_all_reduce": {
+      "source": "/work/ownership-v1/site-main-20261107-v1/hcu_sglang/quick_all_reduce.py",
+      "sha256": "33a37cc889433747a6cdc4a109a1373002deb6bfd1f45e5ccd93c23a691e9ad4",
+      "calls": [
+        "torch.cuda.get_device_properties"
+      ]
+    },
+    "hcu_sglang.layers.attention.hcu_int8_index_k_cache": {
+      "source": "/work/ownership-v1/site-main-20261107-v1/hcu_sglang/layers/attention/hcu_int8_index_k_cache.py",
+      "sha256": "9a740c2fbf5ff426a5bd603799f0015ecdefc69df55a717cae77ac8388b86826",
+      "calls": [
+        "torch.cuda.get_device_properties"
+      ]
+    },
+    "hcu_sglang.mem_cache.dsa_index_cache_mode": {
+      "source": "/work/ownership-v1/site-main-20261107-v1/hcu_sglang/mem_cache/dsa_index_cache_mode.py",
+      "sha256": "c69e82fd7b3c20aceb9e087d3c93afe2aff7190f28a2cdab0e4278b356a9cc7a",
+      "calls": [
+        "torch.cuda.get_device_properties"
+      ]
+    },
+    "sglang.srt.arg_groups.model_hook": {
+      "source": "/work/sglang/python/sglang/srt/arg_groups/model_hook.py",
+      "sha256": "0e6e498dabb99e092424ae33ea0a51376e81a447e3b99a9062f571b1f3516260",
+      "calls": [
+        "torch.cuda.get_device_capability"
+      ]
+    },
+    "hcu_sglang.layers.quantization.cache_config": {
+      "source": "/work/ownership-v1/site-main-20261107-v1/hcu_sglang/layers/quantization/cache_config.py",
+      "sha256": "0e5a5c5daa2db441418b6f8a9ee6bbb284756b7a0165c056fd8d3d8550e4bc7e",
+      "calls": [
+        "torch.cuda.get_device_properties",
+        "torch.cuda.current_device"
+      ]
+    },
+    "sglang.srt.arg_groups.attention_hook": {
+      "source": "/work/sglang/python/sglang/srt/arg_groups/attention_hook.py",
+      "sha256": "242b0c0d16c8b4bca3e354b173955c6879f92780073059ba97c8f8a57e423309",
+      "calls": [
+        "torch.cuda.get_device_capability",
+        "torch.cuda.get_device_capability",
+        "torch.cuda.get_device_capability"
+      ]
+    }
+  },
+  "provenance_note": "Pre-rebase isolated combined integration probe; not final rebased PR end-to-end validation."
+}

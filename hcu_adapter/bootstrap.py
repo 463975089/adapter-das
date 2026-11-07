@@ -155,6 +155,16 @@ def install() -> None:
     pid = os.getpid()
     if _installed_pid == pid:
         return
+    # The multiprocessing resource tracker only manages OS resources. It
+    # inherits the host environment but must not load GPU/framework bridges.
+    argv = getattr(sys, "orig_argv", ())
+    if any(
+        arg == "-c"
+        and argv[index + 1].startswith("from multiprocessing.resource_tracker import main;")
+        for index, arg in enumerate(argv[:-1])
+    ):
+        _installed_pid = pid
+        return
     if not _is_hip():
         _installed_pid = pid
         return

@@ -1,0 +1,123 @@
+{
+  "scope": "Single-node TP8/EP8 diagnostic; MTP and graphs disabled. Target four-node P/D validation remains pending.",
+  "sglang_base": "15c7204b7a3b6edaa222cff80018d8e5f2b2ad0e",
+  "adapter_runtime": "2b7196b9aace4e2e29e2e27c24ea87dfa054de57",
+  "plugin_runtime": "953750c4cde915aa4ed46143a77d8d1711baf496",
+  "quantization": "compressed-tensors: W4 channel-wise experts and dynamic-token INT8 activations; W8A8/ignore rules retained",
+  "flashmla_override": {
+    "commit": "e7b26ad186028b07b9267e296eaf0acaa5cc7069",
+    "code_object_version": 5,
+    "binary_sha256": "6cae04949961ce4de5a9806b42ff5e51df87f3b0a170773742becac5771eb311",
+    "reason": "Original image COV6 functions cannot be found on current nodes; original package retained"
+  },
+  "smoke": [
+    {
+      "case": "arithmetic",
+      "expected": "323",
+      "raw_final_line": "ANSWER: 323",
+      "nfkc_final_line": "ANSWER: 323",
+      "finish_reason": {
+        "type": "stop",
+        "matched": 154827
+      },
+      "completion_tokens": 69,
+      "passed": true
+    },
+    {
+      "case": "formula",
+      "expected": "H2O",
+      "raw_final_line": "ANSWER: H₂O",
+      "nfkc_final_line": "ANSWER: H2O",
+      "finish_reason": {
+        "type": "stop",
+        "matched": 154827
+      },
+      "completion_tokens": 218,
+      "passed": true
+    },
+    {
+      "case": "json-add",
+      "expected": "18",
+      "raw_final_line": "ANSWER: 18",
+      "nfkc_final_line": "ANSWER: 18",
+      "finish_reason": {
+        "type": "stop",
+        "matched": 154827
+      },
+      "completion_tokens": 54,
+      "passed": true
+    }
+  ],
+  "profile": {
+    "input_tokens": 33,
+    "output_tokens": 2,
+    "rank_count": 8,
+    "trace_kernel_hits": {
+      "fused_moe_kernel_gptq_awq": 2400,
+      "_per_token_quant_int8": 9312
+    },
+    "trace_files": [
+      {
+        "file": "candidate-single-v9-TP-0-EP-0.trace.json.gz",
+        "sha256": "0b1b55582cf9b700ca508fa85b6370b495e8c8975e4728bad26d56b44570f609",
+        "compressed_bytes": 19380477
+      },
+      {
+        "file": "candidate-single-v9-TP-1-EP-1.trace.json.gz",
+        "sha256": "d397e9475533f7aca7096a57bbd37bd3717de7c47e9d1c74ce187810f1fd81a9",
+        "compressed_bytes": 19284776
+      },
+      {
+        "file": "candidate-single-v9-TP-2-EP-2.trace.json.gz",
+        "sha256": "e22b0f98eddd8e51e45947e5209b6fba2ad60dee7ef9c6946fccf268938c2b39",
+        "compressed_bytes": 19297650
+      },
+      {
+        "file": "candidate-single-v9-TP-3-EP-3.trace.json.gz",
+        "sha256": "d4cff9261fe01ee19f7389104e9f8d94b2a1361432721c0b80071c44261874a4",
+        "compressed_bytes": 19263051
+      },
+      {
+        "file": "candidate-single-v9-TP-4-EP-4.trace.json.gz",
+        "sha256": "b5dec0ed6366260d973bf1f187054db90423bb9eac0977dea190b4e8db7a9ceb",
+        "compressed_bytes": 19274730
+      },
+      {
+        "file": "candidate-single-v9-TP-5-EP-5.trace.json.gz",
+        "sha256": "8cc8c466d188b23f639243d4dab81203c650ed770ddd877b876302c51fd0493a",
+        "compressed_bytes": 19254401
+      },
+      {
+        "file": "candidate-single-v9-TP-6-EP-6.trace.json.gz",
+        "sha256": "035fb21a25167776d422540aa48cd71ec4bb3816c83eb37bf67c4aecaf84cf63",
+        "compressed_bytes": 19283266
+      },
+      {
+        "file": "candidate-single-v9-TP-7-EP-7.trace.json.gz",
+        "sha256": "65586d823d92aa24776afb82db57f56444d73d7eada2f699203536e7b7a135e7",
+        "compressed_bytes": 19269352
+      }
+    ],
+    "archive_bytes": 154583040,
+    "archive_sha256": "cad7281ecfa9db4381e3c1a928702563ca197894c833d5256e4ca53b9e61680d",
+    "local_compressed_trace_hashes_match": 8
+  },
+  "assembly": {
+    "matched_cache_files": 8,
+    "A_pointer_type": "i8",
+    "packed_B_pointer_type": "i8",
+    "output_pointer_type": "bf16",
+    "matrix_instruction": "v_mmac_i32_16x16x32_i8",
+    "assembly_sha256": [
+      "1541327a7e8b9a03975094377c6229527f490af7a46718510ace180b4e024f77",
+      "85b3f760b6725c2dc2a0ea8b93575449575313e8dd9dabab32943381ffd9273d",
+      "bf48d20cbea3fef6ab933aefeae96db75534684d0f3c0015641f2ae725b134e5",
+      "eaa2137727f4ff24d7cf6f4d683bc1f65c667f6750c9c754a56ccf068e566bb0"
+    ]
+  },
+  "limitations": [
+    "Two output tokens prove the complete diagnostic prefill/decode path; they do not cover a long decode or MTP",
+    "ROCtracer duplicate flow warnings present; kernel duration sums are not e2e speed",
+    "Trace archive and raw requests are task artifacts; this JSON records hashes and verified scope, not trace contents"
+  ]
+}

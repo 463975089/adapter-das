@@ -1,0 +1,612 @@
+{
+  "scope": "First-layer actual attention module I/O only, two archived prefixes and all eight PP0 CP ranks; not model accuracy acceptance.",
+  "reference": {
+    "all_four_original_native_roles": true,
+    "response_pairs_exact_to_uninstrumented_native_v3": 4,
+    "requested_fields": [
+      "output_token_logprobs",
+      "output_top_logprobs",
+      "output_token_ids_logprobs"
+    ],
+    "case_files": 32,
+    "static_files": 1,
+    "archive_bytes": 196484395,
+    "archive_sha256": "7e81cbda9ea6ef9f99d119570388a366c94b68a95cf494b734293266ba402279",
+    "all33_raw_size_sha_exact_locally": true
+  },
+  "candidate": {
+    "generation": "P17 CPv2",
+    "response_pairs_exact_to_uninstrumented_P16": 4,
+    "archive_sha256": "9fa3ab470235a037e8ef067a805319d3b940b629a6077560c907028f32ebafd6"
+  },
+  "cases": [
+    {
+      "id": "arithmetic-prefix0",
+      "boundaries": {
+        "model.layers.0.self_attn#0 /kwargs/hidden_states": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn#0 /kwargs/positions": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0018989667130939719,
+          "max_abs": 0.00048828125
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /input/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 6.188547929820427e-05,
+          "max_abs": 0.001953125
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /input/1": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /input/2": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /kwargs/k_rope": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0012373805465068107,
+          "max_abs": 0.015625
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /kwargs/q_rope": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0013979171110725358,
+          "max_abs": 0.0625
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /kwargs/topk_indices": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.5747149028509393,
+          "max_abs": 28.0
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /output": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0018526621613376144,
+          "max_abs": 0.0001220703125
+        },
+        "model.layers.0.self_attn.fused_qkv_a_proj_with_mqa#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.fused_qkv_a_proj_with_mqa#0 /output/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /kwargs/positions": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /kwargs/q_lora": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /kwargs/x": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /output": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.5747149028509393,
+          "max_abs": 28.0,
+          "all8_sorted_index_sets_exact": true
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /input/1": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /input/2": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0013979171110725358,
+          "max_abs": 0.0625
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /output/1": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0014917619895978877,
+          "max_abs": 0.015625
+        },
+        "model.layers.0.self_attn.indexer.wk#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.wk#0 /output/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.wq_b#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.wq_b#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 1.87055634305476e-05,
+          "max_abs": 0.0078125
+        },
+        "model.layers.0.self_attn.kv_a_layernorm#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.kv_a_layernorm#0 /output": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.o_proj#0 /input/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0019542904766126235,
+          "max_abs": 6.103515625e-05
+        },
+        "model.layers.0.self_attn.o_proj#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0018989667130939719,
+          "max_abs": 0.00048828125
+        },
+        "model.layers.0.self_attn.q_a_layernorm#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.q_a_layernorm#0 /output": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.q_b_proj#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.q_b_proj#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 8.160733482049205e-06,
+          "max_abs": 0.001953125
+        }
+      }
+    },
+    {
+      "id": "formula-prefix0",
+      "boundaries": {
+        "model.layers.0.self_attn#0 /kwargs/hidden_states": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn#0 /kwargs/positions": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0017604742546026904,
+          "max_abs": 0.00048828125
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /input/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 5.6690821716514596e-05,
+          "max_abs": 0.001953125
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /input/1": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /input/2": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /kwargs/k_rope": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0012627851126022346,
+          "max_abs": 0.015625
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /kwargs/q_rope": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0014120931158739043,
+          "max_abs": 0.0625
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /kwargs/topk_indices": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.5556506807128797,
+          "max_abs": 27.0
+        },
+        "model.layers.0.self_attn.attn_mqa#0 /output": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0018527757552082094,
+          "max_abs": 0.0001220703125
+        },
+        "model.layers.0.self_attn.fused_qkv_a_proj_with_mqa#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.fused_qkv_a_proj_with_mqa#0 /output/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /kwargs/positions": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /kwargs/q_lora": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /kwargs/x": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer#0 /output": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.5556506807128797,
+          "max_abs": 27.0,
+          "all8_sorted_index_sets_exact": true
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /input/1": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /input/2": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0014120931158739043,
+          "max_abs": 0.0625
+        },
+        "model.layers.0.self_attn.indexer.rotary_emb#0 /output/1": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.001690029652825067,
+          "max_abs": 0.015625
+        },
+        "model.layers.0.self_attn.indexer.wk#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.wk#0 /output/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.wq_b#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.indexer.wq_b#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 1.8836352810968917e-05,
+          "max_abs": 0.0078125
+        },
+        "model.layers.0.self_attn.kv_a_layernorm#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.kv_a_layernorm#0 /output": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.o_proj#0 /input/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.001866818575044364,
+          "max_abs": 6.103515625e-05
+        },
+        "model.layers.0.self_attn.o_proj#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 0.0017604742546026904,
+          "max_abs": 0.00048828125
+        },
+        "model.layers.0.self_attn.q_a_layernorm#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.q_a_layernorm#0 /output": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.q_b_proj#0 /input/0": {
+          "all8_ranks_exact": true,
+          "worst_rank_nrmse": 0.0,
+          "max_abs": 0.0
+        },
+        "model.layers.0.self_attn.q_b_proj#0 /output/0": {
+          "all8_ranks_exact": false,
+          "worst_rank_nrmse": 7.918478245229002e-06,
+          "max_abs": 0.001953125
+        }
+      }
+    }
+  ],
+  "static": [
+    {
+      "module": "model.layers.0.self_attn",
+      "field": "eps",
+      "candidate": null,
+      "native": null,
+      "exact": true
+    },
+    {
+      "module": "model.layers.0.self_attn",
+      "field": "w_kc",
+      "exact": true,
+      "shape": [
+        64,
+        192,
+        512
+      ],
+      "candidate_dtype": "torch.bfloat16",
+      "native_dtype": "torch.bfloat16",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    },
+    {
+      "module": "model.layers.0.self_attn",
+      "field": "w_vc",
+      "exact": true,
+      "shape": [
+        64,
+        512,
+        256
+      ],
+      "candidate_dtype": "torch.bfloat16",
+      "native_dtype": "torch.bfloat16",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    },
+    {
+      "module": "model.layers.0.self_attn.kv_a_layernorm",
+      "field": "eps",
+      "candidate": 1e-05,
+      "native": 1e-05,
+      "exact": true
+    },
+    {
+      "module": "model.layers.0.self_attn.kv_a_layernorm",
+      "field": "weight",
+      "exact": true,
+      "shape": [
+        512
+      ],
+      "candidate_dtype": "torch.bfloat16",
+      "native_dtype": "torch.bfloat16",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    },
+    {
+      "module": "model.layers.0.self_attn.o_proj",
+      "field": "eps",
+      "candidate": null,
+      "native": null,
+      "exact": true
+    },
+    {
+      "module": "model.layers.0.self_attn.o_proj",
+      "field": "weight",
+      "exact": true,
+      "shape": [
+        16384,
+        6144
+      ],
+      "candidate_dtype": "torch.int8",
+      "native_dtype": "torch.int8",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    },
+    {
+      "module": "model.layers.0.self_attn.o_proj",
+      "field": "weight_scale",
+      "exact": true,
+      "shape": [
+        6144,
+        1
+      ],
+      "candidate_dtype": "torch.float32",
+      "native_dtype": "torch.float32",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    },
+    {
+      "module": "model.layers.0.self_attn.q_a_layernorm",
+      "field": "eps",
+      "candidate": 1e-05,
+      "native": 1e-05,
+      "exact": true
+    },
+    {
+      "module": "model.layers.0.self_attn.q_a_layernorm",
+      "field": "weight",
+      "exact": true,
+      "shape": [
+        2048
+      ],
+      "candidate_dtype": "torch.bfloat16",
+      "native_dtype": "torch.bfloat16",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    },
+    {
+      "module": "model.layers.0.self_attn.q_b_proj",
+      "field": "eps",
+      "candidate": 1e-06,
+      "native": 1e-06,
+      "exact": true
+    },
+    {
+      "module": "model.layers.0.self_attn.q_b_proj",
+      "field": "weight",
+      "exact": true,
+      "shape": [
+        2048,
+        16384
+      ],
+      "candidate_dtype": "torch.int8",
+      "native_dtype": "torch.int8",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    },
+    {
+      "module": "model.layers.0.self_attn.q_b_proj",
+      "field": "weight_scale",
+      "exact": true,
+      "shape": [
+        16384,
+        1
+      ],
+      "candidate_dtype": "torch.float32",
+      "native_dtype": "torch.float32",
+      "finite_masks_exact": true,
+      "candidate_nonfinite": 0,
+      "native_nonfinite": 0,
+      "nrmse": 0.0,
+      "max_abs": 0.0,
+      "different_finite_elements": 0
+    }
+  ],
+  "interpretation": {
+    "fused_qkv": "Identical actual inputs and full2624-column outputs; no evidence for a projection tail bug.",
+    "norms": "Q/K input and output exact on all valid token positions.",
+    "q_b": "Same captured weights/scales and input; tiny BF16 output differences remain.",
+    "rotary": "Actual Q/K/position inputs exact, outputs differ; dominant measured pre-attention preparation discrepancy.",
+    "indexer": "Index order differs, but sorted selected index sets are exact for every observed valid row.",
+    "omissions": "Bounded observer omits tensors over4M elements; fused QKV weights were not in selected static fields; cached rotary invocations after#0 are later layers.",
+    "model_acceptance": "Still failing all6 prefill and all6 aligned decode selected-logprob checks; thresholds unchanged."
+  },
+  "artifacts": [
+    "candidate-pd/compare-attention-probe-v1.py",
+    "candidate-pd/validate-attention-native-pure-v8.py",
+    "candidate-pd/attention-probe-v1/first-attention-comparison.json",
+    "candidate-pd/check-rope-rounding-cpu-v1.py",
+    "candidate-pd/attention-probe-v1/rope-rounding-cpu-v1.json"
+  ],
+  "lightop_recipe_component": {
+    "passed_component": true,
+    "real_case_rank_pairs": 16,
+    "Q_K_checks": 32,
+    "changed_input_graph_replays": 2,
+    "all_Q_K_elementwise_exact_to_native": true,
+    "canonical_FP32_cache_identity_preserved": true,
+    "typed_cache_dtype": "torch.bfloat16",
+    "disabled_constructor_keeps_original_branch": true,
+    "raw_report": "candidate-pd/attention-probe-v1/rope-runtime-v4.json",
+    "raw_report_sha256": "2b47672508b4849aeede6998f6be4bc4d0e606f153edc9d9e86fb7c63cba3bec",
+    "production_source_sha256": {
+      "hcu_sglang/environ.py": "6f665dcbe8eb31afe0c5a8e0c0d37ff4fb0428e2b401352a91bcf9d76853d551",
+      "hcu_sglang/layers/rotary.py": "1355156869b6e185b1639577fe051b9efcc3918dc43d6b11ab36a19fe4c9ed80",
+      "tests/contracts/hcu_source_alignment_targets.json": "e2aa23bcb8efae5fb40b31d81a65b7e1a402cfa8d8dd3fece1827ef5356efc53"
+    },
+    "scope_limit": "Only observed first-layer short-prefix inputs and one changed-input component graph, not full model acceptance. Fused KV-store and offsets not exercised.",
+    "old_head_split_control": "Full64-head public LightOp matches all observed native outputs; splitting8heads produces23861different elements. Failed v3candidate plugin probe retained; not used for model service."
+  },
+  "q_b_public_w8a8_alignment": {
+    "shape_M_N_K": [
+      8,
+      16384,
+      2048
+    ],
+    "case_rank_pairs": 16,
+    "public_vs_native_all_exact_both_images": true,
+    "ASM_vs_original_candidate_all_exact": true,
+    "ASM_different_elements_vs_native": 4,
+    "ASM_worst_rank_nrmse": 8.160733159456868e-06,
+    "cross_image48_quant_scale_public_output_tensors_exact": true,
+    "actual_plugin_flag_on16_outputs_match_native": true,
+    "actual_plugin_flag_off16_outputs_match_original_candidate": true,
+    "changed_input_component_graphs_exact": 2,
+    "runtime_report": "attention-probe-v1/qb-w8a8-v1/candidate-runtime-v2.json",
+    "runtime_report_sha256": "2731929d50cbfc815e697657fcb92dd4a4c1ab793687b4c093c81adc5be2205b",
+    "scope": "Captured first-layer Q-b finitecomponent only. Six-case model replay with bothflags pending."
+  },
+  "same_input_sparse_prefill_core_v1": {
+    "scope": "First-layer BF16 sparse-prefill core component only; no whole-model/decode acceptance.",
+    "fixture": "Actual native q_nope+q_rope, normalizedK+k_rope, selected indices; sm_scale0.0625,d_v512. Two archived prefixes × eight CP ranks; valid token rows only.",
+    "native_provider": "Original native image flash_mla.flash_mla_interface.flash_mla_sparse_fwd",
+    "candidate_provider": "Qualified DTK26.10 /work/vendor-overrides/flashmla-cov5 public interface; pinned binary SHA verified",
+    "native_actual_reconstruction": "All16 fixtures exact for topk_length=None and valid_count; all32 calls finite/exact on valid rows.",
+    "candidate_actual_reconstruction": "Same16 fixtures exact against actual native for both length variants; all32 calls finite/exact on valid rows.",
+    "script": "candidate-pd/check-attention-core-native-v1.py --label <native|candidate>",
+    "archive": {
+      "archive": "/work/candidate-pd/attention-probe-v1/attention-core-v1-20261105.tar.gz",
+      "bytes": 13453710,
+      "sha256": "cba427e66ac40deb75af031b155d827c7c1dae17d542e9f7c87713c95655b55c"
+    },
+    "report_sha256": {
+      "native": "fd5af4c149e9cca4a9f523b341361c72bb09d0f91c9c32098431a4e3cf38d905",
+      "candidate": "59cf5f95fcfb2fd1c30e398191a50bbb803d31c1f6eb8fd1c2872dfcdbe6f820"
+    },
+    "next": "Fresh full-path candidate observation after the qualified native-math fixes; only compare states if observed responses match uninstrumented P20 baseline."
+  }
+}

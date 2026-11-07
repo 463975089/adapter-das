@@ -1,0 +1,100 @@
+{
+  "scope": "Top-K order/dispatch component only; no full model accuracy acceptance.",
+  "cause": "Adapter model_env automatically sets SGLANG_DSA_FUSE_TOPK=0 for indexer configs under the old no-HIP assumption. Current plugin and installed LightOp already provide legacy fused Top-K.",
+  "observed": "Validated P21/D12 observation matches all4 P/D response pairs vs uninstrumented P20 in IDs and all3requested logprob fields; all33state/static files locally SHA-verified.",
+  "boundary": "All first-layer Q/K, norms, Q-b and RoPE inputs/outputs exact native. Selected index sets exact; native order ascending, candidate score-ordered. Sparse attention differs10 BF16 elements on arithmetic and12 on formula. O projection absorbs arithmetic difference; formula final attention output differs105 elements.",
+  "counterfactual": "Both image public FlashMLA providers on identical QKV: native indices reconstruct all16 actual native outputs; current indices reconstruct all16 P21 outputs. Only order changes. This does not establish that all model distribution error is caused by this boundary.",
+  "recipe": "Explicit SGLANG_DSA_FUSE_TOPK=1 overrides only this GLM recipe; retain sgl-kernel default backend and SGLANG_OPT_USE_TOPK_V2=0. No forced torch flag, manual index sort or generic legacy-default removal.",
+  "formal_plugin_qualification": {
+    "cases": 16,
+    "native_indices_all_exact": true,
+    "score_scope": "Synthetic scores on captured native row lengths. All lengths <=K, so native selects every causal index independently of scores. Not captured native MQA logits.",
+    "disabled_branch_preserves_sets": true,
+    "changed_input_graphs": [
+      {
+        "method": "RAGGED",
+        "shift": 3,
+        "graph_vs_eager": {
+          "exact": true,
+          "different": 0
+        }
+      },
+      {
+        "method": "RAGGED",
+        "shift": 7,
+        "graph_vs_eager": {
+          "exact": true,
+          "different": 0
+        }
+      },
+      {
+        "method": "PAGED",
+        "shift": 3,
+        "graph_vs_eager": {
+          "exact": true,
+          "different": 0
+        }
+      },
+      {
+        "method": "PAGED",
+        "shift": 7,
+        "graph_vs_eager": {
+          "exact": true,
+          "different": 0
+        }
+      }
+    ],
+    "graph_probe_note": "v1 created CPU metadata inside capture and failed in the probe; v2 preallocates it, completes4graphs. No vendor failure inferred."
+  },
+  "observer_archive": {
+    "archive": "/work/candidate-pd/attention-candidate-v21-20261105.tar.gz",
+    "bytes": 258156239,
+    "sha256": "6283f732a42f20c208a77671d8337bf3c442b2c44e4818905020dce9a2eacc55"
+  },
+  "qualification_archive": {
+    "archive": "/work/candidate-pd/fused-topk-runtime-v2-20261105.tar.gz",
+    "bytes": 3078,
+    "sha256": "20e6d3163d5eedb6f6aeba8e992dbdfaf4c9d253c18f8f36579c0be5296784ad"
+  },
+  "full_model_status": "Uninstrumented P22/D13 with fused Top-K completed all6 captures (exit0), but all6P and6alignedD distributions still FAIL unchanged thresholds (comparison1); first2 IDs native all6. Further intermediate alignment required.",
+  "full_model_raw_archive": {
+    "archive": "/work/candidate-pd/numerical-p22-20261105.tar.gz",
+    "bytes": 209303,
+    "sha256": "37354bb04532278e505d152b4e08d15d7a72b487afda2c1445e5304e6d23418e",
+    "included_roots": [
+      "finite-v22-on-raw/numerical",
+      "numerical-v1/p22-vs-native-v3-comparison-v4.json",
+      "adapter-fused-topk-v1-source.json",
+      "plugin-native-math-v1-source.json",
+      "runtime-fused-topk-v22-expected-sha256.json",
+      "run-numerical-v22-client.sh",
+      "wait-numerical-v22.py",
+      "run-finite-checks.py",
+      "compare-numerical-v4.py",
+      "numerical-v22-client.log",
+      "numerical-v22-client.exit",
+      "numerical-v22-capture-complete.json",
+      "launch-fused-topk-v22.py",
+      "preflight-fused-topk-v22.py",
+      "fused-topk-preflight-node21.json",
+      "launch-fused-topk-node21.json",
+      "fused-topk-runtime-env-node21.json",
+      "run-node21-v22.sh",
+      "fused-topk-preflight-node22.json",
+      "launch-fused-topk-node22.json",
+      "fused-topk-runtime-env-node22.json",
+      "run-node22-v22.sh",
+      "fused-topk-preflight-node23.json",
+      "launch-fused-topk-node23.json",
+      "fused-topk-runtime-env-node23.json",
+      "run-node23-v13.sh",
+      "fused-topk-preflight-node24.json",
+      "launch-fused-topk-node24.json",
+      "fused-topk-runtime-env-node24.json",
+      "run-node24-v13.sh"
+    ],
+    "capture_exit": 0,
+    "comparison_exit": 1,
+    "scope": "Uninstrumented P22/D13 FUSE_TOPK1 native recipe, six fixed prefixes, all6P and6alignedD fail original tolerances, first2IDs native all6."
+  }
+}

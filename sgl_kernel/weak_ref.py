@@ -69,18 +69,25 @@ def _load_vendor_impl():
             sys.modules.pop("sgl_kernel.common_ops", None)
             return None
 
+    # Inspect registration without allocating a CUDA test tensor. The vendor
+    # op has no CPU kernel, so a CPU tensor probe would silently lose the
+    # storage-decoupled CUDA implementation and retain graph intermediates.
     fn = None
     try:
-        fn = torch.ops.sgl_kernel.weak_ref_tensor
-        fn(torch.zeros(1, device="cuda"))
-    except Exception:
+        candidate = torch.ops.sgl_kernel.weak_ref_tensor
+        if any(
+            torch._C._dispatch_has_kernel_for_dispatch_key(
+                "sgl_kernel::weak_ref_tensor", key
+            )
+            for key in ("CUDA", "CompositeExplicitAutograd", "CompositeImplicitAutograd")
+        ):
+            fn = candidate
+    except (AttributeError, RuntimeError):
+        pass
+    if fn is None:
         fn = getattr(mod, "weak_ref_tensor", None)
-        if fn is None:
-            return None
-        try:
-            fn(torch.zeros(1, device="cuda"))
-        except Exception:
-            return None
+    if not callable(fn):
+        return None
 
     def _impl(t):
         return fn(t) if isinstance(t, torch.Tensor) else t

@@ -1,0 +1,371 @@
+{
+  "scope": "Finite realdense0 W8A8component; M4/M8 gateup/down only. No all-operator or modelaccuracy acceptance.",
+  "fixture": {
+    "scope": "Real layer0 W8A8 weights and actual8-row CP input; identical native input for primary operator pairs, no server changes",
+    "config_sha256": "82c701f0010cad1e6bedc5a7f6fdbfe39fda1f058bf47be3d02ab5b79d3b75ce",
+    "fixture_sha256": "79279b5ade6a1d1de48b82ce9985617ab9ebd1db00d6c2a228cf2da7f80c6bec",
+    "fixture_bytes": 226913481,
+    "tensors": {
+      "gate_proj.weight": {
+        "shape": [
+          12288,
+          6144
+        ],
+        "dtype": "torch.int8"
+      },
+      "gate_proj.weight_scale": {
+        "shape": [
+          12288,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "up_proj.weight": {
+        "shape": [
+          12288,
+          6144
+        ],
+        "dtype": "torch.int8"
+      },
+      "up_proj.weight_scale": {
+        "shape": [
+          12288,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "down_proj.weight": {
+        "shape": [
+          6144,
+          12288
+        ],
+        "dtype": "torch.int8"
+      },
+      "down_proj.weight_scale": {
+        "shape": [
+          6144,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "input_native": {
+        "shape": [
+          8,
+          6144
+        ],
+        "dtype": "torch.bfloat16"
+      },
+      "input_candidate": {
+        "shape": [
+          8,
+          6144
+        ],
+        "dtype": "torch.bfloat16"
+      },
+      "native_mlp_output": {
+        "shape": [
+          8,
+          6144
+        ],
+        "dtype": "torch.bfloat16"
+      }
+    },
+    "valid_rows": 4,
+    "padded_rows": 4
+  },
+  "versions": {
+    "native": {
+      "torch": "2.11.0+dtk2604.2610211125.ga346d2",
+      "lightop": "0.6.0+dtk2604.torch2110.2610211335.ge564f5",
+      "triton": "3.6.0+dtk2604.torch2110.2610171646.g46f0be"
+    },
+    "candidate": {
+      "torch": "2.11.0+dtk2610.2611031312.g529def",
+      "lightop": "0.6.0+dtk2610.torch2110.2611031134.g6aa6bf",
+      "triton": "3.6.0+dtk2610.torch2110.2611031429.g92771c"
+    }
+  },
+  "all24_captured_common_tensors_cross_image_exact": true,
+  "candidate_gemm_cases": [
+    {
+      "name": "native-input-M8-gate-up",
+      "M": 8,
+      "N": 24576,
+      "K": 6144,
+      "valid_rows": 4,
+      "a_dtype": "torch.int8",
+      "b_dtype": "torch.int8",
+      "b_stride": [
+        1,
+        6144
+      ],
+      "scale_a_dtype": "torch.float32",
+      "backends": {
+        "triton": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        },
+        "asm": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        }
+      },
+      "asm_vs_public_triton": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      }
+    },
+    {
+      "name": "native-input-M8-down",
+      "M": 8,
+      "N": 6144,
+      "K": 12288,
+      "valid_rows": 4,
+      "a_dtype": "torch.int8",
+      "b_dtype": "torch.int8",
+      "b_stride": [
+        1,
+        12288
+      ],
+      "scale_a_dtype": "torch.float32",
+      "backends": {
+        "triton": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        },
+        "asm": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        }
+      },
+      "asm_vs_public_triton": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      },
+      "public_path_vs_actual_native_mlp": {
+        "exact": false,
+        "nrmse": 0.005959313362836838,
+        "max_abs": 0.000244140625,
+        "different": 18463,
+        "finite": true
+      }
+    },
+    {
+      "name": "native-input-M4-gate-up",
+      "M": 4,
+      "N": 24576,
+      "K": 6144,
+      "valid_rows": 4,
+      "a_dtype": "torch.int8",
+      "b_dtype": "torch.int8",
+      "b_stride": [
+        1,
+        6144
+      ],
+      "scale_a_dtype": "torch.float32",
+      "backends": {
+        "triton": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        },
+        "asm": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        }
+      },
+      "asm_vs_public_triton": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      }
+    },
+    {
+      "name": "native-input-M4-down",
+      "M": 4,
+      "N": 6144,
+      "K": 12288,
+      "valid_rows": 4,
+      "a_dtype": "torch.int8",
+      "b_dtype": "torch.int8",
+      "b_stride": [
+        1,
+        12288
+      ],
+      "scale_a_dtype": "torch.float32",
+      "backends": {
+        "triton": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        },
+        "asm": {
+          "exact": true,
+          "nrmse": 0.0,
+          "max_abs": 0.0,
+          "different": 0,
+          "finite": true
+        }
+      },
+      "asm_vs_public_triton": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      },
+      "public_path_vs_actual_native_mlp": {
+        "exact": false,
+        "nrmse": 0.005959313362836838,
+        "max_abs": 0.000244140625,
+        "different": 18463,
+        "finite": true
+      }
+    }
+  ],
+  "activation_runtime_reconstruction": [
+    {
+      "source": "native",
+      "activation": "lightop",
+      "activation_vs_public_fused": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      },
+      "pipeline_vs_actual_runtime": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      }
+    },
+    {
+      "source": "native",
+      "activation": "fp32",
+      "activation_vs_public_fused": {
+        "exact": false,
+        "nrmse": 0.002805843250826001,
+        "max_abs": 6.103515625e-05,
+        "different": 12996,
+        "finite": true
+      },
+      "pipeline_vs_actual_runtime": {
+        "exact": false,
+        "nrmse": 0.005959313362836838,
+        "max_abs": 0.000244140625,
+        "different": 18463,
+        "finite": true
+      }
+    },
+    {
+      "source": "native",
+      "activation": "bf16",
+      "activation_vs_public_fused": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      },
+      "pipeline_vs_actual_runtime": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      }
+    },
+    {
+      "source": "candidate",
+      "activation": "lightop",
+      "activation_vs_public_fused": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      },
+      "pipeline_vs_actual_runtime": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      }
+    },
+    {
+      "source": "candidate",
+      "activation": "fp32",
+      "activation_vs_public_fused": {
+        "exact": false,
+        "nrmse": 0.002796689746901393,
+        "max_abs": 6.103515625e-05,
+        "different": 12742,
+        "finite": true
+      },
+      "pipeline_vs_actual_runtime": {
+        "exact": false,
+        "nrmse": 0.00476789940148592,
+        "max_abs": 0.0001220703125,
+        "different": 17964,
+        "finite": true
+      }
+    },
+    {
+      "source": "candidate",
+      "activation": "bf16",
+      "activation_vs_public_fused": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      },
+      "pipeline_vs_actual_runtime": {
+        "exact": true,
+        "nrmse": 0.0,
+        "max_abs": 0.0,
+        "different": 0,
+        "finite": true
+      }
+    }
+  ],
+  "interpretation": "Current image publicW8A8+LightOpfusedSiLU exactlyreconstructs actualnative and candidate dense0 outputs forrespective recordedinputs. Mismatch isalready upstream. KeepGEMMdispatch/activation semantics; do not replace BF16intermediate withFP32 reference.",
+  "raw_artifacts": "candidate-pd/dense0-w8a8-v1/",
+  "reproduction": [
+    "candidate-pd/make-dense0-fixture.py",
+    "candidate-pd/check-dense0-w8a8-v1.py",
+    "candidate-pd/check-dense0-activation-v2.py"
+  ],
+  "backend_scope": "LightOp publictriton_scaled_mm mayinternallydispatchLightOp channelINT8; interface name isnot proof ofa Tritonkernel. CandidateASM comparedexplicitly. ExactCPU INT64dot+FP32scales probes128outputchannels; complete captured backendoutputs alsocompared."
+}

@@ -1,0 +1,201 @@
+{
+  "scope": "Component ABI evidence and actual prefill v3 readiness; full candidate P/D generation and32-rank profiling remain pending",
+  "deepep": {
+    "source_commit": "a755fa7e14631af7e8a6a0d6ead217101d3bfdda",
+    "rocshmem_build_script_pin": "b71ac40294bb10c5ffb11b94bed7d7d20529ab02",
+    "gitlink_differs": "1c22be1a9e83d6500db171b5902e3b0e3d649481",
+    "wheel": "/work/vendor-build/deepep-a755fa-shca/dist/deep_ep_shca-1.1.1+das.opt1.a755fa7a.dtk2610-cp312-cp312-linux_x86_64.whl",
+    "wheel_sha256": "8ad190498bb21066d6176509f22b3b589c0924c02e324409d579ef8934e1ac1f",
+    "prefix": "/work/vendor-overrides/deepep-shca-a755fa-cov5",
+    "code_object_version": 5,
+    "SHCA": true,
+    "U16_LID": false,
+    "original_image_DeepEP_untouched": true,
+    "runtime_validation": {
+      "ranks": 16,
+      "all_passed": true,
+      "cases_per_rank": [
+        {
+          "rows": 3,
+          "quant_type": 0,
+          "dispatch_exact": true,
+          "combine_exact": true
+        },
+        {
+          "rows": 17,
+          "quant_type": 1,
+          "dispatch_exact": true,
+          "combine_exact": true
+        }
+      ],
+      "binary_sha256": "685b785df584b46cec0d33768dd26123a1d2c2783415733a1ba40036032936e1",
+      "scope": "Synthetic LL transport parameters; actual model has256 routed experts. No complete model/MTP/graph accuracy acceptance.",
+      "test_parameters": {
+        "hidden": 6144,
+        "experts": 384,
+        "topk": 8
+      }
+    },
+    "source_integrity": {
+      "nonmetadata_files_exact": 465,
+      "generated_metadata": "deep_ep/version.py",
+      "full_tree_byte_exact": false
+    }
+  },
+  "contiguous_w4a8": {
+    "source_commit": "b061ec70272a001fca622ea814d3ee163e24bb05",
+    "mode": 1002,
+    "scope": "One real layer3 expert, HIPC1002-only COV5 diagnostic, no WASP1006 acceptance",
+    "build": "Native1002 kernel bodies unchanged; exclude WASP include/1006 dispatch and explicitly reject1006, then standard Torch hipify",
+    "module": "/work/vendor-build/deepgemm-w4a8-cov5-probe-v4/hcu_w4a8_cov5_probe.cpython-312-x86_64-linux-gnu.so",
+    "module_sha256": "68e63f0df84f527df0a3561c49e35e2054ef5488972d4cb69a4df164ce4e64f4",
+    "valid_rows": 17,
+    "activation_dtype": "torch.int8",
+    "activation_scale_dtype": "torch.float32",
+    "cov5": {
+      "passed": true,
+      "gemm_stages": [
+        {
+          "nrmse": 0.0,
+          "max_abs_over_reference_rms": 0.0,
+          "max_abs": 0.0,
+          "reference_rms": 0.038238104432821274,
+          "passed": true,
+          "stage": "gate_up_w4a8_gemm",
+          "quantized_a_dtype": "torch.int8",
+          "packed_w_dtype": "torch.int8"
+        },
+        {
+          "nrmse": 0.0,
+          "max_abs_over_reference_rms": 0.0,
+          "max_abs": 0.0,
+          "reference_rms": 0.0010503896046429873,
+          "passed": true,
+          "stage": "down_w4a8_gemm",
+          "quantized_a_dtype": "torch.int8",
+          "packed_w_dtype": "torch.int8"
+        }
+      ]
+    },
+    "same_hip_source_cov6_control": {
+      "build_exit": 0,
+      "runtime_passed": false,
+      "error": "hipGetLastError() failed: no kernel image is available for execution on the device"
+    },
+    "production_provider": {
+      "adapter_commit": "b9956a78a91c5cd2eaa4417eb508db19c2097b2a",
+      "builder": "tools/build_deepgemm_w4a8_cov5.py",
+      "bridge": "hcu_adapter/deepgemm_cov5.py",
+      "module": "/work/vendor-overrides/deepgemm-w4a8-cov5/hcu_deepgemm_w4a8_cov5.cpython-312-x86_64-linux-gnu.so",
+      "module_sha256": "bf9210b670a421fc9ef11781b930238ed24af2e56ae326f2eaead8ba0225f1f2",
+      "generated_hipc1002_source_sha256": "003e487e84382e48672e5765d2454c55259e182730f11deefb6e4681cd299283",
+      "mode": 1002,
+      "architecture": "gfx936",
+      "code_object_version": 5,
+      "original_public_api": "default MODE=None selects the provider while retaining function/code/signature and cached aliases; shared vendor configuration and masked op remain unchanged",
+      "startup_disable": "HCU_DISABLE_OPS=w4a8_contiguous_gemm",
+      "real_expert_validation": {
+        "report": "w4a8-contiguous-provider-mode1002-v1.json",
+        "valid_rows": 17,
+        "gemm_stages": [
+          "gate_up",
+          "down"
+        ],
+        "qdq_nrmse": [
+          0.0,
+          0.0
+        ],
+        "changed_input_graph_replays_per_gemm": 2,
+        "explicit_mode1006_rejected": true
+      },
+      "prefill_runtime": {
+        "nodes": [
+          21,
+          22
+        ],
+        "scheduler_ranks": 16,
+        "role_recipe": "PP2 TP8 CP8 EP8 normal",
+        "checkpoint_loaded": true,
+        "warmup_complete": true,
+        "server_info_http": 200,
+        "mapped_binary_sha256_verified_all_ranks": true,
+        "evidence": [
+          "candidate-pd/runtime-maps-node21-v3.json",
+          "candidate-pd/runtime-maps-node22-v3.json"
+        ]
+      },
+      "scope": "Real prefill warmup and component graph checks; no full P/D request or WASP1006 acceptance"
+    }
+  },
+  "remaining": [
+    "Uninstrumented P/D accuracy after compatible CAR deployment",
+    "Native-aligned numerical and cache/chunk/concurrency/MTP matrix",
+    "Final accepted32-rank profile; diagnostic32-rank archive already complete"
+  ],
+  "aiter_custom_all_reduce": {
+    "version": "0.1.8+dtk2610.torch2110.2611031115.ga1a2bc",
+    "source_files": 402,
+    "source_digest": "990a3f5480e42e2cee5e2c57b9b797aca4ed534712d34802c1b28220c0f4d62d",
+    "original_binary_sha256": "5fd195371e731dc52998617b75e335f05686efc226d2d66c18c3bbd7bcbc5cc5",
+    "original_code_object_version": 6,
+    "original_control": {
+      "ranks": 8,
+      "cases_per_rank": 4,
+      "shape": [
+        40,
+        6144
+      ],
+      "dtype": "bfloat16",
+      "rccl_all_exact": true,
+      "aiter_all_failed": true,
+      "poisoned_outputs_all_unwritten": true,
+      "report": "candidate-pd/embedding-allreduce-v1/validation.json"
+    },
+    "isolated_cov5": {
+      "binary_sha256": "60bf99742bbdb14d92a5b9522064d9af358d2ab25422e758a0ddbcbf0d4a0618",
+      "code_object_version": 5,
+      "architecture": "gfx936",
+      "source_math_changes": false,
+      "public_configuration": [
+        "AITER_JIT_DIR",
+        "AITER_CODE_OBJECT_VERSION",
+        "CK_CODE_OBJECT_VERSION"
+      ],
+      "source_identity_verified_nodes": [
+        21,
+        22,
+        23,
+        24
+      ],
+      "original_binary_unchanged": true,
+      "ranks": 8,
+      "eager_cases_per_rank": 4,
+      "changed_input_graph_replays_per_rank_per_backend": 2,
+      "all_exact": true,
+      "report": "candidate-pd/embedding-allreduce-cov5-v1/validation.json"
+    },
+    "builder": "tools/build_aiter_car_cov5.py",
+    "scope": "CAR component eager and changed-input graph only; uninstrumented full-model P/D accuracy remains pending",
+    "builder_reproduction": {
+      "exit": 0,
+      "binary_sha256": "83955b32cef44c3d451d5b9e2854a5701e18d5b6c878ca71ff8e2f59e91e418f",
+      "ranks": 8,
+      "eager_cases_per_rank": 4,
+      "changed_input_graph_replays_per_rank_per_backend": 2,
+      "all_exact": true,
+      "report": "candidate-pd/embedding-allreduce-cov5-tool-v1/validation.json"
+    },
+    "uninstrumented_pd_recheck": {
+      "prefill_version": "v13",
+      "decode_version": "v8",
+      "all16_prefill_ranks_mapped_cov5_car": true,
+      "sanity_cases_executed": 3,
+      "arithmetic_cold_and_repeat_correct_with_stop": true,
+      "formula_correct": false,
+      "formula_finish": "length512;unrelatedcode",
+      "json_case_executed": false,
+      "model_accuracy_passed": false,
+      "report": "candidate-pd/smoke-v13/validation.json"
+    }
+  }
+}

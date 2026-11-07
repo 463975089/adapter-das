@@ -18,9 +18,9 @@ bootstrap.md §3 记录的 122 进程/50 分钟案；validation-host-26 dsv41f �
 1. 探温快路径：``~/.cache/tvm-ffi/**.so`` 任一存在 → 直接返回（幂等秒过）；
 2. 冷则 flock 排他（TP spawn 风暴下只放一个构建者，防 §3 标题的「JIT
    竞争死锁」），锁内复检后再动手；
-3. 以 **剥掉 PYTHONPATH 的干净 env** 亲跑 tvm_ffi 自带构建脚本
+3. 以 **剥掉 PYTHONPATH 且关闭 adapter 的 env** 亲跑 tvm_ffi 自带构建脚本
    （``utils/_build_optional_torch_c_dlpack.py``，参数照 §3 配方）——
-   子进程无 PYTHONPATH → sitecustomize 不加载 → 单层走完落缓存；
+   显式关闭 adapter，覆盖 editable 安装后 sitecustomize 仍可导入的情况；
 4. 兜底：若 helper 缺席/失败，退化为窗口内 ``import tvm_ffi`` 让加载器
    自己派构建子进程，``_CleanEnvPopen`` 窗口给每个子进程注入同款干净
    env（递归物理断路，不依赖脚本名/libname 版本对齐），窗口结束还原。
@@ -76,8 +76,19 @@ def _helper_script():
     return helper if helper.exists() else None
 
 
+def _clean_build_env(environment=None):
+    from .bootstrap import ACTIVE_HOST_ENV, HOST_ENV
+
+    source = os.environ if environment is None else environment
+    env = {k: v for k, v in source.items() if k != "PYTHONPATH"}
+    # Editable installs expose sitecustomize even without PYTHONPATH.
+    env[HOST_ENV] = "none"
+    env[ACTIVE_HOST_ENV] = "none"
+    return env
+
+
 def _build_with_clean_env(helper, cache_dir):
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env = _clean_build_env()
     cmd = [
         sys.executable,
         str(helper),
@@ -89,14 +100,14 @@ def _build_with_clean_env(helper, cache_dir):
     ]
     LOG.warning(
         "HCU adapter: tvm-ffi dlpack cache cold -> one-time build "
-        "(~20-40s; recursion-safe env, no PYTHONPATH)"
+        "(~20-40s; adapter disabled in build subprocess)"
     )
     subprocess.run(cmd, env=env, check=False, capture_output=True, timeout=900)
 
 
 class _CleanEnvPopen:
-    """窗口内包装 subprocess.Popen：env 缺省的子进程一律注入剥 PYTHONPATH
-    的干净 env。仅覆盖预热窗口（sitecustomize 单线程期），进窗口即装、
+    """窗口内包装 subprocess.Popen：构建子进程剥掉 PYTHONPATH 并关闭
+    adapter，包括调用者显式提供 env 的情况。仅覆盖预热窗口，进窗口即装、
     出窗口即还原——tvm_ffi 加载器自派的构建子进程由此断掉重进
     sitecustomize 的路，不依赖我们拼对 helper 的参数。"""
 
@@ -107,10 +118,7 @@ class _CleanEnvPopen:
         self._orig = subprocess.Popen
 
         def patched(*args, **kwargs):
-            if kwargs.get("env") is None:
-                kwargs["env"] = {
-                    k: v for k, v in os.environ.items() if k != "PYTHONPATH"
-                }
+            kwargs["env"] = _clean_build_env(kwargs.get("env"))
             return self._orig(*args, **kwargs)
 
         subprocess.Popen = patched

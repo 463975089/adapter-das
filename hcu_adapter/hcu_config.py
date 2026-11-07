@@ -16,7 +16,7 @@ Schema (hcu_adapter.yaml, first hit wins in discovery order):
     version: 1
     ops:
       silu_and_mul: triton      # triton | lightop | torch
-      rms_norm: aiter           # triton | aiter | torch
+      rms_norm: aiter           # triton | aiter | lightop | torch
       fused_add_rms_norm: triton  # triton | lightop | torch
       allreduce: aiter          # aiter | nccl (custom AR retired 2026-10-19)
       paged_mqa_logits: triton   # triton (DEFAULT, R-13 #4) | emu | vendor
@@ -134,6 +134,8 @@ BACKEND_CATALOG = {
             "aiter": {"status": "candidate",
                       "note": "aiter.rmsnorm_forward(x,w,eps,training) "
                               "-> (out, ..); plain rmsnorm only"},
+            "lightop": {"status": "candidate",
+                        "note": "Public BF16 plain RMSNorm; other dtypes/Gemma use Triton"},
             "torch": {"status": "production",
                       "note": "reference path"},
         },
@@ -493,6 +495,29 @@ BACKEND_CATALOG = {
                               "channelwise->moe_c; rel 0.02-0.04 gate "
                               "PASS (validation-host-18 gfx938); unlisted shapes "
                               "auto-fallback to triton"},
+        },
+    },
+    "flashmla_kv_indices": {
+        "var": None,
+        "summary": "FlashMLA static-pool page-table import compatibility",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "Reuse SGLang's existing page64 kernel with optional starts "
+                        "and explicit strides; no host tensor reads or new index math.",
+            },
+        },
+    },
+    "w4a8_contiguous_gemm": {
+        "var": None,
+        "summary": "DTK W4A8 HIPC code-object ABI compatibility",
+        "backends": {
+            "dtk": {
+                "status": "candidate",
+                "note": "Optional gfx936 COV5 extension for pinned DeepGEMM b061ec; "
+                        "preserves INT8 activations, native wrapper and cached aliases. "
+                        "Explicit WASP1006 requests are rejected; full P/D pending.",
+            },
         },
     },
     "w4a16_moe": {
