@@ -229,22 +229,11 @@ REGISTRY = {
                  "分组 int4/bf16 不动；=0 还原 stock",
     },
     "HCU_W4A8_MOE": {
-        "env": "HCU_W4A8_MOE", "default": "w4a16",
-        "about": "CT W4A8 MoE scheme 路由（ct_w4a8_moe.py）：DAS 转换的 "
-                 "w4a8 检查点（如 DeepSeek-V4.1-Flash-Channel-INT4-w4a8）"
-                 "config_groups 全 regex targets，target_scheme_map 无 "
-                 "'Linear' 桶，上游 CompressedTensorsW4AFP8MoE.__init__ 构"
-                 "造期 KeyError('Linear')（v0522 w4a8_fp8_moe.py:87，模型建"
-                 "不过，validation-host-26 2026-10-26）。w4a16（默认）=wrap config "
-                 "__init__ 把 int4 组 input_activations 置 None → 上游自然"
-                 "走 _is_hip 的 WNA16TritonMoE 臂（box16 已验证，10.6 channel"
-                 " 改写收口），移除激活量化并使用 bf16，不能视为原 W4A8 "
-                 "数值等价或整模型精度更高；heal=只作用域内补 'Linear' 桶"
-                 "保留 stock W4AFP8 scheme 的选择，channel/group 参数、"
-                 "实际激活量化契约及 HIP 内核仍需验证；"
-                 "int8=显式候选，保留激活配置，BF16 DeepEP low_latency "
-                 "对称 channel-INT4/token-INT8，简单 SiLU、无额外 routed "
-                 "scaling；未验收整模型精度；0=还原 stock",
+        "env": "HCU_W4A8_MOE", "default": "native",
+        "about": "CT MoE routing: native preserves checkpoint activation quantization "
+                 "and delegates to the installed scheme. Missing W4A8 support must "
+                 "fail rather than silently run W4A16. Legacy w4a16 and heal routes "
+                 "require explicit selection. The existing int8 candidate remains an explicit opt-in; 0 disables this bridge.",
     },
     "HCU_DSV4_WQKV_SCALE": {
         "env": "HCU_DSV4_WQKV_SCALE", "default": "1",
@@ -458,7 +447,8 @@ REGISTRY = {
     },
     "HCU_RMS_NORM_IMPL": {
         "env": "HCU_RMS_NORM_IMPL", "default": "triton",
-        "about": "rms_norm 后端档位：triton|aiter(rmsnorm_forward 桥)|torch；"
+        "about": "rms_norm 后端档位：triton|aiter(rmsnorm_forward 桥)|lightop|torch；"
+                 "lightop 仅覆盖 BF16 plain RMSNorm，其他 dtype 使用 triton；"
                  "仅管 plain rmsnorm，fused_add/gemma 变体见 "
                  "HCU_FUSED_ADD_RMS_IMPL",
     },

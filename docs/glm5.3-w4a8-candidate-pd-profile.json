@@ -1,0 +1,467 @@
+{
+  "scope": "Complete diagnostic candidate P/D request; actual route and quantized execution, not model accuracy acceptance",
+  "base_sglang": "15c7204b7a3b6edaa222cff80018d8e5f2b2ad0e",
+  "model": {
+    "format": "compressed-tensors",
+    "experts": 256,
+    "layers": 78,
+    "config_sha256": "82c701f0010cad1e6bedc5a7f6fdbfe39fda1f058bf47be3d02ab5b79d3b75ce",
+    "metadata_hashes_match_across_candidate_nodes_and_native_reference": true
+  },
+  "runtime_sources": {
+    "prefill": {
+      "adapter": "6a8e7a39751ec20f596e4baf24843426bc0af6ae",
+      "plugin": "e810423db3f175095983491cd9edf0e3eefd3e5f",
+      "snapshot_prefixes": [
+        "/work/adapter-kvindices-v1",
+        "/work/plugin-ehnorm-v1"
+      ]
+    },
+    "decode": {
+      "adapter": "796b5345177db0e9fec1926ee245480dd9ede47d",
+      "plugin": "ee6528ca092105834122c038bd953e5de597d84d",
+      "snapshot_prefixes": [
+        "/work/adapter-eagle-v1",
+        "/work/plugin-eagle-sync-v1"
+      ]
+    },
+    "note": "Original runtime commit IDs retained. PR metadata-only email rewrites preserve every commit tree; current adapter63d6a05/pluginb60d3a2 map to the decode source trees. Prefill had not been restarted for the two decode-only MTP hooks."
+  },
+  "topology": {
+    "prefill": "PP2 TP8 CP8 EP8 normal INT8",
+    "decode": "TP16 EP16 attentionDP16 replicaDP1 low_latency INT8 EAGLE5/1/6",
+    "decode_graph_configured_max_bs": 16,
+    "decode_graph_effectively_captured_bs": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "input_tokens": 4095,
+  "output_tokens": 64,
+  "speculative": {
+    "spec_accept_rate": 0.021052631578947368,
+    "spec_accept_length": 1.1228070175438596,
+    "spec_num_correct_drafts": 6,
+    "spec_num_proposed_drafts": 285,
+    "spec_verify_ct": 57,
+    "spec_correct_drafts_histogram": [
+      53,
+      3,
+      0,
+      1
+    ]
+  },
+  "expected_rank_files": 32,
+  "gzip_json_parse_passed": true,
+  "local_archive_sha256_match": "32/32",
+  "archive": {
+    "file": "candidate-pd-profile-v8-diag-20261105.tar",
+    "bytes": 3573882880,
+    "sha256": "4f873f8e5307652352e4a5c17fc5972a374ffa808de3f85fa2c3fed911db8b5f"
+  },
+  "remote_artifact_directory": "/work/candidate-pd/profile-v8-diag",
+  "accuracy": {
+    "passed": false,
+    "short_request": "33-token arithmetic, native fixed IDs and temperature1/top_p.95",
+    "result": "512-token garbled/repetitive output, length termination",
+    "last_pp_observation": "Subsequent observer run finds the real33-token request has all-zero final hidden states and logits. Earliest cause remains under investigation; CPU observation synchronizes and is not acceptance."
+  },
+  "limitations": [
+    "Fixed-length profile is execution evidence, not answer quality or performance.",
+    "Sequential role stop left idle decode activity during prefill export; duration sums are not e2e performance.",
+    "All ranks show role W4A8 and activation INT8 kernels. Decode sparse-attention/indexer kernel attribution is not yet aligned; do not infer complete operator coverage from32 parsed files.",
+    "Finite numerical/cache/chunk/concurrency/MTP-off matrix and final uninstrumented accuracy remain pending."
+  ],
+  "rows": [
+    {
+      "file": "candidate-decode-v8-diag-TP-0-DP-0-EP-0.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 0,
+      "pp_rank": 0,
+      "compressed_sha256": "469ef7328d99a1b63c68bc58344eac580d9d557301eceb555eae895aa3cc68e5",
+      "compressed_bytes": 144563626,
+      "events": 8228191,
+      "kernel_events": 1766968,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-1-DP-1-EP-1.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 1,
+      "pp_rank": 0,
+      "compressed_sha256": "65fe319a9cdf2811c6d38616d13c195b1cb6217518ceb6143d656ed17e4a834e",
+      "compressed_bytes": 140415183,
+      "events": 8047422,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-10-DP-10-EP-10.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 10,
+      "pp_rank": 0,
+      "compressed_sha256": "1379292e427e20f399f5b6f0e175fc8ee245366165176ca13f45393aa4cfc3e0",
+      "compressed_bytes": 138070491,
+      "events": 8047922,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-11-DP-11-EP-11.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 11,
+      "pp_rank": 0,
+      "compressed_sha256": "5706197e522c990a61fb16f6d1d8dbc339debe76c8086015f6dd75bbf5cbcc2f",
+      "compressed_bytes": 138620828,
+      "events": 8048046,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-12-DP-12-EP-12.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 12,
+      "pp_rank": 0,
+      "compressed_sha256": "dc569990716715a78fe186cfb5a9d00f28aa22c0588a9a996341544e4d5811ac",
+      "compressed_bytes": 137784628,
+      "events": 8048122,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-13-DP-13-EP-13.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 13,
+      "pp_rank": 0,
+      "compressed_sha256": "eb6ef1326322febbbc6c49eba282ce35ffbc3d5bd566352e13b1d87c10982d53",
+      "compressed_bytes": 138539498,
+      "events": 8048022,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-14-DP-14-EP-14.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 14,
+      "pp_rank": 0,
+      "compressed_sha256": "66dcea04c1d010b63c0c87906157474de39f64087a967b5028dfec740cfde3f0",
+      "compressed_bytes": 138589772,
+      "events": 8047986,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-15-DP-15-EP-15.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 15,
+      "pp_rank": 0,
+      "compressed_sha256": "2eef00cb3bbf1bf2f0457798374288fb9b34390ace422dd8dee80e93b8661c07",
+      "compressed_bytes": 137805600,
+      "events": 8047970,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-2-DP-2-EP-2.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 2,
+      "pp_rank": 0,
+      "compressed_sha256": "4c2be46270aab2ff088de32bb144a98bada36b4cf21b01c91f8da89b2b4774b3",
+      "compressed_bytes": 140267092,
+      "events": 8047494,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-3-DP-3-EP-3.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 3,
+      "pp_rank": 0,
+      "compressed_sha256": "52589cc242869e31258cfe5df2e0bfe1de338f8f209b5db9311704e9f0515ff6",
+      "compressed_bytes": 140525346,
+      "events": 8047439,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-4-DP-4-EP-4.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 4,
+      "pp_rank": 0,
+      "compressed_sha256": "0fe1be253efc0287592d6f7d556619d775f0b6d204ca6c71f702c9347ecb96bf",
+      "compressed_bytes": 140205490,
+      "events": 8047526,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-5-DP-5-EP-5.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 5,
+      "pp_rank": 0,
+      "compressed_sha256": "b4826f7c24013c74db92d463a515b088d5adfd2bb9ec6c23d887c19c9c2bb1ff",
+      "compressed_bytes": 140296935,
+      "events": 8047378,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-6-DP-6-EP-6.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 6,
+      "pp_rank": 0,
+      "compressed_sha256": "788d474e2bcc9038af564fe1267823c523fcdabd53864be6fe51b4c4ca294e13",
+      "compressed_bytes": 140282317,
+      "events": 8047422,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-7-DP-7-EP-7.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 7,
+      "pp_rank": 0,
+      "compressed_sha256": "5dfbaa520252da8f716fe35eff48d3b7306d90fea98fc14ded9cdeb0748c36fa",
+      "compressed_bytes": 140507983,
+      "events": 8047414,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-8-DP-8-EP-8.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 8,
+      "pp_rank": 0,
+      "compressed_sha256": "9131d3b72558fefc529eb40c53704cf06230989a1e59362e5a5a7abe9885f3f5",
+      "compressed_bytes": 138046468,
+      "events": 8048006,
+      "kernel_events": 1759704,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-decode-v8-diag-TP-9-DP-9-EP-9.trace.json.gz",
+      "role": "decode",
+      "tp_rank": 9,
+      "pp_rank": 0,
+      "compressed_sha256": "8663614129c463075c6a0683e9b6308bbc9c2417c5f9867446d7e3f2d38b1299",
+      "compressed_bytes": 144568337,
+      "events": 8340936,
+      "kernel_events": 1760263,
+      "role_w4a8_kernel_events": 72640,
+      "activation_int8_kernel_events": 156176
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-0-PP-0-EP-0.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 0,
+      "pp_rank": 0,
+      "compressed_sha256": "02be03386fe827d42fd4d5a10989a1810dbb502eaa2e58e376eafc1b77270d5a",
+      "compressed_bytes": 107390330,
+      "events": 5110353,
+      "kernel_events": 2402,
+      "role_w4a8_kernel_events": 48,
+      "activation_int8_kernel_events": 282
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-0-PP-1-EP-0.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 0,
+      "pp_rank": 1,
+      "compressed_sha256": "67412320210a20c72a10149436a6aaf52e522ae97d636dba1b69094f55d013f6",
+      "compressed_bytes": 110791305,
+      "events": 5198866,
+      "kernel_events": 2360,
+      "role_w4a8_kernel_events": 60,
+      "activation_int8_kernel_events": 271
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-1-PP-0-EP-1.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 1,
+      "pp_rank": 0,
+      "compressed_sha256": "a7ab414fe036929daa7c8b249600dec216ad334738303c831e0b98dcfbec5909",
+      "compressed_bytes": 75221007,
+      "events": 3489303,
+      "kernel_events": 2384,
+      "role_w4a8_kernel_events": 44,
+      "activation_int8_kernel_events": 280
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-1-PP-1-EP-1.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 1,
+      "pp_rank": 1,
+      "compressed_sha256": "ce735d40a807091e194217a47afa9c955fc46e42e264e24770c920c42fc6c497",
+      "compressed_bytes": 84305734,
+      "events": 3848336,
+      "kernel_events": 2336,
+      "role_w4a8_kernel_events": 54,
+      "activation_int8_kernel_events": 271
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-2-PP-0-EP-2.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 2,
+      "pp_rank": 0,
+      "compressed_sha256": "41a962aa4bfbc39d24306707834f2e56c9232877c52767bbc50e08a9e6f3265b",
+      "compressed_bytes": 75140385,
+      "events": 3489961,
+      "kernel_events": 2401,
+      "role_w4a8_kernel_events": 48,
+      "activation_int8_kernel_events": 281
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-2-PP-1-EP-2.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 2,
+      "pp_rank": 1,
+      "compressed_sha256": "bfe0c51f8527a9d337baf2096ab680b0f2232b83be895ae59b112d736a83713a",
+      "compressed_bytes": 84293552,
+      "events": 3849184,
+      "kernel_events": 2368,
+      "role_w4a8_kernel_events": 62,
+      "activation_int8_kernel_events": 271
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-3-PP-0-EP-3.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 3,
+      "pp_rank": 0,
+      "compressed_sha256": "21e2e3fcb3bdd5aa854f358680a62ded02f4ddb2093ccdb549e2f83c7e3ae407",
+      "compressed_bytes": 75255973,
+      "events": 3490180,
+      "kernel_events": 2416,
+      "role_w4a8_kernel_events": 52,
+      "activation_int8_kernel_events": 280
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-3-PP-1-EP-3.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 3,
+      "pp_rank": 1,
+      "compressed_sha256": "23ede66083e242c6a98184ac93350a0df54d0552aae1c189ce51b7d87ea612dc",
+      "compressed_bytes": 84310228,
+      "events": 3849376,
+      "kernel_events": 2369,
+      "role_w4a8_kernel_events": 62,
+      "activation_int8_kernel_events": 272
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-4-PP-0-EP-4.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 4,
+      "pp_rank": 0,
+      "compressed_sha256": "cb794f54ce425aefa3248c1729bd3169ffa8795fed98cf9e63355f4e9c21156c",
+      "compressed_bytes": 75222103,
+      "events": 3489180,
+      "kernel_events": 2376,
+      "role_w4a8_kernel_events": 42,
+      "activation_int8_kernel_events": 280
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-4-PP-1-EP-4.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 4,
+      "pp_rank": 1,
+      "compressed_sha256": "7605d2658c3957ef10a283a09077e1aed0dc1623d41ea5dbfbc2afd5ffbab470",
+      "compressed_bytes": 84309569,
+      "events": 3847697,
+      "kernel_events": 2312,
+      "role_w4a8_kernel_events": 48,
+      "activation_int8_kernel_events": 271
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-5-PP-0-EP-5.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 5,
+      "pp_rank": 0,
+      "compressed_sha256": "70c60d84ec57bb78fef8aece6803f02cb5940dca262734464a19698d06b20a42",
+      "compressed_bytes": 75258158,
+      "events": 3490981,
+      "kernel_events": 2448,
+      "role_w4a8_kernel_events": 60,
+      "activation_int8_kernel_events": 280
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-5-PP-1-EP-5.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 5,
+      "pp_rank": 1,
+      "compressed_sha256": "877370b6b87784e602aaa15d79e889cf6089717736b4c3162d46ee9bd9d20069",
+      "compressed_bytes": 84299491,
+      "events": 3847276,
+      "kernel_events": 2296,
+      "role_w4a8_kernel_events": 44,
+      "activation_int8_kernel_events": 271
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-6-PP-0-EP-6.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 6,
+      "pp_rank": 0,
+      "compressed_sha256": "9a38e9a29db5aedec102396e8169dff8f57b920089b9c8afb02ee2ff0bb242e6",
+      "compressed_bytes": 75153906,
+      "events": 3489748,
+      "kernel_events": 2393,
+      "role_w4a8_kernel_events": 46,
+      "activation_int8_kernel_events": 281
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-6-PP-1-EP-6.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 6,
+      "pp_rank": 1,
+      "compressed_sha256": "3dfc6166817be53ecaed92411eb8862a1c95a9307de9d47a5fea1326afbe9e67",
+      "compressed_bytes": 84338975,
+      "events": 3847290,
+      "kernel_events": 2296,
+      "role_w4a8_kernel_events": 44,
+      "activation_int8_kernel_events": 271
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-7-PP-0-EP-7.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 7,
+      "pp_rank": 0,
+      "compressed_sha256": "b660750b4954959d7bdece4f39f21db83f3ffb17b88f4f521319a9643a011d24",
+      "compressed_bytes": 75188844,
+      "events": 3490426,
+      "kernel_events": 2422,
+      "role_w4a8_kernel_events": 54,
+      "activation_int8_kernel_events": 280
+    },
+    {
+      "file": "candidate-prefill-v8-diag-TP-7-PP-1-EP-7.trace.json.gz",
+      "role": "prefill",
+      "tp_rank": 7,
+      "pp_rank": 1,
+      "compressed_sha256": "b9531815b9a0304e40a127f847debcbfa2abb9f104ef0d8aac325cb636b6f322",
+      "compressed_bytes": 84285403,
+      "events": 3847680,
+      "kernel_events": 2310,
+      "role_w4a8_kernel_events": 48,
+      "activation_int8_kernel_events": 271
+    }
+  ]
+}

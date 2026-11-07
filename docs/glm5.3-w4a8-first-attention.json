@@ -1,0 +1,257 @@
+{
+  "scope": "Actual selected norm boundaries in two archived P/D requests/all16P ranks. CPU observation timing changed; captured output IDs and all three requested logprob fields exactly match corresponding uninstrumented nativev3 or candidateP13/D8. No model accuracy acceptance.",
+  "actual_paths": {
+    "native": "CPv2 at eager model-body boundary, eachrank8physical rows",
+    "candidate": "Legacy CP, global normrows40 for logical33 and32 for logical32"
+  },
+  "cases": [
+    {
+      "id": "arithmetic-prefix0",
+      "layer0_norm_input_weight_output_all8_exact": true,
+      "post_attention_residual_all8_exact": true,
+      "attention_output_max_over_rank_nrmse": 0.001667099498164597,
+      "attention_output_max_abs": 0.00048828125,
+      "logits_top1": {
+        "native": [
+          99419,
+          99419,
+          99419,
+          99419,
+          99419,
+          99419,
+          99419,
+          99419
+        ],
+        "candidate": [
+          99419,
+          99419,
+          99419,
+          99419,
+          99419,
+          99419,
+          99419,
+          99419
+        ]
+      }
+    },
+    {
+      "id": "formula-prefix0",
+      "layer0_norm_input_weight_output_all8_exact": true,
+      "post_attention_residual_all8_exact": true,
+      "attention_output_max_over_rank_nrmse": 0.9650846194668075,
+      "attention_output_max_abs": 0.10888671875,
+      "logits_top1": {
+        "native": [
+          785,
+          785,
+          785,
+          785,
+          785,
+          785,
+          785,
+          785
+        ],
+        "candidate": [
+          17351,
+          17351,
+          17351,
+          17351,
+          17351,
+          17351,
+          17351,
+          17351
+        ]
+      }
+    }
+  ],
+  "formula_partial_write": {
+    "scope": "Actual formula32 firstattention output input to postattention norm; tests whether eachrank retains only its4CP-local rows in a32row global buffer. No root-cause/gather fix acceptance",
+    "ranks": [
+      {
+        "rank": 0,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.313891738653183,
+        "first4_vs_native_rank_local_abs_max": 0.04219245910644531
+      },
+      {
+        "rank": 1,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.4226321578025818,
+        "first4_vs_native_rank_local_abs_max": 0.068115234375
+      },
+      {
+        "rank": 2,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.8523503541946411,
+        "first4_vs_native_rank_local_abs_max": 0.16845703125
+      },
+      {
+        "rank": 3,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.3279710114002228,
+        "first4_vs_native_rank_local_abs_max": 0.037109375
+      },
+      {
+        "rank": 4,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.30933138728141785,
+        "first4_vs_native_rank_local_abs_max": 0.0400390625
+      },
+      {
+        "rank": 5,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.33890214562416077,
+        "first4_vs_native_rank_local_abs_max": 0.04473876953125
+      },
+      {
+        "rank": 6,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.36797353625297546,
+        "first4_vs_native_rank_local_abs_max": 0.0347900390625
+      },
+      {
+        "rank": 7,
+        "nonzero_rows": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "tail_rows4to31_all_zero": true,
+        "first4_vs_native_rank_local_nrmse": 0.298346608877182,
+        "first4_vs_native_rank_local_abs_max": 0.0361328125
+      }
+    ]
+  },
+  "artifacts": {
+    "native_validation": "candidate-pd/layer-probe-v7/native-validation.json",
+    "candidate_validation": "candidate-pd/layer-probe-v7/candidate-validation.json",
+    "boundary_comparison": "candidate-pd/layer-probe-v7/native-candidate-comparison-v8.json",
+    "boundary_comparison_sha256": "cb61f283d61c0263c61e2d2241889eaf19c345b7d7ee840ebc386733958715de",
+    "native_archive": "candidate-pd/native-norm-v7-20261105.tar.gz",
+    "native_archive_sha256": "415db36f5d32b476b22b55b0a0aee8efbc33bf8e3596d384ce8d249909b59f8a"
+  },
+  "interpretation": "First observed abnormal boundary is layer0 attention/projection/CP materialization, before dense MLP or routed MoE. Root cause within this boundary not yet proven; do not change downstream quantization to hide it.",
+  "next_control": "Prefill-only CPv2 two-case observer completed; results below. Explicit native CPv2 selection added only to this GLMCT recipe; further uninstrumented numerical and finite matrix still required.",
+  "shared_first10_causal_prefix": [
+    {
+      "role": "native",
+      "first10_same_input_tokens": true,
+      "attention_output_exact": true,
+      "max_abs": 0.0,
+      "nrmse": 0.0
+    },
+    {
+      "role": "candidate",
+      "first10_same_input_tokens": true,
+      "attention_output_exact": false,
+      "max_abs": 0.10009765625,
+      "nrmse": 0.8479306101799011
+    }
+  ],
+  "cpv2_control": {
+    "scope": "Two short fixed prefixes only; actual CPv2 all16P ranks, same production source/vendor/CTW4A8/D9. Observation retained; no uninstrumented or full numerical acceptance yet.",
+    "factor": "SGLANG_ENABLE_CP_V2=1 onP; body layout and padding coupled",
+    "cases": [
+      {
+        "id": "arithmetic-prefix0",
+        "attention_output_worst_rank_nrmse": 0.0018989667130939719,
+        "attention_output_max_abs": 0.00048828125,
+        "logits_top1": {
+          "native": [
+            99419,
+            99419,
+            99419,
+            99419,
+            99419,
+            99419,
+            99419,
+            99419
+          ],
+          "candidate": [
+            99419,
+            99419,
+            99419,
+            99419,
+            99419,
+            99419,
+            99419,
+            99419
+          ]
+        },
+        "raw_logits_worst_rank_nrmse": 0.2599023953115674
+      },
+      {
+        "id": "formula-prefix0",
+        "attention_output_worst_rank_nrmse": 0.0017604742546026904,
+        "attention_output_max_abs": 0.00048828125,
+        "logits_top1": {
+          "native": [
+            785,
+            785,
+            785,
+            785,
+            785,
+            785,
+            785,
+            785
+          ],
+          "candidate": [
+            785,
+            785,
+            785,
+            785,
+            785,
+            785,
+            785,
+            785
+          ]
+        },
+        "raw_logits_worst_rank_nrmse": 0.3366207964522167
+      }
+    ],
+    "remaining": "Final raw logits still differ; original numerical thresholds and finite matrix remain required."
+  }
+}

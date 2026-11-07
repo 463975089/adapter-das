@@ -1,0 +1,79 @@
+{
+  "scope": "Actual residual RMSNorm component alignment only; not full-model numerical or answer acceptance.",
+  "captured_inputs": "Two fixed prefixes, eight PP0 CP ranks, layer0.post_attention_layernorm and layer1.input_layernorm; only valid token rows compared.",
+  "native_provider": "Installed native RMSNorm.forward_hip -> lightop.op.fused_add_rms_norm_opt; all32 native-input replays exactly reconstruct actual native outputs.",
+  "root_cause": "Triton accumulated variance from FP32 input+residual but stored BF16 residual in pass1 and reloaded it for the normalization numerator. Torch fallback also prematurely rounded the residual sum.",
+  "old_triton_native_different_elements": 149008,
+  "fix": "Retain original input/residual through variance pass; recompute FP32 sum in pass2 and round only final output and stored residual. Torch fallback likewise normalizes FP32 sum.",
+  "recipe": "Existing HCU_FUSED_ADD_RMS_IMPL=lightop explicitly selected for GLM; generic default remains triton.",
+  "providers": {
+    "triton": {
+      "source": "/work/adapter-fused-rms-v1/sgl_kernel/layernorm.py",
+      "report_sha256": "e8b6b613d2e8701803a1f0e71b3822dbef4955b3dabcbf1e1746fd3a35e168cb",
+      "native_inputs": 32,
+      "native_all_exact": false,
+      "native_different_elements": 6,
+      "native_worst_nrmse": 5.3277304144334695e-05,
+      "captured_input_replays": 64,
+      "all_stored_residuals_exact": true,
+      "changed_input_graph_replays": 4,
+      "graphs_output_and_residual_all_exact": true,
+      "fp32_reference_cases": 12,
+      "fp32_reference_worst_nrmse": 6.186741730060281e-06,
+      "lightop_disabled": false
+    },
+    "lightop": {
+      "source": "/work/adapter-fused-rms-v1/sgl_kernel/layernorm.py",
+      "report_sha256": "71cbf13a35baf8b31dfb283ee5baa84b4f25c4f3f658cf37d57c6159ee2ca9d4",
+      "native_inputs": 32,
+      "native_all_exact": true,
+      "native_different_elements": 0,
+      "native_worst_nrmse": 0.0,
+      "captured_input_replays": 64,
+      "all_stored_residuals_exact": true,
+      "changed_input_graph_replays": 4,
+      "graphs_output_and_residual_all_exact": true,
+      "fp32_reference_cases": 12,
+      "fp32_reference_worst_nrmse": 5.6458591259510735e-06,
+      "lightop_disabled": false
+    },
+    "torch": {
+      "source": "/work/adapter-fused-rms-v1/sgl_kernel/layernorm.py",
+      "report_sha256": "d1d8d4a50da832d30d71b1462d950d1a622f13d9cbefed44034117e6966f1487",
+      "native_inputs": 32,
+      "native_all_exact": false,
+      "native_different_elements": 2,
+      "native_worst_nrmse": 8.372354415995714e-06,
+      "captured_input_replays": 64,
+      "all_stored_residuals_exact": true,
+      "changed_input_graph_replays": 4,
+      "graphs_output_and_residual_all_exact": true,
+      "fp32_reference_cases": 12,
+      "fp32_reference_worst_nrmse": 0.0,
+      "lightop_disabled": false
+    }
+  },
+  "reference_matrix": "BF16/FP16/FP32, hidden6144/8193, ordinary/Gemma variants; FP32 reference metrics recorded, not bitwise acceptance for differing reduction orders.",
+  "archive": {
+    "archive": "/work/candidate-pd/attention-probe-v1/fused-rms-components-v1-20261105.tar.gz",
+    "bytes": 3879937,
+    "sha256": "178cf3139ae9659655826e4d82ad7232a3ca05a4b6b88a6507cae7c8bb986301"
+  },
+  "reproduce": {
+    "script": "candidate-pd/check-fused-rms-fixed-v1.py",
+    "environment": "HCU_ADAPTER_HOST=none HIP_VISIBLE_DEVICES=7 PYTHONPATH=<qualified-adapter> HCU_FUSED_ADD_RMS_IMPL=<triton|lightop|torch>",
+    "native_replay": "candidate-pd/check-fused-rms-native-v2.py --label native; original native image and LightOp op provider",
+    "note": "Archived v1 native direct sgl_kernel probe failed before any rows because the original compiled operator is absent; it is not evidence."
+  },
+  "model_status": "Uninstrumented P20/D12 with RMSNorm correction completed six captures (exit0), but all6 prefill and all6 aligned decode distributions still fail unchanged thresholds (comparison exit1). First2 IDs match native all6. Operator equality is not full-model acceptance.",
+  "input_archives": {
+    "native": {
+      "archive": "candidate-pd/attention-native-pure-v8-20261105.tar.gz",
+      "sha256": "7e81cbda9ea6ef9f99d119570388a366c94b68a95cf494b734293266ba402279"
+    },
+    "candidate": {
+      "archive": "candidate-pd/attention-candidate-v17-dense0-20261105.tar.gz",
+      "sha256": "9fa3ab470235a037e8ef067a805319d3b940b629a6077560c907028f32ebafd6"
+    }
+  }
+}

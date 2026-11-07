@@ -1,0 +1,65 @@
+{
+  "scope": "Two-node actual SGLang PyNccl RDMA and public Mooncake GPU RDMA; full P/D remains under validation",
+  "mooncake": {
+    "repository": "https://github.com/HYGON-AI/mooncake-das",
+    "commit": "6eb1b21a06cad9e83569815847655ab1673c4e78",
+    "matches_image_commit": true,
+    "tracked_source_files_sha256_exact": 1741,
+    "source_cpp_changes": false,
+    "build_flags": {
+      "USE_HYGON": true,
+      "USE_SHCA": true,
+      "USE_FAKE_HIP_RPC": true,
+      "WITH_STORE": false,
+      "WITH_EP": false
+    },
+    "wheel": "mooncake_transfer_engine_shca-0.3.13.post1+das.opt1.dtk2610.g6eb1b2-cp312-cp312-linux_x86_64.whl",
+    "wheel_sha256": "48194d7bdbed0a13f60bca7e981e566f339e1f60fd24d9340ad7a68e58e413e4",
+    "engine_sha256": "c6da14e2f1136a93410e3a15db8c659d4f3ac9fbe7b1e34ee6eea3d82072aa17",
+    "transfer_engine_sha256": "345ce0b8619ba4043c40928ddb4ee4884637e42d33759cc52905e36a943edad8",
+    "abi": "CPython 3.12, DTK26.10, node-compatible SHCA SDK/verbs pair",
+    "original_package_files_backed_up_per_node": 146,
+    "runtime": {
+      "prefix": "/work/vendor-overrides/mooncake-shca-g6eb1b2-wheel",
+      "IBV_DRIVERS": "shca",
+      "CPATH_prefix": "/work/network-shca/native-sdk/include",
+      "LD_LIBRARY_PATH_prefixes": [
+        "/work/network-shca/native-verbs",
+        "/work/network-shca/native-net",
+        "/work/vendor-overrides/mooncake-shca-g6eb1b2-wheel/mooncake",
+        "/work/vendor-build/mooncake-build-deps/usr/lib/x86_64-linux-gnu"
+      ]
+    }
+  },
+  "network_libraries_sha256": {
+    "libibverbs.so.1": "a57430a6ab66c3fcbbfde8b5e4fed0232016207fe017a49e88b83b4091e631c9",
+    "libshca.so": "781c787953e5c57d178407b50223d61f3521ae7bcae436eefdbe01a4c48f4515",
+    "librccl-net-shca.so": "e0c3fd25c91cdb19c078b8350dd9daadded89d66600b0e5ed298840658af3af6"
+  },
+  "pynccl": {
+    "nodes": [23, 24],
+    "network": "NCCL RDMA Plugin v8, forced to exclude socket fallback",
+    "exact_dtypes": ["float32", "bfloat16", "int32"],
+    "changed_input_graph_replays": 2,
+    "passed": true
+  },
+  "gpu_rdma": {
+    "sender_node": 24,
+    "receiver_node": 23,
+    "payload_transport": "SHCA RDMA",
+    "control_transport": "TCP JSON only",
+    "bytes": [40960, 4194304],
+    "offset": 128,
+    "nonuniform_payload_exact": true,
+    "guard_regions_exact": true,
+    "sender_exit": 0,
+    "receiver_exit": 0,
+    "evidence_directory": "/work/network-shca/mooncake-gpu-v2",
+    "passed": true
+  },
+  "remaining": [
+    "Full four-node DeepEP prefill/decode and KV handoff",
+    "EAGLE MTP and target decode graph",
+    "Numerical/request matrix and candidate 32-rank profile"
+  ]
+}

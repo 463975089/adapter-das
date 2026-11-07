@@ -1,0 +1,1670 @@
+{
+  "scope": "Selected127/top20 finite numerical alignment only; not full-vocabulary or answer-quality acceptance",
+  "passed": false,
+  "candidate": "Uninstrumented P13/D8; CT W4 + dynamic INT8; qualified Aiter CAR COV5",
+  "native": "Original installed native image SGLang0.5.18; numerical-v3 four-node recipe;3660 source/library files exact onall4 nodes before launch",
+  "contract_sha256": "6b8682c5f4bea2e8ea248d9fa0007f07459fbd3c62f61886b87c7f937d8531a2",
+  "sampling": {
+    "temperature": 0,
+    "max_new_tokens": 2,
+    "ignore_eos": true
+  },
+  "probe_token_count": 127,
+  "top_logprob_count": 20,
+  "tolerances_unchanged": {
+    "logprob_rmse_max": 0.1,
+    "logprob_abs_max": 0.5,
+    "top1_must_appear_in_other_top5": true,
+    "required_prefill_cases": 6
+  },
+  "aligned_decode_cases": 5,
+  "capture_protocol": "P T0 produced at final PP stage and reconstructed by PP frontend; duplicate D T0 top20 matches exactly. D T1 is compared only for identical first generated token IDs. All selected rows contain127 finite entries.",
+  "raw_artifacts": {
+    "candidate": "candidate-pd/finite-v13-on-raw/numerical/",
+    "native": "candidate-pd/finite-native-v3-on-raw/numerical/",
+    "comparison": "candidate-pd/numerical-v1/p13-vs-native-v3-comparison-v4.json",
+    "comparison_sha256": "71e2999f138ab537e2d5e51613439e9516e5704cc2814a01ce63d9df81a49178"
+  },
+  "cases": [
+    {
+      "id": "arithmetic-prefix0",
+      "candidate_ids": [
+        99419,
+        353
+      ],
+      "native_ids": [
+        99419,
+        353
+      ],
+      "input_tokens": 33,
+      "request_sha256": "ce5ec49791588e9326fd4c2254e5088ec93a8c482def3349ed1346f5c33ea368",
+      "prefill": {
+        "passed": false,
+        "logprob_rmse": 0.9043919845237873,
+        "logprob_abs_max": 2.281291961669922,
+        "candidate_top1": 99419,
+        "native_top1": 99419,
+        "mutual_top1_in_other_top5": true
+      },
+      "decode": {
+        "passed": false,
+        "logprob_rmse": 0.3692179674555099,
+        "logprob_abs_max": 1.377701759338379,
+        "candidate_top1": 353,
+        "native_top1": 353,
+        "mutual_top1_in_other_top5": true
+      }
+    },
+    {
+      "id": "arithmetic-prefix8",
+      "candidate_ids": [
+        382,
+        10056
+      ],
+      "native_ids": [
+        382,
+        10056
+      ],
+      "input_tokens": 41,
+      "request_sha256": "97ea209f43611585674bf083fca712a9e263b9dd3dcb51f87d5985a00653dc91",
+      "prefill": {
+        "passed": false,
+        "logprob_rmse": 0.6285660055630053,
+        "logprob_abs_max": 1.8712100982666016,
+        "candidate_top1": 382,
+        "native_top1": 382,
+        "mutual_top1_in_other_top5": true
+      },
+      "decode": {
+        "passed": false,
+        "logprob_rmse": 0.4280328879716021,
+        "logprob_abs_max": 1.1165962219238281,
+        "candidate_top1": 10056,
+        "native_top1": 10056,
+        "mutual_top1_in_other_top5": true
+      }
+    },
+    {
+      "id": "formula-prefix0",
+      "candidate_ids": [
+        17351,
+        154842
+      ],
+      "native_ids": [
+        785,
+        1196
+      ],
+      "input_tokens": 32,
+      "request_sha256": "b69ad4dcb0c4ffe69265c779f67ee1aee1d273b0cd56821556589a5b739aacdb",
+      "prefill": {
+        "passed": false,
+        "logprob_rmse": 13.369442868231598,
+        "logprob_abs_max": 20.24422788619995,
+        "candidate_top1": 17351,
+        "native_top1": 785,
+        "mutual_top1_in_other_top5": false
+      },
+      "decode": {
+        "compared": false,
+        "reason": "First generated tokens differ; prefixes unaligned"
+      }
+    },
+    {
+      "id": "json-add-prefix0",
+      "candidate_ids": [
+        785,
+        1196
+      ],
+      "native_ids": [
+        785,
+        1196
+      ],
+      "input_tokens": 44,
+      "request_sha256": "944261f6b31251e3fd7fbcb41ae39323e229baca638843c874c01317152fc1b3",
+      "prefill": {
+        "passed": false,
+        "logprob_rmse": 0.6870959697660677,
+        "logprob_abs_max": 2.0099945068359375,
+        "candidate_top1": 785,
+        "native_top1": 785,
+        "mutual_top1_in_other_top5": true
+      },
+      "decode": {
+        "passed": false,
+        "logprob_rmse": 0.7621530609937011,
+        "logprob_abs_max": 3.0040512084960938,
+        "candidate_top1": 1196,
+        "native_top1": 1196,
+        "mutual_top1_in_other_top5": true
+      }
+    },
+    {
+      "id": "4k-prefix0",
+      "candidate_ids": [
+        785,
+        1196
+      ],
+      "native_ids": [
+        785,
+        1196
+      ],
+      "input_tokens": 4095,
+      "request_sha256": "1cfaa4a4641212863ce77aca8c4442df43320d0636b181e3fcca106c30595277",
+      "prefill": {
+        "passed": false,
+        "logprob_rmse": 1.3540410630103592,
+        "logprob_abs_max": 3.6294479370117188,
+        "candidate_top1": 785,
+        "native_top1": 785,
+        "mutual_top1_in_other_top5": true
+      },
+      "decode": {
+        "passed": false,
+        "logprob_rmse": 0.9536538646695462,
+        "logprob_abs_max": 2.0155982971191406,
+        "candidate_top1": 1196,
+        "native_top1": 1196,
+        "mutual_top1_in_other_top5": true
+      }
+    },
+    {
+      "id": "4k-prefix8",
+      "candidate_ids": [
+        7424,
+        320
+      ],
+      "native_ids": [
+        7424,
+        320
+      ],
+      "input_tokens": 4103,
+      "request_sha256": "55ebff854d2246b1e0c2f7872affe17b04f04c3ac31dde317f03d5347df14ed9",
+      "prefill": {
+        "passed": false,
+        "logprob_rmse": 0.5666958932773084,
+        "logprob_abs_max": 1.8259410858154297,
+        "candidate_top1": 7424,
+        "native_top1": 7424,
+        "mutual_top1_in_other_top5": true
+      },
+      "decode": {
+        "passed": false,
+        "logprob_rmse": 0.4887289331056327,
+        "logprob_abs_max": 1.7822532653808594,
+        "candidate_top1": 320,
+        "native_top1": 320,
+        "mutual_top1_in_other_top5": true
+      }
+    }
+  ],
+  "cpv2_uninstrumented_p16": {
+    "scope": "Selected127/top20 finite numerical alignment only; not full-vocabulary or answer-quality acceptance",
+    "passed": false,
+    "adapter_commit": "23685d87983dd3c66d99c70c8a5395c42dafeb71",
+    "runtime": "UninstrumentedCPv2 P16, sameD9/EAGLE5/1/6/graphs; no observerprefix or whitelist",
+    "tolerances_unchanged": {
+      "logprob_rmse_max": 0.1,
+      "logprob_abs_max": 0.5,
+      "top1_must_appear_in_other_top5": true,
+      "required_prefill_cases": 6
+    },
+    "aligned_decode_cases": 6,
+    "artifact_archive": "candidate-pd/numerical-p16-20261105.tar.gz",
+    "artifact_sha256": "3c6add8aae0a534c1555bcf457f04b28b858c8cb2f4e2f91e34a247c42497364",
+    "cases": [
+      {
+        "id": "arithmetic-prefix0",
+        "candidate_ids": [
+          99419,
+          353
+        ],
+        "native_ids": [
+          99419,
+          353
+        ],
+        "prefill": {
+          "passed": false,
+          "logprob_rmse": 0.6962566706985159,
+          "logprob_abs_max": 3.3335437774658203,
+          "candidate_top1": 99419,
+          "native_top1": 99419,
+          "mutual_top1_in_other_top5": true
+        },
+        "decode": {
+          "passed": false,
+          "logprob_rmse": 0.805646730333888,
+          "logprob_abs_max": 1.6535358428955078,
+          "candidate_top1": 353,
+          "native_top1": 353,
+          "mutual_top1_in_other_top5": true
+        }
+      },
+      {
+        "id": "arithmetic-prefix8",
+        "candidate_ids": [
+          382,
+          10056
+        ],
+        "native_ids": [
+          382,
+          10056
+        ],
+        "prefill": {
+          "passed": false,
+          "logprob_rmse": 0.5754326939211173,
+          "logprob_abs_max": 2.278697967529297,
+          "candidate_top1": 382,
+          "native_top1": 382,
+          "mutual_top1_in_other_top5": true
+        },
+        "decode": {
+          "passed": false,
+          "logprob_rmse": 0.8457328064864323,
+          "logprob_abs_max": 2.0478572845458984,
+          "candidate_top1": 10056,
+          "native_top1": 10056,
+          "mutual_top1_in_other_top5": true
+        }
+      },
+      {
+        "id": "formula-prefix0",
+        "candidate_ids": [
+          785,
+          1196
+        ],
+        "native_ids": [
+          785,
+          1196
+        ],
+        "prefill": {
+          "passed": false,
+          "logprob_rmse": 0.8596624614106648,
+          "logprob_abs_max": 3.1878585815429688,
+          "candidate_top1": 785,
+          "native_top1": 785,
+          "mutual_top1_in_other_top5": true
+        },
+        "decode": {
+          "passed": false,
+          "logprob_rmse": 1.2941545932703864,
+          "logprob_abs_max": 2.524303436279297,
+          "candidate_top1": 1196,
+          "native_top1": 1196,
+          "mutual_top1_in_other_top5": true
+        }
+      },
+      {
+        "id": "json-add-prefix0",
+        "candidate_ids": [
+          785,
+          1196
+        ],
+        "native_ids": [
+          785,
+          1196
+        ],
+        "prefill": {
+          "passed": false,
+          "logprob_rmse": 0.7025117654007408,
+          "logprob_abs_max": 1.8071651458740234,
+          "candidate_top1": 785,
+          "native_top1": 785,
+          "mutual_top1_in_other_top5": true
+        },
+        "decode": {
+          "passed": false,
+          "logprob_rmse": 0.7884065621440884,
+          "logprob_abs_max": 2.224661350250244,
+          "candidate_top1": 1196,
+          "native_top1": 1196,
+          "mutual_top1_in_other_top5": true
+        }
+      },
+      {
+        "id": "4k-prefix0",
+        "candidate_ids": [
+          785,
+          1196
+        ],
+        "native_ids": [
+          785,
+          1196
+        ],
+        "prefill": {
+          "passed": false,
+          "logprob_rmse": 1.1659796674865732,
+          "logprob_abs_max": 3.041727066040039,
+          "candidate_top1": 785,
+          "native_top1": 785,
+          "mutual_top1_in_other_top5": true
+        },
+        "decode": {
+          "passed": false,
+          "logprob_rmse": 1.173901559390271,
+          "logprob_abs_max": 2.8828086853027344,
+          "candidate_top1": 1196,
+          "native_top1": 1196,
+          "mutual_top1_in_other_top5": true
+        }
+      },
+      {
+        "id": "4k-prefix8",
+        "candidate_ids": [
+          7424,
+          320
+        ],
+        "native_ids": [
+          7424,
+          320
+        ],
+        "prefill": {
+          "passed": false,
+          "logprob_rmse": 0.6312292851122628,
+          "logprob_abs_max": 1.9058055877685547,
+          "candidate_top1": 7424,
+          "native_top1": 7424,
+          "mutual_top1_in_other_top5": true
+        },
+        "decode": {
+          "passed": false,
+          "logprob_rmse": 0.4498753580985644,
+          "logprob_abs_max": 1.2633519172668457,
+          "candidate_top1": 320,
+          "native_top1": 320,
+          "mutual_top1_in_other_top5": true
+        }
+      }
+    ]
+  },
+  "uninstrumented_native_rope_P18_D10": {
+    "adapter_commit": "f29c5f7208706b49fe54068bc69d848f61b34c9d",
+    "plugin_commit": "bebe2a1f8ea01ec7ef5209ce6d0dcf4abd928432",
+    "capture_exit": 0,
+    "comparison_exit": 1,
+    "all6_first_two_output_IDs_match_native": true,
+    "prefill_failed": 6,
+    "aligned_decode_failed": 6,
+    "archive_bytes": 159934,
+    "archive_sha256": "fdbf7c417f47838ca0960e59781f7fcdcbcfd63907a2ea587423f59fdb908d22",
+    "scope": "Complete real4node P/D +MTP +targetgraphs fixed6prefix selected127/top20 contract; stillFAIL, not model acceptance",
+    "comparison": {
+      "scope": "Selected127/top20 finite numerical alignment only; not full-vocabulary or answer-quality acceptance",
+      "passed": false,
+      "contract_sha256": "6b8682c5f4bea2e8ea248d9fa0007f07459fbd3c62f61886b87c7f937d8531a2",
+      "tolerances_unchanged": {
+        "logprob_rmse_max": 0.1,
+        "logprob_abs_max": 0.5,
+        "top1_must_appear_in_other_top5": true,
+        "required_prefill_cases": 6
+      },
+      "aligned_decode_cases": 6,
+      "cases": [
+        {
+          "id": "arithmetic-prefix0",
+          "candidate_ids": [
+            99419,
+            353
+          ],
+          "native_ids": [
+            99419,
+            353
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.8122990821697551,
+            "logprob_abs_max": 3.3003692626953125,
+            "candidate_top1": 99419,
+            "native_top1": 99419,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 121910,
+                "candidate_minus_native": -3.3003692626953125
+              },
+              {
+                "token_id": 220,
+                "candidate_minus_native": -2.394120216369629
+              },
+              {
+                "token_id": 2806,
+                "candidate_minus_native": -2.2696075439453125
+              },
+              {
+                "token_id": 2938,
+                "candidate_minus_native": -2.0991973876953125
+              },
+              {
+                "token_id": 785,
+                "candidate_minus_native": 1.9183802604675293
+              }
+            ]
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.4399736144759385,
+            "logprob_abs_max": 1.0675811767578125,
+            "candidate_top1": 353,
+            "native_top1": 353,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 1654,
+                "candidate_minus_native": 1.0675811767578125
+              },
+              {
+                "token_id": 481,
+                "candidate_minus_native": 1.005080223083496
+              },
+              {
+                "token_id": 1293,
+                "candidate_minus_native": -0.9949188232421875
+              },
+              {
+                "token_id": 10,
+                "candidate_minus_native": -0.9324188232421875
+              },
+              {
+                "token_id": 3170,
+                "candidate_minus_native": -0.8699188232421875
+              }
+            ]
+          }
+        },
+        {
+          "id": "arithmetic-prefix8",
+          "candidate_ids": [
+            382,
+            10056
+          ],
+          "native_ids": [
+            382,
+            10056
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.4845312762331293,
+            "logprob_abs_max": 2.042774200439453,
+            "candidate_top1": 382,
+            "native_top1": 382,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 121910,
+                "candidate_minus_native": -2.042774200439453
+              },
+              {
+                "token_id": 220,
+                "candidate_minus_native": -1.9490251541137695
+              },
+              {
+                "token_id": 198,
+                "candidate_minus_native": -1.1365251541137695
+              },
+              {
+                "token_id": 510,
+                "candidate_minus_native": -0.9802742004394531
+              },
+              {
+                "token_id": 123853,
+                "candidate_minus_native": -0.9177742004394531
+              }
+            ]
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.4577791820320345,
+            "logprob_abs_max": 1.9894275665283203,
+            "candidate_top1": 10056,
+            "native_top1": 10056,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 121910,
+                "candidate_minus_native": -1.9894275665283203
+              },
+              {
+                "token_id": 220,
+                "candidate_minus_native": -1.4894275665283203
+              },
+              {
+                "token_id": 123853,
+                "candidate_minus_native": -1.1769275665283203
+              },
+              {
+                "token_id": 1555,
+                "candidate_minus_native": -1.1202869415283203
+              },
+              {
+                "token_id": 271,
+                "candidate_minus_native": 0.9793224334716797
+              }
+            ]
+          }
+        },
+        {
+          "id": "formula-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.8751140581124391,
+            "logprob_abs_max": 3.1017322540283203,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 121910,
+                "candidate_minus_native": -3.1017322540283203
+              },
+              {
+                "token_id": 123853,
+                "candidate_minus_native": -2.1329822540283203
+              },
+              {
+                "token_id": 10056,
+                "candidate_minus_native": -1.750168800354004
+              },
+              {
+                "token_id": 1654,
+                "candidate_minus_native": 1.749830722808838
+              },
+              {
+                "token_id": 18,
+                "candidate_minus_native": -1.7189197540283203
+              }
+            ]
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 1.6891151393506918,
+            "logprob_abs_max": 2.5250415802001953,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 3643,
+                "candidate_minus_native": -2.5250415802001953
+              },
+              {
+                "token_id": 12877,
+                "candidate_minus_native": -2.4625415802001953
+              },
+              {
+                "token_id": 6696,
+                "candidate_minus_native": -2.4312915802001953
+              },
+              {
+                "token_id": 2182,
+                "candidate_minus_native": -2.4000415802001953
+              },
+              {
+                "token_id": 2548,
+                "candidate_minus_native": -2.3687915802001953
+              }
+            ]
+          }
+        },
+        {
+          "id": "json-add-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.7290228991505755,
+            "logprob_abs_max": 2.5807228088378906,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 353,
+                "candidate_minus_native": -2.5807228088378906
+              },
+              {
+                "token_id": 481,
+                "candidate_minus_native": -1.9576759338378906
+              },
+              {
+                "token_id": 320,
+                "candidate_minus_native": -1.7233009338378906
+              },
+              {
+                "token_id": 1156,
+                "candidate_minus_native": -1.5983009338378906
+              },
+              {
+                "token_id": 59341,
+                "candidate_minus_native": -1.4869728088378906
+              }
+            ]
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.5249776930923897,
+            "logprob_abs_max": 1.3751258850097656,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 6696,
+                "candidate_minus_native": 1.3751258850097656
+              },
+              {
+                "token_id": 14795,
+                "candidate_minus_native": 1.3126258850097656
+              },
+              {
+                "token_id": 7546,
+                "candidate_minus_native": 1.2501258850097656
+              },
+              {
+                "token_id": 14132,
+                "candidate_minus_native": 1.1876239776611328
+              },
+              {
+                "token_id": 382,
+                "candidate_minus_native": -1.1561260223388672
+              }
+            ]
+          }
+        },
+        {
+          "id": "4k-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 1.1481069098831307,
+            "logprob_abs_max": 2.7415714263916016,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 1156,
+                "candidate_minus_native": -2.7415714263916016
+              },
+              {
+                "token_id": 3561,
+                "candidate_minus_native": -2.5775089263916016
+              },
+              {
+                "token_id": 902,
+                "candidate_minus_native": -2.3470401763916016
+              },
+              {
+                "token_id": 99243,
+                "candidate_minus_native": 2.2662410736083984
+              },
+              {
+                "token_id": 264,
+                "candidate_minus_native": -2.2376651763916016
+              }
+            ]
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.9226756639498918,
+            "logprob_abs_max": 2.125001907348633,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 154842,
+                "candidate_minus_native": -2.125001907348633
+              },
+              {
+                "token_id": 7424,
+                "candidate_minus_native": 2.1249990463256836
+              },
+              {
+                "token_id": 2975,
+                "candidate_minus_native": -2.031251907348633
+              },
+              {
+                "token_id": 10141,
+                "candidate_minus_native": -2.000001907348633
+              },
+              {
+                "token_id": 312,
+                "candidate_minus_native": -1.8125019073486328
+              }
+            ]
+          }
+        },
+        {
+          "id": "4k-prefix8",
+          "candidate_ids": [
+            7424,
+            320
+          ],
+          "native_ids": [
+            7424,
+            320
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.44097730926814566,
+            "logprob_abs_max": 1.2669086456298828,
+            "candidate_top1": 7424,
+            "native_top1": 7424,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 123853,
+                "candidate_minus_native": 1.2669086456298828
+              },
+              {
+                "token_id": 271,
+                "candidate_minus_native": 0.9544086456298828
+              },
+              {
+                "token_id": 752,
+                "candidate_minus_native": 0.9544086456298828
+              },
+              {
+                "token_id": 788,
+                "candidate_minus_native": 0.9495258331298828
+              },
+              {
+                "token_id": 97421,
+                "candidate_minus_native": -0.9362163543701172
+              }
+            ]
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.46108767762969555,
+            "logprob_abs_max": 1.5947942733764648,
+            "candidate_top1": 320,
+            "native_top1": 320,
+            "mutual_top1_in_other_top5": true,
+            "largest_probe_deltas": [
+              {
+                "token_id": 25,
+                "candidate_minus_native": 1.5947942733764648
+              },
+              {
+                "token_id": 1372,
+                "candidate_minus_native": -1.2489547729492188
+              },
+              {
+                "token_id": 1467,
+                "candidate_minus_native": -1.1864547729492188
+              },
+              {
+                "token_id": 121910,
+                "candidate_minus_native": -1.1395797729492188
+              },
+              {
+                "token_id": 481,
+                "candidate_minus_native": 0.9697942733764648
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "uninstrumented_native_math_P19_D11": {
+    "candidate": "adapter506d4737eeef4a093a1305644cbf142a99dc6b3a + plugind31cc271a3e5fbd80c0e5b32efa311f4203061c6; both native-math flags1; CPv2=1; target P/D,MTP5/1/6,graphs",
+    "capture_exit": 0,
+    "comparison_exit": 1,
+    "raw_archive": {
+      "archive": "/work/candidate-pd/numerical-p19-20261105.tar.gz",
+      "bytes": 111440,
+      "sha256": "a31d95a9d828eba30ed9bd096701785901d30359b2ff319590f88b8443916c1c",
+      "included_roots": [
+        "finite-v19-on-raw/numerical",
+        "numerical-v1/p19-vs-native-v3-comparison-v4.json",
+        "run-numerical-v19-client.sh",
+        "wait-numerical-v19.py",
+        "run-finite-checks.py",
+        "compare-numerical-v4.py",
+        "numerical-v19-client.log",
+        "numerical-v19-client.exit",
+        "numerical-v19-capture-complete.json",
+        "native-math-preflight-node21.json",
+        "native-math-preflight-node22.json",
+        "native-math-preflight-node23.json",
+        "native-math-preflight-node24.json",
+        "launch-native-math-node23.json",
+        "launch-native-math-node24.json",
+        "launch-native-math-node21.json",
+        "launch-native-math-node22.json"
+      ],
+      "capture_exit": 0,
+      "comparison_exit": 1,
+      "scope": "P19/D11 six fixed-prefix capture. All six P and aligned D fail unchanged numerical thresholds."
+    },
+    "runtime_manifest_sha256": "35be6edfdfe9f5f9eb20330e391d3b837999575fa003a398222e9a42c5f029d4",
+    "comparison": {
+      "scope": "Selected127/top20 finite numerical alignment only; not full-vocabulary or answer-quality acceptance",
+      "passed": false,
+      "contract_sha256": "6b8682c5f4bea2e8ea248d9fa0007f07459fbd3c62f61886b87c7f937d8531a2",
+      "tolerances_unchanged": {
+        "logprob_rmse_max": 0.1,
+        "logprob_abs_max": 0.5,
+        "top1_must_appear_in_other_top5": true,
+        "required_prefill_cases": 6
+      },
+      "aligned_decode_cases": 6,
+      "cases": [
+        {
+          "id": "arithmetic-prefix0",
+          "candidate_ids": [
+            99419,
+            353
+          ],
+          "native_ids": [
+            99419,
+            353
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.8733259728206888,
+            "logprob_abs_max": 2.1886911392211914,
+            "candidate_top1": 99419,
+            "native_top1": 99419,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.31543181705665324,
+            "logprob_abs_max": 0.8839435577392578,
+            "candidate_top1": 353,
+            "native_top1": 353,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "arithmetic-prefix8",
+          "candidate_ids": [
+            382,
+            10056
+          ],
+          "native_ids": [
+            382,
+            10056
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.5202781352422505,
+            "logprob_abs_max": 1.284285545349121,
+            "candidate_top1": 382,
+            "native_top1": 382,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.31369856824827336,
+            "logprob_abs_max": 1.3019962310791016,
+            "candidate_top1": 10056,
+            "native_top1": 10056,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "formula-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 1.5145995124866352,
+            "logprob_abs_max": 3.624788284301758,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 2.134720164971533,
+            "logprob_abs_max": 4.278564453125,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "json-add-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.7001673660287048,
+            "logprob_abs_max": 1.986654281616211,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.727568155031263,
+            "logprob_abs_max": 2.482179641723633,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 1.1481069098831307,
+            "logprob_abs_max": 2.7415714263916016,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 1.3161911048730173,
+            "logprob_abs_max": 2.624998092651367,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix8",
+          "candidate_ids": [
+            7424,
+            320
+          ],
+          "native_ids": [
+            7424,
+            320
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.44097730926814566,
+            "logprob_abs_max": 1.2669086456298828,
+            "candidate_top1": 7424,
+            "native_top1": 7424,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.469761081838021,
+            "logprob_abs_max": 1.8478889465332031,
+            "candidate_top1": 320,
+            "native_top1": 320,
+            "mutual_top1_in_other_top5": true
+          }
+        }
+      ]
+    }
+  },
+  "uninstrumented_native_rms_P20_D12": {
+    "candidate": "adapter3199c220ba02f60fb1e587746d06dd3430dcabb9 + plugind31cc271a3e5fbd80c0e5b32efa311f4203061c6; both native-math flags1; HCU_FUSED_ADD_RMS_IMPL=lightop; CPv2=1; CT W4/dynamic INT8 and target P/D,MTP5/1/6,graphs",
+    "capture_exit": 0,
+    "comparison_exit": 1,
+    "comparison_file": "candidate-pd/numerical-v1/p20-vs-native-v3-comparison-v4.json",
+    "comparison_sha256": "8181599599c6b4b8d35781302393d32eac6e77b36c9ed4e12365d2df460c08b6",
+    "raw_archive": {
+      "archive": "/work/candidate-pd/numerical-p20-20261105.tar.gz",
+      "bytes": 208876,
+      "sha256": "aa7c3ab5b560e9e5aa6f73e1a4b329d10a493f9b153da2be4f9fdbab474f8c0e",
+      "included_roots": [
+        "finite-v20-on-raw/numerical",
+        "numerical-v1/p20-vs-native-v3-comparison-v4.json",
+        "adapter-fused-rms-v2-source.json",
+        "plugin-native-math-v1-source.json",
+        "runtime-fused-rms-v20-expected-sha256.json",
+        "run-numerical-v20-client.sh",
+        "wait-numerical-v20.py",
+        "run-finite-checks.py",
+        "compare-numerical-v4.py",
+        "numerical-v20-client.log",
+        "numerical-v20-client.exit",
+        "numerical-v20-capture-complete.json",
+        "launch-fused-rms-v20.py",
+        "preflight-fused-rms-v20.py",
+        "fused-rms-preflight-node21.json",
+        "launch-fused-rms-node21.json",
+        "run-node21-v20.sh",
+        "fused-rms-preflight-node22.json",
+        "launch-fused-rms-node22.json",
+        "run-node22-v20.sh",
+        "fused-rms-preflight-node23.json",
+        "launch-fused-rms-node23.json",
+        "run-node23-v12.sh",
+        "fused-rms-preflight-node24.json",
+        "launch-fused-rms-node24.json",
+        "run-node24-v12.sh"
+      ],
+      "capture_exit": 0,
+      "comparison_exit": 1,
+      "scope": "P20/D12 six fixed-prefix capture; all6 prefill and6 aligned decode fail unchanged tolerances; first2 IDs match native all6."
+    },
+    "comparison": {
+      "scope": "Selected127/top20 finite numerical alignment only; not full-vocabulary or answer-quality acceptance",
+      "passed": false,
+      "contract_sha256": "6b8682c5f4bea2e8ea248d9fa0007f07459fbd3c62f61886b87c7f937d8531a2",
+      "tolerances_unchanged": {
+        "logprob_rmse_max": 0.1,
+        "logprob_abs_max": 0.5,
+        "top1_must_appear_in_other_top5": true,
+        "required_prefill_cases": 6
+      },
+      "aligned_decode_cases": 6,
+      "cases": [
+        {
+          "id": "arithmetic-prefix0",
+          "candidate_ids": [
+            99419,
+            353
+          ],
+          "native_ids": [
+            99419,
+            353
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.6570143408922952,
+            "logprob_abs_max": 1.9282665252685547,
+            "candidate_top1": 99419,
+            "native_top1": 99419,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.3211251899264387,
+            "logprob_abs_max": 1.0050897598266602,
+            "candidate_top1": 353,
+            "native_top1": 353,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "arithmetic-prefix8",
+          "candidate_ids": [
+            382,
+            10056
+          ],
+          "native_ids": [
+            382,
+            10056
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.5480337684229143,
+            "logprob_abs_max": 1.7355327606201172,
+            "candidate_top1": 382,
+            "native_top1": 382,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.3603295729667958,
+            "logprob_abs_max": 1.3344993591308594,
+            "candidate_top1": 10056,
+            "native_top1": 10056,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "formula-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.7691230389320828,
+            "logprob_abs_max": 2.3114490509033203,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.9623248509096767,
+            "logprob_abs_max": 2.35089111328125,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "json-add-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.8509548946357487,
+            "logprob_abs_max": 2.347919464111328,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.5363634827041397,
+            "logprob_abs_max": 1.5432167053222656,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 1.623345692605744,
+            "logprob_abs_max": 3.880758285522461,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 1.9123472858483401,
+            "logprob_abs_max": 2.999988555908203,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix8",
+          "candidate_ids": [
+            7424,
+            320
+          ],
+          "native_ids": [
+            7424,
+            320
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.8401289849515229,
+            "logprob_abs_max": 1.9036750793457031,
+            "candidate_top1": 7424,
+            "native_top1": 7424,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.5468609248578357,
+            "logprob_abs_max": 1.9271273612976074,
+            "candidate_top1": 320,
+            "native_top1": 320,
+            "mutual_top1_in_other_top5": true
+          }
+        }
+      ]
+    }
+  },
+  "uninstrumented_native_fused_topk_P22_D13": {
+    "candidate": "adapter388ab803babdfb222af14f848d89cbdffe88b5e4 + plugind31cc271a3e5fbd80c0e5b32efa311f4203061c6, FUSE_TOPK1/TOPKV2=0; bothnative-mathflags1,RMSlightop, CTW4/dynamicINT8, originalP/D/MTP5/1/6/graphs",
+    "capture_exit": 0,
+    "comparison_exit": 1,
+    "comparison_sha256": "8c34a3653bb51d60ab2dcfad5e528a8e0c111ac9cfd04812191e3dad575889f0",
+    "raw_archive": {
+      "archive": "/work/candidate-pd/numerical-p22-20261105.tar.gz",
+      "bytes": 209303,
+      "sha256": "37354bb04532278e505d152b4e08d15d7a72b487afda2c1445e5304e6d23418e",
+      "included_roots": [
+        "finite-v22-on-raw/numerical",
+        "numerical-v1/p22-vs-native-v3-comparison-v4.json",
+        "adapter-fused-topk-v1-source.json",
+        "plugin-native-math-v1-source.json",
+        "runtime-fused-topk-v22-expected-sha256.json",
+        "run-numerical-v22-client.sh",
+        "wait-numerical-v22.py",
+        "run-finite-checks.py",
+        "compare-numerical-v4.py",
+        "numerical-v22-client.log",
+        "numerical-v22-client.exit",
+        "numerical-v22-capture-complete.json",
+        "launch-fused-topk-v22.py",
+        "preflight-fused-topk-v22.py",
+        "fused-topk-preflight-node21.json",
+        "launch-fused-topk-node21.json",
+        "fused-topk-runtime-env-node21.json",
+        "run-node21-v22.sh",
+        "fused-topk-preflight-node22.json",
+        "launch-fused-topk-node22.json",
+        "fused-topk-runtime-env-node22.json",
+        "run-node22-v22.sh",
+        "fused-topk-preflight-node23.json",
+        "launch-fused-topk-node23.json",
+        "fused-topk-runtime-env-node23.json",
+        "run-node23-v13.sh",
+        "fused-topk-preflight-node24.json",
+        "launch-fused-topk-node24.json",
+        "fused-topk-runtime-env-node24.json",
+        "run-node24-v13.sh"
+      ],
+      "capture_exit": 0,
+      "comparison_exit": 1,
+      "scope": "Uninstrumented P22/D13 FUSE_TOPK1 native recipe, six fixed prefixes, all6P and6alignedD fail original tolerances, first2IDs native all6."
+    },
+    "comparison": {
+      "scope": "Selected127/top20 finite numerical alignment only; not full-vocabulary or answer-quality acceptance",
+      "passed": false,
+      "contract_sha256": "6b8682c5f4bea2e8ea248d9fa0007f07459fbd3c62f61886b87c7f937d8531a2",
+      "tolerances_unchanged": {
+        "logprob_rmse_max": 0.1,
+        "logprob_abs_max": 0.5,
+        "top1_must_appear_in_other_top5": true,
+        "required_prefill_cases": 6
+      },
+      "aligned_decode_cases": 6,
+      "cases": [
+        {
+          "id": "arithmetic-prefix0",
+          "candidate_ids": [
+            99419,
+            353
+          ],
+          "native_ids": [
+            99419,
+            353
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.7077309075810172,
+            "logprob_abs_max": 2.0419578552246094,
+            "candidate_top1": 99419,
+            "native_top1": 99419,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.4514171320307203,
+            "logprob_abs_max": 1.0489730834960938,
+            "candidate_top1": 353,
+            "native_top1": 353,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "arithmetic-prefix8",
+          "candidate_ids": [
+            382,
+            10056
+          ],
+          "native_ids": [
+            382,
+            10056
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.8965153501896536,
+            "logprob_abs_max": 2.3299245834350586,
+            "candidate_top1": 382,
+            "native_top1": 382,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.34586496093436025,
+            "logprob_abs_max": 1.0193214416503906,
+            "candidate_top1": 10056,
+            "native_top1": 10056,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "formula-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.8111822457680127,
+            "logprob_abs_max": 2.6331233978271484,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 1.2526653795838745,
+            "logprob_abs_max": 3.222576141357422,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "json-add-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.9013882218337956,
+            "logprob_abs_max": 2.8293943405151367,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.4368544307537301,
+            "logprob_abs_max": 1.3625974655151367,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 1.2028538100998183,
+            "logprob_abs_max": 2.8507251739501953,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 2.1411702457320008,
+            "logprob_abs_max": 3.6718578338623047,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix8",
+          "candidate_ids": [
+            7424,
+            320
+          ],
+          "native_ids": [
+            7424,
+            320
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.4946020828595063,
+            "logprob_abs_max": 1.3594369888305664,
+            "candidate_top1": 7424,
+            "native_top1": 7424,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.6212952109825286,
+            "logprob_abs_max": 1.8055610656738281,
+            "candidate_top1": 320,
+            "native_top1": 320,
+            "mutual_top1_in_other_top5": true
+          }
+        }
+      ]
+    }
+  },
+  "latest_uninstrumented_cohort": "P24/D14",
+  "uninstrumented_native_router_P24_D14": {
+    "candidate": "adapter5a70ace24422b498cff23cb23d55b45b6443b4c5 + plugin9faa706d8b8c1ebcec680395634fe21ed2fd0f15; BF16 GLM CT gate + public LightOp expert routing enabled, other fixed CTW4/dynamicINT8/P/D/MTP/graph settings retained",
+    "capture_exit": 0,
+    "comparison_exit": 1,
+    "comparison_sha256": "02c1b75eacdae8f9554105d6033f4a33090361f386152c5b259dfa82925d69ca",
+    "raw_archive": {
+      "archive": "/work/candidate-pd/numerical-p24-20261105.tar.gz",
+      "bytes": 182517,
+      "sha256": "22c2e87e02dea06717e2716d6494d0b440c45b33d138bfdc8c78911d8308283c"
+    },
+    "all_first_two_IDs_match_native": true,
+    "comparison": {
+      "scope": "Selected127/top20 finite numerical alignment only; not full-vocabulary or answer-quality acceptance",
+      "passed": false,
+      "contract_sha256": "6b8682c5f4bea2e8ea248d9fa0007f07459fbd3c62f61886b87c7f937d8531a2",
+      "tolerances_unchanged": {
+        "logprob_rmse_max": 0.1,
+        "logprob_abs_max": 0.5,
+        "top1_must_appear_in_other_top5": true,
+        "required_prefill_cases": 6
+      },
+      "aligned_decode_cases": 6,
+      "cases": [
+        {
+          "id": "arithmetic-prefix0",
+          "candidate_ids": [
+            99419,
+            353
+          ],
+          "native_ids": [
+            99419,
+            353
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.6310722573100765,
+            "logprob_abs_max": 1.4282588958740234,
+            "candidate_top1": 99419,
+            "native_top1": 99419,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.8313593871254762,
+            "logprob_abs_max": 1.8839969635009766,
+            "candidate_top1": 353,
+            "native_top1": 353,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "arithmetic-prefix8",
+          "candidate_ids": [
+            382,
+            10056
+          ],
+          "native_ids": [
+            382,
+            10056
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.5460584380189631,
+            "logprob_abs_max": 1.16192626953125,
+            "candidate_top1": 382,
+            "native_top1": 382,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.4754678739798984,
+            "logprob_abs_max": 2.1466846466064453,
+            "candidate_top1": 10056,
+            "native_top1": 10056,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "formula-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.731007915132533,
+            "logprob_abs_max": 2.1251602172851562,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 1.1189474182760184,
+            "logprob_abs_max": 1.868307113647461,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "json-add-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.4409314684106648,
+            "logprob_abs_max": 1.146829605102539,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.28262138250096186,
+            "logprob_abs_max": 0.7238335609436035,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix0",
+          "candidate_ids": [
+            785,
+            1196
+          ],
+          "native_ids": [
+            785,
+            1196
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 1.5144369047564694,
+            "logprob_abs_max": 3.7553863525390625,
+            "candidate_top1": 785,
+            "native_top1": 785,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.6296245792403325,
+            "logprob_abs_max": 1.59375,
+            "candidate_top1": 1196,
+            "native_top1": 1196,
+            "mutual_top1_in_other_top5": true
+          }
+        },
+        {
+          "id": "4k-prefix8",
+          "candidate_ids": [
+            7424,
+            320
+          ],
+          "native_ids": [
+            7424,
+            320
+          ],
+          "prefill": {
+            "passed": false,
+            "logprob_rmse": 0.5292053025888427,
+            "logprob_abs_max": 1.4799413681030273,
+            "candidate_top1": 7424,
+            "native_top1": 7424,
+            "mutual_top1_in_other_top5": true
+          },
+          "decode": {
+            "passed": false,
+            "logprob_rmse": 0.4275672812590991,
+            "logprob_abs_max": 1.1093158721923828,
+            "candidate_top1": 320,
+            "native_top1": 320,
+            "mutual_top1_in_other_top5": true
+          }
+        }
+      ]
+    }
+  }
+}

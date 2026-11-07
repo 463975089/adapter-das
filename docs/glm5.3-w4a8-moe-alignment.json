@@ -1,0 +1,57 @@
+{
+  "scope": "GLM5.3 CT first routed MoE alignment; component evidence is not full model accuracy acceptance",
+  "native_model_gate_intermediate_independently_captured": false,
+  "P23_observer": {
+    "response_pairs_exact_P22": 4,
+    "state_files": 33,
+    "archive_bytes": 435870962,
+    "archive_sha256": "caf0c36584ec9e46140698bb9bde0389176b84b91e94b9bb15638a4a2eba253d",
+    "prefixes": 2,
+    "CP_ranks": 8,
+    "early_norm_pairs_exact_per_prefix": 248,
+    "last_exact_boundary": "layer3 post-attention norm output",
+    "next_residual_exact": true,
+    "first_different_boundary": "layer3 MoE output"
+  },
+  "same_input_router_control": {
+    "fixture_sha256": "00132ad6de47e33dc3baffe46b5def9ac6b1f49dd8b35d7289f528d3c0f0b6de",
+    "all80_cross_image_output_tensors_exact": true,
+    "checkpoint_parameters_exact": true,
+    "native_selected_projection": "BF16 F.linear",
+    "BF16_projection_equals_current_FP32_logits_rounded": true,
+    "changed_expert_sets_tokens": 25,
+    "valid_tokens": 65,
+    "archive_bytes": 5919261,
+    "archive_sha256": "3dcf5c4173292a858abcc248593ee046fa1334f1edf916e5cbbae1091d978d5f"
+  },
+  "formal_dispatch": {
+    "status": "component passed; full model not accepted",
+    "reference_scope": "source-selected native projection and public LightOp, not directly captured native gate IO",
+    "on_case_rank_pairs": 16,
+    "on_logit_weight_ID_output_pairs_exact": 48,
+    "changed_input_graphs_exact": 2,
+    "separate_cold_process_OFF_old_new48_pairs_exact": true,
+    "constructor_and_FP32_priority_guards_passed": 5,
+    "runtime_assets722_exact_after_run": true,
+    "archive_bytes": 6302330,
+    "archive_sha256": "e32e7477e5b31b358a885b823f8046ad69ffb5eaba5e99acd77db88c365d9c7c",
+    "previous_attempts_retained": [
+      "v1 missing standalone TP group context",
+      "v3 BF16 gate alone: Triton routing weights differ up to 5.960464477539063e-08",
+      "v4 shared custom-op registration belonged to base helper, now plugin-specific name",
+      "v5 mixed-policy probe: tiny OFF weights differ from full-service capture; separate old/new OFF controls both show identical standalone outputs",
+      "v6 all GPU/Graph rows exact, other-model guard fixture still had GLM architecture; corrected in v7"
+    ]
+  },
+  "model_acceptance": {
+    "status": "not accepted",
+    "latest_full_cohort": "P24/D14",
+    "prefill_failures": 6,
+    "aligned_decode_failures": 6,
+    "thresholds_unchanged": true,
+    "capture_exit": 0,
+    "comparison_exit": 1,
+    "all_first_two_IDs_match_native": true,
+    "raw_archive_sha256": "22c2e87e02dea06717e2716d6494d0b440c45b33d138bfdc8c78911d8308283c"
+  }
+}

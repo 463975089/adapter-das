@@ -24,7 +24,7 @@ import torch
 
 from .compat import HAS_TRITON, check_cuda_tensor, next_power_of_2
 
-_RMS_IMPL = None  # cached backend choice: "triton" | "aiter" | "torch"
+_RMS_IMPL = None  # cached backend choice: "triton" | "aiter" | "lightop" | "torch"
 _FUSED_ADD_IMPL = None      # cached fused-add tier: "triton" | "lightop" | "torch"
 _LIGHTOP_FUSED_ADD = None   # resolved (fused_add_rms_norm, gemma_fused_add_rmsnorm)
 
@@ -41,7 +41,7 @@ def _resolve_rms_impl():
             from hcu_adapter import hcu_env
 
             impl, _src = hcu_env.resolve("HCU_RMS_NORM_IMPL")
-            if impl in ("triton", "aiter", "torch"):
+            if impl in ("triton", "aiter", "lightop", "torch"):
                 _RMS_IMPL = impl
         except Exception:
             import traceback
@@ -133,6 +133,23 @@ def _aiter_rmsnorm(input, weight, eps):
     return out.view(shape)
 
 
+def _lightop_rmsnorm(input, weight, eps, out):
+    """Use the public BF16 provider while preserving the caller's output buffer."""
+    import lightop
+
+    check_cuda_tensor(input, weight, out)
+    if input.device != weight.device or input.device != out.device:
+        raise ValueError("LightOp RMSNorm tensors must share one device")
+    if not input.numel():
+        return out
+    x = input.contiguous().view(-1, input.shape[-1])
+    y = out.contiguous().view_as(x)
+    lightop.rms_norm(x, weight.contiguous(), eps, out=y)
+    if y.data_ptr() != out.data_ptr():
+        out.copy_(y.view_as(out))
+    return out
+
+
 if HAS_TRITON:
     import triton
     import triton.language as tl
@@ -190,7 +207,6 @@ if HAS_TRITON:
             x = tl.load(x_row + cols, mask=mask, other=0.0).to(tl.float32)
             r = tl.load(res_row + cols, mask=mask, other=0.0).to(tl.float32)
             t = x + r
-            tl.store(res_row + cols, t.to(RES.dtype.element_ty), mask=mask)
             acc += t * t
         var = tl.sum(acc, axis=0) / N
         rstd = 1.0 / tl.sqrt(var + eps)
@@ -198,9 +214,14 @@ if HAS_TRITON:
         for off in range(0, N, BLOCK):
             cols = off + tl.arange(0, BLOCK)
             mask = cols < N
-            t = tl.load(res_row + cols, mask=mask, other=0.0).to(tl.float32)
+            # Keep the FP32 sum for both variance and normalization. Storing
+            # residual in the first pass would round it before this reload.
+            x = tl.load(x_row + cols, mask=mask, other=0.0).to(tl.float32)
+            r = tl.load(res_row + cols, mask=mask, other=0.0).to(tl.float32)
+            t = x + r
             w = tl.load(W + cols, mask=mask, other=0.0).to(tl.float32)
             y = t * rstd * (w + d2f)
+            tl.store(res_row + cols, t.to(RES.dtype.element_ty), mask=mask)
             tl.store(x_row + cols, y.to(X.dtype.element_ty), mask=mask)
 
 
@@ -245,6 +266,12 @@ def _do_rmsnorm(
         impl = "triton"  # vendor backend covers the plain norm only
     if impl == "torch" or not input.is_cuda:
         return _rmsnorm_native(input, weight, eps, gemma, out)
+    if impl == "lightop":
+        # Only the BF16 plain-norm contract has been qualified with this provider.
+        # Other dtypes and Gemma retain the existing Triton implementation.
+        if input.dtype == weight.dtype == out.dtype == torch.bfloat16:
+            return _lightop_rmsnorm(input, weight, eps, out)
+        impl = "triton"
     if impl == "aiter":
         if input.dtype in (torch.bfloat16, torch.float16):
             out.copy_(_aiter_rmsnorm(input, weight, eps))

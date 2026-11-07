@@ -1,0 +1,100 @@
+{
+  "scope": "Bounded actual-input plain RMSNorm component alignment; full six-prefix model validation remains pending",
+  "first_actual_difference": {
+    "case": "arithmetic-prefix0",
+    "layer": 8,
+    "operator": "q_a_layernorm",
+    "tp_cp_rank": 6,
+    "logical_position": 30,
+    "input_and_weight_exact_native": true,
+    "different_bf16_elements": 1,
+    "max_abs": 0.0078125
+  },
+  "route": {
+    "native": "LightOp rms_norm_opt via original RMSNorm.forward_hip",
+    "old_candidate": "sgl_kernel.layernorm.rmsnorm -> adapter Triton",
+    "qualified_candidate": "sgl_kernel.layernorm.rmsnorm -> public lightop.rms_norm for BF16 plain norm",
+    "default": "triton unchanged",
+    "glm_recipe": "HCU_RMS_NORM_IMPL=lightop",
+    "non_bf16_and_gemma": "Existing Triton path; CPU unchanged"
+  },
+  "qualification": {
+    "scope": "Actual32 saved attention8 Q/K norm inputs, public LightOp both original/candidate images, three cold adapter processes; not full-model accuracy acceptance",
+    "passed": true,
+    "actual_inputs": 32,
+    "off_old_new_outputs_exact": 32,
+    "on_adapter_and_both_images_public_exact": 32,
+    "off_old_new_and_on_guards_exact": 6,
+    "guard_names": [
+      "torch.float16",
+      "torch.float32",
+      "float32-weight",
+      "float32-output",
+      "gemma-bf16",
+      "cpu-bf16"
+    ],
+    "changed_input_adapter_graph_replays": 4,
+    "caller_buffer_layout_cases_per_mode": 5,
+    "post_probe_runtime_assets_exact": 211,
+    "quantization_unchanged": true
+  },
+  "image_libraries": {
+    "native": {
+      "flavor": "native",
+      "torch": "2.11.0",
+      "hip": "6.3.26113",
+      "lightop_version": "0.6.0+dtk2604.torch2110.2610211335.ge564f5",
+      "lightop_path": "/usr/local/lib/python3.10/dist-packages/lightop/__init__.py",
+      "public_source": "/usr/local/lib/python3.10/dist-packages/lightop/rmsnorm.py",
+      "public_source_sha256": "3d6a92f5ba968c9ad1dfb7dc36421c5f6a208d29ea552cdd1f0ee9ee41c47472",
+      "device": "BW"
+    },
+    "candidate": {
+      "flavor": "candidate",
+      "torch": "2.11.0",
+      "hip": "7.2.26365",
+      "lightop_version": "0.6.0+dtk2610.torch2110.2611031134.g6aa6bf",
+      "lightop_path": "/usr/local/lib/python3.12/site-packages/lightop/__init__.py",
+      "public_source": "/usr/local/lib/python3.12/site-packages/lightop/rmsnorm.py",
+      "public_source_sha256": "b01547d6af04c9a04fa16d0be49f40d058641a9607e3cea09f919f94a0f4f031",
+      "device": "BW"
+    }
+  },
+  "qualified_source_sha256": {
+    "sgl_kernel/layernorm.py": "31aed150387f7145add8da2b6f933fcec8326149e87b5c01e3fd5d5f43f4116e",
+    "hcu_adapter/hcu_config.py": "eb41f8a2bbce7d624bbddccbd4109f5ea9c169cb30acf0d28ba20383089a3121",
+    "hcu_adapter/hcu_env.py": "4ef8ada2ccd48ac70b5a31c9c29aa8ae70e36e9e5755b1e1c277611342c47ce3"
+  },
+  "raw_component_archive": {
+    "file": "rms-alignment-v2-20261105.tar.gz",
+    "bytes": 1840659,
+    "sha256": "0478661fac281ce1ae03650079ab358eca91d328c2c7225e9b18579121591db8",
+    "local_all_files_verified": true
+  },
+  "raw_actual_inputs": {
+    "candidate_archive": "attention-candidate-v26-20261105.tar.gz",
+    "candidate_sha256": "a6de0b934d69fcdc51a48efb7e6a1acbc0346c83303e5e4812c2b20d57506358",
+    "native_archive": "attention8-native-v9-20261105.tar.gz",
+    "native_sha256": "fe05c060f31d0d46b50225d74cfc265e965accade1e94784aebf8ab944ce4061",
+    "all4_response_pairs_exact_uninstrumented_baselines": true,
+    "original_native3660source_and_library_files_pre_post_exact_all4_nodes": true
+  },
+  "reproduction": {
+    "scripts": [
+      "qualify-attention8-rms-v1.py",
+      "qualify-plain-rms-adapter-v2.py"
+    ],
+    "host": "HCU_ADAPTER_HOST=none",
+    "modes": [
+      "old-off",
+      "new-off",
+      "new-on"
+    ],
+    "note": "Scripts and qualified code are in the component archive; actual-input archives above are required"
+  },
+  "model_acceptance": {
+    "passed": false,
+    "latest_complete_model_run": "P24/D14: all6 prefill and all6 aligned decode fail unchanged thresholds",
+    "required_next": "Frozen qualified source and unchanged full6 numerical contract; component pass is not model acceptance"
+  }
+}

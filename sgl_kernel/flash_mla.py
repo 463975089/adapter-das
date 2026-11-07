@@ -49,7 +49,49 @@ _FLASHMLA_DBG_N = [0]
 # _forward_flashmla_sparse) resolves to the emu without upstream edits.
 from sgl_kernel.flash_mla_sparse import flash_mla_sparse_fwd  # noqa: F401
 
-__all__ = ["flash_mla_with_kvcache", "get_mla_metadata", "flash_mla_sparse_fwd"]
+__all__ = [
+    "flash_mla_with_kvcache", "get_mla_metadata", "flash_mla_sparse_fwd",
+    "hcu_create_flashmla_kv_indices",
+]
+
+
+def hcu_create_flashmla_kv_indices(
+    req_to_token_ptr,
+    req_pool_indices_ptr,
+    page_kernel_lens_ptr,
+    kv_start_idx,
+    kv_indices_ptr,
+    req_to_token_ptr_stride,
+    kv_indices_ptr_stride,
+    PAGED_SIZE=64,
+):
+    """Fill the static-pool page table with SGLang's existing Triton kernel."""
+    if PAGED_SIZE != 64:
+        raise ValueError("hcu_create_flashmla_kv_indices supports page size 64")
+    batch = req_pool_indices_ptr.numel()
+    width = kv_indices_ptr.shape[1]
+    if batch == 0 or width == 0:
+        return
+    from sglang.kernels.ops.kvcache.kv_indices import (
+        create_flashmla_kv_indices_triton,
+        get_num_kv_index_blocks_flashmla,
+    )
+
+    create_flashmla_kv_indices_triton[
+        (batch, get_num_kv_index_blocks_flashmla(width, PAGED_SIZE))
+    ](
+        req_to_token_ptr, req_pool_indices_ptr, page_kernel_lens_ptr,
+        kv_start_idx, kv_indices_ptr, req_to_token_ptr_stride,
+        kv_indices_ptr_stride, PAGED_SIZE,
+    )
+
+
+from hcu_adapter import registry as _registry
+
+_registry.register(
+    "flashmla_kv_indices", "SGLang Triton page-table builder",
+    "sgl_kernel.flash_mla.hcu_create_flashmla_kv_indices", _registry.MECH_SEAM,
+)
 
 _DSV4_V4_BYTES_PER_TOKEN = 584  # KVLayout.V4: 576 data + 8 scale bytes
 

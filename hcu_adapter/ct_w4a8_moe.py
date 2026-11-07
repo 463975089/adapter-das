@@ -1,46 +1,13 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-"""CT W4A8 MoE scheme 路由桥（validation-host-26 dsv41f Channel-INT4-w4a8，2026-10-26）。
+"""Optional compatibility routes for compressed-tensors MoE.
 
-上游事实（v0522 compressed_tensors.py，validation-host-26 实树核对）：
-
-- ``target_scheme_map`` 按**每个 target 字符串**建键
-  （``_quantization_scheme_map_from_config`` 遍历 config_groups 的 targets）。
-  正典 llmcompressor 输出带 ``targets:["Linear"]`` 组 → 有 "Linear" 键；
-  DAS 转换器（DeepSeek-V4.1-Flash-Channel-INT4-w4a8）全部用 regex targets
-  → 键就是 regex 串本身，"Linear" 不存在。
-- ``CompressedTensorsW4AFP8MoE.__init__``（w4a8_fp8_moe.py:87）硬读
-  ``target_scheme_map["Linear"]["weights"]`` 取 num_bits/group_size/symmetric
-  ——这些值与分支选择时已按 regex 匹配到的 ``weight_quant`` 完全相同，读
-  "Linear" 纯属对正典布局的假设 → KeyError，模型构建期死（权重未加载）。
-- 补上 KeyError 仍不足以执行：该 checkpoint 的 channel group_size=-1
-  会使 stock create_weights 的尺度维度为负；stock 标准路径实际使用
-  tensor 级 FP8 激活及固定 group_size=128 的 CUTLASS GEMM，不能等同于
-  checkpoint 声明的 token 级 INT8 激活。参数与内核契约均需另行验证。
-
-修法（governance 判别问句：上游 CUDA 有 W4A8 MoE 行为 → 行为还原归
-adapter；nvfp4 w4a4 capability<10 时上游自己也降级 w4a16"activation
-quantization is ignored"，本桥 w4a16 路由沿用同一模式）：
-
-- ``HCU_W4A8_MOE=w4a16``（默认）：wrap ``CompressedTensorsConfig.__init__``，
-  构造后把 target_scheme_map 中 **int4 权重组**的 ``input_activations``
-  置 None（dense int8/int8-act 组不动）。上游分支链随即自然走
-  ``_is_wNa16_group_channel(w, None)`` 的 ``_is_hip`` 臂 →
-  ``CompressedTensorsWNA16TritonMoE``（ROCm），即 box16 dsv41f-INT4 已
-  验证路径，再由 10.6 channel 改写桥（HCU_WNA16_CHANNEL_MOE）收口
-  block_shape。激活量化被移除 → MoE 激活跑 bf16；这是不同的数值路径，
-  不能据此宣称与原 W4A8 等价或整模型精度更高。
-- ``HCU_W4A8_MOE=heal``：wrap ``get_moe_scheme``，捕获 KeyError('Linear')
-  后**作用域内**临时注入 "Linear" 桶（内容 = 该层 regex 匹配到的
-  scheme_dict，即上游本来就要用的那份），重试原函数，用毕即删——dense
-  int8 组不受污染。保留 stock W4AFP8 scheme 的选择，后续仍需验证
-  channel/group 参数、实际激活量化契约及 HIP 内核；修复构造期 KeyError
-  本身不代表该路径可以执行。
-- ``HCU_W4A8_MOE=0``：全关，还原 stock KeyError。
-- ``HCU_W4A8_MOE=int8``：显式候选，保留激活配置，复用社区 raw INT4
-  加载器，接 BF16 DeepEP low_latency 的原 dtype 整数专家合同；
-  仅支持已验证的对称 channel/token 组和简单 SiLU 配置，未验收整模型精度。
+The default native route preserves the checkpoint's activation quantization.
+It does not supply a missing W4A8 kernel: unsupported schemes fail upstream.
+Legacy W4A16 conversion is available only when explicitly requested and must
+not be used for W4A8 validation. Dense INT8 groups are never converted.
+The existing explicit int8 candidate remains available with its own contracts.
 """
 
 import logging
@@ -171,8 +138,13 @@ def install():
     from hcu_adapter import hcu_env
 
     route, _src = hcu_env.resolve("HCU_W4A8_MOE")
-    if route in ("", "0", "None", "refused") or _installed:
+    if route in ("native", "", "0", "None", "refused") or _installed:
         return
+
+    if route not in ("w4a16", "heal", "int8"):
+        raise ValueError(
+            f"Unsupported HCU_W4A8_MOE={route!r}; expected native, 0, w4a16, heal or int8"
+        )
 
     from sglang.srt.layers.quantization.compressed_tensors import (
         compressed_tensors as _ct,
@@ -191,10 +163,6 @@ def install():
             "input_activations retained; model accuracy not accepted"
         )
     else:
-        if route != "w4a16":
-            LOG.warning(
-                "HCU adapter: HCU_W4A8_MOE=%r unrecognized, using w4a16", route
-            )
         cls.__init__ = _make_patched_init(cls.__init__)
         detail = (
             "__init__ drops int4-group input_activations -> WNA16TritonMoE"

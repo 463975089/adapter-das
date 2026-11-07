@@ -106,6 +106,12 @@ graph 错误；最终输出阈值保持原样，routing 在 down-GEMM 存 BF16 �
 显式 `w8a8_int8` 和自动 CT 的 Linear 都需绑定既有 `int8_scaled_mm`；
 只修 CT 模块不能覆盖前者。`int8_linear` 在验证两个原方法的全局符号契约后
 补 module global，保留方法和已有别名，不新增 GEMM 或改社区源码。
+当前 gfx936/DTK26.10 的 W4A8 连续 GEMM COV5 兼容模块必须锁定 vendor
+版本、wrapper 与实际编译源字节；不能把可执行文件包含目标架构当作能启动的证据。
+`deepgemm_cov5` 通过私有 op facade 保留公共函数与缓存别名，显式 WASP1006
+拒绝，其他算子继续委托原包；移除模块路径或使用已有快关跳过接入。
+构建器只生成隔离编译输入，不写回 vendor/框架源码；数值、变输入 graph 与
+完整 P/D 分开留证，见 `docs/glm5.3-w4a8-development.md`。
 退役自研 all-reduce 后，vendor 拒绝门不得再引用其旧安装状态；
 `HCU_DISABLE_OPS=aiter_ar` 必须在新解释器真实 bootstrap 中拒绝并回退 NCCL。
 CPU 参考工具的单测也必须在干净 HOSTnone/隐藏 GPU 的进程执行；
