@@ -244,8 +244,9 @@ def test_platform_plugin_gates_once_and_returns_the_lazy_class_path(monkeypatch)
     assert calls == ["version"]
 
 
+@pytest.mark.parametrize("arch", ("gfx936", "gfx938"))
 def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
-    monkeypatch,
+    monkeypatch, arch,
 ):
     calls = []
     report = ExtensionReport(
@@ -258,7 +259,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
     monkeypatch.setattr(
         bridge,
         "detect_hcu",
-        lambda: bridge.HcuDetection(True, "gfx938", ""),
+        lambda: bridge.HcuDetection(True, arch, ""),
     )
     monkeypatch.setattr(
         bridge,
@@ -276,6 +277,10 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         lambda: calls.append("dtk"),
     )
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: calls.append("runtime-abi"))
+    # Provider registration has its own contract tests; do not enter a real
+    # platform import from this guard/extension ordering double on either arch.
+    from hcu_adapter.bridges import vllm_fp8
+    monkeypatch.setattr(vllm_fp8, "install", lambda: calls.append("fp8"))
     monkeypatch.setattr(
         bridge,
         "_installed_adapter_version",
@@ -299,6 +304,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "platform",
         "dtk",
         "runtime-abi",
+        "fp8",
         "adapter-version",
         ("extensions", "0.1.0", "0.32.0+rocm723"),
     ]
