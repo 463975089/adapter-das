@@ -58,11 +58,12 @@ def test_deepep_ll_routes_only_w4a16(monkeypatch):
     DeepEPMoE = _install_fake_ep_moe(monkeypatch)
     calls = []
 
-    def fake_kernel(*args):
+    def fake_kernel(*args, **kwargs):
         calls.append(args)
+        assert kwargs == {"swiglu_limit": None}
         return "adapter-w4a16"
 
-    monkeypatch.setattr(w4a16_moe, "deepgemm_w4a16_deepep_ll", fake_kernel)
+    monkeypatch.setattr(w4a16_moe, "w4a16_deepep_ll", fake_kernel)
     w4a16_moe.install_deepep_w4a16()
 
     layer = _w4a16_layer()
@@ -131,6 +132,60 @@ def test_deepep_w4a16_shape_contract():
             torch.ones((2, 2, 1), dtype=torch.bfloat16),
             torch.ones(2, dtype=torch.int32),
         )
+
+
+def test_deepep_ct_packed_weight_names():
+    # Community 0.5.22 CT WNA16TritonMoE preserves these names after converting
+    # the underlying storage from int32 to uint8.
+    layer = _w4a16_layer()
+    layer.w13_weight_packed = layer.w13_weight
+    layer.w2_weight_packed = layer.w2_weight
+    del layer.w13_weight
+    del layer.w2_weight
+    assert w4a16_moe._is_deepep_w4a16_layer(layer)
+
+
+def test_prepare_channel_scales(monkeypatch):
+    vendor = ModuleType("deepgemm")
+    vendor.w4a16_marlin_weight = lambda weights: weights
+    monkeypatch.setitem(sys.modules, "deepgemm", vendor)
+    weights = torch.zeros((2, 16, 256), dtype=torch.uint8)
+    scales = torch.arange(32).reshape(2, 16, 1).to(torch.bfloat16)
+    _, actual = w4a16_moe._prepare(weights, scales)
+    assert actual.shape == (2, 16, 16)
+    assert torch.equal(actual, scales.expand(2, 16, 16))
+
+
+@pytest.mark.parametrize("name", ["w13_weight_zero_point", "w2_weight_zero_point"])
+def test_deepep_does_not_select_asymmetric_weights(name):
+    layer = _w4a16_layer()
+    setattr(layer, name, torch.ones(1))
+    assert not w4a16_moe._is_deepep_w4a16_layer(layer)
+
+
+def test_deepep_swiglu_clamp(monkeypatch):
+    gate_up = torch.tensor([[[20.0, -20.0, -30.0, 30.0]]])
+    seen = []
+    monkeypatch.setattr(w4a16_moe, "_prepare", lambda w, s: (w, s))
+
+    def gemm(a, *args):
+        seen.append(a.clone())
+        return gate_up if len(seen) == 1 else a
+
+    monkeypatch.setattr(w4a16_moe, "_grouped_gemm", gemm)
+    w4a16_moe.deepgemm_w4a16_deepep_ll(
+        torch.ones(1, 1, 2),
+        torch.empty(1, 4, 1, dtype=torch.uint8),
+        torch.empty(1, 2, 1, dtype=torch.uint8),
+        torch.ones(1, 4, 1),
+        torch.ones(1, 2, 1),
+        torch.ones(1, dtype=torch.int32),
+        swiglu_limit=10.0,
+    )
+    expected = torch.nn.functional.silu(
+        torch.tensor([[[10.0, -20.0]]])
+    ) * torch.tensor([[[-10.0, 10.0]]])
+    torch.testing.assert_close(seen[1], expected)
 
 
 def test_deepep_expert_major_pipeline_masks_empty_experts(monkeypatch):

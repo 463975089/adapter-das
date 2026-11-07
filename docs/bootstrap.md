@@ -7,8 +7,8 @@
 >
 > 本文回答：**拿到一个 DTK/sglang 基线镜像的新容器，要让 adapter + 官方
 > sglang v0.5.21 跑起来，需要手工做哪些事、为什么、顺序如何。**
-> 适用镜像：`10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk2604x-py3.10-*` 系
-> （bw7/nmz26/nmz18/bw6 全部现役镜像）。目标耗时：照做 ≤10 分钟。
+> 适用镜像：`192.0.2.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk2604x-py3.10-*` 系
+> （bw7/validation-host-26/validation-host-18/bw6 全部现役镜像）。目标耗时：照做 ≤10 分钟。
 > 三类必做事项：**①依赖套件按版本重打 ②tvm-ffi 首次编译手工预热
 > ③adapter tree 整体同步 + PYTHONPATH**。
 >
@@ -20,7 +20,7 @@
 ## 1. adapter tree 同步：git pull 优先
 
 仓库为团队内网私仓（`<团队仓库地址>`，凭据走团队流程），
-有凭据环境直拉；nmz18 等无凭据节点走本地 bundle + scp 中转。**git 为主、tar/bundle 仅作网络受限时的应急**。
+有凭据环境直拉；validation-host-18 等无凭据节点走本地 bundle + scp 中转。**git 为主、tar/bundle 仅作网络受限时的应急**。
 
 ```bash
 # 首次（容器内，免凭据）：
@@ -86,7 +86,7 @@ pip install --no-cache-dir --force-reinstall fastapi==0.115.12
 
 ```bash
 # 现役镜像（轮子最新；选镜像先 curl tags/list 找日期最新 tag）：
-#   10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048
+#   192.0.2.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048
 # 重建三步：备份 /root 自有状态到挂载区 → stop+rm → run（挂载=原 5 项+公共盘只读）
 docker exec <旧容器> bash -lc 'pip freeze > /root/g53/pip_freeze_$(date +%m%d).txt && cd /root && tar czf /root/g53/container_root_backup.tgz --exclude=./hcu_t2 --exclude=./g53 --exclude=./.cache --exclude=./.triton --exclude=./.local .'
 docker stop g53-tp8 && docker rm g53-tp8
@@ -98,7 +98,7 @@ docker run -d --name g53-tp8 --network host --ipc host --privileged \
   -v /opt/hyhal:/opt/hyhal:ro \
   -v $HOME/sglang-v0521:/sglang-v0521:rw \
   -v /public/opandas/DL_DATA/llm-models:/public/opandas/DL_DATA/llm-models:ro \
-  10.16.1.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048 \
+  192.0.2.152:5000/jenkins/model_test_env/sglang:0.5.18-ubuntu22.04-dtk26041-py3.10-sf_b075-20261018-0048 \
   sleep infinity
 ```
 
@@ -134,10 +134,10 @@ env -u PYTHONPATH python3 $(python3 -c \
 Traceback 输出（sitecustomize 静默完成）。
 
 **捷径（2026-10-18 实操）**：从任一健康容器直拷现成 .so（torch 版本一致即兼容，
-nmz26 g53-tp8 ← nmz18 nsa-tp8，md5 b1fb7b35 校验一致）：
+validation-host-26 g53-tp8 ← validation-host-18 nsa-tp8，md5 b1fb7b35 校验一致）：
 
 ```bash
-# nmz18 侧 b64 出、nmz26 侧解入（或宿主 docker cp 中转），落位后 chmod +x
+# validation-host-18 侧 b64 出、validation-host-26 侧解入（或宿主 docker cp 中转），落位后 chmod +x
 /root/.cache/tvm-ffi/libtorch_c_dlpack_addon_torch211-rocm.so
 ```
 
@@ -147,7 +147,7 @@ nmz26 g53-tp8 ← nmz18 nsa-tp8，md5 b1fb7b35 校验一致）：
 预热自动化——sitecustomize 前部（先于 dsa_topk_v2 等重桥）探温
 `~/.cache/tvm-ffi/**.so`，冷则 flock 排他 + 剥 PYTHONPATH 亲跑 tvm_ffi 自带
 构建脚本；加载器仍要自派子进程时窗口内 Popen 包装注入干净 env 物理断自递归
-（R-18：桥 eager import 链使每个 python3 重进 tvm_ffi，nmz26 dsv41f 冷容器
+（R-18：桥 eager import 链使每个 python3 重进 tvm_ffi，validation-host-26 dsv41f 冷容器
 2026-10-26 复现 9+ 进程堆积）。`HCU_TVMFFI_WARMUP=0` 可关。
 **⚠ 上文「或者：launch 脚本第一行加 `python3 -c "import tvm_ffi"`（带
 PYTHONPATH）」的等效变体已失效**——10-24 起 dsa_topk_v2 eager import 使带
@@ -157,7 +157,7 @@ PYTHONPATH 的裸 import 在 sitecustomize 阶段即触发自递归；手工预�
 ## 4. 运行时库路径补丁
 
 ```bash
-# nmz26 容器（20261012 镜像）：libomp 不在默认路径
+# validation-host-26 容器（20261012 镜像）：libomp 不在默认路径
 export LD_LIBRARY_PATH=/opt/dtk/dcc/lib:$LD_LIBRARY_PATH
 ```
 
@@ -198,7 +198,7 @@ export LD_PRELOAD=/opt/dtk/cuda/cuda-12/lib64/libcudart.so
 长期修复为 `deep_gemm_dtk.py` 改读 DTKROOT。
 
 **容器三件套铁律（2026-10-20 锚定轮改写，替代已废弃的"镜像↔宿主配
-对"旧判）**：镜像本身跨机通用，旧"sf_b075 × nmz18 = HIP init 死锁"是
+对"旧判）**：镜像本身跨机通用，旧"sf_b075 × validation-host-18 = HIP init 死锁"是
 误诊——真凶双因素：①容器缺宿主 `/opt/hyhal` 挂载（`--privileged` 起，
 HAL 从宿主来）；②冷 `~/.cache/tvm-ffi` 触发 tvm_ffi 选件构建器自锁
 （fork 子进程再 import torch/HSA → 父子互 poll pipe 永挂，指纹=poll+
@@ -212,7 +212,7 @@ renderD fd 全开+hsakmt shm deleted——与"镜像错配死锁"完全同构）
 ## 4c. aiter JIT cache：机制与收割（2026-10-20 实测定稿）
 
 **结论先行：新环境无需为 aiter 做任何预 warm**——DTK vendor wheel 把全部
-算子预编译进包（`aiter/jit/module_<op>.so`，nmz26 实测 51 颗/1.1G；
+算子预编译进包（`aiter/jit/module_<op>.so`，validation-host-26 实测 51 颗/1.1G；
 出厂镜像裸 `import aiter` 仅 3.5s、运行时编译量为零、`jit/build/` 清洁）。
 编译只会发生在 wheel 未预编译的新算子/模板上，产物落
 `aiter/jit/build/`（`get_user_jit_dir()` 三级：`AITER_JIT_DIR` env →
@@ -246,7 +246,7 @@ tar xzf aiter_jit_harvest.tgz -C $J
 斧（keys：cache 按 ISA+树 hash 键控，同族卡+同树修订一份种子全网通用）：
 
 ```bash
-# 1. 热机收割（nmz26 热容器内，~20MB）：
+# 1. 热机收割（validation-host-26 热容器内，~20MB）：
 bash ci/cache_export.sh /tmp/hcu_cache_seed.tgz
 # 2a. 冷容器导入（tar 通道）：
 bash ci/cache_import.sh /tmp/hcu_cache_seed.tgz
@@ -269,7 +269,7 @@ HCU_L1_TIMEOUT_SCALE=3 bash ci/l1_gpu_gate.sh <gpu> --up-tree /sglang-v0522
 |---|---|---|
 | bw7 0.5.18-dtk26041-20261010 | **镜像自带 DeepGEMM JIT Pre-Compile 预热会话**（每形状 5.7-7.4GB 挤 KV 预算） | EP 场景 `SGLANG_JIT_DEEPGEMM_PRECOMPILE=false` |
 | bw7 0.5.18-dtk26041-20261010 | 显存配置器带 KV 下限校验（不挤爆，直接 ValueError 报 minimum viable） | 按报错值上调 `--mem-fraction-static` 即可，是友好的 |
-| nmz26 0.5.18-dtk26041-20261012 | 无 DeepGEMM 预热会话（首个形状仍 JIT，慢一次） | 无需处理 |
+| validation-host-26 0.5.18-dtk26041-20261012 | 无 DeepGEMM 预热会话（首个形状仍 JIT，慢一次） | 无需处理 |
 | **sf_b075-20261018-0048**（现役） | **tilelang 0.1.15 回归**：mhc tilelang 融合内核（mhc_pre_big_fuse_with_norm）`ThreadSync("shared.dyn")` pass 硬错 not-warp-uniform（0.1.12 同条件仅 Warning hoisting）；aiter/sgl-kernel/torch 轮子更新均健康 | **钉 tilelang 0.1.12**（保融合路径，勿用 SGLANG_OPT_USE_TILELANG_MHC_*=0 回退 torch 链——性能倒退）：`tar xzf /root/g53/vendor_tilelang_0112.tgz -C /usr/local/lib/python3.10/dist-packages/`（先删 0.1.15 的 tilelang/ 与 dist-info）；恢复后 `import tilelang` 应报 0.1.12+dtk2604.torch2110.2610100923 |
 | **bw7/bw47（gfx936，BW1000 系）× 0.5.18-dtk26041-py3.10-20261016-2048** | ①镜像内 SMI 库路径缺失（`librocm_smi64.so.2` 只在 `/opt/dtk/.hyhal/rocm_smi/lib`）；②torch 真初始化需**宿主 `/opt/hyhal` 挂载**（漏挂=NVML 枚举 8 卡但 `torch.zeros(device='cuda')` 必挂，枚举走 NVML 提交走 HSA 的"半配对"假象）；③**HSA 栈楔死敏感**：持续 GPU churn（全套 kernels）可在套件中段楔死（poll 等 renderD + `hsakmt_shared_mem (deleted)`），timeout SIGTERM 半途杀 HSA 进程必毒化后续 python；④JIT 段窗需放宽（import 面 ~5-10× nmz，l0 60s/cpu 300s 必超） | ①`export LD_LIBRARY_PATH=/opt/dtk/.hyhal/rocm_smi/lib:...`；②docker run 必带 `-v /opt/hyhal:/opt/hyhal:ro`（win 者配 `LD_LIBRARY_PATH=/opt/hyhal/lib:...` 前插）；③楔死后 `rm -f /dev/shm/hsa* /dev/shm/hsakmt*` 即愈（不省 GPU 复位）；跑测纪律=严格串行+诊断期绝不并行 python；④段窗 ×3（240/900/2700/3600/3600，bw47 实测 import 收集 241s、开机恒定 34s/进程） |
 | 全系 | rust TreeCore 无预编译扩展、cargo 半残编不了 | 恒带 `SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND=python`（cookbook §0） |

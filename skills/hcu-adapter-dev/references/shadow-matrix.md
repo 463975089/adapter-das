@@ -71,7 +71,7 @@ triton，emu/triton 暴露 vendor bug。晋级证据门与登记要求见
 `hcu_adapter.yaml` 的 ops 键（见 docs/config.md 与 BACKEND_CATALOG），
 `auto` = 探测+压测结论决定；新算子接入时同步登记 catalog。
 
-## lightop 接入盘点（DTK 0.6.0，nmz26 dtk26041 实测 export 面与 aiter 交集）
+## lightop 接入盘点（DTK 0.6.0，validation-host-26 dtk26041 实测 export 面与 aiter 交集）
 
 gfx938 有 fp8（gfx936 只有 int8）。**与 aiter 同用法的交集算子**（同一语义
 两边都有实现 → 同一份契约测试跑双 backend，正是 73-297 要的"默认打开、

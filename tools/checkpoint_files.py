@@ -26,6 +26,10 @@ def _files(model):
     model = Path(model)
     files = {p.relative_to(model).as_posix(): p for pattern in _ASSETS
              for p in model.glob(pattern)}
+    # trust_remote_code can load checkpoint-local configuration, tokenizer or
+    # model implementations, including their package-relative helper imports.
+    # Bind these bytes without importing or executing any checkpoint code.
+    files.update({p.relative_to(model).as_posix(): p for p in model.rglob("*.py")})
     weights = {p.relative_to(model).as_posix(): p for p in model.glob("*.safetensors")}
     index = model / "model.safetensors.index.json"
     if index.is_file():

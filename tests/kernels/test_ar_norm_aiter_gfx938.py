@@ -15,7 +15,7 @@ Two layers:
 
 Skips below 2 visible GPUs: the L1 kernels segment runs single-GPU, the
 full verdict needs a multi-GPU window (manual 8-rank probe evidence:
-nmz26 2026-10-19, 1ulp/0ulp, 1.38-2.11x, replay exact).
+validation-host-26 2026-10-19, 1ulp/0ulp, 1.38-2.11x, replay exact).
 
 Run (container): HIP_VISIBLE_DEVICES=0,1,2,3 \\
   PYTHONPATH=/root/hcu_t2:/sglang-v0521/python \\

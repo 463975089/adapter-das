@@ -4,6 +4,16 @@
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
+## cuda_graph
+
+HIP driver guard for breakable prefill graph capture
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| prefill-bcg-driver-truth | candidate Breakable prefill uses the upstream  |
+
+路由变量：（auto）
+
 ## vllm_sparse_indexer
 
 vLLM 0.33 C4 sparse indexer through public OOT and official helpers
@@ -283,6 +293,16 @@ W4A16 fused MoE experts (moe_wna16 AWQ/GPTQ-int4 line)
 | deepgemm | candidate R-05 bridge 2026-10-19: DTK deepgemm |
 
 路由变量：`HCU_W4A16_MOE_IMPL`
+
+## ct_channel_w4a8_components
+
+Channel INT4 / token INT8 components and explicit BF16 DeepEP LL route candidate; model acceptance pending
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate w4a8_int8_triton: masked absmax/127. |
+
+路由变量：（auto）
 
 ## int8_linear_gemm
 

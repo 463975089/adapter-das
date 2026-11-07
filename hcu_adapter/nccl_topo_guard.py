@@ -4,7 +4,7 @@
 """NCCL_TOPO_FILE card-count mismatch guard (box16 4-proc fatality, 2026-10-25).
 
 Team images preset NCCL_TOPO_FILE to the box's full-8-card topology XML
-(nmz26 sample: /usr/local/built-in-508-topo-input-tj-default.xml, GPUs
+(validation-host-26 sample: /usr/local/built-in-508-topo-input-tj-default.xml, GPUs
 encoded as ``<gpu dev="N" ...>`` nodes). Running a smaller visible set
 (``HIP_VISIBLE_DEVICES=0-3`` for a 4-proc/4-card group) makes NCCL walk
 XGMI links toward GPU ids beyond the visible set — fatal at the FIRST

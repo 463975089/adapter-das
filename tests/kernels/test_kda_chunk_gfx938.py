@@ -5,7 +5,7 @@
 
 FAILING GATE (kept red until the kernel is fixed — do not skip).
 
-Status as of 2026-10-15, nmz26 gfx938 / DTK 26.04, sglang v0.5.21:
+Status as of 2026-10-15, validation-host-26 gfx938 / DTK 26.04, sglang v0.5.21:
 
 - `kda_gate_chunk_cumsum` (stage 1): PASS — chunk-local cumsum matches a
   python reference to 1e-6.

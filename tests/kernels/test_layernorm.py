@@ -77,6 +77,86 @@ def _reset_fused_add_cache(ln):
     ln._LIGHTOP_FUSED_ADD = None
 
 
+def _fused_add_reference(x, residual, weight, eps, gemma):
+    """Independent CPU arithmetic with the fused kernel's storage boundary."""
+    total = x.cpu().double() + residual.cpu().double()
+    stored = total.to(residual.dtype)
+    multiplier = weight.cpu().double() + (1.0 if gemma else 0.0)
+    normalized = (
+        stored.double()
+        / (total.square().mean(-1, keepdim=True) + eps).sqrt()
+        * multiplier
+    )
+    return normalized.to(x.dtype), stored
+
+
+@pytest.mark.parametrize("gemma", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_fused_add_native_preserves_unrounded_variance(gemma, dtype):
+    import sgl_kernel.layernorm as ln
+
+    # The exact sum lies between adjacent activation values. Computing the
+    # variance after storing the sum would incorrectly normalize it to one.
+    increment = torch.finfo(dtype).eps
+    x = torch.ones(3, 128, dtype=dtype)
+    residual = torch.full_like(x, 1.0 + increment)
+    weight = torch.ones(128, dtype=dtype)
+    expected, expected_residual = _fused_add_reference(
+        x, residual, weight, 1e-6, gemma
+    )
+    assert not torch.equal(
+        expected, torch.full_like(expected, 2.0 if gemma else 1.0)
+    )
+    ln._fused_add_rmsnorm_native(x, residual, weight, 1e-6, gemma)
+    torch.testing.assert_close(residual, expected_residual, rtol=0, atol=0)
+    torch.testing.assert_close(x, expected, rtol=0, atol=0)
+
+
+@requires_gpu
+@pytest.mark.parametrize("backend", ["torch", "triton"])
+@pytest.mark.parametrize("gemma", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_fused_add_variance_fresh_input_graph(backend, gemma, dtype, monkeypatch):
+    import sgl_kernel.layernorm as ln
+
+    monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", backend)
+    monkeypatch.setattr(ln, "_FUSED_ADD_IMPL", None)
+    monkeypatch.setattr(ln, "_LIGHTOP_FUSED_ADD", None)
+    fn = ln.gemma_fused_add_rmsnorm if gemma else ln.fused_add_rmsnorm
+    x = torch.ones(3, 128, device="cuda", dtype=dtype)
+    residual = torch.ones_like(x)
+    weight = torch.ones(128, device="cuda", dtype=dtype)
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        fn(x, residual, weight)
+    torch.cuda.current_stream().wait_stream(stream)
+    assert ln._FUSED_ADD_IMPL == backend
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        fn(x, residual, weight)
+    for wave in range(3):
+        x0 = torch.full((3, 128), 1.0 + wave, dtype=dtype)
+        r0 = torch.full_like(x0, 1.0 + torch.finfo(dtype).eps)
+        w0 = torch.full((128,), 1.0 + 0.25 * wave, dtype=dtype)
+        expected, expected_residual = _fused_add_reference(
+            x0, r0, w0, 1e-6, gemma
+        )
+        for replay in (False, True):
+            x.copy_(x0)
+            residual.copy_(r0)
+            weight.copy_(w0)
+            if replay:
+                graph.replay()
+            else:
+                fn(x, residual, weight)
+            torch.testing.assert_close(
+                residual.cpu(), expected_residual, rtol=0, atol=0
+            )
+            torch.testing.assert_close(x.cpu(), expected, rtol=0, atol=0)
+            torch.testing.assert_close(weight.cpu(), w0, rtol=0, atol=0)
+
+
 def test_fused_add_backend_default_is_triton(monkeypatch):
     """auto (=default) must stay on the triton path — the lightop vendor
     tier is opt-in until it passes the contract + graph-replay matrix."""

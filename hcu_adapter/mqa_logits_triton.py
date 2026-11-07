@@ -3,7 +3,7 @@
 
 """Self-written triton paged-MQA logits (R-02 homegrown tier).
 
-Pool layout (2026-10-18 R-02 audit, final — writer census, nmz26 GPU4):
+Pool layout (2026-10-18 R-02 audit, final — writer census, validation-host-26 GPU4):
 GLM-5.3 runs IndexerKPool (kpool=4), whose store flow NEVER calls the
 base Indexer's `_store_index_k_cache` — so fused_store (row-major) never
 fires. The pool is written by the kpool writer family
@@ -224,7 +224,7 @@ if tl is not None:
         # the gather already deinterleaved), each row reads [ks, ke) and is
         # -inf outside, mirroring mqa_logits_emu._ragged_fp8_mqa_logits
         # exactly. The emu is ~58 aten kernels per call (fingerprinted
-        # 2026-10-24 nmz18: 38 manual_unroll + 31 vectorized + 6 Cijk bmm +
+        # 2026-10-24 validation-host-18: 38 manual_unroll + 31 vectorized + 6 Cijk bmm +
         # 6 reduce + arange) x 44 C4 layers/step — the biggest single
         # elementwise family in the wave6 decode trace.
         i = tl.program_id(0)

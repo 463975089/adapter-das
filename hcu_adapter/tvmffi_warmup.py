@@ -1,14 +1,14 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-"""tvm-ffi torch dlpack 首编自递归 breaker（R-18 自动化；nmz26 2026-10-26）。
+"""tvm-ffi torch dlpack 首编自递归 breaker（R-18 自动化；validation-host-26 2026-10-26）。
 
 tvm_ffi 首次 import 时若缓存缺失会派一个 python 构建子进程
 （``_optional_torch_c_dlpack.load_torch_c_dlpack_extension`` →
 ``subprocess.run``）。子进程继承 PYTHONPATH → 重跑本 adapter 的
 sitecustomize → 桥的 eager import 链（dsa_topk_v2 的 _SCORING_MOD 一路
 拖进 xgrammar → tvm_ffi）→ 缓存仍缺 → 再派构建子进程……形成父子自递归：
-bootstrap.md §3 记录的 122 进程/50 分钟案；nmz26 dsv41f 冷容器 2026-10-26
+bootstrap.md §3 记录的 122 进程/50 分钟案；validation-host-26 dsv41f 冷容器 2026-10-26
 复现（9+ python3 堆积，签名 = 每 ~30s 孵一个新进程、各烧 ~30s import 后
 阻塞在 select 等自己的子进程）。
 

@@ -114,7 +114,7 @@ JPROG="/tmp/hcu_jit_progress.$$.log"; export HCU_JIT_PROGRESS_LOG="$JPROG"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 # some gates exercise upstream classes (rotary etc.) -- mount the sglang
 # source the container actually serves from, when present. Both known
-# locations: nmz26 serves from /sglang-v0521; box16 clones under
+# locations: validation-host-26 serves from /sglang-v0521; box16 clones under
 # /root/sglang-v0521-src. Without this, tests/kernels imports (e.g.
 # kpool_fp8_index) resolve sglang from pip dist-packages, which lacks the
 # dsa submodule -> collection error (2026-10-18 rerun2 forensics).

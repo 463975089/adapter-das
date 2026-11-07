@@ -14,7 +14,7 @@ dual-stream branch is capture-only by construction.
 The gate must test the true device fact (``torch.version.hip``): the
 platform_seam (governance §0.5) flips sglang's ``is_hip()``/``_is_hip`` to
 False in the server process, so an ``_is_hip``-based gate never fires.
-Located: DSV4-Flash nmz16 2026-10-21 (fingerprint bisect: layer-0 post-attn
+Located: DSV4-Flash validation-host-16 2026-10-21 (fingerprint bisect: layer-0 post-attn
 boundary all bit-exact; MoE in-place write-back showed the corruption;
 moepath markers proved the captured path; full account in docs/models.md).
 

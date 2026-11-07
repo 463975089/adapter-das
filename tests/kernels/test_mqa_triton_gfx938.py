@@ -3,7 +3,7 @@
 
 """R-02 parity gate: homegrown triton paged-MQA logits + the emu layout fix.
 
-Pool layout census (2026-10-18, nmz26 GPU4): GLM-5.3 (IndexerKPool,
+Pool layout census (2026-10-18, validation-host-26 GPU4): GLM-5.3 (IndexerKPool,
 kpool=4) writes its index-K pool through the kpool writer family and
 SetKAndS under the forced preshuffle gate — every page = k in the 16-tile
 INTERLEAVE order + PS fp32 scales at the tail. The prefill gather reads

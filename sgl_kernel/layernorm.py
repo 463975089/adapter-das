@@ -55,10 +55,10 @@ def _resolve_fused_add_impl():
 
     lightop 0.6.0 ships in-place fused_add_rms_norm(x, residual, weight,
     variance_epsilon, limit=-1.0) plus the gemma_fused_add_rmsnorm variant —
-    fp32 residual sum, rounding only the final output and stored residual:
-    the same numerics contract as the triton kernel below. auto = triton;
-    lightop is opt-in until it passes the contract + graph-replay matrix
-    (same policy as HCU_SILU_MUL_IMPL)."""
+    Vendor numerics require their own parity checks: the triton path below
+    uses the unrounded fp32 sum for variance and the stored residual for the
+    numerator. auto = triton; lightop is opt-in until it passes the contract
+    + graph-replay matrix (same policy as HCU_SILU_MUL_IMPL)."""
     global _FUSED_ADD_IMPL, _LIGHTOP_FUSED_ADD
     if _FUSED_ADD_IMPL is None:
         _FUSED_ADD_IMPL = "triton"
@@ -218,9 +218,12 @@ def _rmsnorm_native(
 
 
 def _fused_add_rmsnorm_native(input, residual, weight, eps: float, gemma: bool):
-    residual.add_(input)
+    # Match the two-pass fused kernel: its variance consumes the fp32 sum,
+    # while its numerator reloads the residual after activation-dtype storage.
+    total = input.float() + residual.float()
+    residual.copy_(total)
     x = residual.float()
-    scale = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps)
+    scale = x * torch.rsqrt(total.pow(2).mean(-1, keepdim=True) + eps)
     w = weight.float() + (1.0 if gemma else 0.0)
     input.copy_((scale * w).to(input.dtype))
 

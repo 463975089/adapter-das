@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-# vendor test battery, run inside container at /adapter (nmz26, gfx938)
+# vendor test battery, run inside container at /adapter (validation-host-26, gfx938)
 set -o pipefail
 export PYTHONPATH=/adapter
 export TVM_FFI_DISABLE_TORCH_C_DLPACK=1

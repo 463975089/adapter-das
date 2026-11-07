@@ -15,10 +15,10 @@ HCU_DEEPGEMM_BRIDGE) ships a native ``paged_mqa_logits``:
 which is signature-isomorphic to our emu entry (q/kv/weights/lens/bt/
 max_len; page size 64 slots — see the recovered layout contract below).
 ``aiter.ops.paged_mqa_logits`` does NOT exist in the on-box aiter wheel
-(probed 2026-10-18, nmz26 dtk26041) — that tier is retired.
+(probed 2026-10-18, validation-host-26 dtk26041) — that tier is retired.
 
 LAYOUT CONTRACT RECOVERED + WHEEL BUG CONVICTED (probe campaign
-2026-10-18, nmz26 GPU4, deterministic across repeats):
+2026-10-18, validation-host-26 GPU4, deterministic across repeats):
 
 * Layout: fused_kv_cache (P,64,1,132) uint8, page = 8448B with k stored
   ROW-MAJOR (slot s -> bytes [s*128, s*128+128)) followed by 64 fp32

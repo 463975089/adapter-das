@@ -42,7 +42,7 @@ This bridge has four pieces, all behind an explicit opt-in knob:
 4. Optional instrumentation (HCU_PREFILL_CP_DEBUG=1): checksum-logging
    wrappers on the zigzag strategy stages + fa3 emu calls.
 
-Launch recipe (validated on nmz26 gfx938, fa3 emu stack):
+Launch recipe (validated on validation-host-26 gfx938, fa3 emu stack):
     --tp-size 2 --attn-cp-size 2 --enable-prefill-cp --cp-strategy zigzag
     --attention-backend fa3
 

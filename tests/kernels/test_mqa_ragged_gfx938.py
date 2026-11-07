@@ -6,7 +6,7 @@
 The C4 nonpaged plan (dsv4/indexer.py:_nonpaged_mqa_logits ->
 deep_gemm.fp8_mqa_logits) hits the ragged entry 44x per decode step on
 DSV4.1F; the torch emu is ~58 aten kernels per call (fingerprinted
-2026-10-24 nmz18: 38 manual_unroll + 31 vectorized + 6 Cijk bmm + 6 reduce
+2026-10-24 validation-host-18: 38 manual_unroll + 31 vectorized + 6 Cijk bmm + 6 reduce
 + arange) — the dominant elementwise family in the wave6 decode trace.
 The triton sibling (mqa_logits_triton.triton_ragged_mqa_logits) must match the
 emu golden exactly in window/-inf semantics and tightly in values, and

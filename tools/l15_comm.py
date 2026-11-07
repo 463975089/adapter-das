@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from pathlib import Path, PurePosixPath
 import subprocess
@@ -21,7 +22,8 @@ from typing import Any, Mapping, Sequence
 
 
 SCHEMA_VERSION = 1
-KINDS = {"pytest", "torchrun-script"}
+KINDS = {"pytest", "torchrun-script", "ct-int8-deepep"}
+CT_PROBE = "tools/ct_w4a8_deepep_probe.py"
 CLASSIFICATIONS = {
     "candidate-observe",
     "core-green",
@@ -88,7 +90,19 @@ def validate_manifest(document: Mapping[str, Any]) -> list[str]:
             kind = case.get("kind")
             if kind not in KINDS:
                 raise CommManifestError(f"{where}.kind: unsupported {kind!r}")
-            path = _safe_path(case.get("path"), f"{where}.path")
+            if kind == "ct-int8-deepep":
+                path = case.get("path")
+                if path != CT_PROBE:
+                    raise CommManifestError(f"{where}.path: CT probe path must be {CT_PROBE}")
+                if type(case.get("recv_hook")) is not bool:
+                    raise CommManifestError(f"{where}.recv_hook: boolean required")
+                limit = case.get("swiglu_limit")
+                if limit is not None and (
+                    type(limit) not in (int, float) or not math.isfinite(limit) or limit <= 0
+                ):
+                    raise CommManifestError(f"{where}.swiglu_limit: positive finite number required")
+            else:
+                path = _safe_path(case.get("path"), f"{where}.path")
             if kind == "pytest":
                 nodeid = case.get("nodeid")
                 if not isinstance(nodeid, str) or not nodeid.startswith(path + "::"):
@@ -132,17 +146,91 @@ def _contained(root: Path, relative: str) -> Path:
     return target
 
 
-def _case_command(case: Mapping[str, Any], python: str) -> list[str]:
+def _case_command(
+    case: Mapping[str, Any], python: str,
+    *, up_tree: Path | None = None, rank_out: Path | None = None,
+) -> list[str]:
     if case["kind"] == "pytest":
         return [python, "-m", "pytest", "-q", "--tb=line", case["nodeid"]]
-    return [
+    command = [
         python,
         "-m",
         "torch.distributed.run",
         "--standalone",
         "--nproc_per_node=2",
-        case["path"],
     ]
+    if case["kind"] == "ct-int8-deepep":
+        if up_tree is None or rank_out is None:
+            raise CommManifestError("CT communication requires --up-tree and a rank report directory")
+        command += [
+            "-m", "tools.ct_w4a8_deepep_probe",
+            "--up-tree", str(up_tree), "--out", str(rank_out),
+            "--community-dispatcher",
+        ]
+        if case["recv_hook"]:
+            command.append("--recv-hook")
+        if case.get("swiglu_limit") is not None:
+            command += ["--swiglu-limit", str(case["swiglu_limit"])]
+    else:
+        command.append(case["path"])
+    return command
+
+
+def _ct_evidence(case, rank_out, commit):
+    """Require both ranks and each distinct phase, not just a launcher exit."""
+    phases = ["eager"] + [f"graph-{phase}" for phase in range(4)]
+    for rank in range(2):
+        try:
+            report = json.loads((rank_out / f"rank{rank}.json").read_text(encoding="utf-8"))
+            checks = report["checks"]
+            valid = (
+                type(report["rank"]) is int and report["rank"] == rank
+                and report["communication_passed"] is True
+                and report["model_acceptance"] is False
+                and report["community_dispatcher"] is True
+                and report["recv_hook"] is case["recv_hook"]
+                and report["swiglu_limit"] == case.get("swiglu_limit")
+                and report["community_commit"] == commit
+                and [row["phase"] for row in checks] == phases
+                and all(type(row["max_abs"]) in (int, float) and row["max_abs"] == 0
+                        for row in checks)
+            )
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise CommManifestError(f"missing or invalid CT rank {rank} evidence") from exc
+        if not valid:
+            raise CommManifestError(f"incomplete or mismatched CT rank {rank} evidence")
+    return {"rank_phase_checks": 10, "model_acceptance": False}
+
+
+def _run_ct_case(case, root, out_dir, up_tree, command):
+    try:
+        from tools.l15_runtime import audit_source, run_job, test_env
+    except ModuleNotFoundError:
+        from l15_runtime import audit_source, run_job, test_env
+
+    before = audit_source(up_tree)
+    _write_json(out_dir / f"{case['id']}-source-before.json", before)
+    if not before["passed"]:
+        raise CommManifestError("CT communication requires pristine community source")
+    rank_out = out_dir / case["id"] / "ranks"
+    if rank_out.exists():
+        raise CommManifestError("CT rank evidence directory already exists; use a fresh output directory")
+    env = test_env(up_tree, root)
+    env.update(HCU_W4A8_MOE="int8", SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK="8")
+    log = out_dir / f"{case['id']}.log"
+    job = run_job(command, cwd=root, env=env, timeout=case["timeout"], log=log)
+    after = audit_source(up_tree, before["commit"])
+    _write_json(out_dir / f"{case['id']}-source-after.json", after)
+    evidence = {"source_before": before, "source_after": after}
+    error = None
+    try:
+        if not after["passed"]:
+            raise CommManifestError("community source changed during CT communication")
+        if job["returncode"] == 0:
+            evidence.update(_ct_evidence(case, rank_out, before["commit"]))
+    except CommManifestError as exc:
+        error = str(exc)
+    return job, log.read_text(encoding="utf-8", errors="replace"), evidence, error
 
 
 def run_manifest(
@@ -151,6 +239,7 @@ def run_manifest(
     out_dir: Path,
     mode: str,
     case_ids: set[str] | None = None,
+    up_tree: Path | None = None,
 ) -> tuple[dict[str, Any], bool]:
     available = {case["id"] for case in manifest["cases"]}
     if case_ids:
@@ -158,34 +247,45 @@ def run_manifest(
         if unknown:
             raise CommManifestError(f"unknown communication cases: {', '.join(unknown)}")
     selected = [case for case in manifest["cases"] if not case_ids or case["id"] in case_ids]
+    if any(case["kind"] == "ct-int8-deepep" for case in selected) and up_tree is None:
+        raise CommManifestError("CT communication requires --up-tree")
     env = os.environ.copy()
     env["PYTHONPATH"] = str(root) + os.pathsep + env.get("PYTHONPATH", "")
     env.setdefault("MASTER_ADDR", "127.0.0.1")
     results: list[dict[str, Any]] = []
     for index, case in enumerate(selected):
         _contained(root, case["path"])
-        command = _case_command(case, sys.executable)
+        command = _case_command(
+            case, sys.executable, up_tree=up_tree,
+            rank_out=out_dir / case["id"] / "ranks",
+        )
         case_env = env.copy()
         case_env["MASTER_PORT"] = str(29820 + index)
+        evidence, evidence_error = {}, None
         try:
-            completed = subprocess.run(
-                command,
-                cwd=root,
-                env=case_env,
-                capture_output=True,
-                text=True,
-                timeout=case["timeout"],
-                check=False,
-            )
-            returncode = completed.returncode
-            timed_out = False
-            stdout, stderr = completed.stdout, completed.stderr
+            if case["kind"] == "ct-int8-deepep":
+                job, stdout, evidence, evidence_error = _run_ct_case(
+                    case, root, out_dir, up_tree, command)
+                returncode, timed_out, stderr = job["returncode"], job["timed_out"], ""
+            else:
+                completed = subprocess.run(
+                    command,
+                    cwd=root,
+                    env=case_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=case["timeout"],
+                    check=False,
+                )
+                returncode = completed.returncode
+                timed_out = False
+                stdout, stderr = completed.stdout, completed.stderr
         except subprocess.TimeoutExpired as exc:
             returncode = 124
             timed_out = True
             stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
             stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
-        outcome = "passed" if returncode == 0 else "failed"
+        outcome = "passed" if returncode == 0 and evidence_error is None else "failed"
         classification = case.get("classification", manifest["defaults"]["classification"])
         if case["kind"] == "pytest" and (
             returncode == 5 or (returncode == 0 and " skipped" in stdout[-500:])
@@ -205,6 +305,8 @@ def run_manifest(
             "stdout_tail": stdout[-8000:],
             "stderr_tail": stderr[-4000:],
         }
+        if case["kind"] == "ct-int8-deepep":
+            result.update(evidence=evidence, evidence_error=evidence_error)
         results.append(result)
         _write_json(out_dir / f"{case['id']}.json", result)
     hard_failures = [
@@ -260,6 +362,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--out-dir", required=True, type=Path)
     run.add_argument("--mode", choices=("observe", "blocking"), default="observe")
     run.add_argument("--cases", type=_csv_set)
+    run.add_argument("--up-tree", type=Path, help="Pristine community tree required by CT DeepEP cases")
     return parser
 
 
@@ -277,6 +380,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.out_dir.resolve(),
             args.mode,
             args.cases,
+            args.up_tree.resolve() if args.up_tree is not None else None,
         )
         print(
             f"L1.5-comm ({args.mode}): {'PASS' if passed else 'FAIL'} "

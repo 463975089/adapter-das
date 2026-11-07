@@ -145,7 +145,7 @@ def platform_env_defaults():
     the GraphSafe one); the 12 manual =0 exports predate that rule.
     SGLANG_JIT_DEEPGEMM_PRECOMPILE=0 was landed with R-04 (35037be): the
     upstream all-M precompile session is pure boot tax on the AOT DTK wheel
-    (measured ~52s/shape on nmz26 tp4, boot 6:02→3:57; bw7 EP lines saw
+    (measured ~52s/shape on validation-host-26 tp4, boot 6:02→3:57; bw7 EP lines saw
     5.7-7.4GB per shape squeeze the mem budget).
     """
     import os

@@ -11,7 +11,7 @@ no community source or module origin is rewritten.
 Upstream v0.5.22 JIT-compiles the per-token-group quantization family from
 `sglang/kernels/jit/csrc/gemm/per_token_group_quant.cuh`. DTK's clang-based
 hipcc declares the plain warp vote `__all(pred)` (and 1-arg `__ballot`) but
-NOT the mask-form `__all_sync(mask, pred)` (nmz18 gfx938 probe, 2026-10-20),
+NOT the mask-form `__all_sync(mask, pred)` (validation-host-18 gfx938 probe, 2026-10-20),
 so every instantiation of the family dies at name lookup -- glm53f serving
 hits it in decode graph capture (fp8 block-quant MoE gate_up path).
 

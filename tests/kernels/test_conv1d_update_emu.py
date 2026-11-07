@@ -11,33 +11,58 @@ prefill chunk_kda is emulated. Also covers the in-place state slide and the
 conv_state_indices continuous-batching indexing path.
 """
 
-import os
-os.environ.setdefault("HIP_VISIBLE_DEVICES", "0")
-import sys
-sys.path.insert(0, "/root/hcu_t2")
-sys.path.insert(0, "/sglang-v0521/python")
-import sitecustomize
+import math
+
+import pytest
 import torch
+
 from hcu_adapter.conv1d_update_emu import causal_conv1d_update_emu
 
-torch.manual_seed(0)
-D, W, BS = 96, 4, 3
-x = torch.randn(BS, D, device="cuda", dtype=torch.bfloat16)
-w = torch.randn(D, W, device="cuda", dtype=torch.bfloat16) * 0.3
-bias = torch.randn(D, device="cuda", dtype=torch.bfloat16) * 0.1
-state0 = torch.randn(BS, D, W - 1, device="cuda", dtype=torch.bfloat16)
-state = state0.clone()
-idx = torch.arange(BS, device="cuda", dtype=torch.int32)
-out = causal_conv1d_update_emu(x, state, w, bias, "silu", conv_state_indices=idx)
-torch.cuda.synchronize()
-ref = torch.zeros(BS, D, device="cuda")
-for b in range(BS):
-    hist = torch.cat([state0[b].float(), x[b].float().unsqueeze(-1)], dim=1)
-    for d in range(D):
-        val = float((hist[d] * w[d].float()).sum()) + float(bias[d])
-        ref[b, d] = val * torch.sigmoid(torch.tensor(val))
-cos = torch.nn.functional.cosine_similarity(out.float().flatten(), ref.flatten(), dim=0).item()
-exact = torch.allclose(out.float(), ref, atol=2e-2)
-print(f"conv1d emu: cos={cos:.6f} exact(atol2e-2)={exact}")
-assert cos >= 0.9999
-print("PASS")
+
+def _case():
+    generator = torch.Generator().manual_seed(0)
+    x = torch.randn(3, 96, generator=generator).bfloat16()
+    weight = (torch.randn(96, 4, generator=generator) * 0.3).bfloat16()
+    bias = (torch.randn(96, generator=generator) * 0.1).bfloat16()
+    state = torch.randn(6, 96, 3, generator=generator).bfloat16()
+    slots = torch.tensor([4, 1, 5], dtype=torch.int32)
+    return x, weight, bias, state, slots
+
+
+def _reference(x, weight, bias, state, slots):
+    """Scalar FP64 convolution and logical cache update, independent of the emu."""
+    expected = torch.empty(x.shape, dtype=torch.float64)
+    after = state.clone()
+    for row, slot in enumerate(slots.tolist()):
+        for channel in range(x.shape[1]):
+            history = state[slot, channel].double().tolist() + [float(x[row, channel])]
+            value = math.fsum(a * b for a, b in zip(
+                history, weight[channel].double().tolist())) + float(bias[channel])
+            expected[row, channel] = value / (1 + math.exp(-value))
+            after[slot, channel] = torch.tensor(history[1:], dtype=state.dtype)
+    return expected, after
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_conv1d_update_output_and_indexed_state(device):
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("requires a real GPU")
+    inputs = _case()
+    expected, after = _reference(*inputs)
+    x, weight, bias, state, slots = [value.to(device).clone() for value in inputs]
+    actual = causal_conv1d_update_emu(
+        x, state, weight, bias, "silu", conv_state_indices=slots)
+    observed = actual.cpu().double()
+    cosine = torch.nn.functional.cosine_similarity(
+        observed.flatten(), expected.flatten(), dim=0).item()
+    assert cosine >= 0.9999
+    assert (observed - expected).abs().max().item() <= 2e-2
+    # Comparing the entire cache also checks unselected and permuted slots.
+    torch.testing.assert_close(state.cpu(), after, rtol=0, atol=0)
+    for value, original in zip((x, weight, bias, slots),
+                               (inputs[0], inputs[1], inputs[2], inputs[4])):
+        torch.testing.assert_close(value.cpu(), original, rtol=0, atol=0)
+
+
+if __name__ == "__main__":
+    raise SystemExit(pytest.main([__file__]))

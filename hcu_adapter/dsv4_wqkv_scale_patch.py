@@ -14,7 +14,7 @@ scales fall through to "not found in params_dict" and are dropped, so
 ``wqkv_a.weight_scale`` (created by CompressedTensorsW8A8Int8
 .create_weights, verified v0522 compressed_tensors_w8a8_int8.py:78) never
 receives data — every attention projection dequantizes with an
-uninitialized scale. Boot-fine, numerics-garbage; nmz16 2026-10-26
+uninitialized scale. Boot-fine, numerics-garbage; validation-host-16 2026-10-26
 (warnings during shard load; scheme/target forensics same day: the
 WeigthsMapper rewrites the group targets to ``self_attn.(?:wqkv_a|wq_b)``
 so the unfused names have no scheme either — disabling the fuse does NOT

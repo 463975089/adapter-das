@@ -279,6 +279,7 @@ def _install_triton_decode(_sk_fa, registry):
                 out=p.get("out"),
             )
         cu_q = p.get("cu_seqlens_q")
+        packed_q = False
         # Decode feeds 3D packed q, sometimes with cu_seqlens_q (FA3-style),
         # sometimes without (metadata form; B comes from the page table).
         # Normalize to the 4D (B,L,H,D) form the triton kernels take: L=1
@@ -314,6 +315,7 @@ def _install_triton_decode(_sk_fa, registry):
                 B = p["page_table"].shape[0]
                 L = 1 if n_tok == B else 0  # one token per row == decode
             if L >= 1 and B > 0:
+                packed_q = True
                 q = q.reshape(B, L, H, D)
                 p["q"] = q
                 p["cu_seqlens_q"] = None
@@ -345,6 +347,14 @@ def _install_triton_decode(_sk_fa, registry):
                 p["cache_seqlens"],
                 softmax_scale=p.get("softmax_scale"),
             )
+            # Kernel layout is [B,L,H,D]; packed callers consume [B*L,H,D]
+            # and [B*L,H] LSE. Restore only the layout normalized above.
+            if packed_q:
+                o = o.reshape(-1, *o.shape[2:])
+                lse = lse.reshape(-1, lse.shape[-1])
+            if p.get("out") is not None:
+                p["out"].copy_(o)
+                o = p["out"]
             return (o, lse) if p.get("return_softmax_lse") else o
         if (
             triton_ok
@@ -373,6 +383,9 @@ def _install_triton_decode(_sk_fa, registry):
                 p["cache_seqlens"],
                 softmax_scale=p.get("softmax_scale"),
             )
+            if packed_q:
+                o = o.reshape(-1, *o.shape[2:])
+                lse = lse.reshape(-1, lse.shape[-1])
             return (o, lse) if p.get("return_softmax_lse") else o
         if _EMU_TRACE:
             reasons = []

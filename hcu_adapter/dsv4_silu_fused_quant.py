@@ -10,7 +10,7 @@ Production pair on HIP (dsv41f decode, triton fused_moe route): adapter triton
 write+read round-trip per MoE layer per forward (~263+43 launches/step family).
 
 The upstream fused JIT family (``silu_and_mul_{masked,contig}_post_quant.cuh``)
-is NOT usable on gfx938 (unit probes 2026-10-23, nmz26):
+is NOT usable on gfx938 (unit probes 2026-10-23, validation-host-26):
 1. deterministic miscompile: ~3.5% of output elements get wrong values (e.g.
    dequant 99.99 where the true activation is 60.5); deterministic across
    repeated runs, every row, both clamp and no-clamp template variants;
@@ -65,7 +65,7 @@ def _silu_clamp_ptgq_kernel(
     # only, up clamps both sides) composed with the sglang per-token-group
     # quant formula (eps-max absmax, divide by bit8_max, clamp, cast) in one
     # pass with no bf16 round-trip. One CTA handles GPB adjacent 128-groups
-    # (tile sweep nmz26 2026-10-23: GPB=1 halves large-M throughput vs the
+    # (tile sweep validation-host-26 2026-10-23: GPB=1 halves large-M throughput vs the
     # production pair — tiny 512B CTAs starve; GPB=2 keeps the 2.4-2.7x
     # decode win and restores pair-parity at prefill M).
     row = tl.program_id(0).to(tl.int64)
@@ -237,7 +237,7 @@ def _hcu_silu_fused_quant(x, limit, use_fp8_w8a8, block_shape, hooks):
     """Route guard: only the production shape (fp8 w8a8, [128,128] blocks, no
     LoRA hooks). limit=None means plain silu; anything else unsupported keeps
     the stock two-kernel pair. First miss logs the failing conditions once per
-    process (nmz18 2026-10-23: the needle sat installed-but-inert because EP
+    process (validation-host-18 2026-10-23: the needle sat installed-but-inert because EP
     routing takes the filter_expert arm the original anchors never covered;
     the shared-expert arm's guard also silently rejected — diagnose, don't
     guess)."""

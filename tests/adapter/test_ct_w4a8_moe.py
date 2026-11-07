@@ -22,7 +22,7 @@ def _args(type_name, num_bits, **kw):
 
 
 def _args_strtype(type_str, num_bits, **kw):
-    """pydantic use_enum_values 形态：type 是字符串（nmz16 探针实锤）。"""
+    """pydantic use_enum_values 形态：type 是字符串（validation-host-16 探针实锤）。"""
     return NS(type=type_str, num_bits=num_bits, **kw)
 
 
@@ -136,5 +136,5 @@ def test_type_name_tolerance():
     assert cw._type_name(None) == ""
     assert not cw._is_int4_weights(None)
     assert cw._is_int4_weights(W4)
-    assert cw._is_int4_weights(W4S)  # nmz16 探针实锤的形态
+    assert cw._is_int4_weights(W4S)  # validation-host-16 探针实锤的形态
     assert not cw._is_int4_weights(W8)

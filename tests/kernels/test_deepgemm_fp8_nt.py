@@ -5,7 +5,7 @@
 
 The DTK fork's ``fp8_gemm`` only honors per-row scales ([rows, 1]); given
 sglang's per-token-group / per-block 2-D scale tensors it either ignores
-the activation scales or reads them out of bounds (nmz26 probe: cos=0.004,
+the activation scales or reads them out of bounds (validation-host-26 probe: cos=0.004,
 maxrel=4e5 vs a dequant reference — the GLM-5.3-Flash word-soup root
 cause). The adapter therefore replaces the name-only alias with
 ``fp8_gemm_nt_dequant``: unfold both operands by block_k, apply the fp32

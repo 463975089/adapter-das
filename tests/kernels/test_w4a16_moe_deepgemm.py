@@ -192,6 +192,79 @@ def test_c_pipeline(group, E, I, K, M, topk, seed):
                           rtol=1e-2)
 
 
+@requires_gpu
+@pytest.mark.parametrize("channelwise", [False, True])
+@pytest.mark.parametrize("backend", ["deepgemm", "triton"])
+@pytest.mark.parametrize("capacity", [128, 256, 1024])
+def test_deepep_ll_clamp_graph_replay(channelwise, backend, capacity):
+    """Replay changing counts, including EP4's 4 * 256 expert capacity."""
+    from hcu_adapter.w4a16_moe import w4a16_deepep_ll
+
+    E, M, K, I = 4, capacity, 512, 256
+    g1, g2 = (K, I) if channelwise else (128, 128)
+    w1, s1, _ = _make_experts(E, 2 * I, K, g1, seed=101)
+    w2, s2, _ = _make_experts(E, K, I, g2, seed=102)
+    x = torch.randn(E, M, K, device=dev, dtype=torch.bfloat16)
+    counts = torch.tensor([1, 0, 33, M], device=dev, dtype=torch.int32)
+
+    def run():
+        return w4a16_deepep_ll(
+            x, w1, w2, s1, s2, counts, expected_m=32, swiglu_limit=1.0,
+            backend=backend,
+        )
+
+    d1, d2 = _dequant(w1, s1, g1), _dequant(w2, s2, g2)
+
+    def check(got):
+        c1 = torch.einsum("emk,enk->emn", x.float(), d1).to(x.dtype)
+        gate, up = c1.chunk(2, dim=-1)
+        act = torch.nn.functional.silu(gate.clamp(max=1.0)) * up.clamp(-1.0, 1.0)
+        gold = torch.einsum("emi,eki->emk", act.float(), d2)
+        valid = torch.arange(M, device=dev)[None, :] < counts[:, None]
+        actual = got[valid].float()
+        expected = gold[valid]
+        assert torch.isfinite(actual).all()
+        assert torch.count_nonzero(got[~valid]) == 0
+        rel = torch.linalg.vector_norm(actual - expected) / torch.linalg.vector_norm(expected)
+        assert rel.item() < 0.02, f"relative L2={rel.item()}"
+
+    check(run())
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        for _ in range(3):
+            run()
+    torch.cuda.current_stream().wait_stream(stream)
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph, stream=stream):
+        output = run()
+    graph.replay()
+    torch.cuda.synchronize()
+    check(output)
+    if backend == "triton":
+        assert not hasattr(w1, "_hcu_w4a16_marlin_cache")
+        assert not hasattr(w2, "_hcu_w4a16_marlin_cache")
+    counts.copy_(torch.tensor([M, 7, 0, 2], device=dev, dtype=torch.int32))
+    x.mul_(0.5)
+    graph.replay()
+    torch.cuda.synchronize()
+    check(output)
+
+
+@requires_gpu
+@pytest.mark.parametrize("group", [32, 160])
+def test_raw_w4a16_masked_partial_tiles(group):
+    from hcu_adapter.kernels.grouped_gemm_triton import w4a16_masked
+
+    qw, scales, q = _make_experts(3, 80, 160, group, seed=71)
+    x = torch.randn(3, 17, 160, dtype=torch.bfloat16, device=dev)
+    counts = torch.tensor([0, 1, 17], dtype=torch.int32, device=dev)
+    got = w4a16_masked(x, qw, scales, counts)
+    expected = _golden(x, q, scales, group, counts)
+    assert _rel_rows(got.float(), expected, counts) < 0.01
+    assert torch.count_nonzero(got[0]) == 0
+
+
 if __name__ == "__main__":
     import sys as _s
 

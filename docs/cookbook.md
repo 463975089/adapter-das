@@ -15,8 +15,8 @@
 `--preflight-only`，不会启动模型或申请 GPU：
 
 ```bash
-export SGLANG_TREE=/home/lipenghui/lph-adapter/sglang-0.5.22-pristine-iter7
-export ADAPTER_TREE=/home/lipenghui/lph-adapter/adapter-das
+export SGLANG_TREE=/path/to/sglang-0.5.22-pristine-iter7
+export ADAPTER_TREE=/path/to/adapter-das
 bash "$ADAPTER_TREE/tests/tools/run_pristine_model_suite.sh" --preflight-only
 
 # 资源预检通过后再选择模型；脚本会沿用同一套 PYTHONPATH 和源码门禁。
@@ -26,7 +26,7 @@ bash "$ADAPTER_TREE/tests/tools/run_pristine_model_suite.sh" q3-30b-a3b
 未显式提供 `SGLANG_TREE`、`ADAPTER_TREE`，或未通过源码完整性检查时，
 入口直接退出；未通过预检的启动结果不计入模型验收。
 
-所有配方均在 **nmz26 验证容器（容器名仅作环境记录）+ 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（主线）** 实测通过（GLM-5-W4A8 在 nmz18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
+所有配方均在 **validation-host-26 验证容器（容器名仅作环境记录）+ 官方 sglang v0.5.21 源码（/root/sglang-v0521-src）+ 本 adapter（主线）** 实测通过（GLM-5-W4A8 在 validation-host-18）。四判定详情（启动/生成/语义/长文）见 [models.md](models.md)；环境变量语义见 [env-vars.md](env-vars.md)。物料脚本在 `tests/tools/_launch_*.sh`。
 
 ## 0. 公共环境（每个配方都带）
 
@@ -69,7 +69,7 @@ python -m sglang.launch_server --model-path <Qwen3.6-27B-Channel-INT8> \
 #   归因见 models.md 2026-10-18 R-10 行，勿排期实跑。
 ```
 
-## 1.5 nmz26 现役栈速查（2026-10-18 起：镜像 sf_b075-20261018-0048）
+## 1.5 validation-host-26 现役栈速查（2026-10-18 起：镜像 sf_b075-20261018-0048）
 
 ```bash
 # 重建后必做两步（详见 bootstrap.md §0/§3/§5）：
@@ -91,7 +91,7 @@ python3 -m sglang.launch_server --model-path /models/glm53f --served-model-name 
   --nccl-port 30397
 ```
 
-## 1.6 nmz18 × v0.5.22 × glm53f 配方（2026-10-20 四门全绿，R-17 三绑定首演）
+## 1.6 validation-host-18 × v0.5.22 × glm53f 配方（2026-10-20 四门全绿，R-17 三绑定首演）
 
 容器 `g53f-v0522`（sf_b075-20261018-0048 + privileged + hyhal + 模型只读 +
 `$HOME/sglang-v0522` 公共盘树 + g53_tp4 工具盘）；adapter 在容器内
@@ -168,10 +168,10 @@ python -m sglang.launch_server \
 | MTP 投机解码 | 见 §2.2 | ✅ 精度过；吞吐见 §2.2 注（emu 栈暂负收益，真 FA3 内核预期翻正） |
 | hicache 分层 KV | `--enable-hierarchical-cache`（需 adapter 的 get_device_accessible_ptr 桥，已内置） | ⚠ dense 模型全通（逐出-回迁保真）；**GDN 混合模型 MAMBA 状态宿主迁移输出漂移待修，生产 GDN 模型暂不开** |
 | AWQ 量化 | `--quantization moe_wna16`（见 §2.1） | ✅ |
-| slimquant W4A8 | 零显式旗标（checkpoint 自动识别，nmz18 TP8 graph ON 验证） | ✅ GLM-5-W4A8_V2_6 |
+| slimquant W4A8 | 零显式旗标（checkpoint 自动识别，validation-host-18 TP8 graph ON 验证） | ✅ GLM-5-W4A8_V2_6 |
 | PD 分离（节点内） | TCP 版命令块见下方（mooncake_tcp，无需 IB）；RDMA 版见同节（mooncake RoCE，需容器注入三步） | ✅ 双传输面均验：TCP 8 路并发零串扰；RDMA 同配方 5/6+确定性+8 路全过；⚠ `--disaggregation-enable-kv-checksum` 并发误报勿开 |
 | EP 低延迟（DeepEP） | 命令块见下方（LL 是 bf16 MoE 唯一可用 deepep 模式） | ✅ Qwen3-30B-A3B TP2+EP2（锚点+并发全对） |
-| prefill CP（上下文并行） | `HCU_PREFILL_CP=1` + `--enable-prefill-cp --cp-strategy zigzag --attn-cp-size 2`（与 `--tp-size 2` 成对，fa3） | ✅ Qwen3-30B-A3B nmz26 双卡：输出与 TP2 基线对齐（capital/long OK、arith 同因思考超长 MISS、determinism 基线亦 DIFF 非 CP 回归）。上游 HIP 门+两处语义补丁见 [env-vars.md](env-vars.md) `HCU_PREFILL_CP`；排查插桩 `HCU_PREFILL_CP_DEBUG=1`；物料 `tests/tools/_launch_cp2.sh` |
+| prefill CP（上下文并行） | `HCU_PREFILL_CP=1` + `--enable-prefill-cp --cp-strategy zigzag --attn-cp-size 2`（与 `--tp-size 2` 成对，fa3） | ✅ Qwen3-30B-A3B validation-host-26 双卡：输出与 TP2 基线对齐（capital/long OK、arith 同因思考超长 MISS、determinism 基线亦 DIFF 非 CP 回归）。上游 HIP 门+两处语义补丁见 [env-vars.md](env-vars.md) `HCU_PREFILL_CP`；排查插桩 `HCU_PREFILL_CP_DEBUG=1`；物料 `tests/tools/_launch_cp2.sh` |
 | EP 高吞吐 / auto / normal | `--deepep-mode auto/normal`（bf16，同 LL 配方改 mode 即可） | ✅ contiguous grouped GEMM 已用 triton 重写替代坏掉的 DTK w16a16 内核（`HCU_TRITON_CONTIG=1` 默认开）：auto/纯 normal 均锚点+并发+确定性全过；**FP8 线仍锁**（a_scale row/tensor-wise ≠ sglang 128-block，非桥可解） |
 
 ```bash
@@ -266,7 +266,7 @@ L0 结构门禁（零依赖秒级，托管平台 CI）+ L1 GPU 数值门禁（�
 
 ## 5. trace 耗时异常排查配方（驱动空泡吸收家族，2026-10-26 box16 实战提炼）
 
-**背景（历史口供，用户 2026-10-26）**：DTK 栈 prof 早年 trace 里 kernel 之间常见空泡（提前下发/graphlaunch 也在），runtime 一度归驱动、一度归编译器；后来驱动侧"解了"——**空泡从 trace 消失、kernel 耗时变长=空泡时间被折算进 kernel 窗**。nmz18/nmz26 的拍（GPU 不执行已入队活）与本问题同源。上层可绕：das 用整 MoE 单核 vendor kernel（aiter moe_c/lightop marlin）后很少复现——**核少而肥=泡触发面小**。
+**背景（历史口供，用户 2026-10-26）**：DTK 栈 prof 早年 trace 里 kernel 之间常见空泡（提前下发/graphlaunch 也在），runtime 一度归驱动、一度归编译器；后来驱动侧"解了"——**空泡从 trace 消失、kernel 耗时变长=空泡时间被折算进 kernel 窗**。validation-host-18/validation-host-26 的拍（GPU 不执行已入队活）与本问题同源。上层可绕：das 用整 MoE 单核 vendor kernel（aiter moe_c/lightop marlin）后很少复现——**核少而肥=泡触发面小**。
 
 **症状指纹**（占其一即入本流程）：
 1. 某核 trace 耗时远超其工作量应有的量级（如 elementwise 级工作记出 ms 级）；

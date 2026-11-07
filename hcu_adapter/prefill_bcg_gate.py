@@ -71,13 +71,10 @@ def install():
         )
 
     _hcu_capture_prefill_graph.__dict__[_MARK] = True
-    # both namespaces: cuda_graph_setup's intra-module call and the
-    # from-import copy inside model_runner (init_prefill_cuda_graph).
-    _cgs.capture_prefill_graph = _hcu_capture_prefill_graph
-    _mr.capture_prefill_graph = _hcu_capture_prefill_graph
-
     import hcu_adapter.registry as _reg
 
+    # Validate registration before publishing either namespace. A rejected
+    # registration must not leave an active but unreported driver gate.
     _reg.register(
         "cuda_graph",
         "prefill-bcg-driver-truth",
@@ -88,3 +85,7 @@ def install():
         mechanism=_reg.MECH_SEAM,
         detail="breakable prefill -> eager (cuda-python needs CUDA driver)",
     )
+    # both namespaces: cuda_graph_setup's intra-module call and the
+    # from-import copy inside model_runner (init_prefill_cuda_graph).
+    _cgs.capture_prefill_graph = _hcu_capture_prefill_graph
+    _mr.capture_prefill_graph = _hcu_capture_prefill_graph

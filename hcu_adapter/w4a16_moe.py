@@ -41,6 +41,11 @@ Guards (anything unmet -> stock triton, log-once per shape)
   gemm2 -- I is the intermediate per-partition size).
 
 Knob: ``HCU_W4A16_MOE_IMPL = auto | triton | deepgemm`` (auto default).
+
+DeepEP low-latency CT W4A16 serving uses a separate expert-major Triton
+path over the loaded raw bytes. It retains dispatch row counts and clamp
+semantics without caching another complete copy of the expert weights.
+The vendor expert-major helper is retained for explicit numeric comparison.
 """
 
 from __future__ import annotations
@@ -74,7 +79,7 @@ def _dbg(reason: str):
         LOG.warning("HCU w4a16 moe: %s", reason)
 
 
-def deepgemm_w4a16_deepep_ll(
+def w4a16_deepep_ll(
     hidden_states: torch.Tensor,
     w1: torch.Tensor,
     w2: torch.Tensor,
@@ -82,6 +87,9 @@ def deepgemm_w4a16_deepep_ll(
     w2_scale: torch.Tensor,
     masked_m: torch.Tensor,
     expected_m: int | None = None,
+    *,
+    swiglu_limit: float | None = None,
+    backend: str = "triton",
 ) -> torch.Tensor:
     """Run the W4A16 expert-major path after DeepEP low-latency dispatch.
 
@@ -91,6 +99,8 @@ def deepgemm_w4a16_deepep_ll(
     it performs its own token sort/dispatch and would destroy the dispatcher
     layout.  This function therefore keeps the expert-major layout through
     both masked grouped GEMMs and returns the same layout for DeepEP combine.
+    Serving defaults to raw-weight Triton; ``backend="deepgemm"`` is the
+    explicit vendor comparison path with a persistent repack cache.
     """
     if hidden_states.ndim != 3:
         raise ValueError(
@@ -105,44 +115,73 @@ def deepgemm_w4a16_deepep_ll(
         raise ValueError("DeepEP W4A16 expert count does not match weights")
     capacity = hidden_states.shape[1]
     counts = masked_m.to(device=hidden_states.device, dtype=torch.int32)
-    if bool(torch.any(counts < 0)) or bool(torch.any(counts > capacity)):
-        raise ValueError(
-            f"DeepEP W4A16 masked_m must be within [0, {capacity}]"
-        )
+    # Validate on the device without reading dispatch counts back to Python.
+    # This also checks the current counts on each graph replay.
+    valid_counts = torch.all((counts >= 0) & (counts <= capacity))
+    message = f"DeepEP W4A16 masked_m must be within [0, {capacity}]"
+    if counts.is_cuda:
+        torch._assert_async(valid_counts, message)
+    elif not bool(valid_counts):
+        raise ValueError(message)
 
-    b1, s1 = _prepare(w1, w1_scale)
-    b2, s2 = _prepare(w2, w2_scale)
-    c1 = _grouped_gemm(
-        hidden_states.contiguous(),
-        b1,
-        s1,
-        counts,
-        capacity,
-        w1.shape[1],
-        hidden_states.dtype,
-    )
-    intermediate = torch.nn.functional.silu(c1[..., : w1.shape[1] // 2])
-    intermediate = intermediate * c1[..., w1.shape[1] // 2 :]
-    c2 = _grouped_gemm(
-        intermediate.contiguous(),
-        b2,
-        s2,
-        counts,
-        capacity,
-        w2.shape[1],
-        hidden_states.dtype,
-    )
+    if backend == "triton":
+        from .kernels.grouped_gemm_triton import w4a16_masked
+
+        # Read the loaded packed bytes directly. Caching a second full expert
+        # stack per layer exceeds the real model's remaining device memory.
+        gemm1 = lambda x: w4a16_masked(x, w1, w1_scale, counts)
+        gemm2 = lambda x: w4a16_masked(x, w2, w2_scale, counts)
+    elif backend == "deepgemm":
+        b1, s1 = _prepare(w1, w1_scale)
+        b2, s2 = _prepare(w2, w2_scale)
+        gemm1 = lambda x: _grouped_gemm(
+            x, b1, s1, counts, capacity, w1.shape[1], hidden_states.dtype
+        )
+        gemm2 = lambda x: _grouped_gemm(
+            x, b2, s2, counts, capacity, w2.shape[1], hidden_states.dtype
+        )
+    else:
+        raise ValueError(f"Unknown W4A16 masked GEMM backend: {backend}")
+    c1 = gemm1(hidden_states.contiguous())
+    gate, up = c1.chunk(2, dim=-1)
+    if swiglu_limit is not None:
+        gate = gate.clamp(max=swiglu_limit)
+        up = up.clamp(min=-swiglu_limit, max=swiglu_limit)
+    intermediate = torch.nn.functional.silu(gate) * up
+    # These full expert-capacity tensors are no longer consumed by GEMM2.
+    # Releasing them here allows the stream/graph allocator to reuse storage
+    # instead of retaining both projections and both clamped halves together.
+    del c1, gate, up
+    c2 = gemm2(intermediate.contiguous())
     return c2
+
+
+def deepgemm_w4a16_deepep_ll(*args, **kwargs):
+    """Explicit vendor comparison path; serving uses the raw-weight Triton tier."""
+    return w4a16_deepep_ll(*args, **kwargs, backend="deepgemm")
+
+
+def _deepep_weights(layer):
+    # CT keeps the *_packed names even after its uint8 Triton conversion.
+    w1 = getattr(layer, "w13_weight_packed", None)
+    w2 = getattr(layer, "w2_weight_packed", None)
+    if w1 is None:
+        w1 = getattr(layer, "w13_weight", None)
+    if w2 is None:
+        w2 = getattr(layer, "w2_weight", None)
+    return w1, w2
 
 
 def _is_deepep_w4a16_layer(layer) -> bool:
     """Identify the CT-W4A8 -> W4A16 layer without depending on class names."""
+    w1, w2 = _deepep_weights(layer)
     return bool(
-        getattr(layer, "w13_weight", None) is not None
-        and getattr(layer.w13_weight, "dtype", None) == torch.uint8
-        and getattr(layer, "w2_weight", None) is not None
+        getattr(w1, "dtype", None) == torch.uint8
+        and getattr(w2, "dtype", None) == torch.uint8
         and getattr(layer, "w13_weight_scale", None) is not None
         and getattr(layer, "w2_weight_scale", None) is not None
+        and getattr(layer, "w13_weight_zero_point", None) is None
+        and getattr(layer, "w2_weight_zero_point", None) is None
         and not bool(getattr(layer, "use_w4afp8", False))
     )
 
@@ -172,14 +211,28 @@ def install_deepep_w4a16():
             and _is_deepep_w4a16_layer(self)
         ):
             try:
-                output = deepgemm_w4a16_deepep_ll(
+                config = getattr(self, "moe_runner_config", None)
+                if config is not None and (
+                    getattr(config, "activation", "silu") != "silu"
+                    or not getattr(config, "is_gated", True)
+                    or getattr(config, "apply_router_weight_on_input", False)
+                    or getattr(config, "gemm1_alpha", None) is not None
+                    or getattr(config, "gemm1_beta", None) is not None
+                    or getattr(config, "gemm1_clamp_limit", None) is not None
+                ):
+                    raise NotImplementedError(
+                        "DeepEP W4A16 supports SiLU gating with swiglu_limit only"
+                    )
+                w1, w2 = _deepep_weights(self)
+                output = w4a16_deepep_ll(
                     dispatch_output.hidden_states,
-                    self.w13_weight,
-                    self.w2_weight,
+                    w1,
+                    w2,
                     self.w13_weight_scale,
                     self.w2_weight_scale,
                     dispatch_output.masked_m,
                     dispatch_output.expected_m,
+                    swiglu_limit=getattr(config, "swiglu_limit", None),
                 )
                 from sglang.srt.layers.moe.token_dispatcher.deepep import (
                     DeepEPLLCombineInput,
@@ -207,10 +260,10 @@ def install_deepep_w4a16():
 
         registry.register(
             "w4a16_moe",
-            "hcu_adapter.w4a16_moe.deepgemm_w4a16_deepep_ll",
+            "hcu_adapter.w4a16_moe.w4a16_deepep_ll",
             "sglang.srt.layers.moe.ep_moe.DeepEPMoE.run_moe_core",
             registry.MECH_REBIND,
-            detail="CT W4A8->W4A16 DeepEP low-latency expert-major branch",
+            detail="CT W4A8->W4A16 DeepEP LL raw-weight Triton branch",
         )
     except Exception:
         # The route remains functional in minimal/fake test interpreters where
@@ -236,8 +289,16 @@ def _prepare(experts_qweight: torch.Tensor, scales: torch.Tensor):
     if experts_qweight.dtype != torch.uint8:
         raise TypeError(f"qweight dtype {experts_qweight.dtype}")
     b = experts_qweight  # already [E, N, K//2] u8 lo-even (moe_wna16 store)
-    g = 2 * b.shape[-1] // scales.shape[-1]  # checkpoint group size
-    if g not in _GROUP_OK:
+    k = 2 * b.shape[-1]
+    if (
+        scales.ndim != 3
+        or scales.shape[:2] != b.shape[:2]
+        or scales.shape[-1] == 0
+        or k % scales.shape[-1]
+    ):
+        raise ValueError("W4A16 scales must have shape [E, N, K/group]")
+    g = k // scales.shape[-1]  # checkpoint group size
+    if g not in _GROUP_OK and not (scales.shape[-1] == 1 and g % 32 == 0):
         raise ValueError(f"group {g} not expandable to 32")
     if g != 32:
         s = scales.repeat_interleave(g // 32, dim=-1)

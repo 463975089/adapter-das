@@ -19,7 +19,7 @@ route instead reads logical scales and installs an identity layout
 transform; its single-device numerical/graph contracts do not validate
 distributed DeepEP. Disabling that route retains the layout refusal.
 
-fp8 contiguous verdict (R-04 probe campaign, 2026-10-18, nmz26 GPU4,
+fp8 contiguous verdict (R-04 probe campaign, 2026-10-18, validation-host-26 GPU4,
 wheel 2.1.0+dtk2604): NOT unlockable from this wheel, for three
 independent reasons. (1) The ``m_grouped_fp8_gemm_nt_contiguous``
 dispatcher has no gfx936 arm at all (only i8/w6 variants) — the EP
@@ -278,7 +278,7 @@ def install():
     # v0.5.21 dense fp8 w8a8 block-linear (Glm5Next FP8 checkpoints): sglang
     # entrypoint.gemm_nt_f8f8bf16 calls deep_gemm.fp8_gemm_nt(lhs, rhs, out).
     # The DTK fork spells the dense fp8 GEMM `fp8_gemm(a, b, d, ...)` — but a
-    # name-only alias is numerically WRONG: nmz26 GPU probe (probe10/12) shows
+    # name-only alias is numerically WRONG: validation-host-26 GPU probe (probe10/12) shows
     # the fork's kernel only honors per-row scales [rows, 1]; given sglang's
     # per-token-group-128 As [M, K/128] (col-major TMA-aligned) and per-block
     # Bs [N/128, K/128] it either ignores As or reads them OOB (cos=0.004,
@@ -312,7 +312,7 @@ def install():
     # ``deep_gemm`` package: ENABLE_JIT_DEEPGEMM then froze False and
     # entrypoint skipped its ``if ENABLE_JIT_DEEPGEMM:`` definitions, so
     # the fp8 arms later die on deep_gemm_wrapper.get_mn_major_tma_aligned_
-    # tensor (DSV4F fp8 dp8ep8 boot, nmz16 2026-10-21). Drop the package
+    # tensor (DSV4F fp8 dp8ep8 boot, validation-host-16 2026-10-21). Drop the package
     # from sys.modules; the next import re-evaluates against this shim
     # (fresh probe: ENABLE_JIT True, sm 93).
     for _n in [
@@ -337,7 +337,7 @@ def install():
     # masked-layout grouped GEMM (DeepEP low-latency decode, bf16): the
     # fork only ships the packed-layout masked kernel and the bridge's
     # pack cache DOUBLES expert memory (DSV4-Flash EP: 69 GB raw + 69 GB
-    # packed > 144 GB card -> OOM at decode graph capture, nmz16
+    # packed > 144 GB card -> OOM at decode graph capture, validation-host-16
     # 2026-10-21). Triton reimplementation on NATIVE [E, N, K] weights:
     # single copy, shared with the contiguous path. HCU_TRITON_MASKED=0
     # keeps the fork pack path.

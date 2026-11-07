@@ -209,6 +209,9 @@ sglang 符号面，shim 妥协不进契约。
   `mechanism ∈ {seam, rebind, text-patch}`；target 是调试器可下断点的
   点符号。register 自带防重复（同 target 换 op 抛错）、catalog 交叉校验
   （op 必须在 `BACKEND_CATALOG`，无 catalog 条目的绑定不存在）。
+- 串行启动时，一座桥的多个绑定可用 `registration_transaction()` 包住
+  全部注册，成功后再发布宿主属性。注册失败恢复记录与 target 所有权；
+  该上下文不恢复宿主对象，也不是并发安装协议。
 - SGLang JIT portability 的 text-patch needle 白名单同时约束
   `jit_sources` 的编译输入变换。其 target 使用 `jit-input:`，指向
   adapter 内容寻址缓存内的 `csrc/include` 资产；不表示社区文件被写回。
@@ -483,7 +486,7 @@ Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查�
   现值 `0.1.0` 待改——不带基线信息时 pip 层与官方 wheel 可互替、静默换内核；
 - vLLM 支持门现钉 v0.32.0 release line（`bridges/vllm.py`）；抽 common 时
   sglang 线同享"不支持在选择前 fail"；
-- **已知悬案**：vLLM platform plugin 在本栈 import order 下挂死（nmz26
+- **已知悬案**：vLLM platform plugin 在本栈 import order 下挂死（validation-host-26
   实证；sglang 进程内以 `VLLM_PLUGINS=none` 静音规避）——standalone
   vLLM serve bring-up 销案前不得移除该规避；
 - channel-wise 量化（本硬件 core/tensor core 不重叠 → channel-wise 是

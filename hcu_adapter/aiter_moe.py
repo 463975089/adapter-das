@@ -19,7 +19,7 @@ DTK aiter ``aiter_moe`` kernel:
 tuned tables) is NOT an error: the bridge falls back to the stock triton
 kernel and logs the miss once per shape.
 
-Validation (nmz18, BW200/gfx938, dtk26041 image 20261010):
+Validation (validation-host-18, BW200/gfx938, dtk26041 image 20261010):
   E=256 / inter=512 / K=4096 / topk=8, fp8_w8a8 blockwise, solution=asm
   need_shuffle=False -> rel 0.043 (bf16 in, dynamic act quant inside
   kernel) and rel 0.024 (pre-quantized fp8 + per-token-group a1_scale)

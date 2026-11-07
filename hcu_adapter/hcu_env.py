@@ -68,7 +68,7 @@ def _auto_aiter_ar():
     # gfx93x + OLD aiter layout (sglang dispatch NOT on aiter.dist):
     # CUDA-graph replay corrupts data (1eb038d) -> refuse, NCCL fallback.
     # NEW aiter.dist GraphSafeAiterCustomAllreduce passed the full stress
-    # suite incl. graph-replay on gfx938 (2026-10-10, nmz26). Unknown
+    # suite incl. graph-replay on gfx938 (2026-10-10, validation-host-26). Unknown
     # layouts stay refused (conservative); HCU_AITER_AR=1 opts in.
     if arch_name().startswith("gfx93"):
         if _sglang_uses_new_aiter_ca():
@@ -208,7 +208,7 @@ REGISTRY = {
                  "存下 tvm_ffi 首次 import 派构建子进程，子进程继承 "
                  "PYTHONPATH 重进 sitecustomize → 桥 eager import 链"
                  "（dsa_topk_v2→xgrammar→tvm_ffi）再派子进程 → 自递归堆积"
-                 "（bootstrap §3 的 122 进程/50 分钟案；nmz26 dsv41f 冷容器 "
+                 "（bootstrap §3 的 122 进程/50 分钟案；validation-host-26 dsv41f 冷容器 "
                  "2026-10-26 复现）。sitecustomize 前部探温 ~/.cache/tvm-ffi"
                  "/**.so，冷则 flock 排他 + 剥 PYTHONPATH 亲跑 tvm_ffi 自带"
                  "构建脚本（§3 自动化），加载器仍要自派子进程时窗口内 Popen "
@@ -235,13 +235,16 @@ REGISTRY = {
                  "config_groups 全 regex targets，target_scheme_map 无 "
                  "'Linear' 桶，上游 CompressedTensorsW4AFP8MoE.__init__ 构"
                  "造期 KeyError('Linear')（v0522 w4a8_fp8_moe.py:87，模型建"
-                 "不过，nmz26 2026-10-26）。w4a16（默认）=wrap config "
+                 "不过，validation-host-26 2026-10-26）。w4a16（默认）=wrap config "
                  "__init__ 把 int4 组 input_activations 置 None → 上游自然"
                  "走 _is_hip 的 WNA16TritonMoE 臂（box16 已验证，10.6 channel"
-                 " 改写收口），激活 int8 量化被忽略（bf16，数值更保真；上游"
-                 " nvfp4 w4a4→w4a16 同款降级模式）；heal=只作用域内补 "
-                 "'Linear' 桶保留 stock W4AFP8 语义（当前会响亮撞 CUTLASS "
-                 "W4A8 缺核，为将来 W4A8 HIP 内核备的路）；0=还原 stock",
+                 " 改写收口），移除激活量化并使用 bf16，不能视为原 W4A8 "
+                 "数值等价或整模型精度更高；heal=只作用域内补 'Linear' 桶"
+                 "保留 stock W4AFP8 scheme 的选择，channel/group 参数、"
+                 "实际激活量化契约及 HIP 内核仍需验证；"
+                 "int8=显式候选，保留激活配置，BF16 DeepEP low_latency "
+                 "对称 channel-INT4/token-INT8，简单 SiLU、无额外 routed "
+                 "scaling；未验收整模型精度；0=还原 stock",
     },
     "HCU_DSV4_WQKV_SCALE": {
         "env": "HCU_DSV4_WQKV_SCALE", "default": "1",
@@ -334,6 +337,16 @@ REGISTRY = {
                  "原函数私有运行时分配接口保留已有别名，不写回 eagle_utils；"
                  "不以固定 ring 深度推测 DMA 完成。pin 不可用时告警并"
                  "回退社区 pageable 行为；=0 关闭安装。",
+    },
+    "HCU_MOE_STABLE_TOPK": {
+        "env": "HCU_MOE_STABLE_TOPK", "default": "1",
+        "about": "原生 grouped-TopK 在 HIP 上按分数排序后归一化，"
+                 "避免未排序专家槽位的随机排列改变 MoE 有限精度累加。"
+                 "仅核对并改变 GPU 私有副本的两处 sorted 参数常量，"
+                 "保留编译入口和已有别名，不改写社区源码；"
+                 "不改变分组、选择规则、分数、共享专家或缩放；"
+                 "平局仍遵守社区未指定 ID/顺序的 TopK 契约。"
+                 "=0 在新进程中保留社区原生未排序路径。",
     },
     "HCU_MOE_ALIGN_FUSED": {
         "env": "HCU_MOE_ALIGN_FUSED", "default": "2048",

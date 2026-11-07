@@ -13,7 +13,7 @@
 # Also ships tvm-ffi (+ torch_extensions): a cold ~/.cache/tvm-ffi makes
 # tvm_ffi spawn its optional torch-dlpack builder at import, and that
 # builder self-deadlocks on HCU (forked child re-imports torch/HSA, both
-# sides poll pipes forever; nmz18 2026-10-20 forensics). Seeding the ~200K
+# sides poll pipes forever; validation-host-18 2026-10-20 forensics). Seeding the ~200K
 # addon .so skips the build entirely; without a seed, a cold container
 # must set TVM_FFI_DISABLE_TORCH_C_DLPACK=1 instead.
 #

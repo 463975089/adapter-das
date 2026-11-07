@@ -50,7 +50,11 @@ def _finish_gate_slots(
     scale (order mirrors _router_triton_kernel exactly)."""
     num_experts = biased.shape[1]
     k_routed = topk - max(0, num_fused_shared_experts)
-    _, ids = torch.topk(biased, k=k_routed, dim=-1, sorted=False)
+    if k_routed < 0 or k_routed > num_experts:
+        raise RuntimeError("selected index k out of range")
+    # Community routers choose the lowest expert ID on ties for all scoring
+    # functions. Unordered torch.topk can select a different expert mixture.
+    ids = torch.argsort(biased, dim=-1, descending=True, stable=True)[:, :k_routed]
     weights = activated.gather(1, ids).to(torch.float32)
 
     routed_sum = weights.sum(dim=-1, keepdim=True, dtype=torch.float32)
@@ -225,7 +229,8 @@ def moe_fused_gate(scores: torch.Tensor, bias: Optional[torch.Tensor], *args, **
         top2 = torch.topk(g, k=min(2, per_group), dim=-1).values
         group_score = top2.sum(dim=-1)
         kgrp = min(topk_group, num_expert_group)
-        keep = torch.topk(group_score, k=kgrp, dim=-1, sorted=False).indices
+        # The community grouped router also chooses the lowest group ID on ties.
+        keep = torch.argsort(group_score, dim=-1, descending=True, stable=True)[:, :kgrp]
         group_mask = torch.zeros_like(group_score, dtype=torch.bool)
         group_mask.scatter_(1, keep, True)
         expert_mask = (

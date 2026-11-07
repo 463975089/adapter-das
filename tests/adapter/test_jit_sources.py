@@ -371,6 +371,48 @@ def test_dpskmeta_topk_phase3_site_self_heals(tmp_path):
     assert "_cb8" not in text  # variant candidates left no object behind
 
 
+def test_dpskmeta_scalar_topk_bounds_need_no_vector_patch(tmp_path):
+    """Community baa9bef already removed these vector decompositions."""
+    from hcu_adapter import jit_dpskmeta
+
+    layout = {
+        "csrc/deepseek_v4/topk_v2.cuh": [
+            "      smem->v_hi = impl::coarse_bin_lower_bound<kHistBits>(threshold_bin + 1);",
+            "      smem->v_lo = impl::coarse_bin_lower_bound<kHistBits>(threshold_bin + 0);",
+        ],
+        "include/sgl_kernel/deepseek_v4/topk_impl.cuh": [
+            "      const auto v_hi = coarse_bin_lower_bound<kHistBits>(threshold_bin + 1);",
+            "      const auto v_lo = coarse_bin_lower_bound<kHistBits>(threshold_bin + 0);",
+        ],
+    }
+    root = tmp_path / "stage"
+    _write_stage(root, layout)
+    before = _snapshot(root)
+    records = []
+    jit_dpskmeta._apply(root, lambda *a, **k: records.append((a, k)))
+    assert _snapshot(root) == before
+    assert records == []
+
+
+@pytest.mark.parametrize("relpath,drift", [
+    ("csrc/deepseek_v4/topk_v2.cuh",
+     "\n      const auto [v_lo, v_hi] = impl::coarse_bin_bounds<kHistBits>(other_bin);"),
+    ("include/sgl_kernel/deepseek_v4/topk_impl.cuh",
+     "\n  const auto [v_lo, v_hi] = to_fp32(other_keys);"),
+    ("include/sgl_kernel/deepseek_v4/topk_impl.cuh",
+     "\n  const auto [u_lo, u_hi] = to_fp32(other_keys - 0x00010001u);"),
+])
+def test_dpskmeta_self_heal_keeps_drift_guard(tmp_path, relpath, drift):
+    from hcu_adapter import jit_dpskmeta
+
+    root = tmp_path / "stage"
+    _write_stage(root, {relpath: [drift]})
+    before = _snapshot(root)
+    with pytest.raises(RuntimeError, match="needle missing"):
+        jit_dpskmeta._apply(root, lambda *a, **k: None)
+    assert _snapshot(root) == before
+
+
 def test_dpskmeta_topk_impl_drifted_bind_still_raises(tmp_path):
     # Drifted 6sp site in the include/ channel (argument renamed): the §3
     # gate must fire for _PATCHES_INCLUDE exactly as it does for csrc/.

@@ -113,7 +113,7 @@ python -m sglang.launch_server --model-path <model> --port 30000 \
   fork 内核转正后 +80%）；MoE 线 Qwen3.6/3.5 系、Qwen3-30B-A3B；dense
   小模型；CT int8 / W4A8 桥；EP（DeepEP LL）与 PD 分离；完整模型×并行
   战报见 [docs/models.md](docs/models.md)。
-- **正确性/性能卡位分工**：BW1102（gfx938，nmz26 级）= 生产卡型；BW1101
+- **正确性/性能卡位分工**：BW1102（gfx938，validation-host-26 级）= 生产卡型；BW1101
   类仅用于离线正确性对拍，性能结论与 gfx938 特有判别必须生产卡复核。
 - thinking 模型建议给足 `max_tokens` 或用
   `chat_template_kwargs: {"enable_thinking": false}`，否则思考文本会占满

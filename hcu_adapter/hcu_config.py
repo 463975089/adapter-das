@@ -59,6 +59,20 @@ class HcuConfigError(RuntimeError):
 # backends   selectable backend -> {status, note}
 
 BACKEND_CATALOG = {
+    "cuda_graph": {
+        "var": None,
+        "summary": "HIP driver guard for breakable prefill graph capture",
+        "backends": {
+            "prefill-bcg-driver-truth": {
+                "status": "candidate",
+                "note": "Breakable prefill uses the upstream eager runner on HIP; "
+                        "draft prefill returns no runner, other backends delegate "
+                        "unchanged. Decode FULL graphs are outside this gate. "
+                        "Registration/dispatch contracts covered; model qualification "
+                        "and hardware-specific graph support remain separate.",
+            },
+        },
+    },
     "vllm_sparse_indexer": {
         "var": "HCU_VLLM_SPARSE_INDEXER_IMPL",
         "summary": "vLLM 0.33 C4 sparse indexer through public OOT and official helpers",
@@ -259,7 +273,7 @@ BACKEND_CATALOG = {
                "window 64K). Gate tests/kernels/test_mqa_triton_gfx938.py "
                                "(fixed-emu cross-check included). Serving "
                                "A/B passed 2026-10-18 (zero-env tp4 "
-                               "GLM-5.3, nmz26 GPU4-7): four gates green, "
+                               "GLM-5.3, validation-host-26 GPU4-7): four gates green, "
                                "marathon 0/20 + Tokyo (unified post-think "
                                "metric), long-ctx 4972 tok correct; decode "
                                "+9% short / +4% long-ctx vs emu-vec arm "
@@ -411,7 +425,7 @@ BACKEND_CATALOG = {
                                "（BW1101 对拍，性能待 BW1102 复核）。"
                                "Serving A/B executed 2026-10-19 (glm53f "
                                "tp4 zero-env vs HCU_FA_IMPL=triton, "
-                               "nmz26): quality+perf parity <=8k ctx "
+                               "validation-host-26): quality+perf parity <=8k ctx "
                                "(anchors/decode 8.27 tok/s identical/"
                                "prefill within +-10%/LONGCTX facts pass); "
                                "first boot killed by a wrapper bug="
@@ -477,7 +491,7 @@ BACKEND_CATALOG = {
             "aiter": {"status": "validated",
                       "note": "DTK aiter_moe; blockwise->ASM tuned csv, "
                               "channelwise->moe_c; rel 0.02-0.04 gate "
-                              "PASS (nmz18 gfx938); unlisted shapes "
+                              "PASS (validation-host-18 gfx938); unlisted shapes "
                               "auto-fallback to triton"},
         },
     },
@@ -504,6 +518,36 @@ BACKEND_CATALOG = {
                                  "Recon rel 0.0022; three-tier gate "
                                  "tests/kernels/test_w4a16_moe_deepgemm.py; "
                                  "bench vs triton + e2e pending."},
+        },
+    },
+    "ct_channel_w4a8_components": {
+        "var": None,
+        "summary": "Channel INT4 / token INT8 components and explicit BF16 "
+                   "DeepEP LL route candidate; model acceptance pending",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "w4a8_int8_triton: masked absmax/127.5 ties-even INT8 "
+                        "quantization and integer INT8 x signed INT4 GEMM with "
+                        "FP32 token/channel scaling. CPU layer oracle is checked "
+                        "against compressed-tensors 0.17.0. 13 numeric/changed-input "
+                        "graph tests passed on validation-host-b GPU4, including capacity1024; "
+                        "iteration72 records exact candidate bytes. No serving "
+                        "integration or model accuracy acceptance. Explicit "
+                        "w4a8_int8_native_triton retains FP32/BF16/FP16 scale "
+                        "and quotient rounding and dtype-specific zero epsilon; "
+                        "iteration83 has 58 CPU reference and 12 HCU component "
+                        "tests, including exact integer GEMM rescaling. Neither "
+                        "contract waives the FP32 expert-chain failures. "
+                        "Explicit native-storage integer expert with a single "
+                        "FP32 SiLU-times-up product store: iteration86 has "
+                        "69 CPU reference and 18 HCU component/graph tests "
+                        "passed. Explicit HCU_W4A8_MOE=int8 retains activation "
+                        "metadata and reuses the official raw INT4 loader; "
+                        "fresh selector/DeepEP LL ABI and synthetic graph "
+                        "integration checked on validation-host-a. Restricted runner options, "
+                        "distributed dispatch/combine and model acceptance pending.",
+            },
         },
     },
     "int8_linear_gemm": {

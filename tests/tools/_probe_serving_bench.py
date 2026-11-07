@@ -6,7 +6,7 @@
 
 用法：
   python3 bench_serving.py                                   # 默认 127.0.0.1:30187
-  python3 bench_serving.py --url http://10.16.1.26:30187     # nmz26 宿主直跑
+  python3 bench_serving.py --url http://192.0.2.26:30187     # validation-host-26 宿主直跑
   python3 bench_serving.py -c 16 -n 128 -r 3                 # 16 并发 × 128 tok × 3 轮
   python3 bench_serving.py --anchors-only                    # 只跑锚点门
 

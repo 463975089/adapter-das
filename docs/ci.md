@@ -33,7 +33,7 @@ L1.5 v2/代表矩阵的下列 HCU 计数是**拆分前兼容快照的历史证�
 ### 启动就绪严格入口（2026-11-03）
 
 `bash ci/l15_readiness_gate.sh /path/to/sglang` 强制真实单卡 HIP 预检、
-源码绑定和逐 nodeid/subtest 判定。当前五家族清单共 28 case；nmz28 证据为
+源码绑定和逐 nodeid/subtest 判定。当前五家族清单共 28 case；validation-host-c 证据为
 完整 27 case 通过，另新增非零 RoPE MLA case 的 6 个参数化节点增量通过，
 其中 2 case 明确是 CPU 契约。该入口拒绝 skip/xfail/xpass、缺失报告和 collection
 失败；旧 observe/预算分诊结果不能替代它。
@@ -70,12 +70,12 @@ L1.5 v2/代表矩阵的下列 HCU 计数是**拆分前兼容快照的历史证�
 = `CUDA + flashinfer are required` 平台性 skip + 1 件 flashinfer linear GDN
 SM90/SM100 门——与 L1.5 的合法 skip 同类，零非预期。
 
-### L1.5c 批 D 功能面直跑分诊（2026-10-19，nmz18/BW1101 实测）
+### L1.5c 批 D 功能面直跑分诊（2026-10-19，validation-host-18/BW1101 实测）
 
-环境：nmz18 容器 `nsa-tp8`（BW1101 8 卡可见，实测用 GPU4；正确性
+环境：validation-host-18 容器 `nsa-tp8`（BW1101 8 卡可见，实测用 GPU4；正确性
 有效、性能不迁移），adapter 树=快照 `/root/hcu_t2_r14`（=master 40c2808，
 tar 直灌），上游=/sglang-v0521，env 契约同 L1.5b。批 D=「import 即 SKIP
-清查 + 可跑面分级」，原定 nmz26 场地，因占卡转 nmz18。
+清查 + 可跑面分级」，原定 validation-host-26 场地，因占卡转 validation-host-18。
 
 | 批 D 目标 | 件数/测数 | 三态处置 |
 |---|---|---|
@@ -91,7 +91,7 @@ tar 直灌），上游=/sglang-v0521，env 契约同 L1.5b。批 D=「import 即
 L1 纳入建议：三绿段合并为独立 `l15_units` 段（合计 ~10min，随批 B/C
 定位后一批进 gate 脚本）。
 
-### L1.5d 批 B/C 模型族件分诊（2026-10-19，nmz18/BW1101 实测）
+### L1.5d 批 B/C 模型族件分诊（2026-10-19，validation-host-18/BW1101 实测）
 
 环境同 L1.5c（GPU4，快照 40c2808，env 契约同 L1.5b）。逐文件刀（单件
 120-180s 超时），24 unit/models 文件 + 6 kernels/ops 文件 + dsv4 子目录。
@@ -126,7 +126,7 @@ JIT）；teardown 挂两处随 K7 深查役一并处理。L1 纳入建议：批 
 22 文件进 `l15_units` 段（bfa_overlap/批 C 文件暂不进，负面面留
 KNOWN_FAILURES 跟踪——批 C 数值族修复后再转正）。
 
-### L1.5e v0.5.22 树首跑分诊（R-17 升级适配役普查，2026-10-19，nmz26/baa9bef）
+### L1.5e v0.5.22 树首跑分诊（R-17 升级适配役普查，2026-10-19，validation-host-26/baa9bef）
 
 树=/sglang-v0522（浅克隆 v0.5.22 tag），adapter 快照=当前 master，
 env 契约同 L1.5b，GPU4。上游 .22 自带 KNOWN_FAILURES.md（四类账+「未
@@ -156,7 +156,7 @@ env 契约同 L1.5b，GPU4。上游 .22 自带 KNOWN_FAILURES.md（四类账+「
 真增量=两根 needle/seam 漂移（其一 boot 级）+JIT 家族扩面；适配役从
 P0 两根漂移点开工。
 
-### L1.5f v0.5.22 适配役余项收口（2026-10-19，nmz26）
+### L1.5f v0.5.22 适配役余项收口（2026-10-19，validation-host-26）
 
 **rel 线 L1 全门 GREEN（gpu=4，`--up-tree /sglang-v0522`）**：l0/cpu/
 kernels/l15_upstream/l15_mech（预算绊线 38F/99P PASS）/五门禁/vendor 全过
@@ -189,7 +189,7 @@ ar_norm 桶晋级动作在 .22 线从「我们翻默认」变为「上游默认�
 **R-09①②③ 在 .22 线的处置更新**：①终态如上；②③（quant_aiter 桶/
 R-04 面）不受本重构影响，仍按各自节拍。
 
-### L1.5g CUB/uint2 两根实测治愈——cuda-mocker 配方（2026-10-19，nmz26）
+### L1.5g CUB/uint2 两根实测治愈——cuda-mocker 配方（2026-10-19，validation-host-26）
 
 L1.5f 三根定性表中的 **CUB 头缺失根**与 **hipcc uint2 分解缺口根**实测
 同配方治愈（无需装任何库，全部用盒上现有件）：`/opt/dtk/cuda/cuda-12` 是
@@ -218,7 +218,7 @@ cuh` 能找到，但 mocker 的 CUDA 头（`vector_types.h` 等）与 hipcc 隐�
    cudart（`__cudaRegisterFatBinary` 等 fatbin 注册符的提供方，dlopen 时
    进程内必须有它；底层转发 HIP）。
 
-**证据**（nmz26 容器 /tmp/rocm22-mock 作坊版，2026-10-19）：
+**证据**（validation-host-26 容器 /tmp/rocm22-mock 作坊版，2026-10-19）：
 - dpsk_v4_metadata（CUB 依赖）：编译→链接→dlopen→`run` 符号导出全绿
   （`LOAD_OK tvm_ffi.module.Module` / `RUN_FN ffi.Function`）；
 - causal_conv1d bf16 precise_math（uint2 依赖）：同配方 LOAD_OK + **数值
@@ -237,12 +237,12 @@ cuh` 能找到，但 mocker 的 CUDA 头（`vector_types.h` 等）与 hipcc 隐�
 - 生产落地=镜像固化合成根 + adapter 侧收编两个 env；手工配方已可先行
   自救。
 
-### L1.5h cuda-mocker 配方跨环境战役与锚定待跑（2026-10-19 晚，nmz18/nmz26）
+### L1.5h cuda-mocker 配方跨环境战役与锚定待跑（2026-10-19 晚，validation-host-18/validation-host-26）
 
 L1.5g 作坊验证后跨环境推广实测，**配方三关再证成立+两个坑修复+一个硬边界
-发现**；带配方的 mech 锚定复跑因机时未落，等 nmz26 空卡（资产已备）。
+发现**；带配方的 mech 锚定复跑因机时未落，等 validation-host-26 空卡（资产已备）。
 
-**配方在第二环境三模块全过**：nmz18 新容器（sf_b075 镜像）同配方下
+**配方在第二环境三模块全过**：validation-host-18 新容器（sf_b075 镜像）同配方下
 metadata（cache 复刻+补链）与 **compress_plan（c_plan.cuh，uint2 分解缺口
 族第三颗）**补 ninja 编译链接全过、conv1d 装载过——三模块横跨两机两镜像
 族，CUB/uint2 两根的配方修复面坐实。
@@ -252,33 +252,33 @@ metadata（cache 复刻+补链）与 **compress_plan（c_plan.cuh，uint2 分解
 kernels 段 14 测（w4a16_deepgemm 全家）——`cp -r /opt/dtk/.info <合成根>/`
 即消。**坑二（即 L1.5g 壳本体）**：壳必须剥 `-DUSE_ROCM`/
 `-D__HIP_PLATFORM_AMD__*` 并注入 `-DSGL_CUDA_ARCH=750`（mocker 将 gfx938
-映射为 750），漏一条则回到 HIP 头双定义/hipcc uint2 语法缺口（nmz18 首轮
+映射为 750），漏一条则回到 HIP 头双定义/hipcc uint2 语法缺口（validation-host-18 首轮
 壳版本错配复现过全套指纹，反向验证了根因分析）。
 
-**硬边界修正（2026-10-20 锚定轮推翻前判）**：先前"sf_b075 × nmz18 宿主
+**硬边界修正（2026-10-20 锚定轮推翻前判）**：先前"sf_b075 × validation-host-18 宿主
 = HIP init 死锁、同款镜像跨机物理不可行"是**误诊**。真根因双因素：①容器
 未挂宿主 `/opt/hyhal`（HAL 缺失，bw47 战已证同型）；②冷 `~/.cache/tvm-ffi`
 触发 tvm_ffi 选件构建器**自锁**（fork 子进程再 import torch/HSA，父子互
 poll pipe 永挂；指纹=poll+renderD fd 全开+hsakmt shm deleted，与旧"死锁"
 完全同构）。同款镜像 sf_b075-20261018-0048 + `--privileged` + hyhal 挂载
-+ tvm-ffi cache 播种后，nmz18 DC=8 秒出、REAL_INIT_OK、全门可跑。
++ tvm-ffi cache 播种后，validation-host-18 DC=8 秒出、REAL_INIT_OK、全门可跑。
 "镜像↔宿主配对"不成立；成立的是**镜像 × 挂载面 × cache 温度**三件套
 （判别探针保留：60s device_count + 真张量乘二连）。tvm-ffi 侧官方逃生门
 `TVM_FFI_DISABLE_TORCH_C_DLPACK=1`；cache_export/import 已把 tvm-ffi/
 torch_extensions 收进标准种子。
 
-**顺带治理两笔**：①共享盘 `/root/hcu_t2`（nmz26 在役树本体）是**非 git
+**顺带治理两笔**：①共享盘 `/root/hcu_t2`（validation-host-26 在役树本体）是**非 git
 旧版同步树**，其 ci/l1_gpu_gate.sh 无 --up-tree（自动探测逮烘焙 v0521 触
 发 .22 适配层×.21 树 import 死锁）——已从 HEAD b64 刷新 ci/tests/docs 三
-目录修平（sgl_kernel/sitecustomize 在役件未触碰；**nmz26 侧建议尽快
+目录修平（sgl_kernel/sitecustomize 在役件未触碰；**validation-host-26 侧建议尽快
 git 化或重同步全树**）。②gate 位参在 `sh -c` 双跳里会被 `2 >` 吃成 fd
 重定向（GPU 位参丢失 silently 跑 auto-pick）——调用统一
 `[GPU] --up-tree <path> >log 2>&1` 形态。
 
-**锚定已跑（2026-10-20 nmz18 复活轮；nmz26 满载 → 按"重建容器"路线复活
-nmz18：拉同款镜像+privileged+hyhal+三板斧种子，全配方 env、TSCALE=2）**：
+**锚定已跑（2026-10-20 validation-host-18 复活轮；validation-host-26 满载 → 按"重建容器"路线复活
+validation-host-18：拉同款镜像+privileged+hyhal+三板斧种子，全配方 env、TSCALE=2）**：
 l0/cpu/gates/vendor PASS，mech **38F/101P 与基线持平**——成分对账（GPU1
-复跑 `-rf` 名单袋 nmz18 `/tmp/diag_mech_rf.log`）**推翻 32F 可治的拆账**：
+复跑 `-rf` 名单袋 validation-host-18 `/tmp/diag_mech_rf.log`）**推翻 32F 可治的拆账**：
 - `dpsk_v4_topk_v2` **构建失败**（cuda.cu:11 引用
   `TopKKernel<false>::transform_packed`，v0522 头已是 `transform_paged`
   ——针脚失配）→ retry×5 耗尽 → **13 败行 NoneType 连坐** + 4 行 retry
@@ -292,7 +292,7 @@ l0/cpu/gates/vendor PASS，mech **38F/101P 与基线持平**——成分对账�
   （运行期补形）/ per_token_group_quant（`__HIP_SATFINITE/__HIP_E4M3`
   针脚 + `SGL_CUDA_ARCH=750` 触发 vec 16B 上限静态断言——arch 映射层面
   受限，需降 vec 宽或提映射）。
-- **同轮附得（配方揭盖效应）**：kernels **5F/160P**（vs nmz26 无配方
+- **同轮附得（配方揭盖效应）**：kernels **5F/160P**（vs validation-host-26 无配方
   0F/165P）——5F 全 quant bridge 族=quant 模块缺口的暴露面：无配方时
   JIT 工具链不在场→bridge 优雅回退 aiter→绿；有配方 nvcc 在场→真编译
   →硬失败。**配方会揭盖潜伏缺口**，跨机对账必须同配方形态。l15_upstream
@@ -304,9 +304,9 @@ l0/cpu/gates/vendor PASS，mech **38F/101P 与基线持平**——成分对账�
   态）；l15 绊线待 -rf 名单定族。全门终态 GREEN 前置=三模块移植收口
   （topk/c_plan 归 adapter needle patch，quant 归 R-19 vendor 单）。
 
-### L1.5j nmz18 × v0.5.22 × glm53f serving 首跑四门全绿（2026-10-20，R-17 三绑定首演）
+### L1.5j validation-host-18 × v0.5.22 × glm53f serving 首跑四门全绿（2026-10-20，R-17 三绑定首演）
 
-nmz18 新容器 `g53f-v0522`（模型只读+v0522 树公共盘化
+validation-host-18 新容器 `g53f-v0522`（模型只读+v0522 树公共盘化
 `$HOME/sglang-v0522`+三板斧种子+tilelang 0.1.12），配方=cookbook
 §1.6。三 boot 崩点连修（全部 adapter rel 线 commit，详见 models.md 2026-10-20
 行）：①`_hcu_check` 穿透式签名（.22 `dcp_size` 针脚，4ec080d）；②镜像烤
@@ -320,7 +320,7 @@ mocker/nvcc 路线；serving 走的 plain hipcc 路线只有 `__all_sync` 一个
 单流 10.0 tok/s 确定性×3、c8 ~40 tok/s、~5k tok 双事实检索全对；kernels 门
 5F quant 族预期同修（待下轮锚定复跑确认后绊线回 0F）。
 
-### L1.5i bw1000 系列（gfx936/bw47）攻略战——配方跨 ISA 实证+盒级三发现（2026-10-20 凌晨，nmz26/18 满载转场）
+### L1.5i bw1000 系列（gfx936/bw47）攻略战——配方跨 ISA 实证+盒级三发现（2026-10-20 凌晨，validation-host-26/18 满载转场）
 
 nmz 双机满载，按用户指示转 bw7（bw47，gfx936/BW1000 系，8 卡空）继续。
 **配方跨 ISA 直通**：gfx936 的 mocker 同样映射 `__CUDA_ARCH__=750`（E

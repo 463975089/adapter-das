@@ -35,7 +35,7 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 `aiter_ar` 的自动规则（hcu_env.py）区分新旧 aiter 布局：gfx93\* +
 **旧版** `aiter.ops.triton.custom_all_reduce` → 自动拒绝（图重放损坏，
 1eb038d）；**新版** `aiter.dist` GraphSafeAiterCustomAllreduce → 自动允许
-（2026-10-10 nmz26 实测 15/15 压测全过，含 graph-replay 换输入）。
+（2026-10-10 validation-host-26 实测 15/15 压测全过，含 graph-replay 换输入）。
 `HCU_AITER_AR=1` 可显式夺回（压测先行），但跨不过显式 disable。
 变量手册与自动适应总注册表：`docs/env-vars.md` / `hcu_env.py`。
 

@@ -8,7 +8,7 @@ Run on a single GPU inside the DTK container:
     CUDA_VISIBLE_DEVICES=6 python3 _test_dtk_deepgemm.py
 
 Encodes the kernel facts established while bringing DeepEP up on HCU
-(2026-10-11, nmz26). Re-run after any deepgemm wheel upgrade — a change
+(2026-10-11, validation-host-26). Re-run after any deepgemm wheel upgrade — a change
 in any PASS/FAIL verdict below changes what the EP bridge must patch:
 
   1. bf16 masked GEMM, native (G,N,K) weight  -> FAIL (garbage, ~6x ref mag)

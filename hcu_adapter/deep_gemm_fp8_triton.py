@@ -158,7 +158,7 @@ def fp8_m_grouped_gemm_nt_masked(
         b_s.stride(0), b_s.stride(1), b_s.stride(2),
         out.stride(0), out.stride(1),
         BLOCK_M=block_m, BLOCK_N=128, BLOCK_K=64,
-        # w4/s3 is the sweep winner on gfx938 (nmz16 2026-10-21): the fp8
+        # w4/s3 is the sweep winner on gfx938 (validation-host-16 2026-10-21): the fp8
         # tile + convert working set at num_warps=8 serializes (11.9ms ->
         # 2.15ms on the E32 m16 K4096 N4096 bench); bf16 masked uses w8.
         num_warps=4, num_stages=3,

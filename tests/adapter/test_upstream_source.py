@@ -114,7 +114,7 @@ def test_green_model_worker_cannot_hide_source_mutation(tree, tmp_path, monkeypa
         modes="eager,graph", timeout=30, binding_manifest=path / "binding.json",
     )
     monkeypatch.setattr(smoke, "preflight",
-                        lambda *a: {"upstream": {"commit": before["commit"]}})
+                        lambda *a, **kw: {"upstream": {"commit": before["commit"]}})
     calls = []
 
     def job(argv, **kwargs):

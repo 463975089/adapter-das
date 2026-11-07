@@ -27,7 +27,7 @@ Two symbols, both surgical:
   ``GroupCoordinator.fused_allreduce_rmsnorm`` (parallel_state.py), which
   dispatches to the aiter class's ``custom_fused_ar_rms`` / ``fused_ar_rms``.
 
-8-rank probe evidence (nmz26 BW1102, tmp_fetch/probe_r09_arnorm.py,
+8-rank probe evidence (validation-host-26 BW1102, tmp_fetch/probe_r09_arnorm.py,
 2026-10-19): parity vs fp64-exact all-reduce is 1 ulp (norm) / 0 ulp
 (residual) -- *better* than the rccl reference (3-8 ulps; the IPC kernel
 sums exactly where rccl accumulates in ring order); fused vs

@@ -8,7 +8,7 @@ pinned at its pure-logic layer (no torch / no GPU / any machine):
 
   * jit_compat  — __nv_* token aliases in the cuda_fp8.h / cuda_bf16.h
                   forwarders (proven alias set: box16 dtk2604, 43/43
-                  sgl-kernel JIT modules compiled; origin nmz26).
+                  sgl-kernel JIT modules compiled; origin validation-host-26).
   * topo guard  — NCCL_TOPO_FILE <gpu>-count vs visible-count decision
                   table + env action (fatal XGMI "could not find GPU
                   5000" on 4-proc subsets).
@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from hcu_adapter import hcu_env, jit_compat, nccl_topo_guard, watchdog_cold  # noqa: E402
 
-# Real topology-XML shape (nmz26 /usr/local/built-in-508-topo-input-tj-default.xml).
+# Real topology-XML shape (validation-host-26 /usr/local/built-in-508-topo-input-tj-default.xml).
 _TOPO_2GPU = """<system version="2">
   <cpu numaid="0" arch="x86_64" vendor="HygonGenuine">
     <pci busid="0000:09:00.0" class="0x0b4000">

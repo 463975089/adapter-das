@@ -4,7 +4,7 @@
 """Numerics gate: GDN aiter route vs the upstream triton fla kernels.
 
 Findings baked in (2026-10-13): h and v_new are bit-exact (dh=dv=0) at
-every probed shape on gfx936 (bw7); gfx938 (nmz26) shows fp32-ordering
+every probed shape on gfx936 (bw7); gfx938 (validation-host-26) shows fp32-ordering
 divergence growing with accumulation depth — dh up to ~2e-3 and dw up to
 ~3e-5 at bs=4/T=256 (same kernel family, different wave scheduling).
 State pools are fp32 on BOTH sides (sglang ssm pool is fp32); a/b/A_log/

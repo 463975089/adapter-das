@@ -37,6 +37,48 @@
       "backend": "aiter",
       "timeout": 1200,
       "owner": "collective-fusion"
+    },
+    {
+      "id": "ct-int8-deepep-event",
+      "kind": "ct-int8-deepep",
+      "path": "tools/ct_w4a8_deepep_probe.py",
+      "primitive": "dispatch+int8-experts+combine",
+      "backend": "deepep",
+      "recv_hook": false,
+      "timeout": 600,
+      "owner": "moe"
+    },
+    {
+      "id": "ct-int8-deepep-event-clamp",
+      "kind": "ct-int8-deepep",
+      "path": "tools/ct_w4a8_deepep_probe.py",
+      "primitive": "dispatch+int8-experts+combine",
+      "backend": "deepep",
+      "recv_hook": false,
+      "swiglu_limit": 0.75,
+      "timeout": 600,
+      "owner": "moe"
+    },
+    {
+      "id": "ct-int8-deepep-hook",
+      "kind": "ct-int8-deepep",
+      "path": "tools/ct_w4a8_deepep_probe.py",
+      "primitive": "dispatch+int8-experts+combine",
+      "backend": "deepep",
+      "recv_hook": true,
+      "timeout": 600,
+      "owner": "moe"
+    },
+    {
+      "id": "ct-int8-deepep-hook-clamp",
+      "kind": "ct-int8-deepep",
+      "path": "tools/ct_w4a8_deepep_probe.py",
+      "primitive": "dispatch+int8-experts+combine",
+      "backend": "deepep",
+      "recv_hook": true,
+      "swiglu_limit": 0.75,
+      "timeout": 600,
+      "owner": "moe"
     }
   ]
 }

@@ -37,7 +37,7 @@ def install() -> None:
         # is_cuda semantics hard-depends on vllm only for `_custom_ops` symbol
         # stubs (bound elsewhere). The vllm_hcu platform plugin, however,
         # hangs the process on this stack (apply_platform_patches under our
-        # import order — observed live on nmz26 dtk26041: "Platform plugin hcu
+        # import order — observed live on validation-host-26 dtk26041: "Platform plugin hcu
         # is activated" then silence until watchdog). sglang resolves its own
         # platforms via the seam below; the plugin is dead weight here.
         # Gate value must be a NON-empty allowlist (vllm envs treats an unset
@@ -1960,7 +1960,7 @@ def install() -> None:
                 # definitions inside entrypoint's module-level `if ENABLE_JIT_-
                 # DEEPGEMM:` (executed earlier with the pre-bridge False): the
                 # fp8 arms then die on deep_gemm_wrapper.get_mn_major_tma_-
-                # aligned_tensor (DSV4F fp8 dp8ep8, nmz16 2026-10-21; audit:
+                # aligned_tensor (DSV4F fp8 dp8ep8, validation-host-16 2026-10-21; audit:
                 # cached modules carry FLIPPED=True yet lack the fn; purge +
                 # reimport defines it against the shim + identity layout). Drop
                 # the stale modules AFTER the flip so every later import
@@ -2502,7 +2502,7 @@ def install() -> None:
         #     aiter_moe (blockwise -> ASM tuned csv, channelwise -> moe_c),
         #     unlisted shapes fall back to the stock triton kernel (log-once).
         #     Knob: HCU_FUSED_MOE_IMPL = auto | aiter | triton (auto default).
-        #     Gate: nmz18 BW200/gfx938 rel 0.02-0.04 vs bf16 ref (see
+        #     Gate: validation-host-18 BW200/gfx938 rel 0.02-0.04 vs bf16 ref (see
         #     hcu_adapter/aiter_moe.py docstring).
         try:
             from hcu_adapter import aiter_moe as _amo
@@ -2579,7 +2579,7 @@ def install() -> None:
                 "HCU adapter: moe_c w4a16 bridge not installed", exc_info=True
             )
 
-        # 10.8. CT W4A8 MoE scheme route (2026-10-26, nmz26 dsv41f
+        # 10.8. CT W4A8 MoE scheme route (2026-10-26, validation-host-26 dsv41f
         #      Channel-INT4-w4a8): DAS-converted checkpoints carry regex-only
         #      config_groups, so target_scheme_map has no "Linear" bucket and
         #      CompressedTensorsW4AFP8MoE.__init__ dies on KeyError('Linear')
@@ -3013,6 +3013,17 @@ def install() -> None:
                 "HCU adapter: FP4 expert runtime loader not installed", exc_info=True,
             )
 
+        # EP token padding needs a reserved request row in V4.1 metadata.
+        try:
+            from hcu_adapter import dsv41_request_indices
+
+            dsv41_request_indices.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: V4.1 padded request indices not installed",
+                exc_info=True,
+            )
+
         # Import speculative scheduling only after operator/vendor setup.
         # Private metadata allocation preserves community source and aliases.
         try:
@@ -3022,6 +3033,18 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: speculative pinned metadata not installed", exc_info=True,
+            )
+
+        # Native routing needs stable expert slots before its weight sum.
+        # Keep the compiled entry and cached aliases; never rewrite source.
+        try:
+            from hcu_adapter import moe_topk_order
+
+            moe_topk_order.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: native grouped TopK order bridge not installed",
+                exc_info=True,
             )
 
         # Install the model-method binding only after operator/vendor bridges

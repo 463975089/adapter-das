@@ -5,7 +5,7 @@
 
 E=288/N1=1024(shard 512)/N2=4096/K=4096/topk=8/block=128 —— 该形状不在 aiter
 ASM 调优表（tuned_fmoe_asm_w8a8_group.csv 已加载但无条目）→ 桥自动落
-stock triton + smem clamp（BN=BK=64/stages≤2）。2026-10-16 nmz26 实测：
+stock triton + smem clamp（BN=BK=64/stages≤2）。2026-10-16 validation-host-26 实测：
 36ms/步 @M=1（0.792ms/层×45）——decode 侧第二大头（第一是宿主图发射）。
 后续拿到调优窗口跑 sweep 后用本探针复测对比。
 

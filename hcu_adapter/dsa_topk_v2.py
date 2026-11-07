@@ -3,7 +3,7 @@
 
 """DSA top-k v2 fusion enablement for DeepSeek-V4.1 decode (HIP arms).
 
-2026-10-22 trace attribution (nmz26, torch-profiler decode20): the indexer
+2026-10-22 trace attribution (validation-host-26, torch-profiler decode20): the indexer
 top-k of every decode step ran torch.topk -- 57 mbtopk-family kernels baked
 into the verify graph, of which 4 groups x ~920us came from the four
 ratio-1/2 index-source layers' FullTopKIndexer._torch_decode (upstream keeps
@@ -22,7 +22,7 @@ usable on DTK gfx938:
 2. v41 full-topk arm -- ``select_decode``'s DecodeScores branch routes
    through the fused kernel using the per-row slot table as a page_size=1
    transform, replacing topk+sort+gather+mask. Parity vs the torch branch:
-   5/5 random seeds row-exact + len=0 all -1 edge, nmz26 2026-10-22
+   5/5 random seeds row-exact + len=0 all -1 edge, validation-host-26 2026-10-22
    (contract: top-min(k,len) of the first lens[b] scores, slots-table
    mapped, -1 padded, ascending).
 

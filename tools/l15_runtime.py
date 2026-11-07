@@ -136,8 +136,10 @@ def git_stamp(root):
             "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
 
 
-def preflight(up_tree, adapter_root, binding_manifest, host="adapter"):
-    """Verify the exact source binding and allocate on one real HIP device."""
+def preflight(up_tree, adapter_root, binding_manifest, host="adapter", *, device_count=1):
+    """Verify source bindings and allocate on every requested HIP device."""
+    if type(device_count) is not int or device_count < 1:
+        raise ValueError("device_count must be a positive integer")
     integrity = audit_source(up_tree)
     if not integrity["passed"]:
         raise UpstreamSourceError(integrity)
@@ -153,14 +155,20 @@ def preflight(up_tree, adapter_root, binding_manifest, host="adapter"):
     env = test_env(up_tree, adapter_root, host=host)
     env["HCU_ADAPTER_HOST"] = "none"
     probe = """
-import importlib.util, json, os, socket, torch
+import importlib.util, json, os, socket, sys, torch
+expected_count = int(sys.argv[1])
 assert torch.version.hip, 'a HIP build of Torch is required'
 assert torch.cuda.is_available(), 'no usable HIP device'
-assert torch.cuda.device_count() == 1, 'expose exactly one HCU device'
-x = torch.ones(1, device='cuda')
-assert x.add(1).item() == 2
-torch.cuda.synchronize()
-p = torch.cuda.get_device_properties(0)
+assert torch.cuda.device_count() == expected_count, 'expose exactly the requested HCU count'
+devices = []
+for index in range(expected_count):
+ with torch.cuda.device(index):
+  x = torch.ones(1, device='cuda')
+  assert x.add(1).item() == 2
+  torch.cuda.synchronize()
+  p = torch.cuda.get_device_properties(index)
+  devices.append({'index': index, 'device': p.name,
+                  'arch': getattr(p, 'gcnArchName', '')})
 plugin_evidence = {'loaded': False}
 if os.environ.get('SGLANG_PLUGINS') == 'hcu':
     import sglang.srt.plugins as _plugins
@@ -178,7 +186,7 @@ if os.environ.get('SGLANG_PLUGINS') == 'hcu':
 print('L15_RUNTIME ' + json.dumps({
  'hostname': socket.gethostname(), 'torch': torch.__version__,
  'hip': torch.version.hip, 'device_count': torch.cuda.device_count(),
- 'device': p.name, 'arch': getattr(p, 'gcnArchName', ''),
+ 'device': devices[0]['device'], 'arch': devices[0]['arch'], 'devices': devices,
  'visibility': {k: os.environ.get(k) for k in
                 ('HIP_VISIBLE_DEVICES', 'CUDA_VISIBLE_DEVICES', 'ROCR_VISIBLE_DEVICES')},
  'plugin': plugin_evidence,
@@ -186,7 +194,7 @@ print('L15_RUNTIME ' + json.dumps({
              ('sglang', 'sgl_kernel', 'hcu_adapter')}}))
 """
     result = subprocess.run(
-        [sys.executable, "-c", probe], env=env, cwd=adapter_root,
+        [sys.executable, "-c", probe, str(device_count)], env=env, cwd=adapter_root,
         capture_output=True, text=True, timeout=120, check=False,
     )
     if result.returncode:
@@ -196,6 +204,14 @@ print('L15_RUNTIME ' + json.dumps({
     if len(lines) != 1:
         raise ValueError("HCU preflight did not emit runtime evidence")
     runtime = json.loads(lines[0])
+    devices = runtime.get("devices", [])
+    if (type(runtime.get("device_count")) is not int
+            or runtime["device_count"] != device_count
+            or not isinstance(devices, list)
+            or any(not isinstance(d, dict) or type(d.get("index")) is not int
+                   for d in devices)
+            or [d["index"] for d in devices] != list(range(device_count))):
+        raise ValueError("HCU preflight did not verify every requested device")
     expected_roots = {"sglang": up_tree / "python",
                       "sgl_kernel": adapter_root, "hcu_adapter": adapter_root}
     for name, root in expected_roots.items():

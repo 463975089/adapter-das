@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-# GLM-5.3-Flash (/models/glm53f) dp8ep8 + MTP — nmz26 container g53-tp8
+# GLM-5.3-Flash (/models/glm53f) dp8ep8 + MTP — validation-host-26 container g53-tp8
 # 8x GPU0-7, port 30188, log /root/logs/srv_g53f_dp8ep8_mtp.log
 # stack: dtk26041 + torch 2.11 + official sglang v0.5.21 + adapter (hcu_t2)
 # recipe = TP4 baseline envs + cookbook glm-5.3 dp8ep8+MTP flags adapted:

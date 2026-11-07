@@ -7,7 +7,7 @@ The DTK deepgemm fork's ``m_grouped_bf16_gemm_nt_masked`` only ships the
 packed-layout masked kernel (BM64/BN256/BK128 HIPC): the bridge packs
 [E, N, K] weights once and caches the copy — doubling expert memory
 (DSV4-Flash EP: 69 GB raw + 69 GB packed > 144 GB card, OOM at graph
-capture, nmz16 2026-10-21). This module reimplements the contract in
+capture, validation-host-16 2026-10-21). This module reimplements the contract in
 triton with NATIVE [E, N, K] weights: no packing, no extra memory, and
 the same weight tensor serves the contiguous (prefill) path.
 

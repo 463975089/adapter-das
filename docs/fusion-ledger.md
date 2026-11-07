@@ -54,7 +54,7 @@ triton 融合 / 已拆解（登记理由）/ 缺失（桩）**。原则见 gover
    fused_allreduce_rmsnorm(_quant/_per_group/_pad) 家族 op schema 全确认
    （reg_ptr/reg_bytes IPC 注册缓冲 + _fa 句柄）——需 4 rank 联调探针排期；
    接入评估须对照 R-06 custom AR 定罪史（store-ordering 教训）。
-   **落位（2026-10-19，R-09①）**：8-rank 探针（nmz26 BW1102，
+   **落位（2026-10-19，R-09①）**：8-rank 探针（validation-host-26 BW1102，
    tmp_fetch/probe_r09_arnorm.py，hidden=4096 t=1..4096）三段全绿——
    ①数值：对 fp64 精确 AR 真值 norm **1ulp / residual 0ulp**（rccl 参照
    3-8ulp；IPC 精确和 vs 环形累加，融合核反而更准）；②perf：vs

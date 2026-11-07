@@ -26,6 +26,75 @@ _NUM_WARPS = 8
 
 
 @triton.jit
+def _w4a16_masked_kernel(
+    A, B, S, C, COUNTS,
+    M: tl.constexpr, N: tl.constexpr, K: tl.constexpr,
+    GROUP: tl.constexpr, NG: tl.constexpr,
+    BM: tl.constexpr, BN: tl.constexpr, BK: tl.constexpr,
+):
+    expert = tl.program_id(0)
+    row = tl.program_id(1) * BM + tl.arange(0, BM)
+    col = tl.program_id(2) * BN + tl.arange(0, BN)
+    count = tl.load(COUNTS + expert)
+    if tl.program_id(1) * BM < count:
+        kk = tl.arange(0, BK)
+        acc = tl.full((BM, BN), 0, tl.float32)
+        for start in range(tl.cdiv(K, BK)):
+            k = start * BK + kk
+            a = tl.load(
+                A + (expert * M + row[:, None]) * K + k[None, :],
+                (row[:, None] < count) & (row[:, None] < M) & (k[None, :] < K),
+                other=0,
+            )
+            packed = tl.load(
+                B + (expert * N + col[None, :]) * (K // 2) + k[:, None] // 2,
+                (col[None, :] < N) & (k[:, None] < K), other=0,
+            ).to(tl.int32)
+            q = ((packed >> ((k[:, None] % 2) * 4)) & 15) - 8
+            scale = tl.load(
+                S + (expert * N + col[None, :]) * NG + k[:, None] // GROUP,
+                (col[None, :] < N) & (k[:, None] < K), other=0,
+            ).to(tl.float32)
+            b = (q.to(tl.float32) * scale).to(a.dtype)
+            acc += tl.dot(a, b)
+        tl.store(
+            C + (expert * M + row[:, None]) * N + col[None, :],
+            acc,
+            (row[:, None] < count) & (row[:, None] < M) & (col[None, :] < N),
+        )
+
+
+def w4a16_masked(a, weights, scales, counts):
+    """Expert-major symmetric INT4 GEMM without repacking or scale expansion.
+
+    Raw bytes store the even K nibble low; dequantization is (q-8)*scale.
+    Only valid rows participate; padding is zero, including empty experts.
+    All strides are made contiguous before launch and counts stay on device.
+    """
+    e, m, k = a.shape
+    n = weights.shape[1]
+    if (
+        weights.dtype != torch.uint8
+        or tuple(weights.shape) != (e, n, k // 2)
+        or k % 2
+        or scales.ndim != 3
+        or tuple(scales.shape[:2]) != (e, n)
+        or not scales.shape[-1]
+        or k % scales.shape[-1]
+    ):
+        raise ValueError("W4A16 requires packed [E,N,K/2] and scales [E,N,K/group]")
+    if a.dtype not in (torch.bfloat16, torch.float16):
+        raise TypeError("W4A16 requires BF16 or FP16 activations")
+    out = torch.zeros((e, m, n), dtype=a.dtype, device=a.device)
+    _w4a16_masked_kernel[(e, triton.cdiv(m, 16), triton.cdiv(n, 64))](
+        a.contiguous(), weights.contiguous(), scales.contiguous(), out,
+        counts.contiguous(), m, n, k, k // scales.shape[-1], scales.shape[-1],
+        16, 64, 128, num_warps=4,
+    )
+    return out
+
+
+@triton.jit
 def _pow2(e):
     # 2**e for integer -126 <= e <= 127, built from the exponent field (exact).
     return ((e + 127) << 23).to(tl.float32, bitcast=True)

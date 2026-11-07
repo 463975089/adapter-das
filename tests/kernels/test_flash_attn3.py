@@ -12,6 +12,7 @@ Covers the surfaces the sglang fa3 backend actually calls:
 - merge_state_v2: exact partial-state merge
 """
 
+import pytest
 import torch
 
 from sgl_kernel.flash_attn import (
@@ -129,8 +130,8 @@ def _check_paged(name, bs, H, Hk, D, Dv, lens_q_list, pages_per_req, seed=0,
         q.float().cpu(), ref_k.cpu(), ref_v.cpu(), block_table.cpu(),
         seqlens_c.cpu(), cu_q.cpu(), scale, True, window, softcap,
     )
-    diff = (o.float().cpu() - ref).abs().max().item()
     assert o.shape == (M, H, Dv), f"{name}: shape {o.shape}"
+    diff = (o.float().cpu() - ref).abs().max().item()
     assert diff < tol, f"{name}: max diff {diff}"
     print(f"PASS {name}: shape={tuple(o.shape)} diff={diff:.5f}", flush=True)
 
@@ -387,6 +388,7 @@ def test_decode_3d_packed_q_with_cu():
         q3d.reshape(B, 1, H, D), pool_k, pool_v, pt, sl,
         softmax_scale=D**-0.5,
     )[0].reshape(B, H, D)
+    assert o_3d.shape == o_4d.shape
     d = (o_3d.float() - o_4d.float()).abs().max().item()
     assert d <= 2e-2, f"3D(cu) vs 4D triton: {d}"
     print(f"PASS decode 3D packed (cu_seqlens form): router-vs-kernel {d:.5f}")
@@ -405,9 +407,67 @@ def test_decode_3d_packed_q_no_cu():
         q3d.reshape(B, 1, H, D), pool_k, pool_v, pt, sl,
         softmax_scale=D**-0.5,
     )[0].reshape(B, H, D)
+    assert o_3d.shape == o_4d.shape
     d = (o_3d.float() - o_4d.float()).abs().max().item()
     assert d <= 2e-2, f"3D(no cu) vs 4D triton: {d}"
     print(f"PASS decode 3D packed (metadata form): router-vs-kernel {d:.5f}")
+
+
+@pytest.mark.parametrize("length", [1, 3])
+@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize("return_lse", [False, True])
+def test_paged_router_output_layout(length, packed, return_lse):
+    """Check the router ABI before comparing independent dense-reference math."""
+    pool_k, pool_v, pt, sl, q = _decode_fixture(3 * length, 8, 2, 64)
+    # Use three requests with a uniform query window, including speculative
+    # multi-token windows. Page rows remain distinct and noncontiguous.
+    pt, sl = pt[:3], sl[:3].clamp(min=length)
+    q4 = q.reshape(3, length, 8, 64)
+    query = q if packed else q4
+    cu = torch.arange(0, 3 * length + 1, length, dtype=torch.int32).cuda()
+    result = flash_attn_with_kvcache(
+        q=query, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+        cache_seqlens=sl, cu_seqlens_q=cu if packed else None,
+        max_seqlen_q=length, softmax_scale=64**-0.5,
+        causal=True, return_softmax_lse=return_lse,
+    )
+    actual, lse = result if return_lse else (result, None)
+    expected_shape = (3 * length, 8, 64) if packed else (3, length, 8, 64)
+    assert actual.shape == expected_shape
+    ref, ref_lse = _reference(
+        q.float().cpu(), pool_k.cpu(), pool_v.cpu(), pt.cpu(), sl.cpu(),
+        cu.cpu(), 64**-0.5, True,
+    )
+    assert (actual.reshape_as(q).float().cpu() - ref).abs().max().item() < 2e-2
+    if return_lse:
+        assert lse.shape == expected_shape[:-1]
+        assert lse.dtype == torch.float32
+        torch.testing.assert_close(lse.reshape_as(ref_lse).cpu(), ref_lse,
+                                   rtol=0, atol=2e-2)
+
+
+@pytest.mark.parametrize("return_lse", [False, True])
+def test_decode_packed_output_buffer(return_lse):
+    pool_k, pool_v, pt, sl, q = _decode_fixture(3, 8, 2, 64)
+    # A noncontiguous destination also checks that the supplied buffer is used.
+    backing = torch.full((3, 8, 128), float("nan"), device=q.device, dtype=q.dtype)
+    out = backing[..., ::2]
+    result = flash_attn_with_kvcache(
+        q=q, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+        cache_seqlens=sl, causal=True, out=out,
+        return_softmax_lse=return_lse,
+    )
+    actual, lse = result if return_lse else (result, None)
+    assert actual is out
+    assert torch.isnan(backing[..., 1::2]).all()
+    cu = torch.arange(4, dtype=torch.int32)
+    ref, ref_lse = _reference(q.float().cpu(), pool_k.cpu(), pool_v.cpu(),
+                              pt.cpu(), sl.cpu(), cu, 64**-0.5, True)
+    assert actual.shape == ref.shape
+    assert (actual.float().cpu() - ref).abs().max().item() < 2e-2
+    if return_lse:
+        assert lse.shape == ref_lse.shape
+        torch.testing.assert_close(lse.cpu(), ref_lse, rtol=0, atol=2e-2)
 
 
 def test_decode_3d_capture_safe():
@@ -416,27 +476,42 @@ def test_decode_3d_capture_safe():
     pool_k, pool_v, pt, sl, q3d = _decode_fixture(4, 8, 2, 128, seed=47)
     B, H, D = q3d.shape
     static_q = torch.zeros_like(q3d)
+    out = torch.empty_like(q3d)
     flash_attn_with_kvcache(  # warmup (compiles triton) off capture
         q=q3d, k_cache=pool_k, v_cache=pool_v, page_table=pt,
         cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
     )
     g = torch.cuda.CUDAGraph()
     with torch.cuda.graph(g):
-        o = flash_attn_with_kvcache(
+        o, lse = flash_attn_with_kvcache(
             q=static_q, k_cache=pool_k, v_cache=pool_v, page_table=pt,
             cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
+            out=out, return_softmax_lse=True,
         )
     g2 = torch.Generator().manual_seed(53)
-    new_q = torch.randn(B, H, D, generator=g2).to(torch.bfloat16).cuda()
-    static_q.copy_(new_q)
-    g.replay()
-    torch.cuda.synchronize()
-    want = flash_attn_with_kvcache(
-        q=new_q, k_cache=pool_k, v_cache=pool_v, page_table=pt,
-        cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
-    )
-    d = (o.float() - want.float()).abs().max().item()
-    assert d == 0.0, f"graph replay must track fresh q exactly, got {d}"
+    for _ in range(3):
+        new_q = torch.randn(B, H, D, generator=g2).to(torch.bfloat16).cuda()
+        static_q.copy_(new_q)
+        pt.copy_(pt.roll(1, dims=0))
+        sl.copy_(sl.roll(1, dims=0))
+        g.replay()
+        torch.cuda.synchronize()
+        want, want_lse = flash_attn_with_kvcache(
+            q=new_q, k_cache=pool_k, v_cache=pool_v, page_table=pt,
+            cache_seqlens=sl, softmax_scale=D**-0.5, causal=True,
+            return_softmax_lse=True,
+        )
+        assert o is out
+        assert o.shape == want.shape == new_q.shape
+        assert lse.shape == want_lse.shape == (B, H)
+        torch.testing.assert_close(o, want, rtol=0, atol=0)
+        torch.testing.assert_close(lse, want_lse, rtol=0, atol=0)
+        ref, ref_lse = _reference(
+            new_q.float().cpu(), pool_k.cpu(), pool_v.cpu(), pt.cpu(),
+            sl.cpu(), torch.arange(B + 1, dtype=torch.int32), D**-0.5, True,
+        )
+        assert (o.float().cpu() - ref).abs().max().item() < 2e-2
+        torch.testing.assert_close(lse.cpu(), ref_lse, rtol=0, atol=2e-2)
     print("PASS decode 3D capture+replay: replay tracks fresh inputs")
 
 

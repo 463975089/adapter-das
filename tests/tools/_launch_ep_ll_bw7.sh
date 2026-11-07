@@ -6,13 +6,13 @@
 # Validated 2026-10-13 (Qwen3-30B-A3B TP2+EP2 GPU6+7, :30197, 5/5 anchors +
 # 6/6 concurrent zero cross-talk).
 #
-# Recipe deltas vs the nmz26 2026-10-11 form (all three are required):
+# Recipe deltas vs the validation-host-26 2026-10-11 form (all three are required):
 #   - SGLANG_JIT_DEEPGEMM_PRECOMPILE=false: the bw7 root image runs a DeepGEMM
 #     JIT pre-compile session at startup (5.7-7.4 GB per shape), which starves
 #     the bf16 masked weight pack -> OOM in _prepare_bf16_masked_bm64... .
 #   - --mem-fraction-static 0.50: 0.456 < new KV-floor validator < pack-
 #     doubles-the-weights ceiling 0.60. The 0.50 sweet spot sits in between.
-#   - eager + triton attention: the known-good nmz26 form. (fa3 + full graph
+#   - eager + triton attention: the known-good validation-host-26 form. (fa3 + full graph
 #     died on deep_ep num_max_dispatch_tokens_per_rank assert -- graph+LL
 #     combo is NOT validated, see models.md.)
 #   - HCU_DEEPGEMM_BRIDGE=1 aliases the DTK `deepgemm` wheel as deep_gemm.

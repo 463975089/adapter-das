@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import sys
+from contextlib import contextmanager
 
 LOG = logging.getLogger("hcu.adapter")
 
@@ -173,7 +174,7 @@ TEXT_PATCH_ALLOWLIST = {
     # deepseek_v4/paged_mqa_metadata.cuh includes NVIDIA cub for BlockScan;
     # DTK ships hipCUB only (namespace cub mirrors the API, umbrella header
     # per the tree's own lora JIT convention) — DSV4-Flash decode graph
-    # capture, nmz16 gfx938 2026-10-20. See hcu_adapter/jit_dpskmeta.py.
+    # capture, validation-host-16 gfx938 2026-10-20. See hcu_adapter/jit_dpskmeta.py.
     ("platform_detect", "#include <cub/block/block_scan.cuh>"),
     # same file, Phase-1/2 hand scans: mask-form shuffles undeclared on DTK;
     # width=32 HIP forms keep the exact CUDA 32-lane warp segmentation.
@@ -181,7 +182,7 @@ TEXT_PATCH_ALLOWLIST = {
     ("platform_detect", "running = __shfl_sync(0xffffffff, v, 31);"),
     # c_plan.cuh compress-plan: structured bind into HIP uint2 (anonymous
     # union) — 4th site of the ABI fact; unpack_w returns a real uint2 so
-    # member reads are type-identical (DSV4-Flash nmz16 capture chain).
+    # member reads are type-identical (DSV4-Flash validation-host-16 capture chain).
     (
         "platform_detect",
         "    const auto [ragged_id, batch_id] = unpack_w(plan_w);",
@@ -217,7 +218,7 @@ TEXT_PATCH_ALLOWLIST = {
         "    const auto [freq_real, freq_imag] = freq;",
     ),
     ("platform_detect", "    __syncwarp();"),
-    # --- DSV4 family batch #3 (syntax-preflight driver, nmz16 2026-10-20):
+    # --- DSV4 family batch #3 (syntax-preflight driver, validation-host-16 2026-10-20):
     # --- float2 binds (rope/fp4_indexer_rope/c1/c2/mega), mask shuffles +
     # --- PTX scalar asm (mhc_post_combine_norm_prefill), attribute
     # --- placement + cudaMemcpy (c128_online*), CUDA bit intrinsics
@@ -319,7 +320,7 @@ TEXT_PATCH_ALLOWLIST = {
         "platform_detect",
         "    const auto [b0, b1] = cast<fp32x2_t>(b[i]);",
     ),
-    # --- K3/day-0 batch (nmz26 2026-11-05): topk_impl (include/ channel) /
+    # --- K3/day-0 batch (validation-host 2026-11-05): topk_impl (include/ channel) /
     # --- topk_v2 / situ_and_mul structured binds. Same ABI class; the
     # --- 6sp/8sp coarse pairs are the §5.3 ① dual candidates. The situ
     # --- cast pair reuses the silu_and_mul entries above (identical text).
@@ -416,6 +417,25 @@ def register(op, impl, target, mechanism, role=ROLE_ACTIVE, source=None,
     if role == ROLE_REF:
         # refs never serve traffic; nag loudly if registered from a bridge
         LOG.debug("registry: ref impl for %s recorded from %s", op, src)
+
+
+@contextmanager
+def registration_transaction():
+    """Roll back a group of registrations if serial startup installation fails.
+
+    Prepare bindings first, register inside this context, then publish them
+    after the last successful registration. This protects registry bookkeeping;
+    it does not undo arbitrary mutations to host modules.
+    """
+    records_before, bound_before = dict(_RECORDS), dict(_BOUND)
+    try:
+        yield
+    except BaseException:
+        _RECORDS.clear()
+        _RECORDS.update(records_before)
+        _BOUND.clear()
+        _BOUND.update(bound_before)
+        raise
 
 
 def _caller():

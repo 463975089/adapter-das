@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """MHC fused-stats HIP needle (needle-ized from the 2026-10-22 manual tree
-patches, four-gates-verified on nmz26 that night; tree pins kept the win but
+patches, four-gates-verified on validation-host-26 that night; tree pins kept the win but
 must not stay manual divergences).
 
 Two flips, both module-global rebinds (no source rewrite needed):
@@ -50,7 +50,7 @@ def install() -> None:
         _kern_mhc._is_hip = True
         flipped = True
     # Two more constants froze at import from the same seam-read `_is_hip`
-    # (nmz18 2026-10-23: arm-B boot died in triton compile --
+    # (validation-host-18 2026-10-23: arm-B boot died in triton compile --
     # "input_precision must be one of ('ieee', 'tf32'). Got tf32x3").
     # Launch sites read these module globals at call time, so rebinding is
     # enough; "ieee" is the fp32 MFMA path the HIP arm is designed for.

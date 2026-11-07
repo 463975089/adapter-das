@@ -21,6 +21,14 @@ facade 的运行时桥替代磁盘补丁；不可重新引入 common.py 写回�
 `moe_dualstream_gate` 同样已迁移为保留函数对象的运行时分支适配；
 仅作用于 MoE forward 的私有 capture predicate，不能改全局 capture 状态
 或临时改实例的 alt_stream；保留 skip_shared_experts 与 DeepEP 等分支。
+`moe_topk_order` 核对 native grouped router 两处 sorted 关键字操作数，
+仅在 GPU 私有函数副本改变对应常量，CPU 保留原副本，字节码指令不变。
+在原权重归一化之前固定专家槽位，不能事后重排已归一化的权重、全局
+替换 `torch.topk` 或用私有 Torch facade 绕过真实 compiler guard。
+保留 compiled wrapper 及原函数已有别名；Torch 的
+`_torchdynamo_orig_callable` 仍可能是带 `__wrapped__` 的包装，须定位真正
+原函数，并保留其参数名、参数数量和默认值。回归必须覆盖已预热编译入口、
+新进程和变输入 graph；局部重复一致不替代 CPU FP32 整模型精度门禁。
 `spec_h2d_pin` 通过原函数私有 Torch facade 分配 pinned KV-lens，
 保留函数对象与已有别名，不写回 eagle_utils.py。不能以固定 ring 深度
 推测 DMA 已结束；使用 Torch 管理的 pinned 分配并验证多流异步复制。
@@ -62,7 +70,9 @@ checkpoint 哈希结束还须重新读取资产字节确认一致；同 tick 的
 必须匹配 HCU 权重字节并执行完整 eager/graph，不能把合并分布称为
 全词表散度，也不能外推为其他模型/长度通过。聊天模板明确请求 list，
 并在 Engine 前校验 token IDs，避免 Transformers 返回映射时误传字符串 key。
-复合 checkpoint 的文本词表从 text_config 获取，不能读外层/视觉词表；
+复合 checkpoint 的文本词表从 language_config / text_config 获取，
+两者同时存在时按社区优先 language_config，不能读外层/视觉词表；
+同一解析用于文本量化元数据，错误的嵌套类型必须拒绝，不能回退外层。
 独立参考通过公开条件生成 AutoModel 入口加载并记录实际类。Qwen3.5 的
 纯文本验证不外推为图像/NEXTN/量化或多卡通过，家族 cookbook 配方与
 较小 checkpoint 的参数差异必须单独记录。
@@ -105,6 +115,11 @@ GPU 全套已加载宿主时，以独立进程复测，不能放宽生产工具�
 必须匹配 HCU 绑定字节，逐个检查全部加载 tensor 与完整 Linear 量化参数，
 并观察每层实际激活 QDQ；只反量化权重不足以建立参考。保留原精度策略，
 greedy 一致不能豁免分布 FAIL，不能绕过社区 CT 对整模型 FP32 的拒绝。
+MoE router 的有限分数并列须遵循社区较小专家 ID 优先规则，分组选择
+同样以较小组 ID 优先；覆盖 softmax、sigmoid、sqrtsoftplus，
+不能用无序 `torch.topk` 的任意赢家作为参考。bias 只参与排序，
+共享专家、renormalize 与 routed scaling 的原顺序保持不变；
+修复须配独立标量参考及变输入 graph replay，不据此宣布整模型精度通过。
 
 1. **同名 ≠ 同语义**：每个垫片必须对拍参考实现（cos/rel 断言），不能只测
    "能跑不崩"。案例：rope GPT-J cache 恒为半分 [cos|sin] 布局（fbc540c）。

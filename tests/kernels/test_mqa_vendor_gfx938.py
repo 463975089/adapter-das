@@ -3,7 +3,7 @@
 
 """R-02 watchtower: DTK deepgemm paged_mqa_logits vs the emu gold standard.
 
-Probe campaign 2026-10-18 (nmz26 GPU4, deterministic across repeats) pinned
+Probe campaign 2026-10-18 (validation-host-26 GPU4, deterministic across repeats) pinned
 two facts about the wheel op (deepgemm 2.1.0+dtk2604):
 
 1. LAYOUT: fused_kv_cache (P,64,1,132) uint8 pages of 8448B = row-major k

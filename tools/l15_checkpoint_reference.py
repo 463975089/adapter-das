@@ -20,6 +20,8 @@ import sys
 from tools.l15_model_smoke import (
     validate_execution_dtype, validate_generation, validate_lm_head_option, validate_mode,
     validate_quantization_option,
+    validate_tp_option, validate_tp_size,
+    validate_memory_fraction, validate_memory_option,
 )
 from tools.l15_runtime import write_json
 from tools.checkpoint_files import fingerprint
@@ -31,6 +33,15 @@ def requests(document):
     fp32_head = document.get("enable_fp32_lm_head", False)
     dtype = document.get("dtype", "bfloat16")
     quantization = document.get("quantization")
+    tp_size = document.get("tp_size", 1)
+    validate_tp_size(tp_size)
+    mem_fraction = document.get("mem_fraction_static", .25)
+    validate_memory_fraction(mem_fraction)
+    runtime = document.get("runtime", {})
+    if ((tp_size != 1 or "device_count" in runtime)
+            and (type(runtime.get("device_count")) is not int
+                 or runtime["device_count"] != tp_size)):
+        raise ValueError("checkpoint TP size differs from HCU runtime device count")
     if (document.get("artifact") != "l15-model-smoke"
             or document.get("passed") is not True
             or document.get("complete") is not True
@@ -58,6 +69,10 @@ def requests(document):
                 or evidence.get("enable_fp32_lm_head", False) is not fp32_head
                 or evidence.get("dtype", "bfloat16") != dtype
                 or evidence.get("quantization") != quantization
+                or type(evidence.get("tp_size", 1)) is not int
+                or evidence.get("tp_size", 1) != tp_size
+                or type(evidence.get("mem_fraction_static", .25)) not in (int, float)
+                or evidence.get("mem_fraction_static", .25) != mem_fraction
                 or mode not in {"eager", "graph"} or mode in modes):
             raise ValueError("invalid or duplicate checkpoint worker")
         modes.add(mode)
@@ -66,6 +81,8 @@ def requests(document):
         validate_lm_head_option(evidence.get("server_info", {}), fp32_head)
         validate_execution_dtype(evidence.get("server_info", {}), dtype)
         validate_quantization_option(evidence.get("server_info", {}), quantization)
+        validate_tp_option(evidence.get("server_info", {}), tp_size)
+        validate_memory_option(evidence.get("server_info", {}), mem_fraction)
         waves = evidence.get("generations", [])
         cases = evidence.get("accuracy_cases")
         if profile == "accuracy":
@@ -252,6 +269,8 @@ def run(args):
         "enable_fp32_lm_head": document.get("enable_fp32_lm_head", False),
         "execution_dtype": document.get("dtype", "bfloat16"),
         "execution_quantization": document.get("quantization"),
+        "execution_tp_size": document.get("tp_size", 1),
+        "execution_mem_fraction_static": document.get("mem_fraction_static", .25),
         "quantization_reference": quantization_reference,
         "reference": {"torch": torch.__version__, "transformers": transformers.__version__,
                       "device": "cpu", "dtype": "float32", "attention": "eager",
