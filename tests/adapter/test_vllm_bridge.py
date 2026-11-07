@@ -404,7 +404,10 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
     monkeypatch.delitem(sys.modules, "hcu_vllm_das", raising=False)
-    monkeypatch.delitem(bridge.__dict__, "HcuPlatform", raising=False)
+    # The lazy builder caches its result. Register an undo even if the key was
+    # absent, so the platform derived from this double cannot leak to real imports.
+    monkeypatch.setitem(bridge.__dict__, "HcuPlatform", None)
+    monkeypatch.delitem(bridge.__dict__, "HcuPlatform")
     real_import_module = bridge.import_module
     monkeypatch.setattr(
         bridge,
@@ -500,7 +503,8 @@ def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
         "vllm.v1.attention.backends.registry": registry,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
-    monkeypatch.delitem(bridge.__dict__, "HcuPlatform", raising=False)
+    monkeypatch.setitem(bridge.__dict__, "HcuPlatform", None)
+    monkeypatch.delitem(bridge.__dict__, "HcuPlatform")
     real_import_module = bridge.import_module
     monkeypatch.setattr(
         bridge,
