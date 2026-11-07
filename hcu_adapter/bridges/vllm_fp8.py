@@ -11,8 +11,8 @@ from __future__ import annotations
 from importlib import import_module
 import inspect
 
-# gfx938 has no evidence in this change; leave it and all other arches alone.
-VALIDATED_ARCHES = frozenset({'gfx936'})
+# Admit only HCU architectures with validated official-provider behavior.
+VALIDATED_ARCHES = frozenset({'gfx936', 'gfx938'})
 
 
 def install() -> bool:
@@ -62,7 +62,7 @@ def install() -> bool:
         op='vllm_fp8_linear', impl='official-triton',
         target='vllm.model_executor.kernels.linear.TritonFP8ScaledMMLinearKernel',
         mechanism=registry.MECH_SEAM, source=__name__,
-        detail='gfx936; official register_linear_kernel, last-priority fallback; no native predicate change',
+        detail=f'{detection.architecture}; official register_linear_kernel, last-priority fallback; no native predicate change',
     )
     setattr(linear, marker, True)
     return True
