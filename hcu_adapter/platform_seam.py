@@ -35,6 +35,10 @@ LOG = logging.getLogger("hcu.adapter")
 
 # seam 目标清单（install 逐一登记 registry；target = dotted symbol）
 _TARGETS = (
+    "sglang.srt.utils.common:get_device_capability",
+    "sglang.srt.utils.common:get_device_core_count",
+    "sglang.srt.utils.common:get_device_sm",
+    "sglang.srt.utils.common:get_nvgpu_memory_capacity",
     "sglang.srt.utils.common:is_cuda",
     "sglang.srt.utils.common:is_hip",
     "sglang.srt.utils.common:is_cuda_alike",
@@ -243,6 +247,72 @@ def install():
 
     _common.is_flashinfer_available = _hcu_fi_available
 
+    original_memory_capacity = _common.get_nvgpu_memory_capacity
+
+    def _hcu_get_memory_capacity():
+        if torch.version.hip:
+            from hcu_adapter.hip_metadata import minimum_memory_capacity
+
+            return minimum_memory_capacity()
+        return original_memory_capacity()
+
+    _common.get_nvgpu_memory_capacity = _hcu_get_memory_capacity
+
+    original_device_sm = _common.get_device_sm
+
+    def _hcu_get_device_sm():
+        if torch.version.hip and not torch.cuda.is_initialized():
+            from hcu_adapter.hip_metadata import compute_capability
+
+            major, minor = compute_capability()
+            return major * 10 + minor
+        return original_device_sm()
+
+    _common.get_device_sm = _hcu_get_device_sm
+    original_capability = _common.get_device_capability
+    original_core_count = _common.get_device_core_count
+
+    def _hcu_get_device_capability(device_id=0):
+        if torch.version.hip and not torch.cuda.is_initialized():
+            from hcu_adapter.hip_metadata import compute_capability
+
+            return compute_capability(device_id)
+        return original_capability(device_id)
+
+    def _hcu_get_device_core_count(device_id=0):
+        if torch.version.hip and not torch.cuda.is_initialized():
+            from hcu_adapter.hip_metadata import multiprocessor_count
+
+            return multiprocessor_count(device_id)
+        return original_core_count(device_id)
+
+    _common.get_device_capability = _hcu_get_device_capability
+    _common.get_device_core_count = _hcu_get_device_core_count
+
+    from hcu_adapter import lightop_metadata
+
+    lightop_metadata.install()
+    # Preserve the original eager-import order and cached hardware predicates.
+    # The hardware queries change transport, not their values or cache timing.
+    import functools
+    import sglang.srt.utils as early_utils
+
+    for name in ("is_hcu", "is_hcu_native_fp8_supported"):
+        original = getattr(_common, name, None)
+        if original is not None:
+            raw = getattr(original, "__wrapped__", original)
+            replacement = functools.lru_cache(maxsize=1)(
+                lightop_metadata.rewrite_function(raw)
+            )
+            setattr(_common, name, replacement)
+            setattr(early_utils, name, replacement)
+    for name in ("get_device_sm", "get_device_capability", "get_device_core_count"):
+        setattr(early_utils, name, getattr(_common, name))
+    if hasattr(_common, "W8a8GetCacheJSON"):
+        _common.W8a8GetCacheJSON._initialize = lightop_metadata.rewrite_function(
+            _common.W8a8GetCacheJSON._initialize
+        )
+
     # torch HIP graph 拒收 external event（"External events are disallowed in
     # rocm"）；上游 shared_read_event.make_external_event 以 is_cuda 判定后调
     # Event(external=True)。HCU 硬件真值= HIP 无此能力，把上游的构造口替换
@@ -295,6 +365,10 @@ def install():
     _install_gfx_probe_guard(_common)
 
     impls = {
+        "sglang.srt.utils.common:get_device_capability": _hcu_get_device_capability,
+        "sglang.srt.utils.common:get_device_core_count": _hcu_get_device_core_count,
+        "sglang.srt.utils.common:get_device_sm": _hcu_get_device_sm,
+        "sglang.srt.utils.common:get_nvgpu_memory_capacity": _hcu_get_memory_capacity,
         "sglang.srt.utils.common:is_cuda": _hcu_is_cuda,
         "sglang.srt.utils.common:is_hip": _hcu_is_hip,
         "sglang.srt.utils.common:is_cuda_alike": _hcu_is_cuda_alike,
@@ -320,6 +394,10 @@ def install():
     # were already synced inside _replace_version_gates above; these are the
     # four hand-written seam symbols.
     _sync = {
+        "get_device_capability": _hcu_get_device_capability,
+        "get_device_core_count": _hcu_get_device_core_count,
+        "get_device_sm": _hcu_get_device_sm,
+        "get_nvgpu_memory_capacity": _hcu_get_memory_capacity,
         "is_cuda": _hcu_is_cuda,
         "is_hip": _hcu_is_hip,
         "is_cuda_alike": _hcu_is_cuda_alike,
