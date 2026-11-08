@@ -89,6 +89,15 @@ BACKEND_CATALOG = {
             "torch": {"status": "candidate", "note": "Opt-in gfx936 official pre/post and public IR RMS; post/head unchanged; installed/model gates pending"},
         },
     },
+    "vllm_scaled_mm": {
+        "var": None,
+        "summary": "vLLM native FP8/INT8 Linear execution through LightOp with official Triton fallback",
+        "backends": {
+            "auto": {"status": "candidate", "note": "LightOp when installed: INT8 gfx936/gfx938, E4M3FN gfx938; metadata fallback to official Triton; model/performance gates pending"},
+            "lightop": {"status": "candidate", "note": "Require LightOp wheel; native quantization/loading and asymmetric INT8 correction preserved; unsupported contracts use Triton"},
+            "triton": {"status": "validated", "note": "Preserve official providers without execution rebinding; diagnostic startup rollback"},
+        },
+    },
     "vllm_fp8_linear": {
         "var": None,
         "summary": "vLLM official dense FP8 fallback via public linear registration",
