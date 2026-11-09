@@ -4,8 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sgl-kernel"
-version = "0.1.0"
-description = "Triton-backed drop-in replacement of sgl_kernel for HCU (Hygon HCU). Provides the AOT kernel backend (`import sgl_kernel`) consumed by sglang's `sglang.kernels` fused-op layer, so upstream sglang runs on HCU without any code modification."
+# single source: sgl_kernel/version.py (governance §7.4); the hcu-adapter
+# dist in packaging/hcu-adapter pins this exact version.
+dynamic = ["version"]
+description = "HCU shadow sgl_kernel for Hygon HCU (sglang ABI-contract kernels; part of adapter-das)"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -20,17 +22,11 @@ test = [
     "tomli>=1.1; python_version < '3.11'",
 ]
 
-[project.entry-points."vllm.platform_plugins"]
-hcu_adapter = "hcu_adapter.bridges.vllm:hcu_platform_plugin"
-
-[project.entry-points."vllm.general_plugins"]
-hcu_adapter = "hcu_adapter.bridges.vllm:hcu_runtime_plugin"
-
-[tool.setuptools]
-py-modules = ["sitecustomize"]
+[tool.setuptools.dynamic]
+version = {attr = "sgl_kernel.version.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["hcu_adapter*", "sgl_kernel*"]
+include = ["sgl_kernel*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

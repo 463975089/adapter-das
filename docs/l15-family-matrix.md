@@ -2,12 +2,24 @@
 
 该矩阵用于回答“社区 sglang + adapter 是否能在不加载模型权重、不启动服务的条件下，走通五类主要模型行为”。它不是性能测试，也不替代真实模型 L2。
 
-## 当前清单与最近完整矩阵结果（2026-11-06）
+## 当前清单与最近完整矩阵结果（2026-11-07）
 
 当前清单扩为 **58 case**：Dense 10、MLA 17、MoE 14、
 Quantization 10、Mamba 7。新增四项路由并列分数契约，覆盖
 softmax、sigmoid、sqrtsoftplus、分组选择、共享专家及变输入 graph
 replay；其中含 CPU 与 HCU 参数节点。
+
+当前候选 `f87185b` 完成五家族一次整轮 **57/58 PASS，1 FAIL**：
+Dense 9/10、MLA 17/17、MoE 14/14、Quantization 10/10、Mamba 7/7。
+唯一失败为 `dense-fused-add-norm-graph`，其中四个 Triton 参数节点失败、
+四个 Torch 参数节点通过。社区默认融合归一化以未舍入 FP32 和计算方差、
+以激活 dtype 的残差作分子；该候选的 Triton 分子错误地保留了未舍入和。
+历史两项 MLA 失败用例本轮均通过；这不解释或改写历史失败记录。
+同快照附加压缩 MLA/Graph 专项 **3/3 PASS**，CPU 算子/清单组合
+**70 PASS**、L0 GREEN；社区源码前后审计和全部 632 个候选文件摘要通过。
+整轮严格 runner 返回非零，不能把控制器已终结称为整轮通过。
+
+### 首次 58 项整轮与历史专项（2026-11-06）
 
 新清单首次五家族整轮结果为 **56/58 PASS，2 FAIL**：
 Dense 10/10、MLA 15/17、MoE 14/14、Quantization 10/10、

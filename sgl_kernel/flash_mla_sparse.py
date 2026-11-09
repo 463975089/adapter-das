@@ -27,6 +27,21 @@ import torch
 
 __all__ = ["flash_mla_sparse_fwd"]
 
+_CHUNK_MB = None
+
+
+def _chunk_mb():
+    """Per-chunk fp32 working-set budget (MiB) for the row-split emu."""
+    global _CHUNK_MB
+    if _CHUNK_MB is None:
+        try:
+            from hcu_adapter import hcu_env
+
+            _CHUNK_MB = max(1, int(hcu_env.resolve("HCU_FLASHMLA_SPARSE_CHUNK_MB")[0]))
+        except Exception:
+            _CHUNK_MB = 512
+    return _CHUNK_MB
+
 
 def flash_mla_sparse_fwd(
     q,
@@ -46,28 +61,45 @@ def flash_mla_sparse_fwd(
         raise ValueError(
             f"flash_mla_sparse (HCU emu): h_kv={kv_flat.shape[1]} unsupported (1 only)"
         )
-    idx = indices.reshape(s_q, -1).to(torch.int64)  # [s_q, topk]
-    topk = idx.shape[1]
-    valid = idx >= 0
-    if topk_length is not None:
-        # rows with fewer valid selectors mask the tail as well
-        ar = torch.arange(topk, device=q.device)[None, :]
-        valid &= ar < topk_length.reshape(-1, 1).to(torch.int64)
-    idx_safe = idx.clamp_min(0)
+    if s_q == 0:
+        return (
+            q.new_empty(0, heads, d_v),
+            torch.empty(0, heads, dtype=torch.float32, device=q.device),
+            None,
+        )
+    idx_all = indices.reshape(s_q, -1)
+    topk = idx_all.shape[1]
+    tl_all = topk_length.reshape(-1) if topk_length is not None else None
+    sink = attn_sink.reshape(1, -1).to(torch.float32) if attn_sink is not None else None
 
-    # gather: [s_q, topk, d_qk] — per-query selected keys/values
-    k_sel = kv_flat[:, 0, :][idx_safe]  # token dim is index 0
-    k = k_sel.to(torch.float32)
-    scores = torch.einsum("thd,tkd->thk", q.to(torch.float32), k) * sm_scale
-    scores = scores.masked_fill(~valid[:, None, :], float("-inf"))
-    real_lse = torch.logsumexp(scores, dim=-1)  # [s_q, heads]
-    probs = torch.softmax(scores, dim=-1)  # [s_q, heads, topk]
-    if attn_sink is not None:
-        sink = attn_sink.reshape(1, -1).to(scores.dtype)
-        lse = torch.logaddexp(real_lse, sink)
-        probs = probs * torch.exp(real_lse - lse).unsqueeze(-1)
-    else:
-        lse = real_lse
-    v = k[..., :d_v]
-    o = torch.einsum("thk,tkd->thd", probs, v).to(q.dtype)
+    # The fp32 working set is gather [rows, topk, d_qk] + scores/probs
+    # [rows, H, topk]; doing all s_q rows at once OOMs on long chunks
+    # (34 GiB @ 8k-token prefill) and during prefill-graph capture. Rows are
+    # independent, so split along s_q under a fixed budget.
+    per_row = 4 * topk * (d_qk + 3 * heads)
+    rows = max(1, min(s_q, (_chunk_mb() << 20) // max(per_row, 1)))
+    o = q.new_empty(s_q, heads, d_v)
+    lse = torch.empty(s_q, heads, dtype=torch.float32, device=q.device)
+    kv0 = kv_flat[:, 0, :]  # token dim is index 0
+    ar = torch.arange(topk, device=q.device)[None, :] if tl_all is not None else None
+    for s in range(0, s_q, rows):
+        e = min(s + rows, s_q)
+        idx = idx_all[s:e].to(torch.int64)  # [r, topk]
+        valid = idx >= 0
+        if tl_all is not None:
+            # rows with fewer valid selectors mask the tail as well
+            valid &= ar < tl_all[s:e].reshape(-1, 1).to(torch.int64)
+        # gather: [r, topk, d_qk] - per-query selected keys/values
+        k = kv0[idx.clamp_min(0)].to(torch.float32)
+        scores = torch.einsum("thd,tkd->thk", q[s:e].to(torch.float32), k) * sm_scale
+        scores = scores.masked_fill(~valid[:, None, :], float("-inf"))
+        real_lse = torch.logsumexp(scores, dim=-1)  # [r, heads]
+        probs = torch.softmax(scores, dim=-1)  # [r, heads, topk]
+        if sink is not None:
+            lse_c = torch.logaddexp(real_lse, sink)
+            probs = probs * torch.exp(real_lse - lse_c).unsqueeze(-1)
+        else:
+            lse_c = real_lse
+        o[s:e] = torch.einsum("thk,tkd->thd", probs, k[..., :d_v]).to(q.dtype)
+        lse[s:e] = lse_c
     return o, lse, None

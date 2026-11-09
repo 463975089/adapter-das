@@ -482,8 +482,20 @@ Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查�
 
 ### 7.4 版本与门（宿主 / 影子包）
 
-- 影子包 `sgl-kernel` 的版本号必须携带上游基线（目标形态 `0.5.22+hcu.N`）；
-  现值 `0.1.0` 待改——不带基线信息时 pip 层与官方 wheel 可互替、静默换内核；
+- **影子 dist 版本账已销**（2026-11-09 解耦双 dist 落地）：两包版本线**各自独立**——
+  `sgl-kernel` = 纯影子内核（**main 不定基线**：携带 `0.0.0+hcu.dev0`，**拉出 release
+  分支时定死**，基线跟配对上游**内核线**——例 release/sglang_v0.5.22 已定 `0.4.9+hcu.1`：
+  v0.5.22 树的 `python/sglang/kernels/aot`、依赖 pin 与 engine.py 探针三处一致为
+  0.4.9；单源 `sgl_kernel/version.py`，重配对上游树时基线跟那棵树的 aot 版本走）；
+  `hcu-adapter` = 适配层（`hcu_adapter/` + sitecustomize + vllm entry-points；初始
+  `0.5.22+hcu.1`，编码本线 sglang 配对；单源 `packaging/hcu-adapter/VERSION`）。
+  互锁：hcu-adapter 依赖 `sgl-kernel==<内核版>` 精确等号，禁止 `>=`/`~`
+  （`ci/l0_gate.py` 与 `packaging/build.sh` 双重校验）。当初评估解耦的结论：单
+  wheel 让"双宿主适配层挂单宿主内核名"，拆分后 sgl-kernel 的用法与语义与上游
+  内核包对齐（独立内核包，谁需要谁装）；**复评触发条件**：官方
+  sgl-kernel/sglang-kernel 依赖关系弱化（pip 层可被我们的影子直接替代）时重评
+  是否回归单 dist。半装防护：`sgl_kernel/__init__` 哨兵——环境无 `hcu_adapter`
+  时 import 期即 raise（防止"只装 sgl-kernel 不装 hcu-adapter"的半失效静默）；
 - vLLM 支持门现钉 v0.32.0 release line（`bridges/vllm.py`）；抽 common 时
   sglang 线同享"不支持在选择前 fail"；
 - **已知悬案**：vLLM platform plugin 在本栈 import order 下挂死（validation-host-26

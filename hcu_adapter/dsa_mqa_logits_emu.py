@@ -30,6 +30,8 @@ import os
 
 import torch
 
+from .kernels.lightop_usage import _count
+
 _HEAD_PAD = 132
 
 
@@ -262,13 +264,33 @@ def get_num_sms():
         return 120
 
 
-def get_paged_mqa_logits_metadata(context_lens, block_kv, num_sms):
-    """Opaque scheduling blob upstream only feeds back to the same kernel.
+_LIGHTOP_META = []
 
-    Our torch path ignores it; return a small int tensor with the inputs
-    threaded through so callers that assert on shape have something sane.
+
+def _lightop_metadata_fn():
+    if not _LIGHTOP_META:
+        try:
+            from lightop.gemmopt import get_paged_mqa_logits_metadata as fn
+        except Exception:
+            fn = None
+        _LIGHTOP_META.append(fn)
+    return _LIGHTOP_META[0]
+
+
+def get_paged_mqa_logits_metadata(context_lens, block_kv, num_sms):
+    """Scheduling blob for ``fp8_paged_mqa_logits``.
+
+    Contract (DeepGEMM): an int32 [*, 2] split-KV plan sized by num_sms that
+    only the paged-MQA kernel reads back. The torch/triton tiers here ignore it, but
+    any lightop ``paged_mqa_logits`` consumer asserts a genuine plan, so the
+    lightop planner is the producer whenever it is installed; the zero blob
+    is kept only for boxes without lightop.
     """
     rows = context_lens.reshape(-1)
+    planner = _lightop_metadata_fn()
+    if planner is not None:
+        _count("mqa.paged_metadata.native")
+        return planner(rows.to(torch.int32).contiguous(), block_kv, num_sms)
     meta = torch.zeros(
         (rows.numel() + 1, 2), dtype=torch.int32, device=rows.device
     )

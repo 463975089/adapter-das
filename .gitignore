@@ -15,3 +15,8 @@ upstream_watch/
 .tmp/
 .zcode/
 nul
+
+# dual-dist build artifacts (packaging/build.sh)
+/dist/
+build/
+*.egg-info/

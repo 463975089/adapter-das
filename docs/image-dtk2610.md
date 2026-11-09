@@ -28,15 +28,19 @@
   v0.5.22 的 pyproject 声明 `sglang-kernel==0.4.10` 等一排 CUDA-only/不可解析依赖
   → 主 wheel **必须 `--no-deps` 装**；代码运行时只认 `import sgl_kernel`
   （实测 v0.5.22 全树 import 面）→ 我们的影子包按模块名截击，dist 名无关紧要但见 §4 接线点。
-- **发版物四件**：adapter wheel（dist `sgl-kernel`，含 `hcu_adapter/`+`sgl_kernel/`+`sitecustomize`，
-  见其 pyproject）→ 官方 sglang wheel（`--no-deps`）→ 插件 wheel（`--no-deps`）→ 环境级钉版。
+- **发版物五件（双 dist 解耦，governance §7.4）**：影子内核 wheel（dist `sgl-kernel`，版本
+  `0.4.9+hcu.1`=配对上游内核线，只装 `sgl_kernel/`）+ 适配层 wheel（dist `hcu-adapter`，版本
+  `0.5.22+hcu.1` 自有独立线，装 `hcu_adapter/`+`sitecustomize`+vllm entry-points，依赖
+  `sgl-kernel==0.4.9+hcu.1` 精确互锁；`packaging/build.sh` 一次出两张）→ 官方 sglang wheel
+  （`--no-deps`）→ 插件 wheel（`--no-deps`）→ 环境级钉版。升级先卸旧单 wheel 版 sgl-kernel
+  （entry-points 已迁 hcu-adapter，残留会双注册/消失）。
 
 ## 1. 不装的依赖（CUDA-only 或被我们挡位替代）
 
 | 上游声明 | 不装的原因 | 我们的对位 |
 |---|---|---|
 | `torch==2.14.1`、`torchaudio`、`torchvision`、`torchcodec` | 镜像**不自带** python DTK 栈（实测）；重装 PyPI 版=覆盖成 CUDA 版 | 按 §1.5 从现役容器迁移 DTK 栈（torch 2.11.0+hip 7.2.26365、torchvision 0.26.0；torchaudio 栈内无、需要时另配） |
-| `sglang-kernel==0.4.10` | CUDA AOT 内核，无 gfx93x 产物 | **adapter wheel（影子包，模块名 sgl_kernel）** |
+| `sglang-kernel==0.4.10` | CUDA AOT 内核，无 gfx93x 产物 | **影子内核 wheel（dist `sgl-kernel` `0.4.9+hcu.1`，模块名 sgl_kernel）+ `hcu-adapter` wheel 互锁装** |
 | `sgl-flash-mla==1.0.0` | CUDA 内核 | 影子 `sgl_kernel.flash_mla` emu / FlashMLA-das vendor 档（`mla_attention_dtk`） |
 | `sgl-deep-gemm==0.2.3.post2` | CUDA JIT 栈 | deepgemm vendor 桥 / triton 档（governance 三档路由） |
 | `sgl-deep-ep==0.1.2.post1` | CUDA/NVSHMEM | DeepEP-das 档 / NCCL fallback |
@@ -156,9 +160,11 @@ HCU_ADAPTER_HOST=none python3 -c "import tvm_ffi"    # 实测 51 s 一次性构�
 ```
 
 ```dockerfile
-# ① adapter：shadow dist sgl-kernel + hcu_adapter + sitecustomize（一发四件）
-COPY wheels/sgl_kernel-*.whl /wheels/
-RUN HCU_ADAPTER_HOST=none pip install /wheels/sgl_kernel-*.whl
+# ① adapter 双 wheel：sgl-kernel（影子内核）+ hcu-adapter（适配层：sitecustomize
+#    + 桥 + vllm entry-points）。顺序无所谓，依赖 == 互锁自动组队；两张都装，
+#    只装其一会被 sgl_kernel/__init__ 哨兵在 import 期响亮拒绝
+COPY wheels/sgl_kernel-*.whl wheels/hcu_adapter-*.whl /wheels/
+RUN HCU_ADAPTER_HOST=none pip install /wheels/sgl_kernel-*.whl /wheels/hcu_adapter-*.whl
 
 # ② 官方 sglang，零修改；--no-deps 是策略不是图省事（§0）
 COPY wheels/sglang-0.5.22-py3-*.whl /wheels/
@@ -205,8 +211,9 @@ python -c "import sys,os; assert os.environ.get('HCU_ADAPTER_HOST') is not None 
 #    预期 路径含 site-packages/sgl_kernel/，且进程日志出现
 #    "HCU adapter bootstrap: host=..."（bootstrap.py:177）
 
-# ② 影子不被官方内核覆盖（同名 dist 只此一份、路径是我们打包的）
-pip show sgl-kernel | grep -E "^(Version|Location)"
+# ② 双 dist 各就各位（影子内核 + 适配层两张都在、同名 dist 只此一份、路径是我们打包的）
+pip show sgl-kernel   | grep -E "^(Version|Location)"    # 预期 0.4.9+hcu.1
+pip show hcu-adapter  | grep -E "^(Version|Location)"    # 预期 0.5.22+hcu.1
 
 # ③ 插件可发现（sglang entry_points）
 python -c "from importlib.metadata import entry_points; \

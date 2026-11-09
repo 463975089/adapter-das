@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hcu-adapter"
+# hcu-adapter carries its OWN version line (independent of sgl-kernel;
+# this dist's single source is the VERSION file next to this pyproject,
+# encoding the paired upstream *sglang* release). The == interlock pin
+# below must match sgl_kernel/version.py (ci/l0_gate + packaging/build.sh
+# both verify). main keeps a dev pin to match the unpinned kernel dev
+# version; a release branch rewrites both to the paired kernel baseline.
+dynamic = ["version"]
+description = "HCU adapter: framework-level adaptation layer for SGLang & vLLM on Hygon HCU (runtime bootstrap, host bridges, hooks)"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+keywords = ["hcu", "adapter", "sglang", "vllm", "hip"]
+dependencies = [
+    "sgl-kernel==0.0.0+hcu.dev0",
+]
+
+[project.entry-points."vllm.platform_plugins"]
+hcu_adapter = "hcu_adapter.bridges.vllm:hcu_platform_plugin"
+
+[project.entry-points."vllm.general_plugins"]
+hcu_adapter = "hcu_adapter.bridges.vllm:hcu_runtime_plugin"
+
+# sources stay at the repo root (src-layout mapping from this build root);
+# nothing is copied into packaging/ -- build via packaging/build.sh or
+# `python -m build` from this directory.
+[tool.setuptools]
+py-modules = ["sitecustomize"]
+
+[tool.setuptools.package-dir]
+"" = "../.."
+
+[tool.setuptools.packages.find]
+where = ["../.."]
+include = ["hcu_adapter*"]
+
+# hand-edited single source of the hcu-adapter version (setuptools file
+# refs must stay inside this build root, hence a file rather than an
+# out-of-root attr); independent from sgl-kernel's version.
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}

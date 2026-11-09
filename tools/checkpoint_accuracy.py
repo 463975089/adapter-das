@@ -12,6 +12,10 @@ POLICY = {
     "max_top20_missed_mass": .02,
 }
 POLICY_NAME = "bf16-cpu-fp32-top20-v1"
+# A large-vocabulary FP32 log_softmax can accumulate a small mass drift when
+# its probabilities are re-summed in float64. The top20/tail vectors below
+# are normalized before JSD and mass comparisons; reject only larger drift.
+REFERENCE_MASS_TOLERANCE = 1e-3
 
 
 def cases(tokenizer):
@@ -68,7 +72,8 @@ def compare_top20(reference, observed):
         raise ValueError("invalid top20 probability evidence") from exc
     if (reference.ndim != 2 or not torch.isfinite(reference).all()
             or (reference > 0).any()
-            or (reference.double().exp().sum(-1) - 1).abs().max() > 1e-4
+            or (reference.double().exp().sum(-1) - 1).abs().max()
+            > REFERENCE_MASS_TOLERANCE
             or not torch.isfinite(scores).all() or (scores > 0).any()
             or ids.min() < 0 or ids.max() >= reference.shape[1]
             or any(len({v[1] for v in row}) != 20 for row in observed)

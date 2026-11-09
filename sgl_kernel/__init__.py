@@ -106,6 +106,16 @@ from sgl_kernel.kvcacheio import (  # noqa: F401
     transfer_kv_per_layer_ph_lf,
 )
 
+# Dual-dist sentinel (governance §7.4): the shadow kernel wheel never works
+# half-installed -- the bootstrap and platform bridges live in hcu-adapter.
+import importlib.util as _ilu  # noqa: E402
+
+if _ilu.find_spec("hcu_adapter") is None:
+    raise RuntimeError(
+        "sgl_kernel shadow requires hcu-adapter; pip install hcu-adapter "
+        "(bootstrap and platform bridges live there)"
+    )
+
 __all__ = [
     "__version__",
     # elementwise

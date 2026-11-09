@@ -66,10 +66,14 @@ def test_compressed_mla_cache_remap_and_graph(length):
         lse.fill_(float("nan"))
         output.fill_(float("nan"))
 
-    def check(active_length):
+    def check(active_length, active_splits):
         actual = output.cpu().float()
         reference = _reference(q, cache, indices, active_length, scale)
         assert torch.isfinite(actual).all()
+        assert torch.isfinite(partial[:, :, :active_splits]).all()
+        assert torch.isfinite(lse[:, :, :active_splits]).all()
+        assert torch.isnan(partial[:, :, active_splits:]).all()
+        assert torch.isnan(lse[:, :, active_splits:]).all()
         torch.testing.assert_close(actual, reference, atol=1e-2, rtol=1e-2)
         rel = (actual - reference).norm() / reference.norm()
         cosine = torch.nn.functional.cosine_similarity(
@@ -82,11 +86,14 @@ def test_compressed_mla_cache_remap_and_graph(length):
         contiguous_output = torch.empty_like(output)
         run(values.contiguous(), contiguous_output)
         assert torch.equal(output, contiguous_output)
+        run()
+        assert torch.equal(actual, output.cpu().float())
         return actual
 
+    active_splits = {33: 2, 437: 7, 460: 5}[length]
     update(length, 7)
     run()
-    initial = check(length)
+    initial = check(length, active_splits)
     # Warm the exact captured signature on a side stream.
     stream = torch.cuda.Stream()
     stream.wait_stream(torch.cuda.current_stream())
@@ -97,9 +104,14 @@ def test_compressed_mla_cache_remap_and_graph(length):
     with torch.cuda.graph(graph, stream=stream):
         run()
     graph.replay()
-    assert torch.equal(check(length), initial)
-    for active_length, split_count in ((length - 1, 1), (length, 7)):
+    assert torch.equal(check(length, active_splits), initial)
+    replays = [(length - 1, 1, 1), (length, 7, active_splits)]
+    if length == 460:
+        # At fixed split7, crossing 448 changes the split width from 64 to96
+        # and the active count from7 to5. Exercise both directions in one graph.
+        replays.extend(((448, 7, 7), (449, 7, 5), (448, 7, 7)))
+    for active_length, split_count, expected_active in replays:
         update(active_length, split_count)
         graph.replay()
-        changed = check(active_length)
+        changed = check(active_length, expected_active)
         assert not torch.equal(changed, initial), "graph replay used stale inputs"
