@@ -77,16 +77,18 @@ def _reset_fused_add_cache(ln):
     ln._LIGHTOP_FUSED_ADD = None
 
 
-def _fused_add_reference(x, residual, weight, eps, gemma):
+def _fused_add_reference(
+    x, residual, weight, eps, gemma, cast_x_before_out_mul=False
+):
     """Independent CPU arithmetic with the fused kernel's storage boundary."""
     total = x.cpu().double() + residual.cpu().double()
     stored = total.to(residual.dtype)
     multiplier = weight.cpu().double() + (1.0 if gemma else 0.0)
-    normalized = (
-        stored.double()
-        / (total.square().mean(-1, keepdim=True) + eps).sqrt()
-        * multiplier
-    )
+    denominator = (total.square().mean(-1, keepdim=True) + eps).sqrt()
+    if cast_x_before_out_mul:
+        normalized = (total / denominator).to(x.dtype).double() * multiplier
+    else:
+        normalized = stored.double() / denominator * multiplier
     return normalized.to(x.dtype), stored
 
 
@@ -116,16 +118,18 @@ def test_fused_add_native_preserves_unrounded_variance(gemma, dtype):
 @pytest.mark.parametrize("backend", ["torch", "triton"])
 @pytest.mark.parametrize("gemma", [False, True])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-def test_fused_add_variance_fresh_input_graph(backend, gemma, dtype, monkeypatch):
+@pytest.mark.parametrize("width", [128, 12289])
+def test_fused_add_variance_fresh_input_graph(backend, gemma, dtype, width, monkeypatch):
     import sgl_kernel.layernorm as ln
 
     monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", backend)
     monkeypatch.setattr(ln, "_FUSED_ADD_IMPL", None)
     monkeypatch.setattr(ln, "_LIGHTOP_FUSED_ADD", None)
     fn = ln.gemma_fused_add_rmsnorm if gemma else ln.fused_add_rmsnorm
-    x = torch.ones(3, 128, device="cuda", dtype=dtype)
+    # The larger width spans multiple 8192-element tiles and a masked tail.
+    x = torch.ones(3, width, device="cuda", dtype=dtype)
     residual = torch.ones_like(x)
-    weight = torch.ones(128, device="cuda", dtype=dtype)
+    weight = torch.ones(width, device="cuda", dtype=dtype)
     stream = torch.cuda.Stream()
     stream.wait_stream(torch.cuda.current_stream())
     with torch.cuda.stream(stream):
@@ -136,9 +140,9 @@ def test_fused_add_variance_fresh_input_graph(backend, gemma, dtype, monkeypatch
     with torch.cuda.graph(graph):
         fn(x, residual, weight)
     for wave in range(3):
-        x0 = torch.full((3, 128), 1.0 + wave, dtype=dtype)
+        x0 = torch.full((3, width), 1.0 + wave, dtype=dtype)
         r0 = torch.full_like(x0, 1.0 + torch.finfo(dtype).eps)
-        w0 = torch.full((128,), 1.0 + 0.25 * wave, dtype=dtype)
+        w0 = torch.full((width,), 1.0 + 0.25 * wave, dtype=dtype)
         expected, expected_residual = _fused_add_reference(
             x0, r0, w0, 1e-6, gemma
         )
@@ -154,6 +158,60 @@ def test_fused_add_variance_fresh_input_graph(backend, gemma, dtype, monkeypatch
                 residual.cpu(), expected_residual, rtol=0, atol=0
             )
             torch.testing.assert_close(x.cpu(), expected, rtol=0, atol=0)
+            torch.testing.assert_close(weight.cpu(), w0, rtol=0, atol=0)
+
+
+@requires_gpu
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("width", [128, 12289])
+@pytest.mark.parametrize("cast_before_weight", [False, True])
+def test_community_fused_add_storage_modes_fresh_input_graph(
+    dtype, width, cast_before_weight, monkeypatch
+):
+    import sgl_kernel.layernorm as ln
+    from sglang.kernels.ops.layernorm import norm
+
+    assert getattr(norm.fused_add_rmsnorm, "_hcu_adapter_route", False)
+    monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", "triton")
+    monkeypatch.setattr(ln, "_FUSED_ADD_IMPL", None)
+    monkeypatch.setattr(ln, "_LIGHTOP_FUSED_ADD", None)
+    x = torch.ones(3, width, device="cuda", dtype=dtype)
+    residual = torch.ones_like(x)
+    weight = torch.ones(width, device="cuda", dtype=dtype)
+
+    def run():
+        norm.fused_add_rmsnorm(
+            x, residual, weight, eps=1e-6,
+            cast_x_before_out_mul=cast_before_weight,
+        )
+
+    stream = torch.cuda.Stream()
+    stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(stream):
+        run()
+    torch.cuda.current_stream().wait_stream(stream)
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        run()
+    for wave in range(3):
+        x0 = torch.full((3, width), 1.0 + wave, dtype=dtype)
+        r0 = torch.full_like(x0, 1.0 + torch.finfo(dtype).eps)
+        w0 = torch.full((width,), 1.0 + 0.25 * wave, dtype=dtype)
+        expected, expected_residual = _fused_add_reference(
+            x0, r0, w0, 1e-6, False, cast_before_weight
+        )
+        if wave == 0:
+            other, _ = _fused_add_reference(
+                x0, r0, w0, 1e-6, False, not cast_before_weight
+            )
+            assert not torch.equal(expected, other), "storage modes were not distinguished"
+        for replay in (False, True):
+            x.copy_(x0)
+            residual.copy_(r0)
+            weight.copy_(w0)
+            graph.replay() if replay else run()
+            torch.testing.assert_close(x.cpu(), expected, rtol=0, atol=0)
+            torch.testing.assert_close(residual.cpu(), expected_residual, rtol=0, atol=0)
             torch.testing.assert_close(weight.cpu(), w0, rtol=0, atol=0)
 
 

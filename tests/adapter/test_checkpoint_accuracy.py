@@ -8,7 +8,14 @@ import copy
 import pytest
 import torch
 
-from tools.checkpoint_accuracy import POLICY, cases, compare_top20, validate_cases, verdict
+from tools.checkpoint_accuracy import (
+    POLICY,
+    REFERENCE_MASS_TOLERANCE,
+    cases,
+    compare_top20,
+    validate_cases,
+    verdict,
+)
 
 
 class Tokenizer:
@@ -52,6 +59,9 @@ def test_coarsened_distribution_is_rank_free_and_exposes_probability_corruption(
     observed = _head(lp, list(reversed(range(20))))
     good = compare_top20(lp, observed)
     assert all(value <= 1e-12 for value in good.values())
+    # Large-vocabulary FP32 log_softmax can accumulate small re-sum drift.
+    drifted = lp + (REFERENCE_MASS_TOLERANCE / 2)
+    compare_top20(drifted, observed)
     bad = copy.deepcopy(observed)
     bad[0][0][0], bad[0][-1][0] = bad[0][-1][0], bad[0][0][0]
     broken = compare_top20(lp, bad)
@@ -64,7 +74,10 @@ def test_coarsened_distribution_is_rank_free_and_exposes_probability_corruption(
     assert omitted["max_top20_missed_mass"] > .02
 
 
-@pytest.mark.parametrize("fault", ["missing", "duplicate", "nan", "positive", "mass", "vocab"])
+@pytest.mark.parametrize(
+    "fault",
+    ["missing", "duplicate", "nan", "positive", "mass", "vocab", "reference_mass"],
+)
 def test_invalid_top20_is_refused(fault):
     lp = torch.linspace(3, -3, 32)[None].log_softmax(-1)
     observed = _head(lp, list(range(20)))
@@ -79,6 +92,8 @@ def test_invalid_top20_is_refused(fault):
     elif fault == "mass":
         for row in observed[0]:
             row[0] = -.01
+    elif fault == "reference_mass":
+        lp = lp + (REFERENCE_MASS_TOLERANCE * 2)
     else:
         observed[0][0][1] = 32
     with pytest.raises(ValueError):

@@ -214,14 +214,15 @@ if HAS_TRITON:
         for off in range(0, N, BLOCK):
             cols = off + tl.arange(0, BLOCK)
             mask = cols < N
-            # Keep the FP32 sum for both variance and normalization. Storing
-            # residual in the first pass would round it before this reload.
+            # Default community fused-add uses the FP32 sum for variance but
+            # the activation-dtype residual for the normalization numerator.
             x = tl.load(x_row + cols, mask=mask, other=0.0).to(tl.float32)
             r = tl.load(res_row + cols, mask=mask, other=0.0).to(tl.float32)
             t = x + r
+            stored = t.to(RES.dtype.element_ty)
             w = tl.load(W + cols, mask=mask, other=0.0).to(tl.float32)
-            y = t * rstd * (w + d2f)
-            tl.store(res_row + cols, t.to(RES.dtype.element_ty), mask=mask)
+            y = stored.to(tl.float32) * rstd * (w + d2f)
+            tl.store(res_row + cols, stored, mask=mask)
             tl.store(x_row + cols, y.to(X.dtype.element_ty), mask=mask)
 
 
