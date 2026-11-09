@@ -40,6 +40,9 @@ Graph 生命周期仍需单独证明，不能由普通 AR 的可达性推定支�
 
 ## 验证
 
+BF16/FP16 AITER 的可选公开平台 ABI 候选与限制见
+[unquantized AITER compatibility](vllm033-aiter-moe.md)。组件通过不代表模型验收。
+
 CPU 快速回归：
 
 ```bash

@@ -272,3 +272,11 @@ trace 族在拍存在时不可用于功量归因。
 | `HCU_NATIVE_FLASHMLA` | `0` | DeepInfer native FlashMLA 路径开关 |
 
 `HCU_MOE_ALIGN_FUSED`：默认 `2048`，上游已有的 MoE 对齐融合阈值；`0` 关闭，小于等于阈值的 top-k lanes 使用融合实现。此处补齐原有变量的文档登记，不改变默认值。
+# vLLM unquantized AITER padding policy
+
+The v0.33 compatibility candidate consumes the official
+`VLLM_MOE_SKIP_PADDING` variable (Core default `1`). Explicit HCU AITER selection
+on the validated gfx936 path materializes `0` before workers spawn; an already
+cached conflicting value is refused. This keeps valid expert IDs for padded
+Graph rows without changing the selected graph mode. See
+[vLLM AITER candidate](frameworks/vllm033-aiter-moe.md) for admission limits.

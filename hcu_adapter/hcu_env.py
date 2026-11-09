@@ -285,6 +285,10 @@ REGISTRY = {
         "env": "VLLM_ROCM_USE_AITER_CUSTOM_AR", "default": "1", "hosts": ("vllm",),
         "about": "Official AR child switch; 0 vetoes HCU_AITER_AR opt-in, without enabling global AITER",
     },
+    "VLLM_MOE_SKIP_PADDING": {
+        "env": "VLLM_MOE_SKIP_PADDING", "default": "1", "hosts": ("vllm",),
+        "about": "Official skip sentinel; HCU unquantized AITER normalizes to 0 before workers spawn",
+    },
     "AITER_AR_MAX_SIZE_MB": {
         "env": "AITER_AR_MAX_SIZE_MB", "default": "64", "hosts": ("vllm",),
         "about": "Existing provider ordinary-AR admission MiB; staging >=128 MiB and >=2x admission",
