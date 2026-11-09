@@ -153,5 +153,45 @@ def test_sparse_rope_channels_score_without_becoming_values():
     torch.testing.assert_close(lse.double(), reference_lse, rtol=2e-6, atol=2e-6)
 
 
+def test_sparse_emu_row_chunks_match_single_pass():
+    """HCU_FLASHMLA_SPARSE_CHUNK_MB row split: bitwise equal to one pass."""
+    import sgl_kernel.flash_mla_sparse as fms
+
+    s_q, H, d_qk, d_v, pool_tokens, topk = 37, 4, 576, 512, 200, 32
+    kv = torch.randn(pool_tokens, 1, d_qk, dtype=torch.bfloat16)
+    q = torch.randn(s_q, H, d_qk, dtype=torch.bfloat16)
+    idx = torch.stack(
+        [torch.randperm(pool_tokens)[:topk] for _ in range(s_q)]
+    ).to(torch.int32)
+    idx[5, 20:] = -1
+    tkl = torch.full((s_q,), topk, dtype=torch.int32)
+    tkl[7] = 9
+    sink = torch.randn(H) * 1e-3
+    saved = fms._CHUNK_MB
+    try:
+        outs = []
+        for budget in (1 << 20, 1):  # one pass vs ~3 rows per chunk
+            fms._CHUNK_MB = budget
+            outs.append(fms.flash_mla_sparse_fwd(
+                q=q, kv=kv, indices=idx, sm_scale=d_qk**-0.5, d_v=d_v,
+                attn_sink=sink, topk_length=tkl))
+    finally:
+        fms._CHUNK_MB = saved
+    assert torch.equal(outs[0][0], outs[1][0])
+    assert torch.equal(outs[0][1], outs[1][1])
+
+
+def test_sparse_emu_empty_rows():
+    """s_q == 0 (idle DP rank / empty extend) returns empty o/lse."""
+    from sgl_kernel.flash_mla_sparse import flash_mla_sparse_fwd
+
+    o, lse, _ = flash_mla_sparse_fwd(
+        q=torch.empty(0, 4, 576, dtype=torch.bfloat16),
+        kv=torch.randn(64, 1, 576, dtype=torch.bfloat16),
+        indices=torch.empty(0, 1, 16, dtype=torch.int32),
+        sm_scale=576**-0.5, d_v=512)
+    assert o.shape == (0, 4, 512) and o.dtype == torch.bfloat16
+    assert lse.shape == (0, 4) and lse.dtype == torch.float32
+
 if __name__ == "__main__":
     sys.exit(main())

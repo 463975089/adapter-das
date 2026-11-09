@@ -162,6 +162,33 @@ def platform_env_defaults():
     os.environ.setdefault("HCU_DEEPGEMM_BRIDGE", "1")
 
 
+# 早期 import 链（shared_read_event -> runner_utils -> ... -> dsa.utils）先于
+# seam 换绑执行，`from sglang.srt.utils import is_cuda` 留下原函数（HIP 上恒
+# False）。dsa.utils 的 is_graph_dsa_split_op_surface() 因此判 False，prefill
+# graph 捕获里 indexer 落到 eager ragged 臂并断言 "in-graph DSA prefill must
+# go through the graph DSA split-op dispatch"（S1 Hy4 2026-11-03）。只换这一处
+# 的 is_cuda：其 is_hip 保持硬件真值；其他陈旧模块不动（breakable_cuda_graph
+# 依赖原 is_hip() 走 torch 查询捕获状态）。
+_STALE_IS_CUDA_MODULES = ("sglang.srt.layers.attention.dsa.utils",)
+
+
+def _rebind_stale_is_cuda(hcu_is_cuda, registry):
+    import sys as _sys
+
+    for _name in _STALE_IS_CUDA_MODULES:
+        _mod = _sys.modules.get(_name)
+        if _mod is None or _mod.__dict__.get("is_cuda") is hcu_is_cuda:
+            continue
+        _mod.is_cuda = hcu_is_cuda
+        registry.register(
+            "platform_detect",
+            hcu_is_cuda,
+            target=f"{_name}:is_cuda",
+            mechanism=registry.MECH_REBIND,
+            detail="early-import stale binding (graph DSA split-op surface)",
+        )
+
+
 def install():
     import os
     import time
@@ -406,6 +433,8 @@ def install():
     for _n, _fn in _sync.items():
         if getattr(_pkg_utils, _n, None) is not _fn:
             setattr(_pkg_utils, _n, _fn)
+
+    _rebind_stale_is_cuda(_hcu_is_cuda, registry)
     LOG.warning(
         "HCU adapter: platform semantics seam installed "
         "(sglang answers CUDA; hw layers stay HIP-truthful)"
