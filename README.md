@@ -58,10 +58,24 @@ NVIDIA CUDA）上有的行为，HCU 上补齐到一致（影子库/
 
 ## 安装
 
+双 dist（governance §7.4）：`sgl-kernel` 纯影子内核 + `hcu-adapter` 适配层
+（sitecustomize + 桥 + vllm entry-points），版本线各自独立、`==` 互锁，
+`sgl_kernel/__init__` 哨兵防半装（只装内核不装适配层 → import 期响亮报错）。
+
 ```bash
-pip install -e .
+# wheel 态（部署）：packaging/build.sh 一次出两张 wheel 到 dist/
+pip install --no-deps dist/sgl_kernel-*.whl dist/hcu_adapter-*.whl   # 两张都装，顺序无关
+
+# 源码态（开发）
+pip install -e .                       # sgl-kernel（影子内核）
+pip install -e packaging/hcu-adapter   # hcu-adapter（适配层）
 # 之后正常安装/运行 sglang（不要安装官方 sgl-kernel wheel，避免同名冲突）
 ```
+
+> **升级提示**（entry-points 迁移动作，vllm plugin 注册归属变化）：vllm
+> entry-points 已从 sgl-kernel 迁至 hcu-adapter。已部署环境升级到双 dist 版
+> **必须先卸载旧版 sgl-kernel**（`pip uninstall sgl-kernel`）再安装两张新
+> wheel——旧包残留既与影子同名冲突，又会让 vLLM plugin 注册双份/消失。
 
 ## 覆盖范围
 
