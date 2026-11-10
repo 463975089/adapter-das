@@ -93,16 +93,16 @@ BACKEND_CATALOG = {
         "var": "HCU_VLLM_FP4_INDEXER_IMPL",
         "summary": "V41 LightOp FP4 indexer with zero-copy 64-record cache pages",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default existing FP8 behavior"},
-            "lightop": {"status": "candidate", "note": "Eager or PIECEWISE breakable Graph; logical 64-record pages, ratio2 physical 32 records staged for decode; mixed ratios and model acceptance pending"},
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: existing FP8 behavior"},
+            "lightop": {"status": "candidate", "note": "Default: eager or PIECEWISE breakable Graph; logical 64-record pages, ratio2 physical 32 records staged for decode; mixed ratios and model acceptance pending"},
         },
     },
     "vllm_fp4_packer": {
         "var": "HCU_VLLM_FP4_PACKER_IMPL",
         "summary": "Plugin-owned vLLM 0.33 E2M1 arithmetic lowering",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default audited upstream bindings; no lowering installed"},
-            "triton": {"status": "candidate", "note": "Explicit gfx938 Plugin packer; CPU contracts only; native, Graph and model gates pending"},
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: audited upstream bindings; no lowering installed"},
+            "triton": {"status": "candidate", "note": "Default: gfx938 Plugin packer; CPU contracts only; native, Graph and model gates pending"},
         },
     },
     "vllm_sparse_indexer": {

@@ -1,6 +1,6 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-09）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-10）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
@@ -41,8 +41,8 @@ V41 LightOp FP4 indexer with zero-copy 64-record cache pages
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| lightop | candidate Eager or PIECEWISE breakable Graph;  |
-| stock | candidate Default existing FP8 behavior |
+| lightop | candidate Default: eager or PIECEWISE breakabl |
+| stock | candidate Explicit stock fallback: existing FP |
 
 路由变量：`HCU_VLLM_FP4_INDEXER_IMPL`
 
@@ -52,8 +52,8 @@ Plugin-owned vLLM 0.33 E2M1 arithmetic lowering
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| triton | candidate Explicit gfx938 Plugin packer; CPU c |
-| stock | candidate Default audited upstream bindings; n |
+| triton | candidate Default: gfx938 Plugin packer; CPU c |
+| stock | candidate Explicit stock fallback: audited ups |
 
 路由变量：`HCU_VLLM_FP4_PACKER_IMPL`
 
