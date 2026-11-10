@@ -262,3 +262,20 @@ P25/P26 的只读观测保持四份 P/D 响应与未加观测的 P24 精确一�
 实际 DTK26.10 启动日志仍出现 `get_device_memory_capacity → get_nvgpu_memory_capacity → nvidia-smi 缺失 → torch.cuda.mem_get_info`。此前主进程无额外 scheduler queue 的观测不能排除这条 PyTorch 初始化路径。禁止 lazy-init 的 main 组合探针已在同一调用处报错；这不是 INT8 KV 预算方法的错误。
 
 本轮将 CUDA facade 下的容量查询接到已加载 HIP runtime 的 `hipDeviceTotalMem`，按可见 HIP ordinal 查询并取整 MiB 的最小值，保持上游容量选择语义。同步 common 和 utils 出口，不改框架文件，也不调用空闲显存接口。既有日志容量为每卡 65520 MiB；新接口数值、无初始化与新服务 context 状态待单独核验。当前正在运行的 GPQA 服务未修改，不能把该评测归为包含此新增修复。
+
+## 官方 SGLang 0.5.22 上的运行时兼容（2026-11-10）
+
+GLM-5.3 W4A8 的 PP2 + DSA LayerSplit 由 plugin 接入。adapter 为
+`handle_model_specific_adjustments` 提供 `rewrite_resolution_function`。
+它核对已经加载的函数与官方源码及元数据重写一致，再应用 plugin 的局部转换。
+返回的新函数保留原 globals 和默认参数，官方源码文件保持原样。
+
+平台适配先装好元数据、设备探针与平台语义，再导入
+`runner_utils.shared_read_event`，避免其导入链提前初始化 GPU 0。
+已导入的 DSA 模块继续使用现有的 `is_cuda` 别名修复。
+JIT hash TopK 的设备标记使用 `kDLGPU` 匹配 Torch DLPack 设备枚举，
+CPU 标量仍走原路径。
+
+节点组合验证使用官方 `release/v0.5.22` 提交 `baa9befa` 和配套
+plugin。该组合在 DTK26.10 上运行 P=PP2/TP8/CP8/EP8、D=TP16/DP16/EP16
+及 EAGLE，完成三项精度评测。该结果对应当时的组合快照。

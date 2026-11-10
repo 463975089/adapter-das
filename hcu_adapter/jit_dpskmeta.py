@@ -139,6 +139,9 @@ _MHC_ASM = (
 # construct is verifiably gone from the file the patch has no object and is
 # skipped loudly; a changed-but-present construct still trips the §3 gate.
 _SELF_HEAL_ABSENT = {
+    "deepseek_v4/hash_topk.cuh": {
+        "    if (ntn_dev == kDLCUDA) {": "const auto ntn_dev =",
+    },
     "deepseek_v4/topk_bf16_small.cuh": {
         '  asm volatile("mov.u32 %0, %%laneid;" : "=r"(lane_id));': "%%laneid",
     },
@@ -172,6 +175,13 @@ _SELF_HEAL_ABSENT = {
 
 
 _PATCHES = {
+    # anchor-baseline(②): baa9bef hash_topk.cuh contains the CPU/device scalar guard.
+    "deepseek_v4/hash_topk.cuh": [
+        (
+            "    if (ntn_dev == kDLCUDA) {",
+            "    if (ntn_dev == kDLGPU) {",
+        ),
+    ],
     "deepseek_v4/paged_mqa_metadata.cuh": [
         (
             "#include <cub/block/block_scan.cuh>",
