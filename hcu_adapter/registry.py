@@ -48,6 +48,7 @@ _BOUND = {}
 # JIT entries below govern transformations of adapter-owned compiler inputs.
 # They do not authorize writing to the community source tree.
 TEXT_PATCH_ALLOWLIST = {
+    ("platform_detect", "    if (ntn_dev == kDLCUDA) {"),
     # In-memory AST redirects of hardware metadata queries only. Exact modules
     # are enumerated in lightop_metadata._TARGETS; source files stay untouched.
     ("platform_detect", "AST: context-free HIP metadata queries in audited modules"),

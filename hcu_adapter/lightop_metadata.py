@@ -215,3 +215,64 @@ def rewrite_function(function, *, in_place=False):
 
 def audit():
     return dict(_AUDIT)
+
+
+def _code_semantics(code):
+    import types
+
+    constants = tuple(
+        _code_semantics(value) if isinstance(value, types.CodeType) else value
+        for value in code.co_consts
+    )
+    return (
+        code.co_code, constants, code.co_names, code.co_varnames,
+        code.co_freevars, code.co_cellvars, code.co_argcount,
+        code.co_posonlyargcount, code.co_kwonlyargcount, code.co_flags,
+        getattr(code, 'co_exceptiontable', b''),
+    )
+
+
+def rewrite_resolution_function(function, transform):
+    import __future__
+    import functools
+    from pathlib import Path
+    import types
+
+    if (
+        not isinstance(function, types.FunctionType)
+        or function.__closure__
+        or function.__name__ not in _RESOLUTION_TARGETS.get(function.__module__, ())
+    ):
+        raise RuntimeError("Unsupported resolution function for HCU compatibility")
+    source = Path(function.__code__.co_filename).read_text()
+    module = ast.parse(source, filename=function.__code__.co_filename)
+    definitions = [node for node in module.body
+                   if isinstance(node, ast.FunctionDef) and node.name == function.__name__]
+    if len(definitions) != 1 or definitions[0].decorator_list:
+        raise RuntimeError("Official resolution function source changed")
+    tree = ast.Module(body=definitions, type_ignores=[])
+    if '_hcu_metadata' in function.__code__.co_names:
+        from hcu_adapter import hip_metadata
+
+        if function.__globals__.get('_hcu_metadata') is not hip_metadata:
+            raise RuntimeError("Unknown HCU metadata provider in resolution function")
+        tree = ast.fix_missing_locations(_MetadataCalls().visit(tree))
+    flags = 0
+    for name in __future__.all_feature_names:
+        flags |= getattr(__future__, name).compiler_flag & function.__code__.co_flags
+
+    def compiled_code():
+        compiled = compile(ast.fix_missing_locations(tree), function.__code__.co_filename,
+                           'exec', flags=flags, dont_inherit=True)
+        return next(value for value in compiled.co_consts
+                    if isinstance(value, types.CodeType) and value.co_name == function.__name__)
+
+    if _code_semantics(compiled_code()) != _code_semantics(function.__code__):
+        raise RuntimeError("Loaded resolution function differs from its audited source and metadata adaptation")
+    transform(tree)
+    replacement = types.FunctionType(compiled_code(), function.__globals__, function.__name__,
+                                     function.__defaults__)
+    replacement.__kwdefaults__ = function.__kwdefaults__
+    functools.update_wrapper(replacement, function)
+    replacement.__hcu_source_sha256__ = hashlib.sha256(source.encode()).hexdigest()
+    return replacement
