@@ -278,6 +278,13 @@ def _hcu_platform_class() -> type:
         device_name = "hcu"
 
         @classmethod
+        def get_unquantized_aiter_moe_compatibility(cls):
+            # Optional v0.33 public seam; no global AITER/CDNA override.
+            from hcu_adapter.bridges.vllm_moe_aiter import get_compatibility
+
+            return get_compatibility()
+
+        @classmethod
         def use_custom_allreduce(cls) -> bool:
             """Extend official admission only for healthy requested HCU AITER.
 
@@ -312,6 +319,9 @@ def _hcu_platform_class() -> type:
         def check_and_update_config(cls, vllm_config) -> None:
             require_runtime_healthy()
             # Upstream owns config validation/defaults, including worker choice.
+            from hcu_adapter.bridges.vllm_moe_aiter import configure_padding_policy
+
+            configure_padding_policy(vllm_config.kernel_config.moe_backend)
             super().check_and_update_config(vllm_config)
             from hcu_adapter.bridges.vllm_model_load import (
                 OFFICIAL_MODEL_LOAD_WORKER,
