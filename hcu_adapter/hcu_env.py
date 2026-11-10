@@ -136,6 +136,16 @@ def _auto_mqa_emu():
 
 
 REGISTRY = {
+    "HCU_VLLM_FLASHMLA_DECODE": {
+        "env": "HCU_VLLM_FLASHMLA_DECODE", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 packed native decode: default native; explicit stock falls back; startup only; kill switch wins",
+    },
+    "HCU_VLLM_FLASHMLA_PREFILL": {
+        "env": "HCU_VLLM_FLASHMLA_PREFILL", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 FlashMLA prefill: default native; explicit stock falls back; startup only; kill switch wins",
+    },
     "HCU_VLLM_SPARSE_INDEXER_IMPL": {
         "env": "HCU_VLLM_SPARSE_INDEXER_IMPL", "default": "stock",
         "hosts": ("vllm",),

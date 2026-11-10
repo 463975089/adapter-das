@@ -14,6 +14,28 @@ HIP driver guard for breakable prefill graph capture
 
 路由变量：（auto）
 
+## vllm_flashmla_decode
+
+vLLM 0.33 V4.1 native packed-FP8 sparse decode without BF16 KV gather
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Default gfx938 D512 OCP 584-byte cac |
+| stock | candidate Explicit stock fallback: original de |
+
+路由变量：`HCU_VLLM_FLASHMLA_DECODE`
+
+## vllm_flashmla_prefill
+
+vLLM 0.33 V4.1 gathered-BF16 sparse prefill via native FlashMLA
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Default gfx936/gfx938 D512 BF16 dens |
+| stock | candidate Explicit stock fallback: unchanged o |
+
+路由变量：`HCU_VLLM_FLASHMLA_PREFILL`
+
 ## vllm_sparse_indexer
 
 vLLM 0.33 C4 sparse indexer through public OOT and official helpers

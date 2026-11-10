@@ -73,6 +73,22 @@ BACKEND_CATALOG = {
             },
         },
     },
+    "vllm_flashmla_decode": {
+        "var": "HCU_VLLM_FLASHMLA_DECODE",
+        "summary": "vLLM 0.33 V4.1 native packed-FP8 sparse decode without BF16 KV gather",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: original decode global, metadata and backend selection"},
+            "native": {"status": "candidate", "note": "Default gfx938 D512 OCP 584-byte cache; fresh per-call native plan; original MXFP8 epilogue; GPU/Graph/model/performance pending"},
+        },
+    },
+    "vllm_flashmla_prefill": {
+        "var": "HCU_VLLM_FLASHMLA_PREFILL",
+        "summary": "vLLM 0.33 V4.1 gathered-BF16 sparse prefill via native FlashMLA",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: unchanged official ROCm dispatch"},
+            "native": {"status": "candidate", "note": "Default gfx936/gfx938 D512 BF16 dense-index prefill; DTK FlashMLA, no FP32 API; device/model/performance gates pending"},
+        },
+    },
     "vllm_sparse_indexer": {
         "var": "HCU_VLLM_SPARSE_INDEXER_IMPL",
         "summary": "vLLM 0.33 C4 sparse indexer through public OOT and official helpers",

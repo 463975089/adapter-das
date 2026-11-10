@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import MutableMapping
 from dataclasses import dataclass
@@ -21,6 +22,8 @@ from hcu_adapter.extensions import (
     activate_extensions,
 )
 from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
+
+LOG = logging.getLogger("hcu.adapter")
 
 
 SUPPORTED_VLLM_RELEASE_PREFIXES = frozenset({(0, 32), (0, 33)})
@@ -253,6 +256,12 @@ def require_runtime_healthy() -> None:
 
     require_mhc_healthy()
     require_indexer_healthy()
+    from hcu_adapter.bridges.vllm_flashmla import require_healthy as require_flashmla_healthy
+
+    require_flashmla_healthy()
+    from hcu_adapter.bridges.vllm_flashmla_decode import require_healthy as require_flashmla_decode_healthy
+
+    require_flashmla_decode_healthy()
 
 
 def require_extension_healthy(capability: str) -> None:
@@ -400,6 +409,28 @@ def _ensure_hcu_platform_selected() -> None:
         )
 
 
+def _log_post_install_bindings() -> None:
+    """Diagnosability only: report bindings AFTER every install_* has run.
+
+    The bootstrap-time "HCU adapter runtime:" summary and HCU_ADAPTER_DUMP
+    snapshot are taken in common.install(), i.e. before any install_* in this
+    function. They cannot say whether a bridge bound anything; this line and
+    the rewritten dump can. It records state, it does not activate or repair.
+    """
+    from hcu_adapter import hcu_env, registry
+
+    bound = registry.records()
+    for op in ("vllm_flashmla_prefill", "vllm_flashmla_decode"):
+        LOG.warning("HCU adapter install-done: %s <- %s", op,
+                    bound[op]["impl"] if op in bound else "NOT-BOUND")
+    dump_path, _ = hcu_env.resolve("HCU_ADAPTER_DUMP")
+    if dump_path and dump_path != "1":
+        try:
+            registry.dump(dump_path)
+        except OSError as error:  # diagnostics must never break the boot
+            LOG.warning("HCU adapter install-done: dump refresh failed: %s", error)
+
+
 def hcu_runtime_plugin() -> None:
     """Apply the required vLLM runtime guards once in each HCU process."""
     # A healthy fork must first activate/adopt its inherited mHC registration;
@@ -434,6 +465,12 @@ def hcu_runtime_plugin() -> None:
         from hcu_adapter.bridges.vllm_sparse_indexer import install as install_sparse_indexer
 
         install_sparse_indexer()
+        from hcu_adapter.bridges.vllm_flashmla import install as install_flashmla_prefill
+
+        install_flashmla_prefill()
+        from hcu_adapter.bridges.vllm_flashmla_decode import install as install_flashmla_decode
+
+        install_flashmla_decode()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,
@@ -448,6 +485,7 @@ def hcu_runtime_plugin() -> None:
             _RUNTIME_ACTIONS.record_extension_reports(exc.reports)
             raise
         _RUNTIME_ACTIONS.record_extension_reports(reports)
+        _log_post_install_bindings()
 
     _RUNTIME_ACTIONS.run_once("vllm-runtime", initialize)
     require_runtime_healthy()

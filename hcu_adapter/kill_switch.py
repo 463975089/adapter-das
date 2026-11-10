@@ -33,6 +33,8 @@ LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
+    "vllm_flashmla_decode": ("vLLM V4.1 native packed sparse decode; fresh-process stock fallback", None),
+    "vllm_flashmla_prefill": ("vLLM V4.1 native sparse prefill; fresh-process stock fallback", None),
     "vllm_scaled_mm": ("vLLM LightOp FP8/INT8 execution bridge; startup Triton fallback", None),
     "w4a8_contiguous_gemm": ("Optional DTK W4A8 HIPC COV5 ABI repair (startup only)", None),
     "vllm_sparse_indexer": ("vLLM C4 indexer public OOT compatibility; fresh-process stock fallback", "HCU_VLLM_SPARSE_INDEXER_IMPL"),
