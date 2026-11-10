@@ -249,8 +249,16 @@ def require_runtime_healthy() -> None:
 
     Unknown/healthy state is allowed; this is not evidence activation completed.
     Reports remain available after failure for diagnosis.
+
+    Owner aggregation is deferred while the protected runtime callback is still
+    running: owners are installed *by* that callback, so an owner that is
+    requested but not yet installed is a boot-order fact, not a failure. The
+    post-activation gate after ``run_once`` performs the full aggregation and
+    remains the check that refuses "requested but never activated".
     """
     _RUNTIME_ACTIONS.require_runtime_healthy()
+    if _RUNTIME_ACTIONS.runtime_action_in_progress():
+        return
     from hcu_adapter.bridges.vllm_mhc import require_healthy as require_mhc_healthy
     from hcu_adapter.bridges.vllm_sparse_indexer import require_healthy as require_indexer_healthy
 

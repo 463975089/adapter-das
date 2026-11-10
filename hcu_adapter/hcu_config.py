@@ -115,10 +115,11 @@ BACKEND_CATALOG = {
     },
     "vllm_mhc": {
         "var": "HCU_VLLM_MHC_IMPL",
-        "summary": "vLLM 0.33 mHC compatibility; official Torch math via public OOT",
+        "summary": "vLLM 0.33 mHC via public OOT; AITER project with TileLang stage2 by default",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default unchanged upstream; diagnostic rollback, known gfx936 pre/fused failures"},
-            "torch": {"status": "candidate", "note": "Opt-in gfx936 official pre/post and public IR RMS; post/head unchanged; installed/model gates pending"},
+            "stock": {"status": "candidate", "note": "No longer the adapter default; explicit opt-out to the upstream path, diagnostic rollback, known gfx936 pre/fused failures"},
+            "torch": {"status": "candidate", "note": "Opt-in gfx936/gfx938 official pre/post and public IR RMS; post/head unchanged; independent model gates remain candidate"},
+            "aiter": {"status": "candidate", "note": "Default gfx936/gfx938 AITER project plus TileLang pre_big_fuse stage2 through public OOT; missing TileLang uses official Torch rather than legacy big_fuse; gfx938 W4A8 eager operator parity and HumanEval 160/164 passed; Graph and other models pending"},
         },
     },
     "vllm_scaled_mm": {
