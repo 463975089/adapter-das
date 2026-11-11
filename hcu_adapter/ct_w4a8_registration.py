@@ -29,6 +29,21 @@ _publication = None
 _failure = None
 _publishing = False
 _config_provider = None
+_provider_binder = None
+
+
+def set_provider_binder(binder) -> None:
+    """Register the zero-argument binder that installs the plugin provider.
+
+    Deferred to activation so discovery imports this module without vLLM; a
+    second, different owner is refused.
+    """
+    global _provider_binder
+    if not callable(binder):
+        raise ValueError("CT W4A8 provider binder must be callable")
+    if _provider_binder is not None and _provider_binder is not binder:
+        raise RuntimeError("CT W4A8 provider binder already has another owner")
+    _provider_binder = binder
 
 
 def set_config_provider(provider) -> None:
@@ -111,6 +126,8 @@ def activate_extension(context):
         _require_release(context.vllm_version)
         if selected_mode() == "stock":
             return
+        if _provider_binder is not None:
+            _provider_binder()
         if _publication is not None:
             try:
                 check_health()

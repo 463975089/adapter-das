@@ -6,10 +6,16 @@ The distinct channel-FP8 configuration is a native vLLM quantization route that
 HCU only had to surface; it therefore belongs to the adapter. Discovery imports
 no framework or vendor.
 
-Two hooks in the old plugin implementation were private mechanism and stay in
-the plugin: the Engram/EDP guard, the DSpark Graph support gate and the DSpark
-draft registration. They are injected through seams, and a second, different
+The DSpark draft registration is upstream admission too: signature check, single
+owner check and a lazy string handoff. Two hooks in the old plugin implementation
+were private mechanism and stay in the plugin: the Engram/EDP guard and the DSpark
+Graph support gate. They are injected through seams, and a second, different
 owner is refused rather than silently replaced.
+
+Binding is deferred to activation on purpose. Discovery through the entry point
+must import this module without torch or vLLM, so the plugin registers a binder
+callable instead of the providers themselves; the binder runs inside the
+framework, where the plugin mechanism becomes importable.
 """
 from __future__ import annotations
 
@@ -18,7 +24,7 @@ import inspect
 import os
 from threading import RLock
 
-from hcu_adapter import hcu_env, registry
+from hcu_adapter import dsv41_dspark_registration, hcu_env, registry
 from hcu_adapter.kill_switch import op_disabled
 from hcu_adapter.extensions import ExtensionCommitError, ExtensionContext, ExtensionSpec
 from packaging.version import InvalidVersion, Version
@@ -35,11 +41,27 @@ _failure: str | None = None
 _publishing = False
 _engram_edp_hooks = None
 _dspark_graph_hooks = None
-_draft_registration = None
+_provider_binder = None
+_draft_registration = dsv41_dspark_registration
 
 
 class Dsv41ActivationError(RuntimeError):
     """The routing capability cannot be registered under the current contract."""
+
+
+def set_provider_binder(binder) -> None:
+    """Register the zero-argument binder that installs the plugin providers.
+
+    Import stays cheap and framework-free; the binder is invoked once, at
+    activation, right before the hooks are consumed. A second, different owner is
+    refused like the hooks themselves.
+    """
+    global _provider_binder
+    if not callable(binder):
+        raise Dsv41ActivationError("DSV4.1 provider binder must be callable")
+    if _provider_binder is not None and _provider_binder is not binder:
+        raise Dsv41ActivationError("DSV4.1 provider binder already has another owner")
+    _provider_binder = binder
 
 
 def set_engram_edp_hooks(install, check) -> None:
@@ -60,16 +82,6 @@ def set_dspark_graph_hooks(install, check) -> None:
     if _dspark_graph_hooks is not None and _dspark_graph_hooks != (install, check):
         raise Dsv41ActivationError("DSpark Graph support already has another owner")
     _dspark_graph_hooks = (install, check)
-
-
-def set_draft_registration(module) -> None:
-    """Bind the plugin-owned DSpark draft model registration module."""
-    global _draft_registration
-    if module is None:
-        raise Dsv41ActivationError("DSpark draft registration module is required")
-    if _draft_registration is not None and _draft_registration is not module:
-        raise Dsv41ActivationError("DSpark draft registration already has another owner")
-    _draft_registration = module
 
 
 def selected_mode() -> str:
@@ -159,6 +171,8 @@ def activate_extension(context: ExtensionContext) -> None:
         _require_release(context.vllm_version)
         if selected_mode() == "stock":
             return
+        if _provider_binder is not None:
+            _provider_binder()
         if _publication is not None:
             _publishing = True
             try:
@@ -198,8 +212,6 @@ def activate_extension(context: ExtensionContext) -> None:
             resolve = quant.get_quantization_config
             draft_plan = None
             if candidate._is_hcu():
-                if _draft_registration is None:
-                    raise Dsv41ActivationError("DSpark draft registration owner is not bound")
                 try:
                     draft_plan = _draft_registration.prepare_registration()
                 except RuntimeError as error:
@@ -258,5 +270,5 @@ __all__ = [
     "QUANTIZATION_METHOD", "CAPABILITY", "Dsv41ActivationError",
     "activate_extension", "check_health", "extension_spec",
     "selected_mode", "set_engram_edp_hooks", "set_dspark_graph_hooks",
-    "set_draft_registration",
+    "set_provider_binder",
 ]
