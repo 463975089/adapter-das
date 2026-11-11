@@ -1,0 +1,249 @@
+name: HCU MR CI (K8s)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  workflow_dispatch:
+    inputs:
+        pr-number:
+            description: 'PR number to merge into the selected branch (leave empty to test the branch as-is)'
+            required: false
+            default: ''
+        pip_index_url:
+             description: 'Path to DTK package'
+             required: false
+             default: 'http://12.12.12.201:9929/nightly/dtk2610/+simple/'
+permissions:
+  contents: read
+
+concurrency:
+  group: hcu-mr-k8s-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  PIP_TRUSTED_HOST: "12.12.12.201"
+  PIP_INDEX_URL: ${{ inputs.pip_index_url || 'http://12.12.12.201:9929/nightly/dtk2610/+simple/' }}
+
+jobs:
+  image:
+    name: resolve CI image
+    # container.image 在检出之前就求值，读不到仓库里的文件；只能先在前置 job 里读出来，再用 needs 传给后两个 job
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.read.outputs.image }}
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          # 镜像属于基础设施，取基线分支的版本：PR 里改 ci/ci_docker_image 不会影响本次运行（要试新镜像就合入基线）
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          persist-credentials: false
+          
+      - name: Read ci/ci_docker_image
+        id: read
+        run: |
+          set -euo pipefail
+          image="$(tr -d '[:space:]' < ci/ci_docker_image)"
+          # 平台要求用 digest 固定镜像，tag 只作说明；没有 digest 就在这里报错，别等到拉镜像那步才失败
+          case "$image" in
+            *@sha256:*) ;;
+            *) echo "::error::ci/ci_docker_image 必须是 <repo>:<tag>@sha256:<digest>，实际是 '$image'"; exit 1 ;;
+          esac
+          echo "用镜像: $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build whl
+    needs: [image]
+    runs-on: hygon-build
+    timeout-minutes: 20
+    container:
+      # 镜像来自 ci/ci_docker_image（前置 image job 解析），必须带 digest
+      image: ${{ needs.image.outputs.image }}
+    outputs:
+      # L1 按这个目录安装 whl。不能在 L1 里自己拼路径：build 用的是 merge 后的提交，
+      # L1 检出的是 PR head，两边 git rev-parse 的结果不一样
+      wheel_dir: ${{ steps.stage.outputs.wheel_dir }}
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          fetch-depth: 0
+          # Keep the token out of .git/config so PR code cannot read it.
+          persist-credentials: false
+
+      - name: Merge PR into base
+        if: github.event_name == 'pull_request_target' || inputs.pr-number != ''
+        env:
+          # Pass via env instead of inline ${{ }} so a manual input cannot inject shell commands.
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr-number }}
+          # The repo is private, so the fetch needs a token; pass it only to this one command so it never lands in .git/config.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          auth=$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" \
+            fetch "https://github.com/${GITHUB_REPOSITORY}.git" "pull/${PR_NUMBER}/head:pr"
+          git merge --no-ff --no-edit pr
+
+      - name: build and repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist repair
+          bash packaging/build.sh
+          pip install ciupload
+          DTK_VERSION="$(tr -d '.' < /opt/dtk/.info/rocm_version)"
+          GIT_COMMIT="$(git rev-parse --short=6 HEAD)"
+          mkdir -p repair
+          CIUpload REPAIR --dtk_version "${DTK_VERSION}" --git_commit "${GIT_COMMIT}" --outputdir ./repair -f ./dist/*.whl
+          ls -l repair
+          # 两个 whl 必须各有且只有一个，否则 L1 装到的不是本次构建的产物
+          for n in sgl_kernel hcu_adapter; do
+            c=$(ls repair/${n}-*.whl 2>/dev/null | wc -l)
+            [ "$c" = 1 ] || { echo "::error::repair/ 下 ${n} whl 数量为 $c，预期 1"; exit 1; }
+          done
+
+      - name: stage whl
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          GIT_COMMIT="$(git rev-parse --short=6 HEAD)"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          STAGING_ROOT="/ci_public/adapter-das/hcu-wheel-staging"
+          STAGING_DIR="${STAGING_ROOT}/${GITHUB_REPOSITORY_OWNER}_${REPO_NAME}/run-${GITHUB_RUN_ID}/${GIT_COMMIT}"
+          WHEEL_DIR="${STAGING_DIR}/wheels"
+          # 单独重跑 build 时先清掉上一次的 whl，免得目录里同名包有两个版本
+          rm -rf "$WHEEL_DIR" && mkdir -p "$WHEEL_DIR"
+          cp repair/*.whl "$WHEEL_DIR"/
+          ls -l "$WHEEL_DIR"
+          echo "wheel_dir=$WHEEL_DIR" >> "$GITHUB_OUTPUT"
+
+  l0:
+    name: L0 structural gate
+    # L0 刻意零依赖（docs/ci.md 设计取舍），用不到卡和镜像，放云端 runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: L0 gate
+        timeout-minutes: 5
+        run: python3 ci/l0_gate.py
+
+  l1:
+    name: L1 GPU gate (bw1100-1card)
+    # L1 测的是 build job 产出的 whl，不是检出的源码树（见 install whl 步骤）
+    needs: [image, l0, build]
+    runs-on: hygon-bw1100-1card
+    # 等卡 30 分钟 + L1 step 上限 90 分钟 + 其他步骤余量
+    timeout-minutes: 130
+    container:
+      # 镜像来自 ci/ci_docker_image（与 build 用的是同一个）
+      image: ${{ needs.image.outputs.image }}
+    env:
+      # 冷容器把脚本内各段超时窗口放大一倍
+      HCU_L1_TIMEOUT_SCALE: "2"
+      # 可选缓存种子，由 ci/cache_export.sh 生成并放到 /ci_public
+      HCU_CACHE_SEED: /ci_public/adapter-das/cache/hcu_cache_seed.tgz
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: install whl
+        timeout-minutes: 5
+        env:
+          WHEEL_DIR: ${{ needs.build.outputs.wheel_dir }}
+        run: |
+          set -euo pipefail
+          [ -n "$WHEEL_DIR" ] || { echo "::error::build job 没有输出 wheel_dir"; exit 1; }
+          ls -l "$WHEEL_DIR"
+          # --no-deps：REPAIR 改写了 local version，hcu-adapter 的 sgl-kernel==<源码版本>
+          # 互锁 pin 对不上改写后的 sgl-kernel 版本；torch/triton 等依赖镜像里已有。
+          # --force-reinstall：盖掉镜像里预装的同名 dist（含 editable 安装）。
+          python3 -m pip install --no-deps --force-reinstall \
+            "$WHEEL_DIR"/sgl_kernel-*.whl "$WHEEL_DIR"/hcu_adapter-*.whl
+
+          # 以 pip 实际安装位置为准。在 / 下执行、去掉 PYTHONPATH，免得认到源码树里的
+          # *.egg-info；sitecustomize 的启动日志也打在 stdout，用 sed 只取 Location 行
+          loc() { (cd / && env -u PYTHONPATH python3 -m pip show "$1" | sed -n 's/^Location: //p'); }
+          purelib="$(loc hcu-adapter)"
+          [ -n "$purelib" ] && [ "$purelib" = "$(loc sgl-kernel)" ] \
+            || { echo "::error::安装位置异常：'$purelib' vs '$(loc sgl-kernel)'"; exit 1; }
+          for p in hcu_adapter/__init__.py sgl_kernel/__init__.py sitecustomize.py; do
+            [ -f "$purelib/$p" ] || { echo "::error::安装后 $purelib/$p 不存在"; exit 1; }
+          done
+
+          # l1_gpu_gate.sh 会把仓库根放到 PYTHONPATH 最前面，测试文件里也有
+          # sys.path.insert(仓库根)，源码树会盖住装好的包；tools/ 又必须从仓库根导入，
+          # 仓库根不能从路径里拿掉。所以把源码树里的三个模块换成指向安装位置的符号
+          # 链接：无论从哪条路径 import，跑的都是 whl 里的代码。
+          for p in hcu_adapter sgl_kernel sitecustomize.py; do
+            rm -rf "$GITHUB_WORKSPACE/$p"
+            ln -s "$purelib/$p" "$GITHUB_WORKSPACE/$p"
+          done
+
+          HCU_ADAPTER_HOST=none python3 - "$purelib" <<'PY'
+          import os, sys, importlib.metadata as im
+          purelib = os.path.realpath(sys.argv[1])
+          import hcu_adapter, sgl_kernel, sitecustomize
+          for m in (hcu_adapter, sgl_kernel, sitecustomize):
+              real = os.path.realpath(m.__file__)
+              assert real.startswith(purelib + os.sep), f"{m.__name__} -> {real}, not under {purelib}"
+              print(f"{m.__name__}: {m.__file__} -> {real}")
+          for d in ("hcu-adapter", "sgl-kernel"):
+              print(d, im.version(d))
+          PY
+
+      - name: Environment probe
+        timeout-minutes: 5
+        run: |
+          set -x
+          echo "HCU_CI_IN_K8S=${HCU_CI_IN_K8S:-unset} NODE_NAME=${NODE_NAME:-unset} OMP_NUM_THREADS=${OMP_NUM_THREADS:-unset}"
+          python3 --version
+          python3 -c "import torch; print('torch', torch.__version__, 'devices', torch.cuda.device_count())"
+          ls -d /sglang-v0522 /root/sglang-v0522-src /sglang-v0521 /root/sglang-v0521-src 2>/dev/null || true
+
+      - name: Seed JIT cache
+        timeout-minutes: 5
+        run: |
+          if [ -f "$HCU_CACHE_SEED" ]; then
+            bash ci/cache_import.sh "$HCU_CACHE_SEED"
+          else
+            echo "no cache seed at $HCU_CACHE_SEED -- cold JIT"
+            # 没有 tvm-ffi 缓存时冷构建会自锁（docs/ci.md L1.5h），用官方开关绕开
+            echo "TVM_FFI_DISABLE_TORCH_C_DLPACK=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: L1 GPU gate (ci/l1_gpu_gate.sh)
+        # 脚本内各段超时之和（×2）约 70 分钟，这里留余量到 90 分钟
+        timeout-minutes: 90
+        # 容器里只有分到的那张卡，编号固定为 0；直接传 0，跳过 rocm-smi 的空闲卡探测
+        run: bash ci/l1_gpu_gate.sh 0
+
+      - name: Collect logs
+        if: always()
+        timeout-minutes: 5
+        run: |
+          mkdir -p l1-logs
+          cp /tmp/l1_*.log /tmp/hcu_jit_progress.*.log l1-logs/ 2>/dev/null || true
+
+      - name: Upload logs
+        if: always()
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v4
+        with:
+          name: hcu-l1-logs-pr${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: l1-logs/
+          if-no-files-found: ignore
+          retention-days: 7
