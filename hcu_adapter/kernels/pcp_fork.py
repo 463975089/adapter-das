@@ -210,8 +210,13 @@ def validate_config(cfg) -> bool:
                 errors.append(str(error))
             except ValueError as error:
                 errors.append(str(error))
-    if (cfg.attention_config.resolve_indexer_kv_dtype("fp8") != "fp8"
-            or cfg.attention_config.indexer_sparse_logits):
+    from hcu_adapter.fp4_indexer import applicable as fp4_applicable, validate_config as validate_fp4
+    if fp4_applicable(cfg):
+        # The FP4 owner supplies its producer/cache/reader while PCP preserves
+        # replicated K preparation and rank-local query metadata.
+        validate_fp4(cfg)
+    elif (cfg.attention_config.resolve_indexer_kv_dtype("fp8") != "fp8"
+          or cfg.attention_config.indexer_sparse_logits):
         errors.append("source-owned FP8 indexer with dense logits required")
     if cfg.attention_config.backend not in (
         None, AttentionBackendEnum.ROCM_FLASHMLA_SPARSE_DSV4,

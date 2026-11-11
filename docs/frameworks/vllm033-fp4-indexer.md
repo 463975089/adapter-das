@@ -4,6 +4,80 @@ This document records the accepted compatibility route for DeepSeek-V4.1 FP4
 indexer pages on HCU. It is a candidate integration, not a production or
 performance claim.
 
+## Constrained PCP8 integration
+
+The FP4 admission also accepts eager MRV2 TP1/PCP8/DP1/PP1/DCP1 with EP and
+DeepEP high throughput. PCP8 speculation, EPLB, DBO, LoRA and KV transfer
+remain rejected. PCP1's existing graph/speculation domain is unchanged.
+The Plugin-owned FP4 PCP attention uses the Adapter-owned PCP attention and
+reuses native replicated-cache preparation,
+local-query metadata and source-layer cache sharing, with the PCP Engram
+implementation. Core sources are not modified.
+
+The teacher Adapter defaults to `lightop` and the packer to `triton`.
+For comparisons explicitly set `HCU_VLLM_FP4_INDEXER_IMPL=stock` and
+`HCU_VLLM_FP4_PACKER_IMPL=stock` for the FP8 arm; use `lightop`/`triton`
+for the FP4 arm. These changes do not change the defaults.
+
+The Plugin reader subchunks **query rows**, retaining the complete gathered K
+window for every query. It reuses Core's `VLLM_SPARSE_INDEXER_MAX_LOGITS_MB`
+for the aligned FP32 score width, and releases each score matrix before the
+next one. Decode capacity is frozen from scheduler limits at construction.
+Profiling allocates and releases a temporary byte tensor for transient
+prefill/decode scratch. The ratio-specific decode staging pools remain reserved
+and are reused by real decode. Their bytes are accounted separately from
+transient scratch, so the profile avoids retaining a duplicate score workspace.
+Core records the transient allocated peak.
+
+CPU tests cover admission, native constructor routing, source cache sharing,
+eight-rank coordinate replay, CR1/CR2, empty/padded rows, query window and
+candidate-row slicing, output equality and tensor lifetimes. Transport and GPU
+kernel leaves in these CPU tests are doubles. The runtime budget estimates
+explicit tensors. Vendor-private scratch and allocator behavior require device
+measurements.
+
+### Historical device validation on 2026-11-11
+
+These results apply to the earlier pre-refactor revisions. The boundary-refactor
+rebase requires fresh device and model validation.
+
+The paired runs used eight HCU devices, the Channel-FP8 checkpoint, eager MRV2,
+TP1/DP1/PCP8/EP8, DeepGEMM, DeepEP high throughput, logical block size 64 and
+private CPU Engram offload with THP disabled. Both arms used GPU memory
+utilization 0.9, max-num-batched-tokens 32768, max-model-len 65536 and
+max-num-seqs 128. PC, SWA replay, speculation, EPLB, KV transfer and profiler
+capture were disabled. Source package origins, identical commands and prompt
+hashes were checked. The two environment differences selected the Indexer
+and packer implementations.
+
+| Check | Explicit FP8 stock arm | FP4 LightOp / Triton arm |
+|---|---|---|
+| Fixed 32768-token input, output 1, N1/C1 | First warmup failed with an 8.50 GiB allocation in `fp8_mqa_logits_torch` | Two warmups and three measured requests completed |
+| Measured whole-request duration | Unavailable after OOM | 2.988899 / 2.987854 / 2.985082 seconds |
+| Highest device-memory sample | 139.4059 GiB | 127.6222 GiB |
+| Rank-0 available KV-cache budget | 18.52 GiB | 18.37 GiB |
+
+Device memory was sampled every 0.25 seconds and includes weights, KV pools,
+communication buffers and temporary tensors. These samples can miss an
+instantaneous peak. The FP8 arm failed before completing its request, so this
+comparison does not isolate a component's memory reduction or establish a
+throughput speedup.
+
+The FP8 failure occurred after server startup in the Torch score/ReLU/weight
+expression. The separate FP4 profile-workspace lifetime change addresses a
+persistent reservation in that FP4 path. The paired run validates the combined
+FP4 implementation for this configuration.
+
+HumanEval used its original prompts, concurrency 16, one generation per task,
+temperature 0, thinking disabled and at most 2048 output tokens. All 164 task
+IDs were present exactly once. The result was 161/164, pass@1 98.17%, with
+three unit-test failures and no OOM or HTTP 500 errors. No fresh FP8 HumanEval
+comparison was run. Both test services were stopped and the devices released.
+
+CPU validation passed 166 tests and all eight existing FP8 PCP replay cases.
+The Adapter L0 gate passed. Candidate status is retained for the documented
+execution domain.
+
 ## Known deviation from the adapter layout rule
 
 `adapter-das/skills/hcu-adapter-dev/SKILL.md:195-198` says not to copy a
