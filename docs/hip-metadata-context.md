@@ -20,6 +20,14 @@ TVM-FFI build subprocesses, and defers device-dependent configuration logging.
 The AST redirects are limited to the listed modules and produce source hashes
 and rewritten-call audit records; installed vendor files are not modified.
 
+`aiter.meta_size` always answers from the installed native module and falls
+back to the vendor wrapper only when that module is unavailable. It must not
+gate on `torch.cuda.is_initialized()`: official `fp8_kernel` queries device
+properties at import time, which marks Torch initialized without selecting a
+device. The vendor dispatch dummy then opened a context on device 0 in every
+TP rank, and kernels on device 0 stalled periodically once about ten contexts
+shared it.
+
 ## Validation and limits
 
 The DTK 26.10 isolated probe imported the combined adapter/plugin and completed

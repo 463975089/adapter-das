@@ -137,17 +137,20 @@ class _Finder(importlib.abc.MetaPathFinder):
 def install():
     # meta_size is sizeof(aiter::Signal), but the vendor decorator allocates
     # a CUDA dispatch dummy and fetches a stream even for this host-only query.
+    # torch.cuda.is_initialized() is no guard: an import-time property query
+    # (fp8_kernel.is_gfx1250_supported) initializes torch without selecting
+    # a device, and the dummy then opens a context on device 0 in every rank.
     import aiter
-    import torch
     from aiter.jit.core import get_module
     from hcu_adapter import registry
 
     original_meta_size = aiter.meta_size
     if not getattr(original_meta_size, "_hcu_context_free", False):
         def meta_size():
-            if not torch.cuda.is_initialized():
+            try:
                 return get_module("module_custom_all_reduce").meta_size()
-            return original_meta_size()
+            except Exception:
+                return original_meta_size()
 
         meta_size._hcu_context_free = True
         aiter.meta_size = meta_size
