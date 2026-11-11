@@ -149,7 +149,7 @@ REGISTRY = {
     "HCU_VLLM_FP4_INDEXER_IMPL": {
         "env": "HCU_VLLM_FP4_INDEXER_IMPL", "default": "lightop",
         "hosts": ("vllm",),
-        "about": "V41 zero-copy FP4 indexer: stock/lightop; before-allocation admission; fresh-process rollback",
+        "about": "V41 zero-copy FP4 indexer: lightop(默认，需 FP4 indexer cache/indexer_kv_dtype=mxfp4 才生效)/stock(显式回退); before-allocation admission; fresh-process rollback",
     },
     "HCU_VLLM_FP4_PACKER_IMPL": {
         "env": "HCU_VLLM_FP4_PACKER_IMPL", "default": "triton",

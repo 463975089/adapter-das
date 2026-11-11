@@ -179,7 +179,7 @@ def build():
         )
 
         from hcu_adapter.dsv41_channel_fp8 import _is_v41
-        from hcu_adapter.fp4_indexer import selected as fp4_selected
+        from hcu_adapter.fp4_indexer import applicable as fp4_applicable
 
         logger = init_logger(__name__)
         _registered = False
@@ -459,7 +459,7 @@ def build():
                     if _resolve("enabled"):
                         _resolve("register_split")(cfg)
                 self._hcu_owned = _resolve("enabled") and is_v41
-                self._hcu_fp4 = is_v41 and fp4_selected()
+                self._hcu_fp4 = is_v41 and fp4_applicable(cfg)
                 if self._hcu_fp4:
                     self._fp4_preflight(cfg)
                     import inspect

@@ -94,7 +94,7 @@ BACKEND_CATALOG = {
         "summary": "V41 LightOp FP4 indexer with zero-copy 64-record cache pages",
         "backends": {
             "stock": {"status": "candidate", "note": "Explicit stock fallback: existing FP8 behavior"},
-            "lightop": {"status": "candidate", "note": "Default: eager or PIECEWISE breakable Graph; logical 64-record pages, ratio2 physical 32 records staged for decode; mixed ratios and model acceptance pending"},
+            "lightop": {"status": "candidate", "note": "Default: applies only when the model has an FP4 indexer cache (indexer_kv_dtype=mxfp4); eager or PIECEWISE breakable Graph; logical 64-record pages, ratio2 physical 32 records staged for decode; mixed ratios and model acceptance pending"},
         },
     },
     "vllm_fp4_packer": {

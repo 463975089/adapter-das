@@ -29,6 +29,24 @@ def selected():
     return mode == 'lightop'
 
 
+def applicable(cfg):
+    """Whether this deployment actually uses the FP4 indexer cache.
+
+    ``selected()`` only reads the implementation knob, which is on by default
+    for every process. Core enables the MXFP4 indexer cache purely from
+    ``indexer_kv_dtype`` (``dsa_indexer_uses_fp4`` resolves ``auto`` to ``fp8``),
+    so an FP8 deployment must never enter the FP4 branch: it would be rejected
+    by the admission below for unrelated properties such as a PD connector, and
+    would fail before any model weight is allocated.
+    """
+    if not selected():
+        return False
+    attention = getattr(cfg, 'attention_config', None)
+    if attention is None:
+        return False
+    return attention.resolve_indexer_kv_dtype('fp8') == 'mxfp4'
+
+
 def _graph_capture_allowed(cfg):
     """Admit the capture mode through the adapter-owned graph contract.
 
@@ -81,14 +99,23 @@ def validate_config(cfg):
         errors.append('DP1 or DP8 required')
     if p.enable_dbo or p.enable_eplb:
         errors.append('DBO/EPLB unsupported')
-    if cfg.lora_config is not None or cfg.kv_transfer_config is not None:
-        errors.append('LoRA/PD unsupported')
+    # LoRA stays rejected. PD/KV-transfer is NOT gated here any more: the FP4
+    # page format is carried by the connector as opaque block bytes, so a
+    # prefill/decode pair configured identically (both mxfp4) is expected to
+    # transfer unchanged. That combination is still unmeasured; it is admitted
+    # on request and must be validated before it is treated as supported.
+    if cfg.lora_config is not None:
+        errors.append('LoRA unsupported')
     if not cfg.use_v2_model_runner or not (
             cfg.model_config.enforce_eager or _graph_capture_allowed(cfg)):
         errors.append('eager MRV2 or PIECEWISE breakable Graph required; '
                       'full cudagraph is not admitted')
-    if cfg.kernel_config.monokernel or cfg.kernel_config.enable_jit_warmup:
-        errors.append('monokernel/JIT prewarm unsupported by cold rebinding')
+    # JIT warmup is NOT rejected here: `register_warmup()` only queues a compile
+    # key with `JitWarmupRegistry`, so the owner kernels are still unhashed when
+    # the packer rebinds them during model construction. The plugin's
+    # `_require_cold()` remains the runtime judge and reports a real conflict.
+    if cfg.kernel_config.monokernel:
+        errors.append('monokernel unsupported by cold rebinding')
     if cfg.attention_config.indexer_sparse_logits:
         errors.append('dense logits with official candidate masking required')
     if cfg.attention_config.indexer_kv_dtype not in ('auto', 'fp8', 'mxfp4'):
