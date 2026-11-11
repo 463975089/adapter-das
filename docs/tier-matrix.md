@@ -57,6 +57,28 @@ Plugin-owned vLLM 0.33 E2M1 arithmetic lowering
 
 路由变量：`HCU_VLLM_FP4_PACKER_IMPL`
 
+## vllm_dsv41_channel_fp8
+
+vLLM 0.33 V4.1 channel-wise FP8 config via the public quantization API
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Register hcu_dsv41_channel_fp8 witho |
+| stock | candidate Do not register the distinct config; |
+
+路由变量：`HCU_VLLM_DSV41_CHANNEL_FP8_IMPL`
+
+## vllm_ct_w4a8
+
+vLLM 0.33 V4.1 compressed-tensors W4A8 config via the public quantization API
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Register hcu_dsv41_ct_w4a8; HCU MoE  |
+| stock | candidate Do not register the distinct config; |
+
+路由变量：`HCU_VLLM_CT_W4A8_IMPL`
+
 ## vllm_pcp
 
 vLLM 0.33 V4.1 PCP attention owned by the adapter kernel module

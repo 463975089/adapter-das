@@ -156,6 +156,16 @@ REGISTRY = {
         "hosts": ("vllm",),
         "about": "Plugin-owned E2M1 lowering: stock or triton; startup only; kill vllm_fp4_packer wins",
     },
+    "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL": {
+        "env": "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 channel-wise FP8 config registration: native or stock; startup only; kill vllm_dsv41_channel_fp8 wins",
+    },
+    "HCU_VLLM_CT_W4A8_IMPL": {
+        "env": "HCU_VLLM_CT_W4A8_IMPL", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 CT W4A8 config registration: native or stock; startup only; kill vllm_ct_w4a8 wins",
+    },
     "HCU_VLLM_PCP_IMPL": {
         "env": "HCU_VLLM_PCP_IMPL", "default": "stock",
         "hosts": ("vllm",),

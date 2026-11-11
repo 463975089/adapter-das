@@ -105,6 +105,22 @@ BACKEND_CATALOG = {
             "triton": {"status": "candidate", "note": "Default: gfx938 Plugin packer; CPU contracts only; native, Graph and model gates pending"},
         },
     },
+    "vllm_dsv41_channel_fp8": {
+        "var": "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL",
+        "summary": "vLLM 0.33 V4.1 channel-wise FP8 config via the public quantization API",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Do not register the distinct config; upstream FP8/CT selection is untouched"},
+            "native": {"status": "candidate", "note": "Register hcu_dsv41_channel_fp8 without replacing FP8/CT/oracle owners; checkpoint loading and GPU gates pending"},
+        },
+    },
+    "vllm_ct_w4a8": {
+        "var": "HCU_VLLM_CT_W4A8_IMPL",
+        "summary": "vLLM 0.33 V4.1 compressed-tensors W4A8 config via the public quantization API",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Do not register the distinct config; native CT remains the owner"},
+            "native": {"status": "candidate", "note": "Register hcu_dsv41_ct_w4a8; HCU MoE execution stays plugin-private; model/GPU gates pending"},
+        },
+    },
     "vllm_pcp": {
         "var": "HCU_VLLM_PCP_IMPL",
         "summary": "vLLM 0.33 V4.1 PCP attention owned by the adapter kernel module",
