@@ -39,6 +39,7 @@ SWITCHES = {
     "vllm_fp4_packer": ("Plugin E2M1 lowering; fresh-process original-binding rollback", "HCU_VLLM_FP4_PACKER_IMPL"),
     "vllm_scaled_mm": ("vLLM LightOp FP8/INT8 execution bridge; startup Triton fallback", None),
     "w4a8_contiguous_gemm": ("Optional DTK W4A8 HIPC COV5 ABI repair (startup only)", None),
+    "vllm_pcp": ("vLLM V4.1 PCP attention ownership; fresh-process stock fallback", "HCU_VLLM_PCP_IMPL"),
     "vllm_sparse_indexer": ("vLLM C4 indexer public OOT compatibility; fresh-process stock fallback", "HCU_VLLM_SPARSE_INDEXER_IMPL"),
     "vllm_mhc": ("vLLM official Torch/AITER mHC compatibility registration (startup only)", "HCU_VLLM_MHC_IMPL"),
     "deep_ep": ("DeepInfer DeepEP compatibility surface", None),

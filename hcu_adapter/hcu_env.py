@@ -156,6 +156,11 @@ REGISTRY = {
         "hosts": ("vllm",),
         "about": "Plugin-owned E2M1 lowering: stock or triton; startup only; kill vllm_fp4_packer wins",
     },
+    "HCU_VLLM_PCP_IMPL": {
+        "env": "HCU_VLLM_PCP_IMPL", "default": "stock",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 PCP attention: stock or native; startup policy, fresh process required to change",
+    },
     "HCU_VLLM_SPARSE_INDEXER_IMPL": {
         "env": "HCU_VLLM_SPARSE_INDEXER_IMPL", "default": "stock",
         "hosts": ("vllm",),

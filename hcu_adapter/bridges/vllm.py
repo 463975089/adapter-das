@@ -270,6 +270,9 @@ def require_runtime_healthy() -> None:
     from hcu_adapter.bridges.vllm_flashmla_decode import require_healthy as require_flashmla_decode_healthy
 
     require_flashmla_decode_healthy()
+    from hcu_adapter.bridges.vllm_pcp import require_healthy as require_pcp_healthy
+
+    require_pcp_healthy()
 
 
 def require_extension_healthy(capability: str) -> None:
@@ -479,6 +482,9 @@ def hcu_runtime_plugin() -> None:
         from hcu_adapter.bridges.vllm_flashmla_decode import install as install_flashmla_decode
 
         install_flashmla_decode()
+        from hcu_adapter.bridges.vllm_pcp import install as install_pcp
+
+        install_pcp()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,

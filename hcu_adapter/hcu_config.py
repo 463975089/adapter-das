@@ -105,6 +105,14 @@ BACKEND_CATALOG = {
             "triton": {"status": "candidate", "note": "Default: gfx938 Plugin packer; CPU contracts only; native, Graph and model gates pending"},
         },
     },
+    "vllm_pcp": {
+        "var": "HCU_VLLM_PCP_IMPL",
+        "summary": "vLLM 0.33 V4.1 PCP attention owned by the adapter kernel module",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Default: adapter builds no PCP classes; the plugin keeps its native path"},
+            "native": {"status": "candidate", "note": "Adapter-owned V41 PCP backends/indexer/attention; plugin injects the FP8 reference scorer and publishes the model; eager PCP2+ only, real-device gates pending"},
+        },
+    },
     "vllm_sparse_indexer": {
         "var": "HCU_VLLM_SPARSE_INDEXER_IMPL",
         "summary": "vLLM 0.33 C4 sparse indexer through public OOT and official helpers",
