@@ -30,8 +30,9 @@ def set_indexer_reference(function) -> None:
     """Bind the plugin-owned FP8 reference scorer used by the PCP indexer.
 
     The direction rule is plugin -> adapter only, so the adapter cannot import
-    `hcu_vllm_das.v41_indexer`. The plugin binds its scorer during activation;
-    scoring without a bound scorer is a refusal, never a silent fallback.
+    the plugin's FP8 indexer module. The plugin binds its scorer during
+    activation; scoring without a bound scorer is a refusal, never a silent
+    fallback.
     """
     global _reference
     if not callable(function):

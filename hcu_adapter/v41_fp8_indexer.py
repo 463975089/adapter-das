@@ -136,6 +136,20 @@ def graph_capture_allowed(config) -> bool:
     )
 
 
+def resolve_graph_capture_allowed():
+    """Return the graph-capture predicate this process admits by.
+
+    The rule itself is adapter-owned, so a process that never activated the
+    plugin still admits by ``graph_capture_allowed`` above. When the plugin
+    activates it binds a zero-argument ``graph_allowed`` resolver that reads its
+    historical module object; honouring that resolver is what keeps a patch on
+    the plugin's patch point reaching every caller -- including
+    ``hcu_adapter.fp4_indexer``, which must not import the plugin.
+    """
+    resolver = _resolvers.get("graph_allowed")
+    return graph_capture_allowed if resolver is None else resolver()
+
+
 def build():
     """Resolve the reference implementation against the imported vLLM.
 

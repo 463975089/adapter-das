@@ -30,15 +30,18 @@ def selected():
 
 
 def _graph_capture_allowed(cfg):
-    """Delegate execution-mode admission to the plugin's single contract.
+    """Admit the capture mode through the adapter-owned graph contract.
 
-    ``graph_capture_allowed`` is the same predicate used by the V41 FP8
-    reference indexer: it accepts breakable PIECEWISE capture and rejects
-    full cudagraphs.  The import is lazy so this admission module stays
-    importable before the plugin activates and in adapter-only CPU tests.
+    ``graph_capture_allowed`` is a vLLM ``CompilationConfig`` rule (breakable
+    PIECEWISE admitted, full cudagraph rejected), not plugin mechanism, so it
+    lives in ``hcu_adapter.v41_fp8_indexer``. That module hands back the
+    predicate this process admits by: an activated plugin binds a zero-argument
+    hook that reads its historical module object, so a patch there still reaches
+    this check. The import is lazy so this admission module stays importable
+    before the plugin activates and in adapter-only CPU tests.
     """
-    from hcu_vllm_das.v41_indexer_graph import graph_capture_allowed
-    return bool(graph_capture_allowed(cfg))
+    from hcu_adapter.v41_fp8_indexer import resolve_graph_capture_allowed
+    return bool(resolve_graph_capture_allowed()(cfg))
 
 
 def validate_config(cfg):
