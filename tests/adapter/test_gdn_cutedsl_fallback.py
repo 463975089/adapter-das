@@ -3,7 +3,10 @@
 
 """CPU contracts for the HCU CuTeDSL GDN compatibility wrapper."""
 
+import sys
+import types
 import unittest
+from unittest import mock
 
 import torch
 
@@ -84,6 +87,44 @@ class GdnCutedslFallbackTests(unittest.TestCase):
             initial_state_indices=torch.tensor([0, 1]),
         )
         self.assertIs(result, marker)
+
+    def test_probe_reports_absent_cuda_runtime(self):
+        """A missing ``cuda`` package is a normal 'not available', not a fault."""
+        from hcu_adapter import gdn_cutedsl_fallback as subject
+
+        exc = ModuleNotFoundError("No module named 'cuda'", name="cuda")
+        with mock.patch.dict(sys.modules, {"sglang": None}):
+            with mock.patch(
+                "builtins.__import__", side_effect=exc
+            ) as _fake:
+                reason = subject._cutedsl_unavailable()
+        self.assertIsNotNone(reason)
+        self.assertIn("cuda", reason)
+
+    def test_probe_lets_unrelated_import_errors_escape(self):
+        """Only the CuTeDSL dependency itself may be swallowed."""
+        from hcu_adapter import gdn_cutedsl_fallback as subject
+
+        exc = ModuleNotFoundError("No module named 'onnxruntime'", name="onnxruntime")
+        with mock.patch("builtins.__import__", side_effect=exc):
+            with self.assertRaises(ModuleNotFoundError):
+                subject._cutedsl_unavailable()
+
+    def test_install_returns_quietly_when_cuda_absent(self):
+        """install() must not raise, so the bridge never logs a traceback."""
+        from hcu_adapter import gdn_cutedsl_fallback as subject
+
+        exc = ModuleNotFoundError("No module named 'cuda'", name="cuda")
+        fake_torch = types.SimpleNamespace(version=types.SimpleNamespace(hip="6.0"))
+        with mock.patch.object(subject, "torch", fake_torch), mock.patch(
+            "builtins.__import__", side_effect=exc
+        ):
+            with self.assertLogs("hcu.adapter", level="INFO") as logs:
+                self.assertIsNone(subject.install())
+        self.assertTrue(
+            any("skipped" in line for line in logs.output),
+            logs.output,
+        )
 
 
 if __name__ == "__main__":

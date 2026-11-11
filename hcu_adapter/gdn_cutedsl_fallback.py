@@ -69,9 +69,39 @@ def _triton_gated_delta_rule_mtp(original, recurrent, *args, **kwargs):
     return out.reshape(B, T, HV, V)
 
 
+def _cutedsl_unavailable() -> str | None:
+    """Return why CuTeDSL kernels cannot be used here, or None if they can.
+
+    CuTeDSL needs NVIDIA's ``cuda`` Python package. On a non-NVIDIA accelerator
+    that package is simply absent, so this probe answers the routine question
+    "is the CuTeDSL route available?" -- not "is something broken". Keeping it
+    out of the except-block at the call site is what stops every process from
+    printing a traceback for a configuration that was never viable.
+    """
+    try:
+        from sglang.kernels.ops.attention import (  # noqa: F401
+            cutedsl_gdn_mtp_ring as cute,
+        )
+    except ImportError as exc:
+        # Only the CuTeDSL dependency itself counts as "not available".
+        missing = getattr(exc, "name", "") or ""
+        if missing == "cuda" or missing.startswith("cuda."):
+            return f"CuTeDSL runtime absent ({exc})"
+        raise
+    return None
+
+
 def install():
     if not getattr(torch.version, "hip", None):
         return
+
+    skipped = _cutedsl_unavailable()
+    if skipped is not None:
+        # WARNING, not INFO: this runs during adapter bootstrap, before SGLang
+        # configures logging, where INFO records are dropped outright.
+        LOG.warning("HCU adapter: gdn CuTeDSL fallback skipped -- %s", skipped)
+        return
+
     from sglang.kernels.ops.attention import cutedsl_gdn_mtp_ring as cute
     from sglang.kernels.ops.attention.fla import fused_sigmoid_gating_recurrent as fla
 
