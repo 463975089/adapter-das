@@ -175,6 +175,11 @@ def install() -> None:
         _installed_pid = pid
         return
 
+    if host == "sglang":
+        from hcu_adapter.sglang_spawn_device import select_inherited_device
+
+        select_inherited_device()
+
     _installed_pid = pid
     propagate_host(host, os.environ)
     LOG.warning("HCU adapter bootstrap: host=%s source=%s", host, source)

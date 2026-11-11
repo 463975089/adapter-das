@@ -16,7 +16,16 @@ description: hcu-sglang-adapter 仓库开发规约：算子垫片/影子库新�
 以功能和精度为验收标准，性能不设门槛；每日追新推迟到其余优化完成后。
 历史磁盘 text/JIT 补丁逐项迁移，不能把运行时写回源码称为“零修改”。
 迁移函数绑定需测试已缓存别名和 spawn 子进程；仅换 module 属性可能遗漏
-早先的 `from ... import ...`。`dist_bc` 已以保留函数对象和私有 numpy
+早先的 `from ... import ...`。
+
+SGLang spawn workers must select their assigned GPU before common/host bootstrap
+imports AITER or other native GPU libraries. The parent launch context carries a
+private one-use device hint; preserve its yielded logical device, visibility,
+existing callable aliases and parent environment on exceptions. Auxiliary
+non-spawn helpers must not consume the hint as a GPU assignment. See
+`docs/sglang-spawn-device.md` and `tests/adapter/test_sglang_spawn_device.py`.
+
+`dist_bc` 已以保留函数对象和私有 numpy
 facade 的运行时桥替代磁盘补丁；不可重新引入 common.py 写回。
 `moe_dualstream_gate` 同样已迁移为保留函数对象的运行时分支适配；
 仅作用于 MoE forward 的私有 capture predicate，不能改全局 capture 状态

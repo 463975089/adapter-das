@@ -64,6 +64,7 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | docs/env-vars.md | 全量环境变量手册（调试覆盖定位） | REGISTRY 键集与 hcu_env.py 不符（L0 会抓） |
 | docs/frameworks/vllm-required-extensions.md | vLLM 必选 entry-point/capability 启动策略、来源与 bootstrap/HOSTnone 日志边界 | 环境解析或实际 common/general-plugin 时序与契约不符 |
 | docs/cookbook.md | 已验证启动配方（按模型/特性），§4 平台约束必读 | 配方与最新 master 行为不符 |
+| docs/sglang-spawn-device.md | SGLang scheduler GPU selection before adapter bootstrap; spawn hint and alias contracts | Launch context or interpreter startup order changes |
 | docs/bootstrap.md | 新容器 Bootstrap 手册：依赖套件版本钉、tvm-ffi 手工预热、镜像差异表、四条自检 | 镜像换代后版本钉失效（快照与镜像不符） |
 | docs/models.md | 模型验证记录表（一天一行，判定四门）+ 组合特性清单 | 新模型跑完未加行 |
 | docs/tier-matrix.md | 算子档位矩阵（自动生成）：每算子有哪些档、缺哪档、什么状态——实现排期的直接输入 | 与 BACKEND_CATALOG 不一致（L0 `impl-naming` freshness 会抓） |

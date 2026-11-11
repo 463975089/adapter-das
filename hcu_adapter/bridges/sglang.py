@@ -83,6 +83,16 @@ def install() -> None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: platform semantics seam not installed", exc_info=True
             )
+        # Bind the parent launch context after platform selection, before
+        # downstream imports can cache its scheduler launch entry.
+        try:
+            from hcu_adapter import sglang_spawn_device
+
+            sglang_spawn_device.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: scheduler device bridge not installed", exc_info=True
+            )
         # TP init-broadcast payload fix (torch2.11 dlpack readonly BufferError);
         # runtime binding retains imported aliases without source writes;
         # needs sglang.srt.utils.common importable -- after the seam above.
