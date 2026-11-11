@@ -19,6 +19,7 @@ _lock = threading.RLock()
 _reference = None
 _engram_validator = None
 _classes = None
+_forward_context_resolver = None
 
 
 class PcpAttentionError(RuntimeError):
@@ -54,6 +55,34 @@ def set_engram_validator(function) -> None:
                 "PCP engram validator already bound to another owner; restart process"
             )
         _engram_validator = function
+
+
+def set_forward_context_resolver(function) -> None:
+    """Bind the host forward-context reader.
+
+    The plugin re-exported `get_forward_context` and the CPU replay patches it
+    there; once the attention class lives in the adapter, that patch would no
+    longer reach it. The resolver keeps a single, explicit seam.
+    """
+    global _forward_context_resolver
+    if not callable(function):
+        raise PcpAttentionError("PCP forward-context resolver must be callable")
+    with _lock:
+        if (_forward_context_resolver is not None
+                and _forward_context_resolver is not function):
+            raise PcpAttentionError(
+                "PCP forward-context resolver already bound; restart process"
+            )
+        _forward_context_resolver = function
+
+
+def _forward_context():
+    resolver = _forward_context_resolver
+    if resolver is not None:
+        return resolver()
+    from vllm.forward_context import get_forward_context
+
+    return get_forward_context()
 
 
 def bound_reference():
@@ -263,7 +292,7 @@ def build_classes():
             def forward_mqa(self, q, kv, positions, output):
                 if not isinstance(output, torch.Tensor):
                     raise TypeError("HCU PCP attention requires its BF16 output allocation")
-                metadata = get_forward_context().attn_metadata
+                metadata = _forward_context().attn_metadata
                 if metadata is None:
                     return super().forward_mqa(q, kv, positions, output)
                 if not isinstance(metadata, dict) or self.swa_cache_layer.prefix not in metadata:
