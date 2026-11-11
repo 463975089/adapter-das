@@ -71,7 +71,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" ]]; then
-            pip install --no-cache-dir ciupload
+            pip install --no-cache-dir ciupload -i https://pypi.sourcefind.cn/release/dtk/
             CIUpload NIGHTLY \
               --devpi_url "${PYPI_URL}" \
               --password "${CIUPLOAD_PASSWORD}" \
