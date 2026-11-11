@@ -6,17 +6,152 @@ build-backend = "setuptools.build_meta"
 name = "hcu-adapter"
 # hcu-adapter carries its OWN version line (independent of sgl-kernel;
 # this dist's single source is the VERSION file next to this pyproject,
-# encoding the paired upstream *sglang* release). The == interlock pin
-# below must match sgl_kernel/version.py (ci/l0_gate + packaging/build.sh
-# both verify). main keeps a dev pin to match the unpinned kernel dev
-# version; a release branch rewrites both to the paired kernel baseline.
-dynamic = ["version"]
+# encoding the paired upstream *sglang* release). version and dependencies
+# are built by setup.py via _pin.py: a build with DAS_BUILD_STAMP yields
+# <version>+hcu.<stamp> and an exact sgl-kernel==<kernel-public>+hcu.<stamp>
+# interlock, so the two wheels of one build always pair. Without the stamp,
+# VERSION is used as-is and the kernel is pinned by its public version
+# (a release branch rewrites the baseline parts together).
+dynamic = ["version", "dependencies"]
 description = "HCU adapter: framework-level adaptation layer for SGLang & vLLM on Hygon HCU (runtime bootstrap, host bridges, hooks)"
 requires-python = ">=3.9"
 license = {text = "Apache-2.0"}
 keywords = ["hcu", "adapter", "sglang", "vllm", "hip"]
-dependencies = [
-    "sgl-kernel==0.0.0+hcu.dev0",
+
+# Runtime deps of official sglang v0.5.22 on the validated DTK 26.10 stack.
+# sglang itself is installed --no-deps: these extras are the dependency
+# carrier, so pip never resolves sglang's CUDA-only pins. The base
+# dependencies rendered by setup.py/_pin.py carry the kernel interlock plus
+# the validated torch/triton pins; the extras carry the rest of the stack.
+[project.optional-dependencies]
+# Platform-neutral subset of sglang v0.5.22 runtime deps. CUDA-only deps
+# (sglang-kernel, flash-attn-4, flashinfer_python, ...) must stay out.
+# Shared pins follow the resident vllm 0.33.0 stack (numba, compressed-tensors,
+# openai). outlines / smg-grpc-servicer are omitted because their outlines_core
+# / grpcio pins conflict with vllm and sglang imports them only lazily
+# (--grammar-backend outlines, gRPC serving). Rationale: docs/image-dtk2610.md.
+sglang-runtime = [
+    # 服务框架与调度
+    "aiohttp",
+    "fastapi",
+    "uvicorn>=0.51",
+    "uvloop",
+    "watchfiles",
+    "pyzmq>=25.1.2",
+    "orjson",
+    "msgspec",
+    "setproctitle",
+    "psutil",
+    "prometheus-client>=0.20.0",
+    # 模型/词表/结构化输出
+    "transformers==5.19.0",
+    "tokenizers==0.23.2",
+    "sentencepiece==0.2.1",
+    "tiktoken",
+    "blobfile==3.0.0",
+    "gguf",
+    "compressed-tensors==0.17.0",
+    "xgrammar==0.2.8",
+    "llguidance>=1.7.6,<2.0.0",
+    "interegular",
+    "partial_json_parser",
+    "einops",
+    # 推理客户端/生态胶水
+    "openai>=2.25.0",
+    "anthropic>=0.20.0",
+    "mistral_common>=1.11.5",
+    "modelscope",
+    "datasets",
+    "huggingface-hub",
+    "requests",
+    "tqdm",
+    "openai-harmony==0.0.4",
+    # 科学计算/媒体/杂项
+    "numpy",
+    "scipy",
+    "numba==0.65.0",
+    "pillow",
+    "soundfile==0.13.1",
+    "timm==1.0.25",
+    "kernels>=0.14.1,<0.15",
+    "regex",
+    "pybase64",
+    "pydantic",
+    "python-dateutil<3",
+    "python-multipart",
+    "distro",
+    "easydict",
+    "xxhash",
+    "zstandard",
+    "ninja",
+    "build",
+    "IPython",
+    "py-spy",
+    # 多模态（torch_memory_saver 条件项，不进 extra，见文档）
+    "deepseek-recipe==0.2.0",
+    "tml-renderers==0.1.0",
+    # 纯绑定 CUDA 包（只为官方 CUDA-only 分支的 import 探测通过）
+    "cuda-bindings==13.4.4",
+    "nvidia-cutlass-dsl==4.8.1",
+]
+# Platform-neutral subset of sglang v0.5.22 `diffusion` extra. CUDA-only deps
+# (nvidia-modelopt / runai_model_streamer / st_attn / vsa) are lazy imports;
+# this extra only opens the entry point, serving is not HCU-verified.
+# Deviations: opencv-python-headless >=4.13.0 and no moviepy — vllm requires
+# pillow>=13 while moviepy caps pillow<12, and sglang does not import moviepy.
+sglang-diffusion = [
+    "addict==2.4.0",
+    "av==16.1.0",
+    "cache-dit==1.5.1",
+    "cloudpickle==3.1.2",
+    "diffusers==0.37.0",
+    "imageio==2.36.0",
+    "imageio-ffmpeg==0.5.1",
+    "msgpack",
+    "opencv-python-headless>=4.13.0",
+    "PyYAML==6.0.1",
+    "remote-pdb==2.1.0",
+    "scikit-image==0.25.2",
+    "trimesh>=4.0.0",
+    "websockets",
+    "xatlas",
+]
+# HCU DTK vendor stack from the DTK nightly archive; vendor versions
+# intentionally follow the archive (bare PyPI would pull same-name CUDA builds).
+#
+# Each subgroup installs independently so image builds can split them across
+# docker RUN layers and finish with hcu-runtime, keeping every layer below the
+# registry's per-layer size limit. hcu-runtime self-references the three groups;
+# ci/l0_gate.py enforces the composition.
+hcu-runtime-kernels = [
+    "aiter",
+    "boltops",
+    "causal_conv1d",
+    "deep_ep",
+    "deepgemm",
+    "fastsafetensors",
+    "flash_attn",
+    "flash_kda",
+    "flash_mla",
+    "lightop",
+]
+hcu-runtime-serve = [
+    "vllm",
+    "tilelang",
+    "lmcache",
+    "mooncake-transfer-engine",
+    "nixl",
+]
+hcu-runtime-aux = [
+    "torchvision",
+    "torchaudio",
+]
+# One-shot install name for hosts; composed from the subgroups so there is a
+# single package list (pip expands self-referential extras).
+hcu-runtime = [
+    "hcu-adapter[hcu-runtime-kernels]",
+    "hcu-adapter[hcu-runtime-serve]",
+    "hcu-adapter[hcu-runtime-aux]",
 ]
 
 [project.entry-points."vllm.platform_plugins"]
@@ -37,9 +172,3 @@ py-modules = ["sitecustomize"]
 [tool.setuptools.packages.find]
 where = ["../.."]
 include = ["hcu_adapter*"]
-
-# hand-edited single source of the hcu-adapter version (setuptools file
-# refs must stay inside this build root, hence a file rather than an
-# out-of-root attr); independent from sgl-kernel's version.
-[tool.setuptools.dynamic]
-version = {file = "VERSION"}

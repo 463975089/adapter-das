@@ -9,11 +9,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KERNEL_VERSION="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$ROOT/sgl_kernel/version.py")"
-ADAPTER_VERSION="$(tr -d ' \t\r\n' < "$ROOT/packaging/hcu-adapter/VERSION")"
 DIST="$ROOT/dist"
-KERNEL_WHL="$(ls "$DIST"/sgl_kernel-"${KERNEL_VERSION}"-*.whl)"
-ADAPTER_WHL="$(ls "$DIST"/hcu_adapter-"${ADAPTER_VERSION}"-*.whl)"
+# build.sh stamps each pair with hcu.<time>.g<commit>; pick the newest pair
+KERNEL_WHL="$(ls -t "$DIST"/sgl_kernel-*.whl | head -1)"
+ADAPTER_WHL="$(ls -t "$DIST"/hcu_adapter-*.whl | head -1)"
 PY="${PYTHON:-}"
 if [ -z "$PY" ]; then
     for cand in python3 python; do
@@ -49,6 +48,10 @@ assert "sitecustomize" in sys.modules, "sitecustomize not effective"
 eps = {e.name: e for e in im.entry_points(group="vllm.platform_plugins")
        if (e.dist.name if e.dist else "") == "hcu-adapter"}
 assert "hcu_adapter" in eps, "vllm platform plugin entry-point missing"
+pin = [r.replace(" ", "") for r in (im.metadata("hcu-adapter").get_all("Requires-Dist") or [])
+       if r.startswith("sgl-kernel")]
+expected = "sgl-kernel==" + im.version("sgl-kernel")
+assert pin == [expected], (pin, expected)
 print("A ok:", sgl_kernel.__version__)
 '
 
