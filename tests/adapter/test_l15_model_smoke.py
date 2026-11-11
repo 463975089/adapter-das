@@ -29,6 +29,13 @@ def test_tiny_models_are_separate_architectures():
         tiny_config("typo")
 
 
+def test_default_binding_manifest_is_anchored_to_repository(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    args = smoke.build_parser().parse_args(["--up-tree", str(tmp_path)])
+    assert args.binding_manifest == smoke.DEFAULT_BINDING_MANIFEST
+    assert args.binding_manifest.is_file()
+
+
 @pytest.mark.parametrize("fault", ["batch", "tokens", "vocab", "logprobs", "nan", "prob-token"])
 def test_invalid_generation_is_never_a_pass(fault):
     document = [
@@ -373,3 +380,47 @@ def test_timeout_stops_own_descendants(tmp_path, nested):
     stat = Path(f"/proc/{child}/stat")
     if stat.exists():
         assert stat.read_text().split()[2] == "Z", "timed-out child still executing"
+
+
+@pytest.mark.parametrize("fault", ["clean", "tokens", "batches"])
+def test_request_replay_rejects_state_leakage(fault):
+    batches = [[{"output_ids": [7] * 8,
+                 "meta_info": {"output_token_logprobs": [[-.1, 7, None]] * 8}}
+                for _ in range(2)] for _ in range(3)]
+    if fault == "tokens":
+        batches[2][1]["output_ids"][0] = 8
+    if fault == "batches":
+        batches.pop()
+    if fault == "clean":
+        result = smoke.validate_request_replay(batches)
+        assert result["passed"] and result["max_logprob_difference"] == 0
+        assert result["cache_hit_proven"] is False
+    else:
+        with pytest.raises(ValueError, match="replay"):
+            smoke.validate_request_replay(batches)
+
+
+@pytest.mark.parametrize("fault", ["clean", "zero", "missing", "boolean", "tokens"])
+def test_cache_probe_requires_actual_hit_and_stable_output(fault):
+    class Engine:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, **kwargs):
+            assert kwargs["logprob_start_len"] == -1
+            self.calls += 1
+            count = {"clean": 3, "zero": 0, "missing": None,
+                     "boolean": True, "tokens": 3}[fault]
+            token = 8 if fault == "tokens" and self.calls == 2 else 7
+            return [{"output_ids": [token] * 8,
+                     "meta_info": {"cached_tokens": count,
+                                   "output_token_logprobs": [[-.1, token, None]] * 8}}
+                    for _ in range(2)]
+    original = {"logprob_start_len": 0, "input_ids": [[1, 2], [3, 4]]}
+    if fault == "clean":
+        report = smoke.probe_cache_reuse(Engine(), original, 256)
+        assert report["cache_hit_proven"] and report["cached_tokens"] == [3, 3]
+    else:
+        with pytest.raises(ValueError, match="cache"):
+            smoke.probe_cache_reuse(Engine(), original, 256)
+    assert original["logprob_start_len"] == 0

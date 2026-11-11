@@ -3448,3 +3448,53 @@ PASS**；CPU 组合为 **76 passed、1 skipped、38 deselected**，L0 GREEN。
 Top20 最大差 **0.604931366 > 0.15**，Top20/tail JSD
 **0.002448766 > 0.002**。多模型真实权重、必要配置和整模型精度验收继续
 未完成。
+
+### PR61 参考工具修复后的 Qwen3 真实模型复验（2026-11-09）
+
+在包含 `185db71` 的 PR61 代码上，使用固定的 SGLang 社区源码快照
+`baa9befa381511cd4d56f83980951e5a45fffc6d`，重新执行两个真实 checkpoint
+的完整 accuracy profile。Qwen3.5-2B-Base 使用 BF16/TP4，Qwen3-0.6B
+Channel-FP8 使用 `compressed-tensors`/BF16/TP2。两种模型的 eager 和
+decode graph 均完成启动、三批固定输入、缓存复用和变输入生成；四个 smoke
+job 全部通过，checkpoint 字节绑定和社区源码审计也通过。
+
+Qwen3.5-2B-Base 的独立 CPU FP32 参考不再被大词表概率和拒绝，但原
+`bf16-cpu-fp32-top20-v1` 精度策略仍失败：最大所选 logprob 误差
+**0.124270**，最大 greedy regret **0.195494 > 0.15**，最大 Top20
+logprob 误差 **0.497615 > 0.15**，Top20/tail JSD **0.002974 >
+0.002**。这说明当前 BF16 配置可以启动并生成，精度门仍未闭合。
+
+Qwen3-0.6B Channel-FP8 使用显式
+`--quantized-reference ct-fp8-token-channel`。独立参考逐项核对 **507**
+个 checkpoint tensor、**196** 个量化 Linear，并在 **5** 次 forward 中
+观察到每层 activation QDQ。该参考同样完成，但精度失败幅度更大：最大所选
+logprob 误差 **1.334696**，最大 greedy regret **1.177153**，最大
+Top20 logprob 误差 **2.876089**，Top20/tail JSD **0.128425**，尾部
+质量差 **0.069929**。因此 CT Channel-FP8 当前只能记录为启动/生成通过，
+不能记录为精度通过。
+
+本轮没有新增运行时修复、默认 dtype 改动或精度阈值放宽；后续应优先分解
+BF16 与 CT Channel-FP8 的实际 logits/top20 差异，再决定是否需要生产代码
+修改。原始 smoke、worker 日志、CPU 参考和量化 QDQ 证据留在仓库外的
+`external-evidence:adapter-das-model-evidence-20261109.tar.gz`，SHA256
+为 `41fb4d34e44c95906ff7e602e6ae52d9974f488f060ff8d741b9df94ec2a855a`。
+
+### CT Channel-FP8 基础链与真实模型验收边界（2026-11-09）
+
+在固定的 CT FP8 基础链上，以 token 数 1、17、33 运行 channel FP8
+scaled GEMM、scale 形状和 Graph replay 契约，结果为 **3/3 PASS**。
+这证明量化算子链的独立执行合同和图重放合同当前成立。
+
+真实 `Qwen3-0.6B-Channel-FP8` 使用 BF16/TP2 和
+`compressed-tensors` 启动并完成生成；默认量化实现和显式
+`HCU_QUANT_IMPL=torch` 两条路线的 eager/graph smoke 均通过。两条路线的
+显式 `ct-fp8-token-channel` CPU reference 指标一致：最大所选 logprob
+误差 **1.334696**、最大 greedy regret **1.177153**、最大 Top20
+logprob 误差 **2.876089**、Top20/tail JSD **0.128425**、tail mass
+error **0.069929**、missed mass **0.006180**。
+
+因此当前结论是：CT Channel-FP8 已具备启动和生成证据，但精度门仍失败；
+该失败不能归因于 aiter 专用量化路线，暂不修改生产量化路径，也不通过放宽
+精度阈值或改变默认 dtype 掩盖差异。后续应在真实模型边界上分别拆分
+BF16/FP8 累积、量化反量化和 CPU FP32 reference 的数值差异，取得可复现的
+算子级证据后再决定是否需要运行时修复。

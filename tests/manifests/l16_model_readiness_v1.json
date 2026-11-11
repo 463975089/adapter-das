@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "manifest_id": "adapter-das-l1.6-model-readiness-v1",
+  "layer": "L1.6",
+  "purpose": "Real Engine launch and basic generation readiness after L1.5 component gates",
+  "defaults": {
+    "device_count": 1,
+    "modes": [
+      "eager",
+      "graph"
+    ],
+    "profile": "smoke",
+    "dtype": "bfloat16",
+    "mem_fraction_static": 0.25,
+    "host": "adapter",
+    "needs_server": false,
+    "needs_model_weights": false,
+    "external_network": false
+  },
+  "cases": [
+    {
+      "id": "dummy-dense",
+      "kind": "dummy",
+      "family": "dense",
+      "intent": "Dense Engine construction, eager generation and decode graph evidence"
+    },
+    {
+      "id": "dummy-moe",
+      "kind": "dummy",
+      "family": "moe",
+      "intent": "MoE Engine construction, routing-compatible generation and graph evidence"
+    },
+    {
+      "id": "dummy-mla",
+      "kind": "dummy",
+      "family": "mla",
+      "intent": "MLA Engine construction, compressed-KV generation and graph evidence"
+    },
+    {
+      "id": "dummy-mamba",
+      "kind": "dummy",
+      "family": "mamba",
+      "intent": "Mamba Engine construction, recurrent-state generation and graph evidence"
+    },
+    {
+      "id": "dummy-hybrid",
+      "kind": "dummy",
+      "family": "hybrid",
+      "intent": "Hybrid linear/full-attention Engine construction and generation"
+    },
+    {
+      "id": "checkpoint-smoke",
+      "kind": "checkpoint",
+      "family": "checkpoint",
+      "intent": "External real checkpoint load, eager/graph generation and checkpoint byte binding",
+      "requires_checkpoint": true
+    }
+  ]
+}

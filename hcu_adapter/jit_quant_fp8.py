@@ -47,6 +47,53 @@ _PATCHES = (
     ("gemm/per_token_group_quant.cuh", _NEEDLE_QUANT, _REPL_QUANT),
 )
 
+# Under HIP fp8_e4m3_t is uint8 storage, so the community static_cast would
+# truncate a numeric value into a byte instead of encoding an OCP FP8 value.
+# Apply to both the CTA and warp kernels in the private compiler-input bundle.
+_NEEDLE_TOKEN_CVT = (
+    "output_vec[j] = static_cast<fp8_e4m3_t>("
+    "math::max(math::min(value, math::FP8_E4M3_MAX), -math::FP8_E4M3_MAX));"
+)
+_REPL_TOKEN_CVT = (
+    "output_vec[j] = __hip_cvt_float_to_fp8("
+    "math::max(math::min(value, 448.0f), -448.0f), "
+    "__HIP_SATFINITE, __HIP_E4M3);"
+)
+_PATCHES += (("gemm/per_token_quant_fp8.cuh", _NEEDLE_TOKEN_CVT, _REPL_TOKEN_CVT),)
+# This export writes OCP e4m3fn, not the architecture-default FNUZ format.
+# Match its scale divisor to the explicit OCP conversion without changing the
+# shared math constant used by other, independently validated kernel families.
+_NEEDLE_TOKEN_SCALE = " / math::FP8_E4M3_MAX"
+_REPL_TOKEN_SCALE = " / 448.0f"
+_PATCHES += (("gemm/per_token_quant_fp8.cuh", _NEEDLE_TOKEN_SCALE, _REPL_TOKEN_SCALE),)
+_NEEDLE_TOKEN_INCLUDE = "#include <sgl_kernel/tensor.h>"
+_REPL_TOKEN_INCLUDE = "#include <hip/hip_runtime.h>\n#include <hip/hip_fp8.h>\n" + _NEEDLE_TOKEN_INCLUDE
+_PATCHES += (("gemm/per_token_quant_fp8.cuh", _NEEDLE_TOKEN_INCLUDE, _REPL_TOKEN_INCLUDE),)
+
+# The per-tensor kernel only needs atomic::max. Its shared atomic header also
+# declares unused CUDA PTX event helpers, which HIP rejects even without calls.
+# Keep the existing HIP CAS maximum, local to this compiler input only.
+_TENSOR_ATOMIC = """#include <sgl_kernel/utils.cuh>
+namespace sglang::device::atomic {
+SGL_DEVICE float max(float* addr, float value) {
+  int* bits = reinterpret_cast<int*>(addr);
+  int old = *bits, assumed;
+  do {
+    assumed = old;
+    old = atomicCAS(bits, assumed, __float_as_int(fmaxf(value, __int_as_float(assumed))));
+  } while (assumed != old);
+  return __int_as_float(old);
+}
+}
+"""
+_PATCHES += (
+    ("gemm/per_tensor_quant_fp8.cuh", _NEEDLE_TOKEN_INCLUDE, _REPL_TOKEN_INCLUDE),
+    ("gemm/per_tensor_quant_fp8.cuh", "#include <sgl_kernel/atomic.cuh>", _TENSOR_ATOMIC),
+    ("gemm/per_tensor_quant_fp8.cuh", "static_cast<DST_DTYPE>(value)",
+     "__hip_cvt_float_to_fp8(value, __HIP_SATFINITE, __HIP_E4M3)"),
+    ("gemm/per_tensor_quant_fp8.cuh", "math::FP8_E4M3_MAX", "448.0f"),
+)
+
 # v0.5.22 added a second-generation kernel file whose fp8 store path calls
 # the CUDA conversion family by its __nv spelling (per_token_group_quant_
 # 8bit_v2.cuh:325/332 — gfx938 hipcc: unknown type name

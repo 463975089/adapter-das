@@ -646,14 +646,13 @@ def _fingerprint_errors(output: str, limit: int = 20) -> list[str]:
 
 
 def _pytest_env(up_tree: Path, adapter_root: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    parts = [str(up_tree / "python"), str(adapter_root)]
-    existing = env.get("PYTHONPATH")
-    if existing:
-        parts.append(existing)
-    env["PYTHONPATH"] = os.pathsep.join(parts)
-    env["PYTHONUNBUFFERED"] = "1"
-    return env
+    # Controllers may run with host=none; only the pytest children load SGLang.
+    # Do not inherit another source tree or an installed optional plugin.
+    try:
+        from tools.l15_runtime import test_env
+    except ModuleNotFoundError:
+        from l15_runtime import test_env
+    return test_env(up_tree, adapter_root)
 
 
 def collect_manifest(
@@ -958,22 +957,42 @@ def classify_outcomes(
             summary["unobserved"] = summary.get("unobserved", 0) + 1
             continue
         outcome = str(record.get("outcome", "not_collected"))
+        subtests = record.get("subtests", [])
+        bad_subtests = [s for s in subtests if s.get("outcome") not in {"passed", "skipped"}
+                        or "wasxfail" in s]
+        skipped_subtests = [s for s in subtests if s.get("outcome") == "skipped"]
+        if outcome == "passed" and bad_subtests:
+            outcome = "failed"
+        elif outcome == "passed" and skipped_subtests:
+            outcome = "skipped" if len(skipped_subtests) == len(subtests) else "partial"
         summary[outcome] = summary.get(outcome, 0) + 1
-        if outcome == "passed":
+        if outcome == "partial":
+            test["classification"] = "candidate-observe"
+            test["route_evidence"] = "not_collected"
+            test["subtest_observation"] = {
+                "passed": sum(s.get("outcome") == "passed" for s in subtests),
+                "skipped": len(skipped_subtests),
+                "skip_reasons": sorted({_public_diagnostic(s.get("reason", "pytest subtest skip"))
+                                        for s in skipped_subtests}),
+            }
+        elif outcome == "passed":
             test["classification"] = "contract-green"
             test["route_evidence"] = "not_collected"
             promoted.append(nodeid)
         elif outcome == "skipped":
             phase = record.get("phases", {}).get("setup", {})
             test["classification"] = "platform-skip"
-            test["platform_guard"] = "pytest-runtime-skip"
+            test["platform_guard"] = "pytest-subtest-skip" if skipped_subtests else "pytest-runtime-skip"
             test["skip_reason"] = _public_diagnostic(
-                phase.get("reason", "pytest skip")
+                "; ".join(sorted({s.get("reason", "pytest subtest skip") for s in skipped_subtests}))
+                if skipped_subtests else phase.get("reason", "pytest skip")
             )
             test["route_evidence"] = "not_collected"
         elif outcome in {"failed", "error", "xfail", "xpass"}:
             phases = record.get("phases", {})
             phase = phases.get("call") or phases.get("setup") or phases.get("teardown") or {}
+            if bad_subtests:
+                phase = bad_subtests[0]
             fingerprint = phase.get("fingerprint") or phase.get("reason") or outcome
             test["classification"] = "diagnostic-known-fail"
             test["route_evidence"] = "not_collected"
@@ -1065,9 +1084,11 @@ def _merge_pytest_outcomes(
     documents: Sequence[Mapping[str, Any]], returncode: int
 ) -> dict[str, Any]:
     tests: dict[str, Mapping[str, Any]] = {}
+    collection_errors = []
     for document in documents:
         if document.get("artifact") != "l15-pytest-outcomes":
             raise ManifestError("run outcome group must be l15-pytest-outcomes")
+        collection_errors.extend(document.get("collection_errors", []))
         for record in document.get("tests", []):
             nodeid = record.get("nodeid")
             if not isinstance(nodeid, str):
@@ -1080,7 +1101,34 @@ def _merge_pytest_outcomes(
         "artifact": "l15-pytest-outcomes",
         "exitstatus": returncode,
         "tests": [tests[nodeid] for nodeid in sorted(tests)],
+        "collection_errors": collection_errors,
     }
+
+
+def execution_failures(manifest, nodeids, outcomes):
+    """A green manifest node requires a real passing call, not just pytest rc=0."""
+    try:
+        from tools.l15_runtime import check_outcomes
+    except ModuleNotFoundError:
+        from l15_runtime import check_outcomes
+    records = outcomes.get("tests", [])
+    actual = {record["nodeid"] for record in records}
+    expected = set(nodeids)
+    failures = []
+    if outcomes.get("collection_errors"):
+        failures.append({"kind": "collection-errors", "errors": outcomes["collection_errors"]})
+    if actual != expected:
+        failures.append({"kind": "nodeid-mismatch", "missing": sorted(expected - actual),
+                         "unexpected": sorted(actual - expected)})
+    green = {item["nodeid"] for item in _expanded_tests(manifest)
+             if _classification(item, manifest["defaults"]) in {"core-green", "contract-green"}}
+    for record in records:
+        nodeid = record["nodeid"]
+        if nodeid in green and not check_outcomes(
+            dict(outcomes, tests=[record]), nodeid
+        ):
+            failures.append({"kind": "green-node-not-passed", "nodeid": nodeid})
+    return failures
 
 
 def run_manifest(
@@ -1184,7 +1232,8 @@ def run_manifest(
     outcomes = _merge_pytest_outcomes(outcome_documents, returncode)
     _write_json(outcome_path, outcomes)
     all_outcomes_present = all(group["outcomes_present"] for group in group_results)
-    passed = returncode == 0 and not any_timed_out and all_outcomes_present
+    failures = execution_failures(manifest, nodeids, outcomes)
+    passed = returncode == 0 and not any_timed_out and all_outcomes_present and not failures
     artifact = {
         "schema_version": SCHEMA_VERSION,
         "artifact": "l15-run",
@@ -1201,6 +1250,7 @@ def run_manifest(
         "timed_out": any_timed_out,
         "passed": passed,
         "outcomes_file": str(outcome_path),
+        "execution_failures": failures,
         "outcome_summary": _outcome_summary(outcomes),
         "stdout": "\n".join(stdout_parts),
         "stderr": "\n".join(stderr_parts),

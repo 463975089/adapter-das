@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -735,7 +736,8 @@ class L15ManifestTests(unittest.TestCase):
                             "artifact": "l15-pytest-outcomes",
                             "exitstatus": 0,
                             "tests": [
-                                {"nodeid": nodeid, "outcome": "passed", "phases": {}}
+                                {"nodeid": nodeid, "outcome": "passed",
+                                 "phases": {"call": {"outcome": "passed"}}}
                                 for nodeid in selected
                             ],
                         }
@@ -869,3 +871,71 @@ class L15ManifestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_green_execution_requires_complete_real_call_evidence():
+    import copy
+
+    node = "test/registered/a/test_x.py::test_x"
+    manifest = minimal_manifest(tests=[{
+        "nodeid": node, "domain": "kernel", "logical_ops": ["op"],
+        "classification": "contract-green", "route_evidence": "not_collected", "owner": "kernel",
+    }])
+    good = {"artifact": "l15-pytest-outcomes", "exitstatus": 0, "tests": [
+        {"nodeid": node, "outcome": "passed", "phases": {"call": {"outcome": "passed"}}}
+    ]}
+    assert not l15.execution_failures(manifest, [node], good)
+    for fault in ["missing", "unexpected", "skip", "no-call", "xfail", "subtest"]:
+        document = copy.deepcopy(good)
+        record = document["tests"][0]
+        if fault == "missing":
+            document["tests"] = []
+        elif fault == "unexpected":
+            record["nodeid"] = node + "_wrong"
+        elif fault == "skip":
+            record["outcome"] = "skipped"
+        elif fault == "no-call":
+            record["phases"] = {}
+        elif fault == "xfail":
+            record["phases"]["call"]["wasxfail"] = "known"
+        else:
+            record["subtests"] = [{"outcome": "failed"}]
+        assert l15.execution_failures(manifest, [node], document), fault
+
+
+@pytest.mark.parametrize("children,classification", [
+    ([{"outcome": "passed"}], "contract-green"),
+    ([{"outcome": "skipped", "reason": "unsupported backend"}], "platform-skip"),
+    ([{"outcome": "passed"}, {"outcome": "skipped", "reason": "unsupported backend"}], "candidate-observe"),
+    ([{"outcome": "failed", "fingerprint": "wrong math"}], "diagnostic-known-fail"),
+])
+def test_classifier_does_not_promote_skipped_or_failed_subtests(children, classification):
+    node = "test/registered/test_x.py::test_x"
+    m = minimal_manifest()
+    m["selectors"] = [{"id": "fixture", "domain": "kernel", "logical_ops": ["op"],
+                       "owner": "kernel", "paths": ["test/registered"]}]
+    m["tests"] = [{"nodeid": node, "source_id": "fixture", "domain": "kernel",
+                   "logical_ops": ["op"], "owner": "kernel",
+                   "classification": "contract-green", "route_evidence": "not_collected"}]
+    outcomes = {"artifact": "l15-pytest-outcomes", "tests": [
+        {"nodeid": node, "outcome": "passed", "phases": {"call": {"outcome": "passed"}},
+         "subtests": children}]}
+    updated, report = l15.classify_outcomes(m, [outcomes])
+    entry = l15._expanded_tests(updated)[0]
+    assert entry["classification"] == classification
+    assert report["promoted_contract_green_count"] == (classification == "contract-green")
+    if classification == "candidate-observe":
+        assert entry["subtest_observation"] == {"passed": 1, "skipped": 1,
+                                               "skip_reasons": ["unsupported backend"]}
+
+
+
+def test_pytest_child_selects_sglang_without_inheriting_controller_or_plugin(monkeypatch, tmp_path):
+    monkeypatch.setenv("HCU_ADAPTER_HOST", "none")
+    monkeypatch.setenv("SGLANG_PLUGINS", "hcu")
+    monkeypatch.setenv("PYTHONPATH", "/unrelated-source")
+    env = l15._pytest_env(tmp_path / "community", ROOT)
+    assert env["HCU_ADAPTER_HOST"] == "sglang"
+    assert env["SGLANG_PLUGINS"] == "none"
+    assert env["VLLM_PLUGINS"] == "none"
+    assert env["PYTHONPATH"].split(os.pathsep) == [str(ROOT), str(tmp_path / "community/python")]
