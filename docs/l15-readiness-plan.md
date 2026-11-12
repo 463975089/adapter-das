@@ -3537,3 +3537,15 @@ error **0.069929**、missed mass **0.006180**。
 精度阈值或改变默认 dtype 掩盖差异。后续应在真实模型边界上分别拆分
 BF16/FP8 累积、量化反量化和 CPU FP32 reference 的数值差异，取得可复现的
 算子级证据后再决定是否需要运行时修复。
+
+
+### 2026-11-04：保留插件注册后的实时 JIT include 顺序
+
+SGLang 的 plugin 在 adapter 安装后调整共享 `DEFAULT_INCLUDE`。adapter
+不能在绑定时冻结此列表，否则插件拥有的 `topk_v2.cuh` 会误用旧版
+`topk_impl.cuh`。私有 compiler include 门面在每次构造 BuildSpec 时读取
+同一列表，映射社区 include 到不可变 bundle，再追加 CUDA→HIP forwarder。
+不晚期重绑、不修改社区文件，不新增配置、算子实现或 registry target；
+沿用 `platform_detect / immutable-jit-inputs` 登记。
+回归覆盖已缓存 loader 别名、插件头文件插入/移除、晚注册 dependency
+provider 及官方原函数两臂；GPU 编译与模型验收结果另行记录。

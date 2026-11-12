@@ -256,3 +256,47 @@ adapter 负责 `mapped_host_view=dtk`、`qsa_scatter=triton`、HIP QSA prep 的�
 组合服务在 gfx936/DTK2610/Python3.12、TP4/attention-DP4/EP4、INT8 pinned PLE、BF16 计算、E5M2 KV、fa3、EAGLE 3 steps/4 tokens、full decode Graph 下通过 smoke 32/32（含图像）、扩展 5/5。131072/1024、C1、seed42、零缓存、四次预热后三次中位数 **TTFT 17.834771 s / TPOT 11.343052 ms**；GSM8K **1287/1319=97.5739%**、错误 0、length 截断 2。历史 DAS 为 18.245208 s / 12.170289 ms、1287/1319，来自另一节点/镜像；同分不表示逐题输出一致。
 
 最终配方使用 `GPU_MAX_HW_QUEUES=2`、全局 prefill 预算 131072、AITER 通信及 CPU benchmark 客户端。queue1 候选曾在全量中挂起；queue2 全量约 23 分钟未复现，根因未完全确定。使用隔离 venv 与显式官方路径验证模块归属；官方树含 adapter 基线 bootstrap portability 改写，本次 QSA 接入采用 rebind/provider。E5M2 为 KV 存储，计算前转换 BF16；未验证 FP8 GEMM、其他架构、其他并行规模、file offload 或 vLLM。
+## DeepSeek V4.1 channel-FP8 HumanEval 回归（2026-11-12）
+
+验证环境：8×BW1101/gfx938，驱动
+`6.4.2-V2.1.0`，Torch `2.11.0+dtk2610.2611031312.g529def`，Triton
+`3.6.0+dtk2610.torch2110.2611031429.g92771c`。
+
+固定源码：official `baa9befa381511cd4d56f83980951e5a45fffc6d`；adapter
+基线 `780da02dc3961b762e6eadb48b3ec829736bb448` 加本次 AITER MoE clamp
+参数修复；plugin `1f5642095da5aa1701c046964eebb76d8992606e`。official 和
+plugin 工作树保持干净。实际模型为
+`/models/DeepSeek-V4.1-Flash-1017-Channel-FP8-w8a8`。
+
+```bash
+source /opt/open-sglang/env.sh
+cd /home/scripts/SGlang_Docs
+bash run_dpsk-v41.sh 10015 /models/DeepSeek-V4.1-Flash-1017-Channel-FP8-w8a8
+# 服务就绪后，另一个 shell：
+source /opt/open-sglang/env.sh
+cd /home/scripts/acc_test
+limit=all bash run-all-acc.sh /module/DeepSeek-V4.1-Flash-Channel-FP8 10015 dataset=humaneval
+```
+
+服务为纯 TP8、DSPARK block=5、默认 folded proposal、decode Graph max bs=32、
+max-running-requests=32，关闭 prefill Graph/radix cache，mem-fraction=0.85。
+评测保留原脚本 temperature=1、top_p=1、max_tokens=4096、stream=true、
+并发64、seed42和原评分规则。请求中的 `/module/...` 是模型名称，服务实际
+加载上述 `/models/...` 权重。
+
+结果：原 nmz110 92/164（56.1%）；nmz18 修复前关闭 folded proposal 的诊断
+对照96/164（58.5%）；nmz18 修复后恢复原配置158/164（96.3%）。三个条件
+分别记账，关闭折叠草稿不作为最终部署方案。GSM8K 本轮未复测。
+
+根因：AITER MoE 桥漏传 `MoeRunnerConfig.swiglu_limit=10`。修复优先传递
+非 None 的 swiglu limit，其余保留 gemm1_clamp_limit；运行日志确认 target
+ASM 和 draft Triton 均收到10。精度分布与反例详情见本仓 skill 的
+`references/precision-triage.md`。新增参数合同5项、真实HCU三形状数值/变输入
+Graph 3项、已有相关MoE合同8项、官方
+`test/registered/unit/layers/moe/test_flashinfer_cutlass_swiglu_params.py`
+8项通过。官方测试隐藏GPU时因HIP导入设备查询而无法收集，在真实HCU+
+adapter环境重跑通过；不把前次collection error记为skip或通过。L0 GREEN。
+
+完整评测输出：`/home/scripts/acc_test/nmz_DeepSeek-V4.1-Flash-Channel-FP8/20261112_125007/humaneval`。
+容器运行证据：`/tmp/hcu-humaneval-clamp-fixed.kojfa_ba`；诊断对照：
+`/tmp/hcu-humaneval-nmz18-resume.vwcy4A`。
