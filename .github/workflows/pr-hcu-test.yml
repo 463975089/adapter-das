@@ -94,6 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf dist repair
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           HCU_ADAPTER_HOST=none bash packaging/build.sh
           cp -rf dist/*.whl repair/*.whl
           ls -l repair
