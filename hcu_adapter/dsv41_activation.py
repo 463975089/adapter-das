@@ -210,6 +210,15 @@ def activate_extension(context: ExtensionContext) -> None:
                 raise Dsv41ActivationError("public quantization registry contract changed")
             register = quant.register_quantization_config
             resolve = quant.get_quantization_config
+            # Everything that can refuse has to refuse BEFORE the public
+            # registry is touched. Core has no unregister, so a failure after
+            # `register()` leaves this process with a config it cannot select
+            # and cannot remove: the framework keeps starting, the native model
+            # eventually fails at construction, and a same-process retry stacks
+            # another draft publication on top. Both preconditions are checked
+            # here, ahead of the registration below.
+            if _engram_edp_hooks is None or _dspark_graph_hooks is None:
+                raise Dsv41ActivationError("DSV4.1 guard providers are not bound")
             draft_plan = None
             if candidate._is_hcu():
                 try:
@@ -231,6 +240,9 @@ def activate_extension(context: ExtensionContext) -> None:
                         _fatal("DSV4.1 public registration failed; use a fresh process")
                     except ExtensionCommitError as refusal:
                         raise refusal from error
+            # From here on the name is registered and cannot be removed, so every
+            # remaining failure has to become commit-fatal rather than a
+            # recoverable error the framework would swallow.
             draft_state = None
             if draft_plan is not None:
                 try:
@@ -240,13 +252,17 @@ def activate_extension(context: ExtensionContext) -> None:
                         _fatal("DSV4.1 draft registration failed; use a fresh process")
                     except ExtensionCommitError as refusal:
                         raise refusal from error
-            if _engram_edp_hooks is None or _dspark_graph_hooks is None:
-                raise Dsv41ActivationError("DSV4.1 guard providers are not bound")
             try:
                 _engram_edp_hooks[0]()
                 _dspark_graph_hooks[0]()
-            except RuntimeError as error:
-                raise Dsv41ActivationError(str(error)) from error
+            except BaseException as error:
+                try:
+                    _fatal(
+                        "DSV4.1 guard install failed after public registration; "
+                        "use a fresh process"
+                    )
+                except ExtensionCommitError as refusal:
+                    raise refusal from error
             _publication = (quant, config_class, register, resolve, draft_state)
             registry.register(
                 op=OP, impl="native", target=TARGET,
