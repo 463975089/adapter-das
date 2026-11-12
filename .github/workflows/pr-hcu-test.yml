@@ -61,6 +61,10 @@ jobs:
     container:
       # 镜像来自 ci/ci_docker_image（前置 image job 解析），必须带 digest
       image: ${{ needs.image.outputs.image }}
+    defaults:
+      run:
+        # 容器 job 的默认 shell 是 sh，set -o pipefail 是 bash 扩展，不显式指定会在第一行就退出
+        shell: bash
     outputs:
       # L1 按这个目录安装 whl，不自己拼路径：merge 的提交号由 build 算出来，
       # 让 L1 自己推等于两边各算一遍，迟早对不上
@@ -169,6 +173,10 @@ jobs:
     container:
       # 镜像来自 ci/ci_docker_image（与 build 用的是同一个）
       image: ${{ needs.image.outputs.image }}
+    defaults:
+      run:
+        # 容器 job 的默认 shell 是 sh，set -o pipefail 是 bash 扩展，不显式指定会在第一行就退出
+        shell: bash
     env:
       # 冷容器把脚本内各段超时窗口放大一倍
       HCU_L1_TIMEOUT_SCALE: "2"
@@ -208,9 +216,7 @@ jobs:
           set -euo pipefail
           [ -n "$WHEEL_DIR" ] || { echo "::error::build job 没有输出 wheel_dir"; exit 1; }
           ls -l "$WHEEL_DIR"
-          # --no-deps：REPAIR 改写了 local version，hcu-adapter 的 sgl-kernel==<源码版本>
-          # 互锁 pin 对不上改写后的 sgl-kernel 版本；torch/triton 等依赖镜像里已有。
-          # --force-reinstall：盖掉镜像里预装的同名 dist（含 editable 安装）。
+         
           HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall \
             "$WHEEL_DIR"/sgl_kernel-*.whl "$WHEEL_DIR"/hcu_adapter-*.whl
 
