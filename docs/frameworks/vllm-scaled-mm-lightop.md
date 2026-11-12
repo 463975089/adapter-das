@@ -77,8 +77,8 @@ unset ROCR_VISIBLE_DEVICES
 export HIP_VISIBLE_DEVICES=3 CUDA_VISIBLE_DEVICES=3
 export HCU_ADAPTER_HOST=none VLLM_PLUGINS=hcu_adapter VLLM_ROCM_USE_AITER=0
 export PYTHONDONTWRITEBYTECODE=1
-export PYTHONPATH=/public2/home/laibao/pkg/dcu/project/deepseekv4.1-flash/opt-aiopt1086-1103/adapter-das
-cd "$PYTHONPATH"
+# run from the adapter-das checkout root
+export PYTHONPATH="$PWD"
 timeout 600 python3 -B tests/tools/_probe_vllm_scaled_mm_lightop.py \
   --output .artifacts/scaled-mm-replay-new
 ```
