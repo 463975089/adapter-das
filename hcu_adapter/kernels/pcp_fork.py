@@ -15,6 +15,16 @@ from __future__ import annotations
 
 import threading
 
+from hcu_adapter import hcu_env
+from hcu_adapter.kill_switch import op_disabled
+
+# Same operator-facing knob the bridge records and health-checks. `select_attention`
+# must read it too: that function decides which class actually runs, so a `stock`
+# mode or a kill switch reaching only the bookkeeping would leave the documented
+# rollback path inert while the owned PCP classes were still built and executed.
+MODE_VARIABLE = 'HCU_VLLM_PCP_IMPL'
+OP_NAME = 'vllm_pcp'
+
 _lock = threading.RLock()
 _reference = None
 _engram_validator = None
@@ -24,6 +34,20 @@ _forward_context_resolver = None
 
 class PcpAttentionError(RuntimeError):
     """V4.1 PCP attention is unavailable or its contracts drifted."""
+
+
+def selected_mode() -> str:
+    """Effective PCP mode: `native` runs the owned classes, `stock` does not.
+
+    The kill switch wins over the mode variable, matching `bridges/vllm_pcp.py`;
+    a second, divergent reading of the same knob is what the review caught.
+    """
+    if op_disabled(OP_NAME):
+        return 'stock'
+    value, _ = hcu_env.resolve(MODE_VARIABLE, host='vllm')
+    if value not in ('stock', 'native'):
+        raise PcpAttentionError(f'{MODE_VARIABLE} must be stock or native')
+    return value
 
 
 def set_indexer_reference(function) -> None:
@@ -327,9 +351,15 @@ def build_classes():
 
 
 def select_attention(cfg):
-    """Return the owned attention class for a PCP config, else the native one."""
+    """Return the owned attention class for a PCP config, else the native one.
+
+    Admission is two gates, not one: the deployment has to look like PCP *and* the
+    operator has to have selected the owned implementation. Without the second gate
+    `stock` (the default) and `HCU_DISABLE_OPS=vllm_pcp` would be inert, because
+    this function -- not the bridge's bookkeeping -- is what picks the class.
+    """
     from vllm.models.deepseek_v41.amd import model as native
 
-    if not validate_config(cfg):
+    if selected_mode() == 'stock' or not validate_config(cfg):
         return native._select_dsv4_attn_cls(cfg)
     return build_classes()["attention"]
