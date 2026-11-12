@@ -12,7 +12,7 @@ on:
         pip_index_url:
              description: 'Path to DTK package'
              required: false
-             default: 'http://12.12.12.201:9929/nightly/dtk2610/+simple/'
+             default: ''
 permissions:
   contents: read
 
@@ -21,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PIP_TRUSTED_HOST: "12.12.12.201"
-  PIP_INDEX_URL: ${{ inputs.pip_index_url || 'http://12.12.12.201:9929/nightly/dtk2610/+simple/' }}
+  PIP_TRUSTED_HOST: ${{ vars.PIP_TRUSTED_HOST }}
+  PIP_INDEX_URL: ${{ vars.PIP_INDEX_URL || inputs.pip_index_url }}
 
 jobs:
   image:
@@ -94,12 +94,8 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf dist repair
-          bash packaging/build.sh
-          pip install ciupload
-          DTK_VERSION="$(tr -d '.' < /opt/dtk/.info/rocm_version)"
-          GIT_COMMIT="$(git rev-parse --short=6 HEAD)"
-          mkdir -p repair
-          CIUpload REPAIR --dtk_version "${DTK_VERSION}" --git_commit "${GIT_COMMIT}" --outputdir ./repair -f ./dist/*.whl
+          HCU_ADAPTER_HOST=none packaging/build.sh
+          cp -rf dist/*.whl repair/*.whl
           ls -l repair
           # 两个 whl 必须各有且只有一个，否则 L1 装到的不是本次构建的产物
           for n in sgl_kernel hcu_adapter; do
@@ -171,7 +167,7 @@ jobs:
           # --no-deps：REPAIR 改写了 local version，hcu-adapter 的 sgl-kernel==<源码版本>
           # 互锁 pin 对不上改写后的 sgl-kernel 版本；torch/triton 等依赖镜像里已有。
           # --force-reinstall：盖掉镜像里预装的同名 dist（含 editable 安装）。
-          python3 -m pip install --no-deps --force-reinstall \
+          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall \
             "$WHEEL_DIR"/sgl_kernel-*.whl "$WHEEL_DIR"/hcu_adapter-*.whl
 
           # 以 pip 实际安装位置为准。在 / 下执行、去掉 PYTHONPATH，免得认到源码树里的
