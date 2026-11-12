@@ -62,8 +62,8 @@ jobs:
       # 镜像来自 ci/ci_docker_image（前置 image job 解析），必须带 digest
       image: ${{ needs.image.outputs.image }}
     outputs:
-      # L1 按这个目录安装 whl。不能在 L1 里自己拼路径：build 用的是 merge 后的提交，
-      # L1 检出的是 PR head，两边 git rev-parse 的结果不一样
+      # L1 按这个目录安装 whl，不自己拼路径：merge 的提交号由 build 算出来，
+      # 让 L1 自己推等于两边各算一遍，迟早对不上
       wheel_dir: ${{ steps.stage.outputs.wheel_dir }}
     steps:
       - name: Checkout base branch
@@ -82,6 +82,8 @@ jobs:
           # The repo is private, so the fetch needs a token; pass it only to this one command so it never lands in .git/config.
           GH_TOKEN: ${{ github.token }}
         run: |
+          # 容器里 workspace 常以别的 uid 挂进来，git 会以 dubious ownership 拒绝操作
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           auth=$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)
@@ -96,7 +98,10 @@ jobs:
           rm -rf dist repair
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           HCU_ADAPTER_HOST=none bash packaging/build.sh
-          cp -rf dist/*.whl repair/*.whl
+          # repair/ 只是这次的产物暂存目录（不再走 CIUpload REPAIR 改写版本）；
+          # 目录要先建出来，glob 不匹配时 cp 会把 'repair/*.whl' 当字面量报错
+          mkdir -p repair
+          cp -f dist/*.whl repair/
           ls -l repair
           # 两个 whl 必须各有且只有一个，否则 L1 装到的不是本次构建的产物
           for n in sgl_kernel hcu_adapter; do
@@ -126,11 +131,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout PR head
+      - name: Checkout base branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          fetch-depth: 0
+          # Keep the token out of .git/config so PR code cannot read it.
           persist-credentials: false
+
+      - name: Merge PR into base
+        if: github.event_name == 'pull_request_target' || inputs.pr-number != ''
+        env:
+          # Pass via env instead of inline ${{ }} so a manual input cannot inject shell commands.
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr-number }}
+          # The repo is private, so the fetch needs a token; pass it only to this one command so it never lands in .git/config.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 容器里 workspace 常以别的 uid 挂进来，git 会以 dubious ownership 拒绝操作
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          auth=$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" \
+            fetch "https://github.com/${GITHUB_REPOSITORY}.git" "pull/${PR_NUMBER}/head:pr"
+          git merge --no-ff --no-edit pr
       - name: L0 gate
         timeout-minutes: 5
         run: python3 ci/l0_gate.py
@@ -151,11 +175,30 @@ jobs:
       # 可选缓存种子，由 ci/cache_export.sh 生成并放到 /ci_public
       HCU_CACHE_SEED: /ci_public/adapter-das/cache/hcu_cache_seed.tgz
     steps:
-      - name: Checkout PR head
+      - name: Checkout base branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.base.ref || github.ref }}
+          fetch-depth: 0
+          # Keep the token out of .git/config so PR code cannot read it.
           persist-credentials: false
+
+      - name: Merge PR into base
+        if: github.event_name == 'pull_request_target' || inputs.pr-number != ''
+        env:
+          # Pass via env instead of inline ${{ }} so a manual input cannot inject shell commands.
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr-number }}
+          # The repo is private, so the fetch needs a token; pass it only to this one command so it never lands in .git/config.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 容器里 workspace 常以别的 uid 挂进来，git 会以 dubious ownership 拒绝操作
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          auth=$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)
+          git -c http.extraheader="AUTHORIZATION: basic ${auth}" \
+            fetch "https://github.com/${GITHUB_REPOSITORY}.git" "pull/${PR_NUMBER}/head:pr"
+          git merge --no-ff --no-edit pr
 
       - name: install whl
         timeout-minutes: 5
