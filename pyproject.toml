@@ -22,9 +22,6 @@ test = [
     "tomli>=1.1; python_version < '3.11'",
 ]
 
-[tool.setuptools.dynamic]
-version = {attr = "sgl_kernel.version.__version__"}
-
 [tool.setuptools.packages.find]
 include = ["sgl_kernel*"]
 

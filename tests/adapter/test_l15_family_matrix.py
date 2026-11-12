@@ -213,3 +213,17 @@ def test_passing_parent_cannot_erase_a_skipped_subtest():
     document = {"artifact": "l15-pytest-outcomes", "exitstatus": 0,
                 "tests": list(plugin._RESULTS.values())}
     assert not check_outcomes(document, node)
+
+
+@pytest.mark.parametrize("variant", ["identical", "base-first", "parameter-first"])
+def test_rejects_overlapping_nodeids_even_with_distinct_case_ids(variant):
+    document = repository_matrix()
+    cases = document["families"][0]["cases"]
+    original = cases[0]["nodeid"]
+    duplicate = dict(cases[0], id="distinct-id-duplicate")
+    if variant == "base-first":
+        duplicate["nodeid"] = original + "[shape]"
+    elif variant == "parameter-first":
+        cases[0]["nodeid"] = original + "[shape]"
+    cases.append(duplicate)
+    assert "overlapping selection" in matrix.validate(document)[0]

@@ -26,6 +26,7 @@
 | vLLM 官方 AR 的 HCU 兼容 / 快关 / 安装时序 | docs/frameworks/vllm032-allreduce.md（真实 runtime ABI → FP8 → AR → Plugin；registration 与 fusion pass、availability 与 selection 分开） |
 | 跑一个模型 | docs/cookbook.md（找配方）→ docs/models.md（看先例与坑）→ cookbook.md §4 平台约束 |
 | **新容器/新镜像首次部署** | docs/bootstrap.md（依赖重打+tvm-ffi 预热+自检，照做 ≤10min） |
+| 构建 wheel / 排查构建与依赖解析 | docs/build.md（双 dist 一次构建、打戳与互锁、`--no-stamp`、安装组合与常见问题） |
 | 排查精度问题 | skills/…/references/precision-triage.md → references/kill-switches.md |
 | 改 CI / 加门禁 | docs/ci.md → docs/test-route-governance.md（目标态：精度→功能→性能→路由→退役）→ ci/l0_gate.py |
 | 梳理 L1.5 / 更新上游用例 manifest | docs/l15-test-inventory.md（逐文件候选与分诊）→ docs/l15-family-matrix.md（Dense/MLA/MoE/量化/Mamba 代表矩阵）→ docs/test-route-governance.md §1.3–§1.5 → docs/test-route-implementation-plan.md MR-02A～02E |

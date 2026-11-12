@@ -58,8 +58,8 @@ def run(args):
     commands = [
         ("components", "l15-family-matrix-run",
          [sys.executable, "-m", "tools.l15_family_matrix", "run", "--up-tree", str(tree)]),
-        ("models", "l15-model-smoke",
-         [sys.executable, "-m", "tools.l15_model_smoke", "--up-tree", str(tree),
+        ("models", "l16-model-readiness",
+         [sys.executable, "-m", "tools.l16_model_readiness", "run", "--up-tree", str(tree),
           "--checkpoint", str(args.checkpoint.resolve()),
           "--binding-manifest", str(root / matrix_manifest["upstream_manifest"])]),
     ]

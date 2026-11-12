@@ -34,7 +34,11 @@ FAILS=()
 # segment logs remain unchanged for backward compatibility until MR-06.
 L15_MANIFEST="$ROOT/tests/manifests/l15_v0522.json"
 L15_MANIFEST_MODE="${L15_MANIFEST_MODE:-observe}"
-L15_MANIFEST_BATCHES="${L15_MANIFEST_BATCHES:-current,batch-1}"
+# Include every candidate batch by default.  The selectors are selected by
+# "current"; omitting batch-2..4 silently reduced the shadow inventory to the
+# first candidate batch and made the default gate look more complete than it
+# was.  Callers may still narrow the set explicitly for a staged migration.
+L15_MANIFEST_BATCHES="${L15_MANIFEST_BATCHES:-current,batch-1,batch-2,batch-3,batch-4}"
 L15_RESULT_ROOT="${L15_RESULT_ROOT:-$ROOT/results/l15-manifest}"
 L15_FAMILY_MATRIX_MODE="${L15_FAMILY_MATRIX_MODE:-off}"
 L15_FAMILY_MATRIX_FAMILIES="${L15_FAMILY_MATRIX_FAMILIES:-dense,mla,moe,quantization,mamba}"
@@ -160,7 +164,38 @@ run_seg() {  # name timeout_base cmd...
 # ---------------------------------------------------------------- segments
 run_seg l0      60   python3 ci/l0_gate.py
 run_seg cpu     300  python3 -m pytest tests/test_ops_cpu.py -q --no-header
-run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -q --no-header
+# Transfer ownership only to a blocking matrix with an available upstream tree.
+# Observe/off modes retain the broad regression's blocking coverage.
+FAMILY_DESELECT=()
+if [ "$L15_FAMILY_MATRIX_MODE" = "blocking" ] && [ -n "$UP_TREE" ]; then
+    family_nodes="$(python3 - "$ROOT/tests/manifests/l15_family_matrix_v1.json" "$L15_FAMILY_MATRIX_FAMILIES" <<'PY'
+import json
+import sys
+
+from tools.l15_family_matrix import validate
+
+document = json.loads(open(sys.argv[1], encoding="utf-8").read())
+errors = validate(document)
+if errors:
+    raise ValueError("; ".join(errors))
+selected = set(sys.argv[2].split(","))
+known = {family["id"] for family in document["families"]}
+if not selected or selected - known:
+    raise ValueError("invalid family selection")
+for family in document["families"]:
+    if family["id"] in selected:
+        for case in family["cases"]:
+            if case.get("kind") == "adapter-pytest":
+                print(case["nodeid"])
+PY
+    )" || { echo "L1: invalid family manifest/selection"; exit 2; }
+    while IFS= read -r nodeid; do
+        [ -n "$nodeid" ] && FAMILY_DESELECT+=(--deselect "$nodeid")
+    done <<< "$family_nodes"
+    echo "L1: kernels transfers $((${#FAMILY_DESELECT[@]} / 2)) cases to blocking matrix"
+fi
+run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -q --no-header \
+    "${FAMILY_DESELECT[@]}"
 
 # L1.5: upstream attention-unittest selection (dsa + kda + dense + mla
 # dirs; mla extend subtests over flashinfer stubs -> legal skips, see
@@ -177,6 +212,24 @@ run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -q --no-heade
 if [ -n "$UP_TREE" ]; then
     echo "L1: upstream tree = $UP_TREE"
     UP="$UP_TREE/test/registered/attention/unittests"
+    if [ "$L15_FAMILY_MATRIX_MODE" = "blocking" ]; then
+        ownership_out="$L15_RESULT_ROOT/ownership-$(date +%Y%m%dT%H%M%S)-$$"
+        python3 -m tools.l15_ci_plan --families "$L15_FAMILY_MATRIX_FAMILIES" \
+            --out-dir "$ownership_out" || exit 2
+        # Green nodes have one owner; known diagnostics/platform baselines are
+        # listed in ownership.json as NOT EXECUTED, never as a successful test.
+        run_seg l15_exact 1800 env HCU_ADAPTER_HOST=none HCU_DEEPGEMM_BRIDGE=1 \
+            PYTHONPATH="$ROOT:$UP_TREE/python" python3 -m tools.l15_manifest run \
+            --up-tree "$UP_TREE" --manifest "$ownership_out/manifest.json" \
+            --classifications core-green,contract-green --out-dir "$ownership_out/execution"
+        if [ -s "$ownership_out/observe-nodeids.txt" ]; then
+            env HCU_ADAPTER_HOST=none HCU_DEEPGEMM_BRIDGE=1 \
+                PYTHONPATH="$ROOT:$UP_TREE/python" python3 -m tools.l15_manifest run \
+                --up-tree "$UP_TREE" --manifest "$ownership_out/observation-manifest.json" \
+                --classifications candidate-observe --out-dir "$ownership_out/observation" \
+                || echo "L1: mixed subtest observation WARN; not core coverage"
+        fi
+    else
     run_seg l15_upstream 1800 env HCU_DEEPGEMM_BRIDGE=1 \
         PYTHONPATH="$UP_TREE/python:$ROOT" \
         python3 -m pytest "$UP/dsa" "$UP/kda" "$UP/dense" "$UP/mla" \
@@ -227,6 +280,8 @@ if [ -n "$UP_TREE" ]; then
         fi
     else
         echo "L1: l15_mech SKIP (no mechanism dirs in this tree)"
+    fi
+
     fi
 
     # L1.5 v2 manifest shadow.  This collects explicit candidate sources and

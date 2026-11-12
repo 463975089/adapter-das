@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+
+# HCU 官方 sglang 镜像（main 线）：DTK 基础镜像 + nightly 归档上的
+# torch/triton/vendor 栈 + 归档里的 hcu-adapter wheel（精确互锁同戳
+# sgl-kernel）+ 官方 sglang（--no-deps，依赖由 adapter extras 提供）。
+#
+# hcu-runtime 按子 extra（kernels/serve/aux）分 RUN 安装，避免单个
+# docker layer 超过镜像仓库上限；torch/triton 随最小的 aux 组落在第一层，
+# 最后用 hcu-runtime 收尾确认组合完整（子 extra 由 ci/l0_gate.py 校验）。
+#
+# adapter 与内核两张 wheel 由 packaging/build.sh 构建后上传到 nightly 归档；
+# 镜像侧直接按 dist 名安装 hcu-adapter，sgl-kernel 由它的 == 互锁依赖自动组队。
+#
+# 用法：
+#   docker build -f docker/Dockerfile.sglang \
+#     --build-arg BASE_IMAGE=192.0.2.152:5000/hcu/base/dtk:26.10-ubuntu22.04-py3.12 \
+#     --build-arg PYPI_URL=http://<pypi-host>/pypi \
+#     --build-arg RESOURCE_SERVER_URL=http://<resource-server> \
+#     -t adapter:sglang0.5.22-dtk2610-py312 .
+
+# 基础镜像来自镜像总表 ${HARBOR_SITE}/hcu/base/dtk:<DTK版本>-<OS>-py<Python版本>；
+# 基础镜像自带 ENV DTK_VERSION（token 格式 dtk2604/dtk2610），pip 归档路径用它拼接。
+ARG BASE_IMAGE
+
+FROM ${BASE_IMAGE}
+
+ENV ROCM_PATH=/opt/dtk
+
+RUN echo "source /opt/dtk/env.sh" >> ~/.bashrc
+
+SHELL ["/bin/bash", "-c"]
+
+ARG PYPI_URL
+ARG RESOURCE_SERVER_URL
+
+# pip 配置（nightly 归档按基础镜像的 DTK_VERSION 拼接）。torch/triton 与 HCU vendor
+# 包都从该归档解析；torch==2.13.0 / triton==3.7.0 由 adapter wheel 的基础依赖钉死。
+RUN TRUSTED_HOST="${PYPI_URL#*://}" && TRUSTED_HOST="${TRUSTED_HOST%%/*}" && \
+    mkdir -p ~/.pip && \
+    printf '%s\n' \
+    '[global]' \
+    "index-url = ${PYPI_URL}/nightly/${DTK_VERSION}/+simple/" \
+    "trusted-host = ${TRUSTED_HOST}" \
+    > ~/.pip/pip.conf && \
+    pip install --ignore-installed --no-cache-dir blinker
+
+# AICC 编译器（脚本自动检测基础镜像的 DTK 版本；成功后写入 /opt/dtk/hcu_llvm.info，
+# triton HCU 后端所需的 aillvm 由它安装）
+RUN wget -q "${RESOURCE_SERVER_URL}/ai_cc/Nightly/hcu_llvm_installer.sh" -O /tmp/hcu_llvm_installer.sh && \
+    chmod +x /tmp/hcu_llvm_installer.sh && \
+    bash /tmp/hcu_llvm_installer.sh && \
+    rm -f /tmp/hcu_llvm_installer.sh
+
+# blas cut 覆盖包（脚本自动检测基础镜像的 DTK 版本）
+RUN wget -q "${RESOURCE_SERVER_URL}/Jenkins/CI_scripts/dtk_blas_cut_installer.sh" -O /tmp/dtk_blas_cut_installer.sh && \
+    chmod +x /tmp/dtk_blas_cut_installer.sh && \
+    bash /tmp/dtk_blas_cut_installer.sh && \
+    rm -f /tmp/dtk_blas_cut_installer.sh
+
+# amdsmi（官方 sglang 的平台探测依赖；wheel 自带 libamd_smi.so）
+RUN pip install --no-cache-dir amdsmi==1.0.0+630c16a6.dirty && \
+    echo "export LD_LIBRARY_PATH=$(python3 -c 'import os, amdsmi; print(os.path.dirname(amdsmi.__file__))'):\$LD_LIBRARY_PATH" >> ~/.bashrc
+
+# ---- adapter 栈：按 extra 分 RUN，控制单层体积 ----
+# ADAPTER_VERSION 留空 = 取归档最新；要复现某次构建就传完整版本号
+# （0.5.22+hcu.<时间>.g<commit>）。
+ARG ADAPTER_VERSION=
+
+# 1) 先装最小的 aux 组（torchvision/torchaudio）：torch/triton 大件与同戳
+#    sgl-kernel 随 adapter 基础依赖一起落在这一层。首个 adapter 安装按 ==
+#    互锁钉版本；后续层不带版本号，pip 不会升级已安装的 adapter，只会补齐
+#    extra 依赖。
+RUN PIN=""; \
+    if [ -n "${ADAPTER_VERSION}" ]; then PIN="==${ADAPTER_VERSION}"; fi; \
+    HCU_ADAPTER_HOST=none pip install --no-cache-dir \
+        "hcu-adapter[hcu-runtime-aux]${PIN}"
+
+# 2) 内核组（aiter/flash_attn/deepgemm 等）
+RUN HCU_ADAPTER_HOST=none pip install --no-cache-dir \
+    "hcu-adapter[hcu-runtime-kernels]"
+
+# 3) 服务组（vllm/tilelang/lmcache/mooncake/nixl）
+RUN HCU_ADAPTER_HOST=none pip install --no-cache-dir \
+    "hcu-adapter[hcu-runtime-serve]"
+
+# 4) 官方 sglang 运行时依赖
+RUN HCU_ADAPTER_HOST=none pip install --no-cache-dir \
+    "hcu-adapter[sglang-runtime]"
+
+# 5) 扩散入口依赖
+RUN HCU_ADAPTER_HOST=none pip install --no-cache-dir \
+    "hcu-adapter[sglang-diffusion]"
+
+# 6) 收尾：hcu-runtime 自引用三个子 extra，确认整组已就位
+RUN HCU_ADAPTER_HOST=none pip install --no-cache-dir \
+    "hcu-adapter[hcu-runtime]"
+
+# 官方 sglang 零修改；--no-deps 是策略：依赖由 adapter extras 提供，避免解析 CUDA-only 包。
+ARG SGLANG_VERSION=0.5.22
+ARG SGLANG_EXTRA_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple/
+ARG SGLANG_TRUSTED_HOST=mirrors.cloud.tencent.com
+RUN HCU_ADAPTER_HOST=none pip install --no-cache-dir --no-deps \
+        --extra-index-url "${SGLANG_EXTRA_INDEX_URL}" --trusted-host "${SGLANG_TRUSTED_HOST}" \
+        "sglang==${SGLANG_VERSION}"
+
+# tvm-ffi dlpack 附加库一次性预热；必须带 none，否则 builder 自繁殖（docs/image-dtk2610.md §3）
+RUN HCU_ADAPTER_HOST=none python3 -c "import tvm_ffi"
+
+# 官方 engine 探的是 dist 名 sglang-kernel，本包 dist 名是 sgl-kernel → 跳过版本探针
+ENV SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK=1
+
+RUN pip install --no-cache-dir --no-deps hcu_sglang_plugin
+
+# 构建完成后移除内网 pip 源，避免运行时意外拉取内网依赖
+RUN rm -rf ~/.pip/pip.conf
+
+# /etc/image.info（口径同基础镜像；容器启动时由 ENTRYPOINT 打印）
+ARG BUILD_TIME
+RUN cd /tmp && \
+    wget -q "${RESOURCE_SERVER_URL}/pkg/slant.flf" -O /tmp/slant.flf && \
+    { figlet -f slant -d /tmp -w 80 sglang; \
+      echo "dtk    : ${DTK_VERSION}"; \
+      echo "built  : ${BUILD_TIME:-$(date +%Y%m%d-%H%M)}"; } > /etc/image.info && \
+    rm -f /tmp/slant.flf

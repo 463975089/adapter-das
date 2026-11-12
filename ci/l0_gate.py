@@ -432,9 +432,13 @@ def check_dual_dist_packaging(r):
     sgl-kernel (root pyproject) is a pure shadow kernel: no sitecustomize
     py-module, no entry-points, packages limited to sgl_kernel*. hcu-adapter
     (packaging/hcu-adapter) owns sitecustomize + the vllm entry-points and
-    interlocks the kernel dist with an exact == pin on the single kernel
-    version source (sgl_kernel/version.py). Versions are independent lines;
-    only the pin is machine-checked.
+    interlocks the kernel dist at build time: its setup.py/_pin.py renders
+    sgl-kernel==<public>[+hcu.<stamp>] from the single kernel version source
+    (sgl_kernel/version.py), and build.sh passes one DAS_BUILD_STAMP to both
+    wheels. Without a stamp the pin names the public kernel version only.
+    The adapter base dependencies also carry the validated torch/triton pins
+    so a plain adapter install cannot drift to the newest nightly stack.
+    Versions are independent lines; only the pin is machine-checked.
     """
     try:
         import tomllib
@@ -465,13 +469,27 @@ def check_dual_dist_packaging(r):
         r.fail("dual-dist", "sgl_kernel/version.py lacks __version__")
         return
     kernel_version = m.group(1)
+    public_version = kernel_version.split("+", 1)[0]
 
     adapter_project = adapter_pp["project"]
-    if adapter_project.get("dependencies") != [f"sgl-kernel=={kernel_version}"]:
-        r.fail("dual-dist",
-               f"hcu-adapter dependency must be exactly "
-               f"['sgl-kernel=={kernel_version}'], got "
-               f"{adapter_project.get('dependencies')!r}")
+    dynamic = adapter_project.get("dynamic") or []
+    if "dependencies" not in dynamic or "version" not in dynamic:
+        r.fail("dual-dist", "hcu-adapter version/dependencies must be dynamic "
+               "(rendered by setup.py/_pin.py at build time)")
+    try:
+        import importlib.util
+        pin_file = adapter_pp_path.parent / "_pin.py"
+        spec = importlib.util.spec_from_file_location("hcu_adapter_build_pin", pin_file)
+        pin_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(pin_mod)
+        pin = pin_mod.kernel_pin(stamp="")
+    except Exception as exc:
+        r.fail("dual-dist", f"cannot evaluate hcu-adapter interlock pin: {exc}")
+    else:
+        if pin != f"sgl-kernel=={public_version}":
+            r.fail("dual-dist",
+                   f"hcu-adapter interlock pin must be "
+                   f"'sgl-kernel=={public_version}', got {pin!r}")
     if adapter_project.get("entry-points", {}).get("vllm.platform_plugins") != {
             "hcu_adapter": "hcu_adapter.bridges.vllm:hcu_platform_plugin"}:
         r.fail("dual-dist", "hcu-adapter vllm.platform_plugins entry-point "
@@ -483,6 +501,25 @@ def check_dual_dist_packaging(r):
     if "sitecustomize" not in adapter_pp.get("tool", {}).get(
             "setuptools", {}).get("py-modules", []):
         r.fail("dual-dist", "hcu-adapter must ship sitecustomize (py-modules)")
+
+    # Docker layering split: hcu-runtime composes the subgroups by self-reference.
+    extras = adapter_project.get("optional-dependencies") or {}
+    runtime_groups = (
+        "hcu-runtime-kernels",
+        "hcu-runtime-serve",
+        "hcu-runtime-aux",
+    )
+    missing_groups = [g for g in runtime_groups if g not in extras]
+    if missing_groups:
+        r.fail("dual-dist", f"hcu-runtime subgroups missing: {missing_groups}")
+    else:
+        expected = {f"hcu-adapter[{g}]" for g in runtime_groups}
+        actual = set(extras.get("hcu-runtime") or [])
+        if actual != expected:
+            r.fail("dual-dist",
+                   "hcu-runtime must compose hcu-runtime-kernels/serve/aux "
+                   f"by self-reference; missing={sorted(expected - actual)} "
+                   f"extra={sorted(actual - expected)}")
 
     adapter_version_file = adapter_pp_path.parent / "VERSION"
     if not adapter_version_file.read_text(encoding="utf-8").strip():

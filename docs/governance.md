@@ -489,8 +489,12 @@ Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查�
   0.4.9；单源 `sgl_kernel/version.py`，重配对上游树时基线跟那棵树的 aot 版本走）；
   `hcu-adapter` = 适配层（`hcu_adapter/` + sitecustomize + vllm entry-points；初始
   `0.5.22+hcu.1`，编码本线 sglang 配对；单源 `packaging/hcu-adapter/VERSION`）。
-  互锁：hcu-adapter 依赖 `sgl-kernel==<内核版>` 精确等号，禁止 `>=`/`~`
-  （`ci/l0_gate.py` 与 `packaging/build.sh` 双重校验）。当初评估解耦的结论：单
+  互锁：hcu-adapter 依赖 `sgl-kernel==<内核公共版本>[+hcu.<戳>]` 精确等号，禁止 `>=`/`~`。
+  构建期由 `packaging/hcu-adapter/_pin.py` 从单一版本源渲染 pin：`packaging/build.sh`
+  给两张 wheel 传同一个 `DAS_BUILD_STAMP=<时间>.g<commit>`（渲染为
+  `+hcu.<时间>.g<commit>`），带戳内核与 adapter 依赖逐字互锁；无戳（可编辑/开发安装）
+  时退化为内核公共版本等号。
+  `ci/l0_gate.py` 与 `packaging/build.sh` 双重校验。当初评估解耦的结论：单
   wheel 让"双宿主适配层挂单宿主内核名"，拆分后 sgl-kernel 的用法与语义与上游
   内核包对齐（独立内核包，谁需要谁装）；**复评触发条件**：官方
   sgl-kernel/sglang-kernel 依赖关系弱化（pip 层可被我们的影子直接替代）时重评

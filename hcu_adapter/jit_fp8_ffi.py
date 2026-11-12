@@ -22,6 +22,10 @@ LOG = logging.getLogger("hcu.adapter")
 _LOCK = threading.RLock()
 _MARKER = "_hcu_fp8_output_cache"
 _TARGETS = (
+    ("sglang.kernels.ops.quantization.per_tensor_quant_fp8", "per_tensor_quant_fp8_module",
+     "per_tensor_quant_fp8"),
+    ("sglang.kernels.ops.quantization.per_token_quant_fp8", "_jit_per_token_quant_fp8_module",
+     "per_token_quant_fp8"),
     ("sglang.kernels.ops.quantization.per_token_group_quant", "_jit_module",
      "per_token_group_quant"),
     ("sglang.kernels.ops.quantization.per_token_group_quant_8bit_v2", "_jit_module",
@@ -117,4 +121,4 @@ def install():
             target=module_name + "." + name, mechanism=registry.MECH_REBIND,
             detail="retain factory/cache aliases; only e4m3fn output viewed as uint8 at FFI",
         )
-    LOG.warning("HCU adapter: JIT FP8 output storage views installed (generic, v2, DSV4)")
+    LOG.warning("HCU adapter: JIT FP8 output storage views installed (per-token, generic, v2, DSV4)")
