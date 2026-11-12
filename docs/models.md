@@ -208,3 +208,19 @@ decode graph 分配 0.021 GB；报告
 - **1.1 topk_v2 ragged 转正**：96 例 parity 集合语义 0 错（rem/topk/L/offsets 正交扫，4 reps）；非确定性=atomicAppend 发射到达序（topk_impl.cuh 612/617，paged 臂同源同在跑）；2.2-2.9× 快过 legacy；`HCU_TOPK_V2_RAGGED` 默认翻 1（validation-host-18 容器 dsa_topk_backend.py 已改）。**方法论：topk parity 一律比排序后集合，双跑分离"错"与"序"。**
 - **1.2/1.3 口径翻案（双双达标）**：rmsnorm 5.3-5.9µs=das 地板；router 10µs 快 das 2.8×。教训入库：**①trace 家族和÷单核地板=假膨胀 ②墙钟(bench loop)≠核时，必须 CUDA graph 重放 ③旧 trace 不代表当前树**（act_and_mul 3.1ms/reduce_bf16 438µs 都是 1.0a/b 前旧账）。P1 真残余=eager 段 per-call 50-90µs host 开销（→1.5/1.6）。
 - 容器遗产（/root）：topk_ragged_parity/bench.py、rmsnorm_bench2.py、router_graph/matrix.py、router_baseline.pt——复跑即可。
+
+## HY3 Channel FP8 适配（SGLang 0.5.22）
+
+HY3 Channel FP8 使用每个 token 一份 scale。DeepEP 翻译桥此前将 FP8 的 `quant_group_size` 固定为 128，忽略 plugin 请求的 0，导致低延迟 masked GEMM 收到不匹配的 scale 形状。桥现在透传该参数，默认值仍为 128；Channel FP8 由 plugin 显式选择 0。普通 FP8、UE8M0 和 BF16 的默认调用不变，vLLM 不使用此 SGLang 桥。
+
+AITER all-reduce 的启动探测改为检查模块文件是否存在，避免在设备绑定前导入 GPU 通信模块。文件存在仅表示可以尝试加载，实际使用仍需通过设备与通信能力检查。
+
+### 验证范围
+
+- 离线回归：`tests/adapter/test_deepep_dispatch_scale.py` 覆盖默认 128、显式 0/128、UE8M0 与 BF16 的参数透传；`tests/adapter/test_hcu_env_ar_norm.py` 覆盖 AITER 模块存在、缺失及探测不执行模块代码。两文件共 3 项测试及 3 个子例通过，`tests/test_ops_cpu.py` 38 项通过，adapter L0 通过。这些检查不代替原生内核数值验证。
+- 2026-11-11 组合验证：官方 SGLang `baa9befa`、adapter `9e616cc`、plugin `3eb48a8`；DTK 26.10、Python 3.12、Torch 2.11。HY3 Channel FP8 在 TP8 / attention DP8、DeepEP、FA3、E4M3 KV、NEXTN 配置下完成启动与问答。固定 GSM8K 5-shot 200 题，数值答案正确 197/200，正确且正常结束 196/200；1 题达到输出长度上限，0 请求错误。该结果属于两仓与计算库的组合，不能归为本桥的独立精度结论。
+- NEXTN 缓存回归共 128 次请求完整返回，未复现负尺寸 `-64` 或服务退出；合成 token 输入的冷、热缓存输出仍有差异，原因未定位。早期 0.9 显存配方曾 OOM，8 并发曾出现 NEXTN padding 失败；上述缓存回归没有按这两个原始配方复验。
+
+### 依赖与限制
+
+Channel FP8 需要配套 plugin 显式传入 `quant_group_size=0`。上述组合验证使用静态显存比例 0.70 和部署环境中的 DeepGEMM v4 兼容扩展；该扩展不在本仓提交内，仅安装两仓不能保证复现。AITER custom all-reduce 初始化存在回退警告，通信后端未验收。现有启动环境变量尚未完成配置治理，与 sglang-das 0.5.18 的同条件性能、精度对照也尚未完成。
