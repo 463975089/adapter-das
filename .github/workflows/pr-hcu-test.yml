@@ -1,7 +1,7 @@
 name: HCU MR CI (K8s)
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf dist repair
-          HCU_ADAPTER_HOST=none packaging/build.sh
+          HCU_ADAPTER_HOST=none bash packaging/build.sh
           cp -rf dist/*.whl repair/*.whl
           ls -l repair
           # 两个 whl 必须各有且只有一个，否则 L1 装到的不是本次构建的产物
