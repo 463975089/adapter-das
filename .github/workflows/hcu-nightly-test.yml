@@ -5,6 +5,11 @@ on:
     - cron: '37 14 * * *'
   workflow_dispatch:
     inputs:
+      ref:
+        description: '要构建的 Git ref/branch/tag/SHA，默认当前分支 HEAD'
+        required: false
+        default: ''
+        type: string
       l2_models:
         description: "L2 模型 id，空格分隔（见 tests/tools/run_model_suite.sh 的 MODELS；单卡池只能跑单卡模型）"
         required: false
@@ -13,6 +18,14 @@ on:
         description: "L1.5 五类代表矩阵模式（off|observe|blocking）"
         required: false
         default: "observe"
+      pip_index_url:
+            description: 'pip index url'
+            required: false
+            default: ''
+      pip_trusted_host:
+            description: 'pip trusted host'
+            required: false
+            default: ''
 
 permissions:
   contents: read
@@ -25,26 +38,160 @@ env:
   SGLANG_REPO_URL: ${{ vars.SGLANG_REPO_URL || 'https://github.com/sgl-project/sglang.git' }}
   SGLANG_REF: v0.5.22
   SGLANG_COMMIT: baa9befa381511cd4d56f83980951e5a45fffc6d
+  PIP_TRUSTED_HOST: ${{ inputs.pip_trusted_host || vars.PIP_TRUSTED_HOST }}
+  PIP_INDEX_URL: ${{ inputs.pip_index_url || vars.PIP_INDEX_URL }}
 
 jobs:
+  image:
+    name: resolve CI image
+    # container.image 在检出之前就求值，读不到仓库里的文件；只能先在前置 job 里读出来，再用 needs 传给后两个 job
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.read.outputs.image }}
+    steps:
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          # 这个 workflow 只有 schedule / workflow_dispatch，没有 pull_request，
+          # 所以 input 为空时 github.ref 就是触发分支：schedule 是默认分支，
+          # 手动触发是所选分支。l15/l2 用同一个表达式，保证镜像和被测代码同源
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+          
+      - name: Read ci/ci_docker_image
+        id: read
+        run: |
+          set -euo pipefail
+          # 这个 workflow 要被 release 线复用，那条分支上的基础设施文件是后补的；
+          # 缺失时直接报出来，比 tr 报 "No such file" 更容易定位
+          [ -f ci/ci_docker_image ]             || { echo "::error::${{ inputs.ref || github.ref }} 上没有 ci/ci_docker_image"; exit 1; }
+          image="$(tr -d '[:space:]' < ci/ci_docker_image)"
+          # 平台要求用 digest 固定镜像，tag 只作说明；没有 digest 就在这里报错，别等到拉镜像那步才失败
+          case "$image" in
+            *@sha256:*) ;;
+            *) echo "::error::ci/ci_docker_image 必须是 <repo>:<tag>@sha256:<digest>，实际是 '$image'"; exit 1 ;;
+          esac
+          echo "用镜像: $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      
   l15:
     name: L1.5 upstream gate (bw1100-1card)
+    needs: [image]
     runs-on: hygon-bw1100-1card
     # 冷 JIT：l15_upstream 约 35 分钟、l15_mech 约 14 分钟，manifest collect 和五类矩阵
     # 每个 case 最多 1200s；再加 30 分钟等卡
     timeout-minutes: 360
     container:
-      image: 10.16.1.152:5000/hcu/base_env/sglang:0.5.22-dtk2610-py312-20261111-1121@sha256:d772f8889bc961bbfde6f2e3348159f0b117e341f72fa342b6cc29f3564122e8
+      image: ${{ needs.image.outputs.image }}
     env:
       HCU_L1_TIMEOUT_SCALE: "2"
       L15_MANIFEST_MODE: observe
       L15_FAMILY_MATRIX_MODE: ${{ inputs.family_matrix_mode || 'observe' }}
       L15_RESULT_ROOT: ${{ github.workspace }}/results/l15-manifest
       HCU_CACHE_SEED: /ci_public/adapter-das/cache/hcu_cache_seed.tgz
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
+          # 与 image job 同一个表达式：镜像和被测代码必须来自同一个 ref，
+          # 否则手动指定 ref 时会拿 A 分支的镜像跑 B 分支的代码
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
+
+      - name: reinstall adapter from source tree
+        run: |
+          set -euo pipefail
+          # 容器里 workspace 常以别的 uid 挂进来，git 操作会以 dubious ownership 失败
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          # 不再编 whl：按 README 的源码态做法直接从工作树安装（pip install .）。
+          # 必须先卸后装——镜像里预装的 dist 认领的是同一批文件，不卸掉会留下一个
+          # RECORD 已失效的 dist：它仍然注册 vllm entry-points，之后 pip 卸载它
+          # 还会连带删掉本次安装的文件。两条线的包布局不同：
+          #   main    : 根 pyproject 只含 sgl_kernel*，适配层在 packaging/hcu-adapter
+          #   release : 根 pyproject 一个 sgl-kernel 同时含 sgl_kernel* + hcu_adapter*
+          if [ -f packaging/hcu-adapter/pyproject.toml ]; then MODEL=dual; else MODEL=single; fi
+          echo "安装模型: $MODEL"
+
+          # 上一次运行残留的构建/元数据目录会让 pip 读到过期的 egg-info
+          rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+
+          # 装包期统一 HCU_ADAPTER_HOST=none：sitecustomize 的宿主探测会给每个 python
+          # 进程加约 30 秒；未安装时 pip 只打 warning 并以 0 退出
+          HCU_ADAPTER_HOST=none python3 -m pip uninstall -y sgl-kernel hcu-adapter
+
+          # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
+          # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
+          HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
+            || python3 -m pip install 'setuptools>=64' wheel
+          HCU_ADAPTER_HOST=none python3 -m pip install \
+            --no-deps --no-build-isolation .
+          if [ "$MODEL" = dual ]; then
+            HCU_ADAPTER_HOST=none python3 -m pip install \
+              --no-deps --no-build-isolation ./packaging/hcu-adapter
+          fi
+          # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
+          # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
+          # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
+          rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+
+          # 以 pip 实际安装位置为准。在 / 下执行、去掉 PYTHONPATH，免得认到源码树里的
+          # *.egg-info；sitecustomize 此时已装好，再加 HCU_ADAPTER_HOST=none 压掉它的
+          # 启动日志（会打在 stdout 上），用 sed 只取 Location 行
+          loc() { (cd / && env -u PYTHONPATH HCU_ADAPTER_HOST=none python3 -m pip show "$1" 2>/dev/null \
+            | sed -n 's/^Location: //p'); }
+          purelib="$(loc sgl-kernel)"
+          [ -n "$purelib" ] || { echo "::error::装完找不到 sgl-kernel 的安装位置"; exit 1; }
+          if [ "$MODEL" = dual ]; then
+            [ "$purelib" = "$(loc hcu-adapter)" ] \
+              || { echo "::error::安装位置异常：'$purelib' vs '$(loc hcu-adapter)'"; exit 1; }
+          fi
+          # 两条线都要求这三个模块由本次安装提供（release 线的单 dist 全带）
+          for p in hcu_adapter/__init__.py sgl_kernel/__init__.py sitecustomize.py; do
+            [ -f "$purelib/$p" ] || { echo "::error::安装后 $purelib/$p 不存在"; exit 1; }
+          done
+
+          # 两个 job 都会把仓库根放到 PYTHONPATH 最前面（l1_gpu_gate.sh 的 $ROOT、
+          # run_model_suite.sh 的 $ADAPTER），而 hcu_adapter/、sgl_kernel/、
+          # sitecustomize.py 就躺在仓库根，源码树会盖住刚装的包。不换掉的话这一步
+          # 装了什么都被源码顶替，包里少模块也照样绿。tools/ 必须从仓库根导入，
+          # 根不能移出路径，所以只把这三个换成指向安装位置的符号链接。
+          for p in hcu_adapter sgl_kernel sitecustomize.py; do
+            rm -rf "$GITHUB_WORKSPACE/$p"
+            ln -s "$purelib/$p" "$GITHUB_WORKSPACE/$p"
+          done
+
+          HCU_ADAPTER_HOST=none python3 - "$purelib" "$MODEL" <<'PY'
+          import os, sys, importlib.metadata as im
+          purelib = os.path.realpath(sys.argv[1])
+          model = sys.argv[2]
+          import hcu_adapter, sgl_kernel, sitecustomize
+          for m in (hcu_adapter, sgl_kernel, sitecustomize):
+              real = os.path.realpath(m.__file__)
+              assert real.startswith(purelib + os.sep), f"{m.__name__} -> {real}, not under {purelib}"
+              print(f"{m.__name__}: {m.__file__} -> {real}")
+          print("sgl-kernel", im.version("sgl-kernel"))
+          if model == "dual":
+              print("hcu-adapter", im.version("hcu-adapter"))
+          else:
+              # 单 dist 模型下不能再有 hcu-adapter：它和本次的 sgl-kernel 抢同一批文件
+              try:
+                  stale = im.version("hcu-adapter")
+              except im.PackageNotFoundError:
+                  print("hcu-adapter: absent (correct for release line)")
+              else:
+                  raise SystemExit(f"hcu-adapter {stale} still installed; it shadows the install")
+              # entry-points 必须由 sgl-kernel 这个 dist 提供
+              eps = [e for e in im.entry_points(group="vllm.platform_plugins")
+                     if e.name == "hcu_adapter"]
+              assert eps, "vllm platform plugin entry-point missing after install"
+              owners = {e.dist.name for e in eps if e.dist}
+              assert owners == {"sgl-kernel"}, f"entry-point owners: {owners}"
+              print("entry-point owner: sgl-kernel")
+          PY
 
       - name: Fetch upstream sglang tree
         run: |
@@ -108,20 +255,118 @@ jobs:
 
   l2:
     name: L2 e2e model suite (bw1100-4card)
+    needs: [image]
     runs-on: hygon-bw1100-4card
     # 每个模型最多等 1500s 启动 + 四判定；再加 30 分钟等卡
     timeout-minutes: 180
     container:
-      image: 10.16.1.152:5000/hcu/base_env/sglang:0.5.22-dtk2610-py312-20261111-1121@sha256:d772f8889bc961bbfde6f2e3348159f0b117e341f72fa342b6cc29f3564122e8
+      image: ${{ needs.image.outputs.image }}
+    defaults:
+      run:
+        shell: bash
     env:
       L2_MODELS: ${{ inputs.l2_models || 'q25-05b' }}
       LOGD: /root/logs/model_suite
     steps:
       - uses: actions/checkout@v4
         with:
+          # 与 image job 同一个表达式：镜像和被测代码必须来自同一个 ref，
+          # 否则手动指定 ref 时会拿 A 分支的镜像跑 B 分支的代码
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
-      # 与 l15 job 的同名步骤一致（两个 job 不同容器，各拉一份）
+      - name: reinstall adapter from source tree
+        run: |
+          set -euo pipefail
+          # 容器里 workspace 常以别的 uid 挂进来，git 操作会以 dubious ownership 失败
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          # 不再编 whl：按 README 的源码态做法直接从工作树安装（pip install .）。
+          # 必须先卸后装——镜像里预装的 dist 认领的是同一批文件，不卸掉会留下一个
+          # RECORD 已失效的 dist：它仍然注册 vllm entry-points，之后 pip 卸载它
+          # 还会连带删掉本次安装的文件。两条线的包布局不同：
+          #   main    : 根 pyproject 只含 sgl_kernel*，适配层在 packaging/hcu-adapter
+          #   release : 根 pyproject 一个 sgl-kernel 同时含 sgl_kernel* + hcu_adapter*
+          if [ -f packaging/hcu-adapter/pyproject.toml ]; then MODEL=dual; else MODEL=single; fi
+          echo "安装模型: $MODEL"
+
+          # 上一次运行残留的构建/元数据目录会让 pip 读到过期的 egg-info
+          rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+
+          # 装包期统一 HCU_ADAPTER_HOST=none：sitecustomize 的宿主探测会给每个 python
+          # 进程加约 30 秒；未安装时 pip 只打 warning 并以 0 退出
+          HCU_ADAPTER_HOST=none python3 -m pip uninstall -y sgl-kernel hcu-adapter
+
+          # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
+          # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
+          HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
+            || python3 -m pip install 'setuptools>=64' wheel
+          HCU_ADAPTER_HOST=none python3 -m pip install \
+            --no-deps --no-build-isolation .
+          if [ "$MODEL" = dual ]; then
+            HCU_ADAPTER_HOST=none python3 -m pip install \
+              --no-deps --no-build-isolation ./packaging/hcu-adapter
+          fi
+          # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
+          # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
+          # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
+          rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+
+          # 以 pip 实际安装位置为准。在 / 下执行、去掉 PYTHONPATH，免得认到源码树里的
+          # *.egg-info；sitecustomize 此时已装好，再加 HCU_ADAPTER_HOST=none 压掉它的
+          # 启动日志（会打在 stdout 上），用 sed 只取 Location 行
+          loc() { (cd / && env -u PYTHONPATH HCU_ADAPTER_HOST=none python3 -m pip show "$1" 2>/dev/null \
+            | sed -n 's/^Location: //p'); }
+          purelib="$(loc sgl-kernel)"
+          [ -n "$purelib" ] || { echo "::error::装完找不到 sgl-kernel 的安装位置"; exit 1; }
+          if [ "$MODEL" = dual ]; then
+            [ "$purelib" = "$(loc hcu-adapter)" ] \
+              || { echo "::error::安装位置异常：'$purelib' vs '$(loc hcu-adapter)'"; exit 1; }
+          fi
+          # 两条线都要求这三个模块由本次安装提供（release 线的单 dist 全带）
+          for p in hcu_adapter/__init__.py sgl_kernel/__init__.py sitecustomize.py; do
+            [ -f "$purelib/$p" ] || { echo "::error::安装后 $purelib/$p 不存在"; exit 1; }
+          done
+
+          # 两个 job 都会把仓库根放到 PYTHONPATH 最前面（l1_gpu_gate.sh 的 $ROOT、
+          # run_model_suite.sh 的 $ADAPTER），而 hcu_adapter/、sgl_kernel/、
+          # sitecustomize.py 就躺在仓库根，源码树会盖住刚装的包。不换掉的话这一步
+          # 装了什么都被源码顶替，包里少模块也照样绿。tools/ 必须从仓库根导入，
+          # 根不能移出路径，所以只把这三个换成指向安装位置的符号链接。
+          for p in hcu_adapter sgl_kernel sitecustomize.py; do
+            rm -rf "$GITHUB_WORKSPACE/$p"
+            ln -s "$purelib/$p" "$GITHUB_WORKSPACE/$p"
+          done
+
+          HCU_ADAPTER_HOST=none python3 - "$purelib" "$MODEL" <<'PY'
+          import os, sys, importlib.metadata as im
+          purelib = os.path.realpath(sys.argv[1])
+          model = sys.argv[2]
+          import hcu_adapter, sgl_kernel, sitecustomize
+          for m in (hcu_adapter, sgl_kernel, sitecustomize):
+              real = os.path.realpath(m.__file__)
+              assert real.startswith(purelib + os.sep), f"{m.__name__} -> {real}, not under {purelib}"
+              print(f"{m.__name__}: {m.__file__} -> {real}")
+          print("sgl-kernel", im.version("sgl-kernel"))
+          if model == "dual":
+              print("hcu-adapter", im.version("hcu-adapter"))
+          else:
+              # 单 dist 模型下不能再有 hcu-adapter：它和本次的 sgl-kernel 抢同一批文件
+              try:
+                  stale = im.version("hcu-adapter")
+              except im.PackageNotFoundError:
+                  print("hcu-adapter: absent (correct for release line)")
+              else:
+                  raise SystemExit(f"hcu-adapter {stale} still installed; it shadows the install")
+              # entry-points 必须由 sgl-kernel 这个 dist 提供
+              eps = [e for e in im.entry_points(group="vllm.platform_plugins")
+                     if e.name == "hcu_adapter"]
+              assert eps, "vllm platform plugin entry-point missing after install"
+              owners = {e.dist.name for e in eps if e.dist}
+              assert owners == {"sgl-kernel"}, f"entry-point owners: {owners}"
+              print("entry-point owner: sgl-kernel")
+          PY
+
       - name: Fetch upstream sglang tree
         run: |
           up=""
