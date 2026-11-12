@@ -61,6 +61,15 @@ def bound_resolvers() -> tuple[str, ...]:
     return tuple(sorted(_resolvers))
 
 
+def resolver_owner() -> str | None:
+    """Read-only: the module that bound the collaborators, if any.
+
+    Exposed so the owner can detect a hot-reload that replaced the binding
+    module while the resolver table still points at the previous one.
+    """
+    return _owner
+
+
 def _resolve(name):
     resolver = _resolvers.get(name)
     if resolver is None:
@@ -189,6 +198,24 @@ def build():
             # the plugin module is the single place these are patched.
             return _resolve(name)
 
+        # Names that used to be closure-fixed at build() time and that a
+        # historical `patch.object(v41_indexer, ...)` is documented to reach.
+        # They are read through resolvers so the patch still changes what
+        # executes. Types and dtypes stay closure-fixed on purpose: patching a
+        # metadata class or a dtype is not a supported seam, and turning them
+        # into resolvers would add hot-path indirection for no behaviour gain.
+        def _native_indexer():
+            resolver = _resolvers.get("native_indexer")
+            return native_indexer if resolver is None else resolver()
+
+        def _mqa_logits():
+            resolver = _resolvers.get("mqa_logits")
+            return fp8_mqa_logits_torch if resolver is None else resolver()
+
+        def _layer_name():
+            resolver = _resolvers.get("layer_name")
+            return _resolve_layer_name if resolver is None else resolver()
+
         def _cache_flat(cache, head_dim):
             if cache.dtype != torch.uint8 or cache.ndim not in (3, 4):
                 raise ValueError("FP8 indexer cache must be uint8 [pages,block,128+4]")
@@ -289,12 +316,23 @@ def build():
 
         def _select(logits, starts, ends, out, candidates, block_size, write):
             if candidates is not None:
+                helper = _collaborator(
+                    "candidate_select" if write else "candidate_mask")
+                if not logits.is_cuda and helper in (select_candidate_blocks,
+                                                     apply_candidate_mask):
+                    # Both upstream candidate helpers open with
+                    # `assert logits.is_cuda`. A CPU replay that substitutes
+                    # them never exercised this path, so a green replay is not
+                    # evidence it works. Refuse explicitly instead of letting a
+                    # bare AssertionError surface from inside the kernel.
+                    raise V41IndexerError(
+                        "V41 candidate-block selection needs CUDA; the reference "
+                        "indexer's CPU candidate path is not implemented")
                 if write:
-                    _collaborator("candidate_select")(
-                        logits, starts, ends, candidates.shape[1], block_size, candidates)
+                    helper(logits, starts, ends, candidates.shape[1], block_size,
+                           candidates)
                 else:
-                    _collaborator("candidate_mask")(
-                        logits, starts, ends, candidates, block_size)
+                    helper(logits, starts, ends, candidates, block_size)
             out.copy_(local_topk(logits, starts, ends, out.shape[1]))
 
         @eager_break_during_capture
@@ -305,17 +343,18 @@ def build():
                     candidates: torch.Tensor | None = None,
                     candidate_block_size: int = 0,
                     candidate_write: bool = False) -> torch.Tensor:
-            prefix = _resolve_layer_name(prefix)
+            prefix = _layer_name()(prefix)
             context = _resolve("forward_context")
             if not isinstance(context.attn_metadata, dict):
                 # Reuse the actual native profiling reservations/fake ABI; this
                 # branch never reads cache bytes or invokes the faulty paged
                 # decode fallback.
-                return native_indexer(hidden_states, prefix, cache, q, None, weights,
-                                      128, "ue8m0", topk_tokens, head_dim,
-                                      max_model_len, total_seq_lens, out, True,
-                                      compress_ratio, candidates,
-                                      candidate_block_size, candidate_write)
+                return _native_indexer()(
+                    hidden_states, prefix, cache, q, None, weights,
+                    128, "ue8m0", topk_tokens, head_dim,
+                    max_model_len, total_seq_lens, out, True,
+                    compress_ratio, candidates,
+                    candidate_block_size, candidate_write)
             meta = context.attn_metadata[prefix]
             if not isinstance(meta, DeepseekV32IndexerMetadata):
                 raise TypeError("V41 reference indexer requires native indexer metadata")
@@ -369,7 +408,7 @@ def build():
                     _collaborator("gather_kv")(
                         cache, keys, scales, chunk.block_table, chunk.cu_seq_lens,
                         token_to_seq=chunk.token_to_seq)
-                    logits = fp8_mqa_logits_torch(
+                    logits = _mqa_logits()(
                         q[start:end], (keys, scales.view(torch.float32)),
                         weights[start:end], chunk.cu_seqlen_ks, chunk.cu_seqlen_ke)
                     _select(logits, chunk.cu_seqlen_ks, chunk.cu_seqlen_ke,
@@ -530,7 +569,7 @@ def build():
                         "V41 reference indexer consumes source-owned K and one FP8 Q "
                         "tensor")
                 return torch.ops.vllm.hcu_v41_fp8_indexer_reference(
-                    hidden_states, _resolve_layer_name(self.k_cache.prefix),
+                    hidden_states, _layer_name()(self.k_cache.prefix),
                     self.k_cache.kv_cache, q_quant, weights, self.topk_tokens,
                     self.head_dim, self.max_model_len, self.max_total_seq_len,
                     self.topk_indices_buffer, self.compress_ratio,
