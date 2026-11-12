@@ -35,6 +35,7 @@ vLLM 0.33 V4.1 gathered-BF16 sparse prefill via native FlashMLA
 | stock | candidate Explicit stock fallback: unchanged o |
 
 路由变量：`HCU_VLLM_FLASHMLA_PREFILL`
+
 ## vllm_fp4_indexer
 
 V41 LightOp FP4 indexer with zero-copy 64-record cache pages
