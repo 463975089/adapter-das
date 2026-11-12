@@ -1,0 +1,192 @@
+name: HCU Nightly (K8s)
+
+on:
+  schedule:
+    - cron: '37 14 * * *'
+  workflow_dispatch:
+    inputs:
+      l2_models:
+        description: "L2 模型 id，空格分隔（见 tests/tools/run_model_suite.sh 的 MODELS；单卡池只能跑单卡模型）"
+        required: false
+        default: "q25-05b"
+      family_matrix_mode:
+        description: "L1.5 五类代表矩阵模式（off|observe|blocking）"
+        required: false
+        default: "observe"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hcu-nightly-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  SGLANG_REPO_URL: ${{ vars.SGLANG_REPO_URL || 'https://github.com/sgl-project/sglang.git' }}
+  SGLANG_REF: v0.5.22
+  SGLANG_COMMIT: baa9befa381511cd4d56f83980951e5a45fffc6d
+
+jobs:
+  l15:
+    name: L1.5 upstream gate (bw1100-1card)
+    runs-on: hygon-bw1100-1card
+    # 冷 JIT：l15_upstream 约 35 分钟、l15_mech 约 14 分钟，manifest collect 和五类矩阵
+    # 每个 case 最多 1200s；再加 30 分钟等卡
+    timeout-minutes: 360
+    container:
+      image: 10.16.1.152:5000/hcu/base_env/sglang:0.5.22-dtk2610-py312-20261111-1121@sha256:d772f8889bc961bbfde6f2e3348159f0b117e341f72fa342b6cc29f3564122e8
+    env:
+      HCU_L1_TIMEOUT_SCALE: "2"
+      L15_MANIFEST_MODE: observe
+      L15_FAMILY_MATRIX_MODE: ${{ inputs.family_matrix_mode || 'observe' }}
+      L15_RESULT_ROOT: ${{ github.workspace }}/results/l15-manifest
+      HCU_CACHE_SEED: /ci_public/adapter-das/cache/hcu_cache_seed.tgz
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Fetch upstream sglang tree
+        run: |
+          up=""
+          for d in /sglang-v0522 /root/sglang-v0522-src; do
+            [ -d "$d/test/registered/attention/unittests" ] && { up="$d"; break; }
+          done
+          src=image
+          if [ -z "$up" ]; then
+            src=clone
+            up="$RUNNER_TEMP/sglang-$SGLANG_REF"
+            rm -rf "$up"
+            ok=0
+            for i in 1 2 3; do
+              if git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$SGLANG_REF" "$SGLANG_REPO_URL" "$up"; then ok=1; break; fi
+              echo "clone attempt $i failed"; rm -rf "$up"; sleep 30
+            done
+            [ "$ok" = 1 ] || { echo "::error::拉取上游 sglang 失败：$SGLANG_REPO_URL @ $SGLANG_REF"; exit 1; }
+          fi
+          head="$(git -C "$up" rev-parse HEAD 2>/dev/null || echo unknown)"
+          echo "upstream tree: $up (source=$src, HEAD=$head)"
+          if [ "$head" != "$SGLANG_COMMIT" ]; then
+            if [ "$src" = clone ]; then
+              echo "::error::$SGLANG_REF 解析到 $head，预期 $SGLANG_COMMIT（tag 被移动或镜像仓库不同步）"; exit 1
+            fi
+            echo "::warning::镜像内上游树 HEAD=$head，与验证基线 $SGLANG_COMMIT 不一致"
+          fi
+          [ -d "$up/test/registered/attention/unittests" ] \
+            || { echo "::error::$up 下没有 test/registered/attention/unittests"; exit 1; }
+          echo "HCU_UP_TREE=$up" >> "$GITHUB_ENV"
+
+      - name: Seed cache
+        run: |
+          if [ -f "$HCU_CACHE_SEED" ]; then
+            bash ci/cache_import.sh "$HCU_CACHE_SEED"
+          else
+            echo "no cache seed at $HCU_CACHE_SEED -- cold JIT"
+            echo "TVM_FFI_DISABLE_TORCH_C_DLPACK=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: L1.5 gate (ci/l1_gpu_gate.sh)
+        # 容器里只有分到的那张卡，编号固定为 0
+        run: bash ci/l1_gpu_gate.sh 0 --up-tree "$HCU_UP_TREE"
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p l15-logs
+          cp /tmp/l1_*.log /tmp/hcu_jit_progress.*.log l15-logs/ 2>/dev/null || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hcu-nightly-l15-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            l15-logs/
+            results/l15-manifest/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  l2:
+    name: L2 e2e model suite (bw1100-4card)
+    runs-on: hygon-bw1100-4card
+    # 每个模型最多等 1500s 启动 + 四判定；再加 30 分钟等卡
+    timeout-minutes: 180
+    container:
+      image: 10.16.1.152:5000/hcu/base_env/sglang:0.5.22-dtk2610-py312-20261111-1121@sha256:d772f8889bc961bbfde6f2e3348159f0b117e341f72fa342b6cc29f3564122e8
+    env:
+      L2_MODELS: ${{ inputs.l2_models || 'q25-05b' }}
+      LOGD: /root/logs/model_suite
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # 与 l15 job 的同名步骤一致（两个 job 不同容器，各拉一份）
+      - name: Fetch upstream sglang tree
+        run: |
+          up=""
+          for d in /sglang-v0522 /root/sglang-v0522-src; do
+            [ -d "$d/python/sglang" ] && { up="$d"; break; }
+          done
+          src=image
+          if [ -z "$up" ]; then
+            src=clone
+            up="$RUNNER_TEMP/sglang-$SGLANG_REF"
+            rm -rf "$up"
+            ok=0
+            for i in 1 2 3; do
+              if git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$SGLANG_REF" "$SGLANG_REPO_URL" "$up"; then ok=1; break; fi
+              echo "clone attempt $i failed"; rm -rf "$up"; sleep 30
+            done
+            [ "$ok" = 1 ] || { echo "::error::拉取上游 sglang 失败：$SGLANG_REPO_URL @ $SGLANG_REF"; exit 1; }
+          fi
+          head="$(git -C "$up" rev-parse HEAD 2>/dev/null || echo unknown)"
+          echo "upstream tree: $up (source=$src, HEAD=$head)"
+          if [ "$head" != "$SGLANG_COMMIT" ]; then
+            if [ "$src" = clone ]; then
+              echo "::error::$SGLANG_REF 解析到 $head，预期 $SGLANG_COMMIT（tag 被移动或镜像仓库不同步）"; exit 1
+            fi
+            echo "::warning::镜像内上游树 HEAD=$head，与验证基线 $SGLANG_COMMIT 不一致"
+          fi
+          echo "HCU_UP_TREE=$up" >> "$GITHUB_ENV"
+
+      - name: Pre-check
+        run: |
+          set -x
+          # run_model_suite.sh 用 /opt/dtk/bin/rocm-smi 查空闲显存来选卡；查不到会一直
+          # sleep 120 等下去，所以这里先确认能看到 HCU[0]，看不到就直接失败
+          /opt/dtk/bin/rocm-smi --showmeminfo vram | grep -q 'HCU\[0\]' \
+            || { echo "::error::rocm-smi 看不到 HCU[0]"; exit 1; }
+          ls -d /public/opendas/DL_DATA/llm-models \
+            || { echo "::error::/public 下没有模型目录"; exit 1; }
+          # 脚本会设 PYTHONPATH=$ADAPTER:$SGLANG_V0521（变量名沿用旧版本，实际是 v0522 树）
+          echo "ADAPTER=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "SGLANG_V0521=$HCU_UP_TREE/python" >> "$GITHUB_ENV"
+
+      - name: L2 model suite
+        run: bash tests/tools/run_model_suite.sh $L2_MODELS
+
+      - name: Verdict
+        run: |
+          rc=0
+          for id in $L2_MODELS; do
+            f="$LOGD/result_$id.txt"
+            echo "::group::$id"; cat "$f" 2>/dev/null || echo "(no result file)"; echo "::endgroup::"
+            for g in G2-generation G3-precision G4-long; do
+              if grep -q "^$g PASS" "$f" 2>/dev/null; then
+                echo "$id $g PASS"
+              else
+                echo "::error::$id $g not PASS"; rc=1
+              fi
+            done
+          done
+          exit $rc
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hcu-nightly-l2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /root/logs/model_suite/
+          if-no-files-found: ignore
+          retention-days: 7
