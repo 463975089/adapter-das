@@ -2,6 +2,10 @@ name: HCU MR CI (K8s)
 
 on:
   pull_request_target:
+    branches:
+        - main
+        # release 线是单 whl 打包模型（只有 sgl-kernel，含 hcu_adapter/）
+        - 'release/**'
     types: [opened, synchronize, reopened, ready_for_review, labeled]
   workflow_dispatch:
     inputs:
@@ -10,9 +14,13 @@ on:
             required: false
             default: ''
         pip_index_url:
-             description: 'Path to DTK package'
-             required: false
-             default: ''
+            description: 'pip index url'
+            required: false
+            default: ''
+        pip_trusted_host:
+            description: 'pip trusted host'
+            required: false
+            default: ''
 permissions:
   contents: read
 
@@ -21,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PIP_TRUSTED_HOST: ${{ vars.PIP_TRUSTED_HOST }}
-  PIP_INDEX_URL: ${{ vars.PIP_INDEX_URL || inputs.pip_index_url }}
+  PIP_TRUSTED_HOST: ${{ inputs.pip_trusted_host || vars.PIP_TRUSTED_HOST }}
+  PIP_INDEX_URL: ${{ inputs.pip_index_url || vars.PIP_INDEX_URL }}
 
 jobs:
   image:
@@ -44,6 +52,10 @@ jobs:
         id: read
         run: |
           set -euo pipefail
+          # main 与 release 线都带这个文件；缺失就意味着基线分支漏提交了基础设施
+          # 文件，直接失败比悄悄用别的镜像跑绿更安全
+          [ -f ci/ci_docker_image ] \
+            || { echo "::error::基线分支没有 ci/ci_docker_image"; exit 1; }
           image="$(tr -d '[:space:]' < ci/ci_docker_image)"
           # 平台要求用 digest 固定镜像，tag 只作说明；没有 digest 就在这里报错，别等到拉镜像那步才失败
           case "$image" in
@@ -69,6 +81,8 @@ jobs:
       # L1 按这个目录安装 whl，不自己拼路径：merge 的提交号由 build 算出来，
       # 让 L1 自己推等于两边各算一遍，迟早对不上
       wheel_dir: ${{ steps.stage.outputs.wheel_dir }}
+      # dual = main 线（两个 dist）；single = release 线（一个 sgl-kernel 含两个包）
+      whl_model: ${{ steps.build.outputs.whl_model }}
     steps:
       - name: Checkout base branch
         uses: actions/checkout@v4
@@ -95,23 +109,52 @@ jobs:
             fetch "https://github.com/${GITHUB_REPOSITORY}.git" "pull/${PR_NUMBER}/head:pr"
           git merge --no-ff --no-edit pr
 
-      - name: build and repair
+      - name: build whl
+        id: build
         shell: bash
         run: |
           set -euo pipefail
           rm -rf dist repair
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          HCU_ADAPTER_HOST=none bash packaging/build.sh
+
+          # 两条线的打包模型不同，按仓库实际结构分派：
+          #   main    : packaging/build.sh 出双 dist（sgl-kernel + hcu-adapter，精确互锁）
+          #   release : 无 packaging/，根 pyproject.toml 出一个 sgl-kernel，包内同时含
+          #             sgl_kernel/ 与 hcu_adapter/（+ sitecustomize、vllm entry-points）
+          if [ -x packaging/build.sh ]; then
+            MODEL=dual
+            HCU_ADAPTER_HOST=none bash packaging/build.sh
+          else
+            MODEL=single
+            # --no-build-isolation 需要环境里已有构建后端；build.sh 也是这么补的
+            python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
+              || python3 -m pip install 'setuptools>=64' wheel
+            HCU_ADAPTER_HOST=none python3 -m pip wheel --no-deps --no-build-isolation \
+              --wheel-dir dist .
+          fi
+          echo "打包模型: $MODEL"
+          echo "whl_model=$MODEL" >> "$GITHUB_OUTPUT"
+
           # repair/ 只是这次的产物暂存目录（不再走 CIUpload REPAIR 改写版本）；
           # 目录要先建出来，glob 不匹配时 cp 会把 'repair/*.whl' 当字面量报错
           mkdir -p repair
           cp -f dist/*.whl repair/
           ls -l repair
-          # 两个 whl 必须各有且只有一个，否则 L1 装到的不是本次构建的产物
-          for n in sgl_kernel hcu_adapter; do
-            c=$(ls repair/${n}-*.whl 2>/dev/null | wc -l)
-            [ "$c" = 1 ] || { echo "::error::repair/ 下 ${n} whl 数量为 $c，预期 1"; exit 1; }
-          done
+
+          # 装到 L1 的 whl 必须各有且只有一个，否则测到的不是本次构建的产物
+          if [ "$MODEL" = dual ]; then
+            for n in sgl_kernel hcu_adapter; do
+              c=$(ls repair/${n}-*.whl 2>/dev/null | wc -l)
+              [ "$c" = 1 ] || { echo "::error::repair/ 下 ${n} whl 数量为 $c，预期 1"; exit 1; }
+            done
+          else
+            # 单 dist：文件名是 sgl_kernel-（dist 名 sgl-kernel 的规范化形式），
+            # 且必须是唯一一个 whl
+            c=$(ls repair/*.whl 2>/dev/null | wc -l)
+            [ "$c" = 1 ] || { echo "::error::release 线应只产出 1 个 whl，实际 $c 个"; exit 1; }
+            ls repair/sgl_kernel-*.whl >/dev/null 2>&1 \
+              || { echo "::error::单 dist 产物不是 sgl_kernel-*.whl"; exit 1; }
+          fi
 
       - name: stage whl
         id: stage
@@ -212,20 +255,38 @@ jobs:
         timeout-minutes: 5
         env:
           WHEEL_DIR: ${{ needs.build.outputs.wheel_dir }}
+          WHL_MODEL: ${{ needs.build.outputs.whl_model }}
         run: |
-          set -euo pipefail
+          set -e
           [ -n "$WHEEL_DIR" ] || { echo "::error::build job 没有输出 wheel_dir"; exit 1; }
           ls -l "$WHEEL_DIR"
-         
-          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall \
-            "$WHEEL_DIR"/sgl_kernel-*.whl "$WHEEL_DIR"/hcu_adapter-*.whl
 
           # 以 pip 实际安装位置为准。在 / 下执行、去掉 PYTHONPATH，免得认到源码树里的
           # *.egg-info；sitecustomize 的启动日志也打在 stdout，用 sed 只取 Location 行
-          loc() { (cd / && env -u PYTHONPATH python3 -m pip show "$1" | sed -n 's/^Location: //p'); }
-          purelib="$(loc hcu-adapter)"
-          [ -n "$purelib" ] && [ "$purelib" = "$(loc sgl-kernel)" ] \
-            || { echo "::error::安装位置异常：'$purelib' vs '$(loc sgl-kernel)'"; exit 1; }
+          loc() { (cd / && env -u PYTHONPATH python3 -m pip show "$1" 2>/dev/null | sed -n 's/^Location: //p'); }
+
+          if [ "$WHL_MODEL" = single ]; then
+            # release 线：本次只产出 sgl-kernel 一个 dist，而它自带 hcu_adapter/ 与
+            # sitecustomize.py；镜像里预装的 hcu-adapter dist 认领的正是同一批文件。
+            # 不先卸掉会留下一个 RECORD 已失效的 dist：它仍注册 vllm entry-points，
+            # 之后 pip 卸载它还会连带删掉新 wheel 的文件。所以必须先卸后装。
+            HCU_ADAPTER_HOST=none python3 -m pip uninstall -y hcu-adapter \
+              || echo "镜像里没有 hcu-adapter，跳过"
+            HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall \
+              "$WHEEL_DIR"/sgl_kernel-*.whl
+          else
+            # main 线：两个 dist 各自拥有自己的包，force-reinstall 会先按 RECORD 卸旧版
+            HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall \
+              "$WHEEL_DIR"/sgl_kernel-*.whl "$WHEEL_DIR"/hcu_adapter-*.whl
+          fi
+
+          purelib="$(loc sgl-kernel)"
+          [ -n "$purelib" ] || { echo "::error::装完找不到 sgl-kernel 的安装位置"; exit 1; }
+          if [ "$WHL_MODEL" = dual ]; then
+            [ "$purelib" = "$(loc hcu-adapter)" ] \
+              || { echo "::error::安装位置异常：'$purelib' vs '$(loc hcu-adapter)'"; exit 1; }
+          fi
+          # 两条线都要求这三个模块由本次安装提供（release 线的单 dist 全带）
           for p in hcu_adapter/__init__.py sgl_kernel/__init__.py sitecustomize.py; do
             [ -f "$purelib/$p" ] || { echo "::error::安装后 $purelib/$p 不存在"; exit 1; }
           done
@@ -239,16 +300,33 @@ jobs:
             ln -s "$purelib/$p" "$GITHUB_WORKSPACE/$p"
           done
 
-          HCU_ADAPTER_HOST=none python3 - "$purelib" <<'PY'
+          HCU_ADAPTER_HOST=none python3 - "$purelib" "$WHL_MODEL" <<'PY'
           import os, sys, importlib.metadata as im
           purelib = os.path.realpath(sys.argv[1])
+          model = sys.argv[2]
           import hcu_adapter, sgl_kernel, sitecustomize
           for m in (hcu_adapter, sgl_kernel, sitecustomize):
               real = os.path.realpath(m.__file__)
               assert real.startswith(purelib + os.sep), f"{m.__name__} -> {real}, not under {purelib}"
               print(f"{m.__name__}: {m.__file__} -> {real}")
-          for d in ("hcu-adapter", "sgl-kernel"):
-              print(d, im.version(d))
+          print("sgl-kernel", im.version("sgl-kernel"))
+          if model == "dual":
+              print("hcu-adapter", im.version("hcu-adapter"))
+          else:
+              # 单 dist 模型下不能再有 hcu-adapter：它和本次的 sgl-kernel 抢同一批文件
+              try:
+                  stale = im.version("hcu-adapter")
+              except im.PackageNotFoundError:
+                  print("hcu-adapter: absent (correct for release line)")
+              else:
+                  raise SystemExit(f"hcu-adapter {stale} still installed; it shadows the wheel")
+              # entry-points 必须由 sgl-kernel 这个 dist 提供
+              eps = [e for e in im.entry_points(group="vllm.platform_plugins")
+                     if e.name == "hcu_adapter"]
+              assert eps, "vllm platform plugin entry-point missing after install"
+              owners = {e.dist.name for e in eps if e.dist}
+              assert owners == {"sgl-kernel"}, f"entry-point owners: {owners}"
+              print("entry-point owner: sgl-kernel")
           PY
 
       - name: Environment probe
