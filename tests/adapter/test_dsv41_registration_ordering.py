@@ -151,3 +151,48 @@ def test_stock_mode_returns_without_registering(isolated, monkeypatch):
     assert isolated.registry.register_calls == 0
     assert activation._publication is None
     assert activation._failure is None
+
+
+def test_health_refuses_a_registry_record_that_lost_its_owner(isolated, monkeypatch):
+    """The registry record is part of the published state, not bookkeeping.
+
+    Activation makes `_publication` and the record one atomic step. If the record
+    is later removed or re-pointed, the process is no longer in the state it was
+    admitted in, and `check_health()` used to say nothing about it.
+    """
+    _bind_guards(monkeypatch)
+    activation.activate_extension(CONTEXT)
+    activation.check_health()
+
+    from hcu_adapter import registry as adapter_registry
+
+    original = adapter_registry.get(activation.OP)
+    assert original is not None
+    # `_fatal` latches `_failure`, so restore the record AND clear the latch to
+    # leave the next case a clean process.
+    try:
+        monkeypatch.setitem(adapter_registry._RECORDS, activation.OP, None)
+        with pytest.raises(ExtensionCommitError, match="registry record"):
+            activation.check_health()
+    finally:
+        adapter_registry._RECORDS[activation.OP] = original
+        monkeypatch.setattr(activation, "_failure", None)
+
+
+def test_health_refuses_a_registry_record_with_a_foreign_target(isolated, monkeypatch):
+    """A second owner re-pointing the op must be refused, not reported healthy."""
+    _bind_guards(monkeypatch)
+    activation.activate_extension(CONTEXT)
+
+    from hcu_adapter import registry as adapter_registry
+
+    original = adapter_registry.get(activation.OP)
+    try:
+        forged = dict(original)
+        forged["target"] = "some.other.module.attribute"
+        monkeypatch.setitem(adapter_registry._RECORDS, activation.OP, forged)
+        with pytest.raises(ExtensionCommitError, match="registry record"):
+            activation.check_health()
+    finally:
+        adapter_registry._RECORDS[activation.OP] = original
+        monkeypatch.setattr(activation, "_failure", None)

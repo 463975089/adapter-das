@@ -151,6 +151,22 @@ def check_health() -> None:
                 raise refusal from error
         if not owned:
             _fatal("DSV4.1 public quantization registration changed owner")
+        # The registry record is part of the published state, not bookkeeping:
+        # activation makes `_publication` and the record one atomic step, so a
+        # later change to either means the process is no longer in the state it
+        # was admitted in. Without this, `registry.unregister()`-style external
+        # edits (or a second owner overwriting the op) went unnoticed while the
+        # extension still reported healthy.
+        try:
+            record = registry.get(OP)
+        except BaseException as error:
+            try:
+                _fatal("DSV4.1 registry record is unreadable")
+            except ExtensionCommitError as refusal:
+                raise refusal from error
+        if (record is None or record.get("implementation") != "native"
+                or record.get("target") != TARGET):
+            _fatal("DSV4.1 registry record changed owner or target")
         try:
             if _engram_edp_hooks is None or _dspark_graph_hooks is None:
                 raise RuntimeError("DSV4.1 guard providers are not bound")
