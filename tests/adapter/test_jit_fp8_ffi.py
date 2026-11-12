@@ -140,6 +140,32 @@ def _key(dtype=torch.float8_e4m3fn):
     return torch.bfloat16, dtype, 32, False, True, True, False, False, False
 
 
+@pytest.mark.parametrize("module,factory_name,entry", [
+    ("per_token_quant_fp8", "_jit_per_token_quant_fp8_module", "per_token_quant_fp8"),
+    ("per_tensor_quant_fp8", "per_tensor_quant_fp8_module", "per_tensor_quant_fp8"),
+])
+def test_quant_export_preserves_warm_factory_alias_and_output_bytes(module, factory_name, entry):
+    assert ("sglang.kernels.ops.quantization." + module, factory_name, entry) in bridge._TARGETS
+    source = """@cache_once
+def _jit_module(dtype):
+    return load_jit("per_token_quant_fp8", dtype)
+"""
+    factory, modules, calls = _factory((_CACHE, source), entry=entry)
+    alias = factory
+    factory(torch.bfloat16)  # Populate the original factory cache first.
+    bridge._install_factory(factory, entry)
+    x = torch.ones(3, 4, dtype=torch.bfloat16)
+    output = torch.empty_like(x, dtype=torch.float8_e4m3fn)
+    scale = torch.ones(3, 1)
+    getattr(alias(torch.bfloat16), entry)(x, output, scale)
+    assert calls[-1][0] is x and calls[-1][2] is scale
+    assert calls[-1][1].dtype == torch.uint8
+    assert calls[-1][1].data_ptr() == output.data_ptr()
+    assert output.dtype == torch.float8_e4m3fn
+    assert torch.equal(output.float(), torch.ones_like(x, dtype=torch.float32))
+    assert len(modules) == 1
+
+
 def test_original_factory_and_warm_aliases_use_only_output_view(sources):
     factory, modules, calls = _factory(sources)
     alias = factory

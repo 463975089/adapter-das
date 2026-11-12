@@ -3883,6 +3883,56 @@
       "platform_guard": "pytest-runtime-skip",
       "skip_reason": "pytest skip"
     },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_layout_robustness_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 280, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_projected_dense_attention_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 305, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_cuda_graph_decode_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 315, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_eagle_draft_cuda_graph_runner_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 376, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_eagle_draft_extend_v2_cuda_graph_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 343, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_eagle_draft_extend_v2_cuda_graph_runner_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 366, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_frozen_kv_mtp_cuda_graph_runner_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 388, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_spec_verify_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 398, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_spec_verify_cuda_graph_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 412, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/dense/test_fa4.py::TestFA4DenseAttentionBackendCorrectness::test_runner_mode_split_op_extend_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dense/test_fa4.py', 325, 'Skipped: fa4 backend is not available: fa4 requires the CUTLASS cute DSL (SM90a, CUDA-only); unavailable on HIP/DTK — use the fa3/triton/dsa backends')"
+    },
     "test/registered/attention/unittests/dense/test_flashinfer.py::TestFlashInferDenseAttentionBackendCorrectness::test_layout_robustness_cases": {
       "classification": "platform-skip",
       "platform_guard": "pytest-runtime-skip",
@@ -3932,6 +3982,79 @@
       "classification": "platform-skip",
       "platform_guard": "pytest-runtime-skip",
       "skip_reason": "('test/registered/attention/unittests/dense/test_hybrid_attn.py', 76, 'Skipped: CUDA + flashinfer are required')"
+    },
+    "test/registered/attention/unittests/dsa/test_dsa.py::TestDSAAttentionBackendCorrectness::test_layout_robustness_dense_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dsa/test_dsa.py', 133, 'Skipped: DSA MHA_ONE_SHOT dense fallback is not selected here.')"
+    },
+    "test/registered/attention/unittests/dsa/test_dsa.py::TestDSAAttentionBackendCorrectness::test_mha_one_shot_dense_fallback_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/dsa/test_dsa.py', 51, 'Skipped: DSA MHA_ONE_SHOT dense fallback is not selected here.')"
+    },
+    "test/registered/attention/unittests/dsa/test_dsa.py::TestDSAAttentionBackendCorrectness::test_sparse_cuda_graph_decode_impl_variants": {
+      "classification": "candidate-observe",
+      "subtest_observation": {
+        "passed": 3,
+        "skip_reasons": [
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 391, 'Skipped: DSA CG decode impl `aiter` not supported: aiter is HIP/AMD only')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 391, 'Skipped: DSA CG decode impl `trtllm` not supported: trtllm requires SM10.0 (Blackwell B200), got SM9.3')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 391, 'Skipped: DSA tilelang decode requires topk=2048; the shared sparse fixture uses topk=128.')"
+        ],
+        "skipped": 3
+      }
+    },
+    "test/registered/attention/unittests/dsa/test_dsa.py::TestDSAAttentionBackendCorrectness::test_sparse_decode_impl_variants": {
+      "classification": "candidate-observe",
+      "subtest_observation": {
+        "passed": 3,
+        "skip_reasons": [
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 205, 'Skipped: DSA decode impl `aiter` not supported: aiter is HIP/AMD only')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 205, 'Skipped: DSA decode impl `trtllm` not supported: trtllm requires SM10.0 (Blackwell B200), got SM9.3')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 205, 'Skipped: DSA tilelang decode requires topk=2048; the shared sparse fixture uses topk=128. A topk=2048 fixture variant is needed to exercise this path.')"
+        ],
+        "skipped": 3
+      }
+    },
+    "test/registered/attention/unittests/dsa/test_dsa.py::TestDSAAttentionBackendCorrectness::test_sparse_fp8_decode_cases": {
+      "classification": "candidate-observe",
+      "subtest_observation": {
+        "passed": 1,
+        "skip_reasons": [
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 306, 'Skipped: DSA decode impl `aiter` does not support FP8 KV cache (only `flashmla_kv` / `flashmla_auto` read FP8 K directly).')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 306, 'Skipped: DSA decode impl `fa3` does not support FP8 KV cache (only `flashmla_kv` / `flashmla_auto` read FP8 K directly).')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 306, 'Skipped: DSA decode impl `flashmla_sparse` does not support FP8 KV cache (only `flashmla_kv` / `flashmla_auto` read FP8 K directly).')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 306, 'Skipped: DSA decode impl `tilelang` does not support FP8 KV cache (only `flashmla_kv` / `flashmla_auto` read FP8 K directly).')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 306, 'Skipped: DSA decode impl `trtllm` does not support FP8 KV cache (only `flashmla_kv` / `flashmla_auto` read FP8 K directly).')"
+        ],
+        "skipped": 5
+      }
+    },
+    "test/registered/attention/unittests/dsa/test_dsa.py::TestDSAAttentionBackendCorrectness::test_sparse_fp8_prefill_cases": {
+      "classification": "candidate-observe",
+      "subtest_observation": {
+        "passed": 3,
+        "skip_reasons": [
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 292, 'Skipped: DSA prefill impl `aiter` does not support FP8 KV cache (only `flashmla_sparse`, `flashmla_kv`, and `flashmla_auto` read FP8 K directly; others require BF16 K).')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 292, 'Skipped: DSA prefill impl `fa3` does not support FP8 KV cache (only `flashmla_sparse`, `flashmla_kv`, and `flashmla_auto` read FP8 K directly; others require BF16 K).')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 292, 'Skipped: DSA prefill impl `tilelang` does not support FP8 KV cache (only `flashmla_sparse`, `flashmla_kv`, and `flashmla_auto` read FP8 K directly; others require BF16 K).')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 292, 'Skipped: DSA prefill impl `trtllm` does not support FP8 KV cache (only `flashmla_sparse`, `flashmla_kv`, and `flashmla_auto` read FP8 K directly; others require BF16 K).')"
+        ],
+        "skipped": 4
+      }
+    },
+    "test/registered/attention/unittests/dsa/test_dsa.py::TestDSAAttentionBackendCorrectness::test_sparse_prefill_impl_variants": {
+      "classification": "candidate-observe",
+      "subtest_observation": {
+        "passed": 4,
+        "skip_reasons": [
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 198, 'Skipped: DSA prefill impl `aiter` not supported: aiter is HIP/AMD only')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 198, 'Skipped: DSA prefill impl `trtllm` not supported: trtllm requires SM10.0 (Blackwell B200), got SM9.3')",
+          "('test/registered/attention/unittests/dsa/test_dsa.py', 198, 'Skipped: DSA tilelang prefill requires topk=2048; the shared sparse fixture uses topk=128. A topk=2048 fixture variant is needed to exercise this path.')"
+        ],
+        "skipped": 3
+      }
     },
     "test/registered/attention/unittests/dsv4/test_deepseek_v4.py::TestDSV4AttentionBackendCorrectness::test_eagle_draft_extend_without_cpu_seq_lens": {
       "classification": "diagnostic-known-fail",
@@ -4061,6 +4184,51 @@
       "fingerprint": "E AssertionError: dtype=torch.float32 it=6 During handling of the above exception, another exception occurred: E Exception: retry() exceed maximum number of retries.",
       "promotion_condition": "stable green execution with route evidence review",
       "review_condition": "the recorded outcome or fingerprint changes"
+    },
+    "test/registered/attention/unittests/mla/test_flashinfer.py::TestFlashInferMLAAttentionBackendCorrectness::test_runner_mode_cuda_graph_decode_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/mla/test_flashinfer.py', 177, 'Skipped: flashinfer backend is not available: flashinfer attention kernels are CUDA-only and is_flashinfer_available() is False on HCU; use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/mla/test_flashinfer.py::TestFlashInferMLAAttentionBackendCorrectness::test_runner_mode_eagle_draft_cuda_graph_runner_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/mla/test_flashinfer.py', 219, 'Skipped: flashinfer backend is not available: flashinfer attention kernels are CUDA-only and is_flashinfer_available() is False on HCU; use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/mla/test_flashinfer.py::TestFlashInferMLAAttentionBackendCorrectness::test_runner_mode_eagle_verify_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/mla/test_flashinfer.py', 199, 'Skipped: flashinfer backend is not available: flashinfer attention kernels are CUDA-only and is_flashinfer_available() is False on HCU; use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/mla/test_flashinfer.py::TestFlashInferMLAAttentionBackendCorrectness::test_runner_mode_eagle_verify_cuda_graph_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/mla/test_flashinfer.py', 209, 'Skipped: flashinfer backend is not available: flashinfer attention kernels are CUDA-only and is_flashinfer_available() is False on HCU; use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/mla/test_flashinfer.py::TestFlashInferMLAAttentionBackendCorrectness::test_runner_mode_split_op_extend_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/mla/test_flashinfer.py', 182, 'Skipped: flashinfer backend is not available: flashinfer attention kernels are CUDA-only and is_flashinfer_available() is False on HCU; use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/mla/test_flashinfer.py::TestFlashInferMLAAttentionBackendCorrectness::test_tiny_deepseek_mla_attention_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/mla/test_flashinfer.py', 109, 'Skipped: flashinfer backend is not available: flashinfer attention kernels are CUDA-only and is_flashinfer_available() is False on HCU; use the fa3/triton/dsa backends')"
+    },
+    "test/registered/attention/unittests/mla/test_flashmla.py::TestFlashMLAAttentionBackendCorrectness::test_runner_mode_split_op_extend_cases": {
+      "classification": "platform-skip",
+      "platform_guard": "pytest-subtest-skip",
+      "skip_reason": "('test/registered/attention/unittests/mla/test_flashmla.py', 283, \"Skipped: hcu-adapter flashinfer: wrapper method 'plan' reached — this attention path needs flashinfer, which is unavailable on HCU. Pair the flashmla decode backend with --prefill-attention-backend triton.\")"
+    },
+    "test/registered/attention/unittests/mla/test_flashmla.py::TestFlashMLAAttentionBackendCorrectness::test_tiny_deepseek_mla_attention_cases": {
+      "classification": "candidate-observe",
+      "subtest_observation": {
+        "passed": 2,
+        "skip_reasons": [
+          "('test/registered/attention/unittests/mla/test_flashmla.py', 213, \"Skipped: hcu-adapter flashinfer: wrapper method 'plan' reached — this attention path needs flashinfer, which is unavailable on HCU. Pair the flashmla decode backend with --prefill-attention-backend triton.\")"
+        ],
+        "skipped": 6
+      }
     },
     "test/registered/attention/unittests/mla/test_tokenspeed_mla.py::TestTokenspeedMLAAttentionBackendCorrectness::test_projected_mla_attention_cases": {
       "classification": "platform-skip",

@@ -73,6 +73,28 @@ def _git(tree, *args):
     ])
 
 
+def test_per_token_fp8_conversion_is_staged_for_both_kernel_paths(tmp_path):
+    from hcu_adapter import jit_quant_fp8
+
+    root = tmp_path / "community" / "jit"
+    root.mkdir(parents=True)
+    _synthetic(root)
+    path = root / "csrc/gemm/per_token_quant_fp8.cuh"
+    # CTA and warp implementations have the same output store expression.
+    path.write_text(jit_quant_fp8._NEEDLE_TOKEN_INCLUDE + "\n" +
+                    (jit_quant_fp8._NEEDLE_TOKEN_CVT + "\n" +
+                     "scale = maximum" + jit_quant_fp8._NEEDLE_TOKEN_SCALE + ";\n") * 2)
+    before = _snapshot(root)
+    bundle, _ = bridge.prepare(root, tmp_path / "cache")
+    transformed = (bundle / "csrc/gemm/per_token_quant_fp8.cuh").read_text()
+    assert transformed.count(jit_quant_fp8._REPL_TOKEN_CVT) == 2
+    assert transformed.count(jit_quant_fp8._REPL_TOKEN_SCALE) == 2
+    assert jit_quant_fp8._NEEDLE_TOKEN_CVT not in transformed
+    assert transformed.count("#include <hip/hip_fp8.h>") == 1
+    assert transformed.index("<hip/hip_runtime.h>") < transformed.index("<hip/hip_fp8.h>")
+    assert _snapshot(root) == before
+
+
 @pytest.fixture(params=["offline", "community-git"])
 def source(tmp_path, request):
     root = tmp_path / "community" / "jit"

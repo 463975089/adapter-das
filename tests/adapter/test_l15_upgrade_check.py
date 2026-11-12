@@ -95,3 +95,30 @@ def test_reviewed_drift_must_match_exact_changes(monkeypatch, args, candidate, a
     else:
         with pytest.raises(ValueError, match="does not match"):
             upgrade.run(args)
+
+
+@pytest.mark.parametrize("model_commit,expected", [("new", True), ("old", False)])
+def test_upgrade_invokes_l16_after_components_and_binds_candidate(monkeypatch, args,
+                                                                model_commit, expected):
+    setup(monkeypatch)
+    calls = []
+
+    def job(argv, **kwargs):
+        calls.append(argv)
+        report = Path(argv[argv.index("--out") + 1])
+        is_model = "tools.l16_model_readiness" in argv
+        if is_model:
+            assert len(calls) == 2
+            assert argv[argv.index("tools.l16_model_readiness") + 1] == "run"
+            assert "--checkpoint" in argv
+        report.write_text(json.dumps({
+            "artifact": "l16-model-readiness" if is_model else "l15-family-matrix-run",
+            "passed": True,
+            "runtime": {"upstream": {"commit": model_commit if is_model else "new"}},
+        }))
+        return {"returncode": 0, "timed_out": False}
+
+    from pathlib import Path
+    monkeypatch.setattr(upgrade, "run_job", job)
+    assert upgrade.run(args) is expected
+    assert json.loads(args.out.read_text())["ready"] is expected

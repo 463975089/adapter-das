@@ -14,6 +14,7 @@ Two wheels, independent version lines, one interlock:
 """
 
 import os
+from email.parser import Parser
 from pathlib import Path
 import re
 import shutil
@@ -22,6 +23,8 @@ import sys
 import zipfile
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 try:
     import tomllib
@@ -45,11 +48,14 @@ def _adapter_version():
         encoding="utf-8").strip()
 
 
-def _build_wheel(source_dir, tmp_path, tag):
+def _build_wheel(source_dir, tmp_path, tag, *, stamp=None):
     wheel_dir = tmp_path / ("wheel-" + tag)
     wheel_dir.mkdir()
     env = os.environ.copy()
     env["HCU_ADAPTER_HOST"] = "none"
+    env.pop("DAS_BUILD_STAMP", None)
+    if stamp is not None:
+        env["DAS_BUILD_STAMP"] = stamp
     subprocess.run(
         [
             sys.executable,
@@ -142,8 +148,8 @@ def test_adapter_wheel_carries_bootstrap_bridges_and_entry_points(adapter_wheel)
     dist_info = f"hcu_adapter-{version}.dist-info"
     assert f"{dist_info}/METADATA" in members
     metadata = archive.read(f"{dist_info}/METADATA").decode()
-    assert f"Requires-Dist: sgl-kernel=={_kernel_version()}" in metadata, \
-        "adapter must interlock the kernel dist with an exact pin"
+    assert f"Requires-Dist: sgl-kernel=={Version(_kernel_version()).public}" in metadata, \
+        "unstamped adapter must pin the kernel's public version"
     assert "sgl-kernel~=" not in metadata
 
     entry_points = archive.read(f"{dist_info}/entry_points.txt").decode()
@@ -172,11 +178,38 @@ def test_vllm_entry_points_declared_only_in_adapter_dist():
     assert "entry-points" not in kernel_project
 
 
-def test_interlock_pin_matches_single_version_source():
-    version = _kernel_version()
+def test_interlock_pin_matches_single_version_source(adapter_wheel):
     project = tomllib.loads(ADAPTER_PYPROJECT.read_text(encoding="utf-8"))["project"]
-    assert project["dependencies"] == [f"sgl-kernel=={version}"], \
-        "hcu-adapter dependency must be an exact == pin on the single source"
+    assert "dependencies" in project["dynamic"] and "dependencies" not in project
+    with zipfile.ZipFile(adapter_wheel) as archive:
+        name = next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))
+        metadata = Parser().parsestr(archive.read(name).decode())
+    base = {str(r) for line in metadata.get_all("Requires-Dist", [])
+            if (r := Requirement(line)).marker is None}
+    assert base == {f"sgl-kernel=={Version(_kernel_version()).public}",
+                    "packaging>=23", "torch==2.13.0", "triton==3.7.0"}
+
+
+def test_stamped_wheel_pair_pins_exact_matching_build(tmp_path):
+    source = _copy_repo(tmp_path)
+    stamp = "20261111.g123abc"
+    kernel = _build_wheel(source, tmp_path, "stamped-kernel", stamp=stamp)
+    adapter = _build_wheel(source / "packaging/hcu-adapter", tmp_path,
+                           "stamped-adapter", stamp=stamp)
+    messages = []
+    for wheel in (kernel, adapter):
+        with zipfile.ZipFile(wheel) as archive:
+            name = next(n for n in archive.namelist() if n.endswith(".dist-info/METADATA"))
+            messages.append(Parser().parsestr(archive.read(name).decode()))
+    expected_kernel = f"{Version(_kernel_version()).public}+hcu.{stamp}"
+    expected_adapter = f"{Version(_adapter_version()).public}+hcu.{stamp}"
+    assert messages[0]["Version"] == expected_kernel
+    assert messages[1]["Version"] == expected_adapter
+    pin = next(Requirement(r) for r in messages[1].get_all("Requires-Dist", [])
+               if Requirement(r).name == "sgl-kernel")
+    assert str(pin.specifier) == f"=={expected_kernel}"
+    assert pin.specifier.contains(expected_kernel)
+    assert not pin.specifier.contains(f"{Version(_kernel_version()).public}+hcu.other")
 
 
 def test_adapter_version_file_is_the_adapter_single_source(adapter_wheel):

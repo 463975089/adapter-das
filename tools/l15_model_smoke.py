@@ -17,6 +17,10 @@ from tools.checkpoint_files import audit as audit_checkpoint, fingerprint
 from tools.checkpoint_model import text_configuration, vocabulary_size
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_BINDING_MANIFEST = REPO_ROOT / "tests/manifests/l15_v0522.json"
+
+
 def tiny_config(family):
     config = dict(
         vocab_size=256, hidden_size=128, intermediate_size=256,
@@ -81,6 +85,44 @@ def validate_generation(document, vocab_size, expected_count=8):
             for entry, token in zip(probabilities, ids)
         ):
             raise ValueError("generation has missing/non-finite token logprobs")
+
+
+def probe_cache_reuse(engine, request, vocab_size):
+    """Request only output logprobs so prompt logprobs do not force recompute."""
+    import copy
+
+    request = copy.deepcopy(request)
+    request["logprob_start_len"] = -1
+    warm = engine.generate(**request)
+    replay = engine.generate(**request)
+    validate_generation(warm, vocab_size)
+    validate_generation(replay, vocab_size)
+    counts = [item.get("meta_info", {}).get("cached_tokens") for item in replay]
+    if any(type(count) is not int or count <= 0 for count in counts):
+        raise ValueError("cache probe did not observe cached tokens for every replay request")
+    if any(a["output_ids"] != b["output_ids"] for a, b in zip(warm, replay)):
+        raise ValueError("cache replay changed greedy tokens")
+    return {"passed": True, "cached_tokens": counts, "cache_hit_proven": True}
+
+
+def validate_request_replay(generations):
+    """Require deterministic greedy tokens after an intervening request batch.
+
+    Logprob differences are recorded, not used as a substitute for independent
+    model accuracy. Scheduler/cache-dependent arithmetic may change rounding.
+    """
+    if len(generations) != 3:
+        raise ValueError("request replay requires original, changed, replay batches")
+    maximum = 0.0
+    for original, replay in zip(generations[0], generations[2]):
+        if original["output_ids"] != replay["output_ids"]:
+            raise ValueError("replayed request tokens changed after intervening inputs")
+        before = original["meta_info"]["output_token_logprobs"]
+        after = replay["meta_info"]["output_token_logprobs"]
+        maximum = max(maximum, *(abs(a[0] - b[0]) for a, b in zip(before, after)))
+    return {"passed": True, "greedy_tokens_equal": True,
+            "max_logprob_difference": maximum,
+            "cache_hit_proven": False}
 
 
 def validate_mode(info, mode):
@@ -202,9 +244,10 @@ def worker(args):
                     f"(sources={sorted(sources)})"
                 )
         generations = []
-        # Two batches test fresh inputs and cache reuse through the real
-        # tokenizer/scheduler/prefill/decode path, rather than a model mock.
-        for wave in range(3 if accuracy_cases is not None else 2):
+        # Original -> changed -> original tests request isolation. Actual cache
+        # hits need separate runtime counters and are not inferred from equality.
+        for wave in range(3):
+            input_wave = 0 if wave == 2 else wave
             generation_args = dict(
                 sampling_params=dict(temperature=0, max_new_tokens=8, ignore_eos=True),
                 return_logprob=True, logprob_start_len=0,
@@ -215,16 +258,23 @@ def worker(args):
                 generation_args["top_logprobs_num"] = 20
             elif args.family == "checkpoint":
                 generation_args["prompt"] = (
-                    ["The capital of France is", "2 + 2 ="] if wave == 0 else
+                    ["The capital of France is", "2 + 2 ="] if input_wave == 0 else
                     ["The capital of China is", "3 + 3 ="]
                 )
             else:
                 generation_args["input_ids"] = [
-                    [1, 7 + wave, 12, 9], [1, 18, 17 + wave, 6, 5],
+                    [1, 7 + input_wave, 12, 9], [1, 18, 17 + input_wave, 6, 5],
                 ]
             result = engine.generate(**generation_args)
             validate_generation(result, vocab_size)
             generations.append(result)
+        replay = validate_request_replay(generations) if accuracy_cases is None else None
+        cache_probe = {"applicable": False, "reason": "recurrent cache or accuracy profile"}
+        cache_family = args.family in ("dense", "moe", "mla") or (
+            args.family == "checkpoint" and text_configuration(config).get("model_type") in
+            ("qwen3", "qwen2", "llama", "deepseek_v2", "deepseek_v3"))
+        if accuracy_cases is None and cache_family:
+            cache_probe = probe_cache_reuse(engine, generation_args, vocab_size)
         info = engine.get_server_info()
         validate_mode(info, args.mode)
         validate_lm_head_option(info, fp32_head)
@@ -248,7 +298,8 @@ def worker(args):
         "mem_fraction_static": mem_fraction,
         "model_type": config.get("model_type"),
         "text_model_type": text_configuration(config).get("model_type"),
-        "generations": generations, "server_info": info,
+        "generations": generations, "request_replay": replay,
+        "cache_probe": cache_probe, "server_info": info,
     })
 
 
@@ -369,7 +420,7 @@ def run(args):
     return all(job["passed"] for job in jobs)
 
 
-def main():
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--up-tree", type=Path)
     parser.add_argument("--families", default="dense,moe,mla,mamba,hybrid,checkpoint")
@@ -387,7 +438,7 @@ def main():
                         help="use the official FP32 output-layer option for precision attribution")
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--binding-manifest", type=Path,
-                        default=Path("tests/manifests/l15_v0522.json"))
+                        default=DEFAULT_BINDING_MANIFEST)
     parser.add_argument("--host", choices=("adapter", "adapter+plugin"),
                         default="adapter",
                         help="load only the adapter, or also the installed "
@@ -399,6 +450,11 @@ def main():
     parser.add_argument("--family", help=argparse.SUPPRESS)
     parser.add_argument("--mode", choices=("eager", "graph"), help=argparse.SUPPRESS)
     parser.add_argument("--checkpoint-manifest", type=Path, help=argparse.SUPPRESS)
+    return parser
+
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
     if args.worker:
         worker(args)

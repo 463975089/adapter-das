@@ -1,0 +1,84 @@
+name: Adapter HCU validation
+
+# The runner must run inside a prepared HCU test environment. Repository or
+# environment variables provide a reserved device set and pristine source tree;
+# no machine addresses or deployment paths belong in this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        type: choice
+        required: true
+        options: [components, readiness, upgrade]
+      baseline_ref:
+        description: SGLang baseline revision for upgrade only
+        type: string
+      candidate_ref:
+        description: SGLang revision already checked out in the pristine tree
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adapter-hcu-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  hcu:
+    runs-on: [self-hosted, linux, hcu-adapter]
+    environment: hcu-validation
+    timeout-minutes: 120
+    env:
+      HCU_ADAPTER_HOST: none
+      HCU_TREE: ${{ vars.HCU_UPSTREAM_TREE }}
+      HCU_MODEL: ${{ vars.HCU_CHECKPOINT }}
+      HCU_GPU_IDS: ${{ vars.HCU_GPU_IDS }}
+      SUITE: ${{ inputs.suite }}
+      BASELINE_REF: ${{ inputs.baseline_ref }}
+      CANDIDATE_REF: ${{ inputs.candidate_ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set result directory
+        shell: bash
+        run: echo "OUTPUT_DIR=${RUNNER_TEMP}/adapter-hcu-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+      - name: Check reservation and run selected suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HCU_TREE" && test -d "$HCU_TREE"
+          test -n "$HCU_GPU_IDS"
+          # A runner reservation is a prerequisite; a utilization snapshot alone
+          # is not a lease. Never select a different device on failure.
+          python3 -m tools.hcu_ci_preflight --devices "$HCU_GPU_IDS"
+          export HIP_VISIBLE_DEVICES="$HCU_GPU_IDS" CUDA_VISIBLE_DEVICES="$HCU_GPU_IDS"
+          mkdir -p "$OUTPUT_DIR"
+          case "$SUITE" in
+            components)
+              [[ "$HCU_GPU_IDS" != *,* ]]
+              python3 -m tools.l15_ci_plan --families dense,mla,moe,quantization,mamba --out-dir "$OUTPUT_DIR/ownership"
+              python3 -m tools.l15_manifest run --up-tree "$HCU_TREE" --manifest "$OUTPUT_DIR/ownership/manifest.json" --classifications core-green,contract-green --out-dir "$OUTPUT_DIR/upstream-exact"
+              if [ -s "$OUTPUT_DIR/ownership/observe-nodeids.txt" ]; then
+                python3 -m tools.l15_manifest run --up-tree "$HCU_TREE" --manifest "$OUTPUT_DIR/ownership/observation-manifest.json" --classifications candidate-observe --out-dir "$OUTPUT_DIR/upstream-observation" || echo "Mixed subtest observation WARN; not core coverage"
+              fi
+              python3 -m tools.l15_family_matrix run --up-tree "$HCU_TREE" --out "$OUTPUT_DIR/components.json"
+              ;;
+            readiness)
+              test -n "$HCU_MODEL"
+              device_count="$(awk -F, '{print NF}' <<< "$HCU_GPU_IDS")"
+              python3 -m tools.l16_model_readiness run --up-tree "$HCU_TREE" --checkpoint "$HCU_MODEL" --device-count "$device_count" --out "$OUTPUT_DIR/readiness.json"
+              ;;
+            upgrade)
+              [[ "$HCU_GPU_IDS" != *,* ]]
+              test -n "$HCU_MODEL" && test -n "$BASELINE_REF" && test -n "$CANDIDATE_REF"
+              python3 -m tools.l15_upgrade_check --up-tree "$HCU_TREE" --checkpoint "$HCU_MODEL" --baseline-ref "$BASELINE_REF" --candidate-ref "$CANDIDATE_REF" --out "$OUTPUT_DIR/upgrade.json" --timeout 5400
+              ;;
+            *) exit 2 ;;
+          esac
+      - name: Upload reports and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adapter-hcu-${{ inputs.suite }}
+          path: ${{ env.OUTPUT_DIR }}
+          if-no-files-found: ignore

@@ -347,12 +347,21 @@ def test_quantized_linear_chain(runtime, monkeypatch, kind, tokens):
 
     def reference():
         maximum = 127 if kind == "int8" else torch.finfo(dtype).max
-        activation_scale = x.float().abs().amax(-1, keepdim=True).clamp_min(1e-10) / maximum
-        values = x.float() / activation_scale
+        # The CT native JIT route stores scale = FP32(amax / 448), then
+        # quantizes with its
+        # FP32 reciprocal. Compute these boundaries independently on CPU:
+        # device tensor division may multiply by a rounded reciprocal of
+        # 448 instead, changing a scale by one ULP and flipping FP8 ties.
+        # The ordinary FP8 route uses the separate tensor/aiter contract.
+        source = x.detach().cpu().float() if kind == "ct-fp8" else x.float()
+        activation_scale = source.abs().amax(-1, keepdim=True).clamp_min(1e-10) / maximum
+        values = (source * activation_scale.reciprocal() if kind == "ct-fp8"
+                  else source / activation_scale)
         if kind == "int8":
             # libdevice.round uses half-away-from-zero (not torch's ties-even).
             values = values.sign() * torch.floor(values.abs() + 0.5)
-        q = values.to(dtype).float()
+        q = values.to(dtype).float().to(x.device)
+        activation_scale = activation_scale.to(x.device)
         result = (q @ weight.float().t()) * activation_scale * scale.view(1, -1)
         if kind == "ct-fp8":
             return (result + bias.float()).to(x.dtype)

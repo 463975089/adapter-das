@@ -1,0 +1,121 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+
+name: Nightly Image
+
+# 每天北京时间 00:00（UTC 16:00）构建 sglang / vLLM 两张运行镜像并推送到内网
+# 仓库。镜像里的 adapter 取 nightly 归档最新版；需要复现时用 workflow_dispatch
+# 手动触发并指定 ref。
+#
+# 依赖自托管 runner 的 docker 与内网可达性（内网 registry / pip 归档 /
+# 资源服务器），因此固定跑在 hygon-image-build 上。
+
+on:
+  schedule:
+    # GitHub Actions cron 用 UTC：16:00 UTC = 次日 00:00 北京时间
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: '要构建的 Git ref/branch/tag/SHA，默认当前分支 HEAD'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # 夜间镜像构建耗时长，不取消正在进行的推送
+  group: nightly-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-image:
+    name: build-${{ matrix.image }}
+    runs-on: hygon-image-build
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      # 单 runner 顺序构建，避免两张镜像同时抢占磁盘/网络
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - image: sglang
+            version: '0.5.22'
+            dockerfile: docker/Dockerfile.sglang
+          - image: vllm
+            version: '0.33.0'
+            dockerfile: docker/Dockerfile.vllm
+
+    env:
+      REGISTRY: ${{ vars.HARBOR_SITE }}
+      IMAGE_NAMESPACE: hcu/base_env
+      BASE_IMAGE_TAG: 26.10-ubuntu22.04-py3.12
+      PYPI_URL: ${{ vars.PYPI_URL }}
+      RESOURCE_SERVER_URL: ${{ vars.RESOURCE_SERVER_URL }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Login registry
+        run: |
+          echo "${{ secrets.HARBOR_PASSWORD }}" | docker login "${REGISTRY}" \
+            --username "${{ secrets.HARBOR_USERNAME }}" \
+            --password-stdin
+
+      - name: Build and push
+        run: |
+          # tag 段从 BASE_IMAGE_TAG 推导，避免与基础镜像版本重复维护
+          DTK_TAG="${BASE_IMAGE_TAG%%-*}"            # 26.10
+          DTK_VER="${DTK_TAG//./}"                   # 2610
+          OS_TAG="${BASE_IMAGE_TAG#*-}"; OS_TAG="${OS_TAG%%-*}"  # ubuntu22.04
+          PY_VER="${BASE_IMAGE_TAG##*-py}"           # 3.12
+          STAMP="$(TZ=Asia/Shanghai date +%Y%m%d-%H%M)"
+          TAG="${REGISTRY}/${IMAGE_NAMESPACE}/${{ matrix.image }}:${{ matrix.version }}-${OS_TAG}-dtk${DTK_VER}-py${PY_VER}-${STAMP}"
+          LATEST_TAG="${REGISTRY}/${IMAGE_NAMESPACE}/${{ matrix.image }}:${{ matrix.version }}-latest"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "LATEST_TAG=${LATEST_TAG}" >> "$GITHUB_ENV"
+          echo "DTK_VER=${DTK_VER}" >> "$GITHUB_ENV"
+          docker build --pull \
+            -f "${{ matrix.dockerfile }}" \
+            --build-arg "BASE_IMAGE=${REGISTRY}/hcu/base/dtk:${BASE_IMAGE_TAG}" \
+            --build-arg "PYPI_URL=${PYPI_URL}" \
+            --build-arg "RESOURCE_SERVER_URL=${RESOURCE_SERVER_URL}" \
+            -t "${TAG}" \
+            -t "${LATEST_TAG}" \
+            .
+          docker push "${TAG}"
+          docker push "${LATEST_TAG}"
+          echo "pushed \`${TAG}\` and \`${LATEST_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # 登记镜像记录（DashHub，口径同 vllm-plugin-das 的 release-docker-image）：
+      # 用产物镜像本身起临时容器（与构建同 runner，主机亲和），补装 cinotificate
+      # 后执行 --record_image。失败仅告警不阻断，可稍后手动重试。
+      - name: Record image
+        continue-on-error: true
+        timeout-minutes: 10
+        run: |
+          PYPI_HOST="${PYPI_URL#*://}"; PYPI_HOST="${PYPI_HOST%%/*}"; PYPI_HOST="${PYPI_HOST%%:*}"
+          docker run --rm --network=host \
+            -e "IMAGE_TAG=${TAG}" \
+            -e "HCU_ADAPTER_HOST=none" \
+            --entrypoint /bin/bash "${TAG}" -c "
+              set -e
+              pip install cinotificate \
+                -i '${PYPI_URL}/nightly/dtk${DTK_VER}/+simple/' \
+                --trusted-host '${PYPI_HOST}'
+              CInotificate --record_image
+            "
+
+      - name: Cleanup local image
+        if: always()
+        run: |
+          docker ps --filter "ancestor=${TAG}" -q | xargs -r docker rm -f || true
+          docker image rm -f "${TAG}" || true
+          docker image rm -f "${LATEST_TAG}" || true

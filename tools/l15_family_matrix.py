@@ -72,6 +72,7 @@ def validate(document: Mapping[str, Any]) -> list[str]:
         if len(families) != len(FAMILIES) or {f["id"] for f in families} != FAMILIES:
             raise MatrixError("families must contain exactly dense, mla, moe, quantization, mamba")
         case_ids: set[str] = set()
+        selections: list[tuple[str, str]] = []
         for fi, family in enumerate(families):
             where = f"families[{fi}]"
             cases = family.get("cases")
@@ -102,6 +103,14 @@ def validate(document: Mapping[str, Any]) -> list[str]:
                         raise MatrixError(f"{cwhere}.nodeid: exact nodeid required")
                 else:
                     _safe_path(case.get("path", ""), "tests/", f"{cwhere}.path")
+                if kind in {"upstream-pytest", "adapter-pytest"}:
+                    for previous_kind, previous in selections:
+                        if previous_kind == kind and (
+                            nodeid == previous or nodeid.startswith(previous + "[")
+                            or previous.startswith(nodeid + "[")
+                        ):
+                            raise MatrixError(f"{cwhere}.nodeid: overlapping selection {nodeid!r}")
+                    selections.append((kind, nodeid))
     except MatrixError as exc:
         errors.append(str(exc))
     return errors

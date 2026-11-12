@@ -50,7 +50,8 @@ report.json + report.md
 | **L0** | 结构和治理是否合法 | 语法、catalog/registry/docs、孤儿/重复/过期资产 | CPU、零外部依赖 | 每次提交；HARD 规则任一红即阻塞 |
 | **L1** | adapter 自有实现是否正确 | kernel、bridge、bootstrap、配置、打包、graph safety | 1 卡，MR 级 | 独立参照 + shape/dtype 矩阵 + replay |
 | **L1.5** | 接入社区 sglang 后真实调用面是否兼容 | 上游官方 pytest，固定 nodeid manifest | 1 卡，MR/追新 | `core-green` 硬门；其余三态分账 |
-| **L2-F** | 模型和特性组合能否工作 | launch/生成/锚点/长文/Graph/TP·EP·PD 等 | 1–8 卡 | 扩展验证/发版；功能矩阵判定 |
+| **L1.6** | 指定真实 checkpoint 或 dummy 架构能否完成启动就绪闭环 | Engine load、eager/graph generation、TP/显存配置、源码/权重完整性 | 1–4 卡 | L1.5 后受控执行；启动和完整性为硬门 |
+| **L2-F** | 模型和特性组合能否工作 | launch/生成/锚点/长文/Graph/TP·EP·PD 等 | 1–8 卡 | L1.6 后扩展验证/发版；功能矩阵判定 |
 | **L2-P** | 热点路径是否变快或回退 | op microbench + serving A/B | 1–8 卡 | 扩展验证/档位晋级；同窗阈值 |
 | **L3** | 长期稳定性和复杂拓扑是否健康 | 压测、多机、RDMA、故障恢复 | 按场景 | 专项触发，不挂普通 MR |
 
@@ -228,6 +229,11 @@ adapter commit、sglang commit、arch、DTK/Torch/Triton 和测试 nodeid。报�
 
 L1.5 只收单卡、无 server、无外部资产的官方单测；完整模型、HTTP、多卡、RDMA、
 外部存储和数据集归 L2-F/L3，不得为了扩大 L1.5 数字混入。
+
+L1.6 是 L1.5 与 L2-F 之间的启动就绪桥接层。它可以使用 dummy 架构或指定的真实
+checkpoint，但每个 case 必须绑定实际 Engine 配置、设备数量、eager/graph 模式、
+生成结果、源码完整性和（真实 checkpoint 时）权重文件完整性。L1.6 通过不能替代
+独立模型精度、长上下文、并发、性能或多机验收。
 
 ## 4. 运行态路由账：安装了谁 ≠ 实际调用了谁
 

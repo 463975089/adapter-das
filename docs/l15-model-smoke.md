@@ -1,4 +1,14 @@
-# 真实模型 TP 与显存配置验收
+# L1.6 模型启动就绪：真实模型 TP 与显存配置验收
+
+L1.6 的 manifest 和统一入口见：
+
+- `tests/manifests/l16_model_readiness_v1.json`
+- `ci/l16_model_readiness_gate.sh`
+- `python -m tools.l16_model_readiness validate`
+
+L1.6 位于 L1.5 组件门和 L2-F 完整模型功能验证之间。它只回答指定模型能否按
+绑定的 SGLang 源码和 adapter 配置启动，并完成 eager/graph 基础生成；完整精度、
+性能、并发和多机功能仍由 L2-F/L2-P/L3 负责。
 
 `tools.l15_model_smoke` 使用社区 Engine 执行真实 checkpoint 或显式
 dummy 模型；二者的权重证据分开记录。默认 `--tp-size 1`，
@@ -118,3 +128,40 @@ CPU FP32 精度参考，也不证明更大模型、其他预算或 TP 配置通�
 原始报告、日志和四个受测 Python 文件保存在仓库外
 `external-evidence:memory274-275`，归档 SHA256：
 `7726829e50491e37075109fee8a47818baeab73140cb0618ff3b5c039487bc27`。
+
+
+## L1.6 控制器失败合同
+
+L1.6 每次启动子任务前删除旧报告，逐项核对报告类型、家族、eager/graph
+模式、dtype、TP、显存预算、host 及 pristine 社区 commit。每个模式必须有
+成功的 worker、源码完整性和真实/dummy 权重身份；真实 checkpoint 还要求
+权重绑定和运行后审计证据。源码发生变化时停止后续任务。
+
+所有选中 case 的 checkpoint 参数在第一个模型任务前检查。子任务复用
+`tools.l15_runtime.run_job` 的独立 Linux 进程组和超时清理；失败与超时保留
+本次已完成的 case 报告及日志。Windows CPU 回归只验证控制器合同，Linux
+进程组清理需在远端执行生命周期回归。
+
+
+## 基础请求重放
+
+`smoke` profile 按原请求、变输入、原请求重放执行三个批次，要求重放的 greedy
+输出 token 相同，并报告所选 logprob 的最大差。概率差用于诊断，不代替独立精度
+参考；原 accuracy profile 的请求和精度阈值保持不变。报告中的
+`request_replay.cache_hit_proven=false` 明确表示请求重放本身不能证明实际缓存命中。
+后续需要独立缓存计数或受控 cache-on/off 证据。
+
+`tools.l15_upgrade_check` 在严格组件矩阵之后调用 L1.6 runner，要求汇总报告绑定
+本次审查的 SGLang candidate commit；缺失或其他 commit 的报告均不能使升级就绪。
+
+
+### 实际缓存命中探针
+
+初次 Dense 实测中，三批带 `logprob_start_len=0` 的请求均报告 `cached_tokens=0`。
+因此新增独立探针：保留原请求，改为仅取输出 logprob（`logprob_start_len=-1`），
+连续预热和重放。Dense/MoE/MLA dummy，以及已登记的 Qwen2/Qwen3/Llama/
+DeepSeek V2/V3 checkpoint smoke 要求两个重放请求各自的 `cached_tokens` 为正整数，
+并且 greedy token 相同；结果写入 `cache_probe`。recurrent 模型及 accuracy profile
+暂不启用该探针，单列适用范围，不能记作缓存命中通过。
+
+新增探针尚需独立 HCU 实测，不能由此前 `d744a43` 的启动/重放结果转授。
