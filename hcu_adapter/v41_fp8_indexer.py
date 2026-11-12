@@ -314,12 +314,33 @@ def build():
                 (ends - starts <= k)[:, None], ordered, selected)
             return output
 
+        def _unwrap_helper(helper):
+            """Follow decorator/partial wrappers down to the underlying function.
+
+            The CPU guard must not depend on bare object identity: a patched
+            seam may be a wrapper, a decorator, a proxy or a `functools.partial`
+            around the upstream kernel, and identity would then miss it and let
+            the bare `assert logits.is_cuda` fire. Unwrapping covers those.
+            """
+            import functools
+            seen = set()
+            while id(helper) not in seen:
+                seen.add(id(helper))
+                if isinstance(helper, functools.partial):
+                    helper = helper.func
+                    continue
+                inner = getattr(helper, '__wrapped__', None)
+                if inner is None:
+                    break
+                helper = inner
+            return helper
+
         def _select(logits, starts, ends, out, candidates, block_size, write):
             if candidates is not None:
                 helper = _collaborator(
                     "candidate_select" if write else "candidate_mask")
-                if not logits.is_cuda and helper in (select_candidate_blocks,
-                                                     apply_candidate_mask):
+                upstream = (select_candidate_blocks, apply_candidate_mask)
+                if not logits.is_cuda and _unwrap_helper(helper) in upstream:
                     # Both upstream candidate helpers open with
                     # `assert logits.is_cuda`. A CPU replay that substitutes
                     # them never exercised this path, so a green replay is not
@@ -328,11 +349,19 @@ def build():
                     raise V41IndexerError(
                         "V41 candidate-block selection needs CUDA; the reference "
                         "indexer's CPU candidate path is not implemented")
-                if write:
-                    helper(logits, starts, ends, candidates.shape[1], block_size,
-                           candidates)
-                else:
-                    helper(logits, starts, ends, candidates, block_size)
+                try:
+                    if write:
+                        helper(logits, starts, ends, candidates.shape[1],
+                               block_size, candidates)
+                    else:
+                        helper(logits, starts, ends, candidates, block_size)
+                except AssertionError as error:
+                    # Backstop for a CUDA-only helper we could not identify by
+                    # unwrapping. Keep the original text so a genuine assertion
+                    # inside a CPU substitute is still diagnosable.
+                    raise V41IndexerError(
+                        "V41 candidate-block selection failed on a non-CUDA "
+                        f"tensor; the helper is likely CUDA-only ({error})") from error
             out.copy_(local_topk(logits, starts, ends, out.shape[1]))
 
         @eager_break_during_capture

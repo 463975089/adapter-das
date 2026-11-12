@@ -263,13 +263,30 @@ def activate_extension(context: ExtensionContext) -> None:
                     )
                 except ExtensionCommitError as refusal:
                     raise refusal from error
-            _publication = (quant, config_class, register, resolve, draft_state)
-            registry.register(
-                op=OP, impl="native", target=TARGET,
-                mechanism=registry.MECH_SEAM, source=__name__,
-                detail="V4.1 channel-FP8 config registered through the public "
-                       "quantization API without replacing FP8/CT owners",
-            )
+            # `_publication` and the registry record are one step, not two.
+            # `registry.register()` raises a plain ValueError for an unknown op,
+            # an illegal mechanism or a duplicate target, and the extension
+            # framework treats a non-fatal error as recoverable: it records the
+            # failure and keeps booting. Publishing first and registering second
+            # therefore left a window where `_publication` was set, `_failure`
+            # was unset and `check_health()` -- which never inspects the registry
+            # -- would call the result healthy.
+            try:
+                registry.register(
+                    op=OP, impl="native", target=TARGET,
+                    mechanism=registry.MECH_SEAM, source=__name__,
+                    detail="V4.1 channel-FP8 config registered through the public "
+                           "quantization API without replacing FP8/CT owners",
+                )
+                _publication = (quant, config_class, register, resolve, draft_state)
+            except BaseException as error:
+                try:
+                    _fatal(
+                        "DSV4.1 registry publication failed after public "
+                        "registration; use a fresh process"
+                    )
+                except ExtensionCommitError as refusal:
+                    raise refusal from error
         finally:
             _publishing = False
 
