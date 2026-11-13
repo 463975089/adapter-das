@@ -210,7 +210,9 @@ def activate_extension(context: ExtensionContext) -> None:
             return
         _require_release(context.vllm_version)
         if selected_mode() == "stock":
-            return
+            raise Dsv41ActivationError(
+                "DSV4.1 routing is disabled by stock policy or kill switch"
+            )
         if _provider_binder is not None:
             _provider_binder()
         _publishing = True

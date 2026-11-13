@@ -143,10 +143,11 @@ def test_healthy_activation_registers_once_and_publishes(isolated, monkeypatch):
     assert isolated.registry.get_quantization_config(METHOD) is isolated.config_class
 
 
-def test_stock_mode_returns_without_registering(isolated, monkeypatch):
+def test_stock_mode_refuses_without_registering(isolated, monkeypatch):
     monkeypatch.setenv(activation.MODE_VARIABLE, "stock")
     _bind_guards(monkeypatch)
-    activation.activate_extension(CONTEXT)
+    with pytest.raises(activation.Dsv41ActivationError, match="disabled"):
+        activation.activate_extension(CONTEXT)
 
     assert isolated.registry.register_calls == 0
     assert activation._publication is None

@@ -165,7 +165,9 @@ def activate_extension(context):
         if mode == "stock":
             if published:
                 _fatal("CT W4A8 policy changed to stock after publication; start a fresh process")
-            return
+            raise RuntimeError(
+                "CT W4A8 registration is disabled by stock policy or kill switch"
+            )
         if _provider_binder is not None:
             _provider_binder()
         if published:

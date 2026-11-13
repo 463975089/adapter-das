@@ -88,6 +88,28 @@ def restore(owner, monkeypatch):
     monkeypatch.setenv(owner.module.MODE_VARIABLE, 'native')
 
 
+@pytest.mark.parametrize('source', ['stock', 'kill'])
+@pytest.mark.parametrize('required', ['optional', 'extension', 'capability'])
+def test_first_disabled_owner_never_reports_active(owner, monkeypatch, source, required):
+    disable(owner, monkeypatch, source)
+    if required == 'optional':
+        reports, _ = load(owner)
+    else:
+        with pytest.raises(RequiredExtensionError) as refusal:
+            load(owner, context(owner, required))
+        reports = refusal.value.reports
+    assert len(reports) == 1
+    assert reports[0].status is ExtensionStatus.FAILED
+    assert owner.calls == []
+    assert owner.module._publication is None
+    assert owner.module._failure is None
+    restore(owner, monkeypatch)
+    reports, lifecycle = load(owner, context(owner, required))
+    assert reports[0].status is ExtensionStatus.ACTIVE
+    lifecycle.require_extension_healthy(next(iter(owner.spec.capabilities)))
+    assert owner.calls == [owner.method]
+
+
 @pytest.mark.parametrize('source', ['invalid', 'stock', 'kill'])
 @pytest.mark.parametrize('entry', ['activate', 'health'])
 def test_published_policy_drift_is_fatal_even_after_restore(owner, monkeypatch, source, entry):
