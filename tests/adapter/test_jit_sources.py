@@ -44,6 +44,8 @@ def _synthetic(root):
         for needle, _ in module._PATCHES:
             add("csrc/" + module._RELPATH, needle)
     add("csrc/" + jit_concat_mla._RELPATH, jit_concat_mla._DLDEVICE_NEEDLE)
+    add("csrc/" + jit_concat_mla._RELPATH, jit_concat_mla._Q_KERNEL_NEEDLE)
+    add("csrc/" + jit_concat_mla._RELPATH, jit_concat_mla._Q_LAUNCH_NEEDLE)
     add("csrc/" + jit_ptgq._RELPATH, jit_ptgq._NEEDLE)
     for name, pairs in jit_dpskmeta._PATCHES.items():
         for needle, _ in pairs:
@@ -135,6 +137,11 @@ def test_complete_bundle_preserves_sources_and_all_transforms(source, tmp_path):
     warp = (bundle / "include/sgl_kernel/warp.cuh").read_text()
     assert "T _v;" in warp and "__hip_bfloat162 _v;" not in warp
     assert "__shfl_up_sync(active_mask" not in warp
+    from hcu_adapter import jit_concat_mla
+
+    concat = (bundle / "csrc" / jit_concat_mla._RELPATH).read_text()
+    assert jit_concat_mla._NATIVE_Q_KERNEL in concat
+    assert jit_concat_mla._NATIVE_Q_LAUNCH in concat
     assert (bundle / "cuda-headers/cuda_fp8.h").is_file()
     for primitive in ("load", "store", "scan"):
         body = (bundle / f"cuda-headers/cub/block/block_{primitive}.cuh").read_text()

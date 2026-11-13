@@ -431,7 +431,54 @@ gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非
 
 - CI keeper 状态记在 `~/hcu_ci/`（sha/status/rc）；清掉即全部重测。
 - L1 各段日志在容器 `/tmp/l1_<段名>.log`。
+- 每分钟 heartbeat 同步新增的完整日志行。`kernels` 使用逐用例名称输出，
+  单个用例执行超过 120 秒时由 pytest faulthandler 输出线程栈；该诊断
+  不改变用例、断言或分段超时预算，完整日志仍由 CI artifact 保存。
 - L1 测试本身不写远端——无令牌只影响回帖能力。
+
+### FP8 Linear graph 捕获超时（2026-11-12）
+
+gfx938、DTK 26.10、Torch 2.13.0 的 MR CI 在
+`test_quantized_linear_chain[1-fp8]` 停滞。现场栈指向
+`apply_fp8_linear → _apply_fallback_scaled_mm → torch._scaled_mm`，
+位于 `replay_three` 的 graph 捕获体内；eager 和预热已完成。
+隔离进程对照保持原输入、数学和断言，仅改变预热 stream：默认 stream
+预热后换 stream 捕获，hipBLASLt 报 error 900（`operation not permitted
+when stream is capturing`）并阻塞；在实际捕获 stream 预热后，原用例及
+三轮变输入 replay 通过。因此 helper 显式创建同一 stream 用于预热和
+捕获，并先等待输入所在 stream；不修改 FP8 量化或生产 GEMM 分发。
+对照日志见 [CI run 43194609535](https://github.com/HYGON-AI/adapter-das/actions/runs/43194609535/job/131103153076)。
+修正后的两次同 stream 预热在
+[CI run 43196120630](https://github.com/HYGON-AI/adapter-das/actions/runs/43196120630/job/131108225814)
+通过 INT8、FP8、CT-FP8 × 1/17/33 token 的全部 9 个 Linear 节点，
+每个节点保留三轮变输入 replay 和原精度断言；其余失败不计为已修复。
+同轮定向段在 122.17 秒完成，完整结果是 **9 passed / 4 failed**：
+三个 compression 节点均在检查社区原测试文件时失败，wheel 安装位置下
+缺少 `test/registered/attention/unittests/dsv4/test_dsv41_fused_compress.py`，
+尚未执行压缩算子；INT8 MoE `[33-2]` 则在变输入 replay 比较中出现
+1/4224 个元素超差，最大绝对差 0.0224609375（原 `atol=0.02`）。
+现场记录其分发进入 Aiter 的未调优 `solution_type=triton`，不能将该失败
+解释为原 Q 拼接内核错误，也不能通过放宽精度或跳过原测试消除。
+在同镜像的
+[CI run 43199988553](https://github.com/HYGON-AI/adapter-das/actions/runs/43199988553/job/131121528672)
+中，仅设已有 `HCU_FUSED_MOE_IMPL=triton` 关闭 Aiter 桥，原 INT8 MoE
+`[33-2]` 用例及三轮变输入 replay 在 39.63 秒通过。实际安装的
+`aiter/moe.py` SHA256 为
+`975eaecbdb6f9934695ad785bef97535e2e9b364c5f6d8e850a2f99f3715f147`；
+其 `get_aiter_moe_config` 在所有调优候选缺失后，对默认未调优 Triton
+配置仍返回 `True`，INT8 小形状和 GLM FP8 形状均现场复现。
+现有桥仅检查 status，因而接管了本应保留社区路径的调用；这同时解释
+`_test_aiter_moe_gate` 的 `B1-should-fallback` 失败。此轮仅定位该分发
+合同差异，未修改生产 MoE 算法、精度或全局配置，也未将 CI 记为全绿。
+
+随后修正 `hcu_adapter.aiter_moe` 的配置准入：同时检查 status 和
+`solution_type`，只接管已有的 `asm` / `moe_c` 路径；Triton（包括
+默认未调优配置）、未知实现或配置缺失均返回 `None`，由原 SGLang
+`fused_experts` 执行。显式 `HCU_FUSED_MOE_IMPL=aiter` 同样保留准入
+限制，原 ASM/moe_c 的权重布局、量化、scale、激活与归约参数透传不变。
+该修改不改算子数学或测试容差，复用现有 INT8 MoE 三个参数节点及
+`_test_aiter_moe_gate.py` 在 GitHub GPU CI 验证；压缩测试源码缺失
+属于独立问题。
 
 ## 测试怎么归层（给提 MR 的人）
 

@@ -181,6 +181,8 @@ TEXT_PATCH_ALLOWLIST = {
         "  return r;\n"
         "}",
     ),
+    ("platform_detect", "template <bool kUsePDL>\n__global__ void concat_mla_absorb_q_kernel("),
+    ("platform_detect", "    LaunchKernel(grid_size, block_size, device.unwrap())\n        .enable_pdl(kUsePDL)("),
     # deepseek_v4/paged_mqa_metadata.cuh includes NVIDIA cub for BlockScan;
     # DTK ships hipCUB only (namespace cub mirrors the API, umbrella header
     # per the tree's own lora JIT convention) — DSV4-Flash decode graph

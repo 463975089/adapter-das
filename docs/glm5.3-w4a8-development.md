@@ -279,3 +279,52 @@ CPU 标量仍走原路径。
 节点组合验证使用官方 `release/v0.5.22` 提交 `baa9befa` 和配套
 plugin。该组合在 DTK26.10 上运行 P=PP2/TP8/CP8/EP8、D=TP16/DP16/EP16
 及 EAGLE，完成三项精度评测。该结果对应当时的组合快照。
+
+## 2026-11-11 MLA Q 拼接的 HCU 实现对齐
+
+87K/C80 和 40K/C80 的两个 PP stage、全部 16 个 rank 的实际满批 profile 表明：原生从 attention helper 经 `sgl_kernel.elementwise.concat_mla_absorb_q` 调用 HCU AOT，grid 为 8192、block 为 256；组合版经官方 JIT 调用 CUDA 形态的 1024-thread kernel。每满批 39 次拼接，原生合计约 29.8 ms，组合版约 59–61 ms。二者均将 BF16 的 512 和 64 维按原顺序拼接成 576 维，不涉及 scale、累加、量化或浮点舍入。
+
+原生容器安装的 common_ops SHA256 为 `07752f007a0ab720538514eb084e82297136c1d9ec9ac87353b6471766804e57`，使用 HIP 6.3；组合容器为 HIP 7.2、Torch 2.11。没有把原生整库复制进组合容器。参考源码取自固定 DAS 工作树 `15c7204b7a3b6edaa222cff80018d8e5f2b2ad0e` 的 `python/sglang/kernels/aot/csrc/elementwise/concat_mla_absorb_q_hcu.cu`，文件 SHA256 为 `75192a37b2bcd337d412a4fc2cabf402f49fe5cd03580534364fe4f0e9971f07`，该文件最近一次提交为 `756ae5b4fe26cf9ad666d46cda6c45b14b3abc60`。安装包构建标签不能证明与该源码提交相同，实际输出已直接与原生容器已安装算子对拍。
+
+候选在 adapter 的既有 immutable JIT compiler-input 变换中加入上述纯拷贝内核，保留源码版权；仅将 BF16 类型接到现行 FFI，并保留 256 线程、32 行/block、128-bit 访存和原始索引顺序。准入要求 BF16 512/64 维、无 PDL、base 和各行 16-byte 对齐；未满足准入的有效旧布局继续走既有 kernel。K 拼接保持原实现。变换与 launch 锚点登记到现有 allowlist，编译缓存 key 仍由输入和变换文件哈希决定，不改官方源码文件。
+
+在两个 PP stage 均出现 6 个请求、32,768 个新增 token、队列仍有至少 20 个请求的满批日志后启用捕获，避免把启动 dummy 或预填共享前缀当作 C80 输入。全部 16 个 rank 的实际输入为 BF16 Q-nope `[4096,64,512]`、Q-rope `[4096,64,64]`；原始 stride、base 对齐及值随输入归档。旧 JIT、新 HCU JIT 和原生实际安装 AOT 的 2,415,919,104 个 BF16 输出元素逐位一致，改变 Q 输入后两套镜像的 Graph 重放也逐位一致。原始输入不在本仓提交。
+
+| 当前验收链路 | 状态 | 本次证据 |
+|---|---|---|
+| Prefill helper → adapter immutable 编译输入 → FFI → HCU Q kernel | 已对齐 | 16 个实际工作 rank 的 trace 均为 grid8192/block256，实际库和输入哈希随报告绑定。 |
+| BF16 拼接顺序、shape/stride、访存与输出 | 已对齐 | 同一份实际输入对照旧 JIT 与已安装原生 AOT，输出逐位相同；没有权重或 scale 参数，没有浮点运算。 |
+| 更换输入的算子 Graph 重放 | 已对齐 | 原输入及原地改变 Q 后，16 rank 输出均逐位一致；另外验证不满 block 的尾部及 4-byte 对齐 B 的旧路径回退。 |
+| 新版本整服务的 Decode/MTP | 运行时已核对，精度未通过 | 真实 P/D 的 16 个 decode rank 均覆盖 MTP、Graph 与 Q 拼接；target Graph 子 kernel 被命令缓存隐藏，不声称新 trace 逐个显示其 W4A8/DeepEP kernel。未变路径另外绑定完整源码对比及每节点 17 个算子库哈希。 |
+
+真实输入的单次 GPU 耗时中位数：P0 为旧 JIT 1.5260 ms、HCU JIT 0.7681 ms；P1 为 1.5024 ms、0.7476 ms。这是纯算子重放时间。去掉诊断观测后的 MQA＋Q 组合服务已完成同一份 87K/C80 输入、160 次预热和 320 条正式请求的配对计时；两边 320 条均命中 80,896 个缓存 token，计时内 Triton 编译为零。
+
+| 87K/C80 路径 | 新输入 token/s | 总输入 token/s | 耗时 | TTFT P50 |
+|---|---:|---:|---:|---:|
+| 本轮原生 | 20,357.67 | 288,400.39 | 96.577 s | 23.317 s |
+| MQA＋Q 组合版 | 20,300.52 | 287,590.63 | 96.849 s | 23.362 s |
+
+本轮相对原生吞吐为 -0.281%；此前 MQA 单项相对配对原生为 -2.141%。组合版相对 MQA 单项吞吐增加 2.132%，相对历史原组合版 18,353.71 token/s 增加 10.607%。这是单档结果，不能外推成全矩阵或其他模型已对齐。干净服务完整 16-rank 调用 profile 已通过：每 rank 捕获 4 个完整 GPU 满批，每批 39 次 Q 拼接均实际命中 HCU grid8192/block256，MQA padding 清理调用为零；全部 rank 同时包含 MQA 和 W4A8 计算。P0/P1 的每批 Q 拼接耗时中位数分别为 30.98/29.09 ms，实际加载 JIT 库哈希均为上述 `0ede0208…`。profile 在正式计时完成后另行采集，未与吞吐计时混用。CPU 窗口另有边界 annotation，未按该标记数误除 GPU 计时。结果为 `clean-profile-owner-verified.json`。
+
+本 PR 基于 adapter main `1ab11bdc9de19b7578349c8259c02a56ab289b68`，该版本 Prefill 示例脚本已显式设置 `SGLANG_DSA_MQA_SPLIT_BY_SEQ=1`，因此本 PR 没有启动脚本修改。plugin 的全局默认仍关闭，未改其他模型的量化配方。精度复测使用官方 SGLang 0.5.22 和已冻结的 #27/#62 组合部署；本 PR 的两个运行时修改文件与节点已验收文件逐字节相同，不将组合部署描述为整个 main PR head 的运行验收。
+
+证据位于测试目录 `${RUN}/prefill-qconcat-alignment-20261111-v1/`：`q-inputs-owner-verified.json`、`q-native-cross-image-verified.json`、逐 rank `q-inputs/` 与 `native-checks/`。首次候选复制注册表时遗漏已有 `ntn_dev` 兼容项，immutable 输入检查拒绝，未完成有效请求或计时；修正后两个节点的独立编译、Graph、布局回退预检均通过，失败日志原样保留。当前 JIT 二进制 SHA256 为 `0ede0208613ceea8888fc43e047a3e8a54b82541ff492af2d0e9f8d9cf583d7b`，两节点一致。
+
+本次修改文件的 CI 等价 Ruff 0.12.1 选择 E9/F63/F7/F82（ignore-noqa）、Python 语法、L0 与 `git diff --check` 已通过；L0 的 31 个既有软警告保留。未新增单测。
+
+真实 P/D 的 HMMT Nov25 128K 复测为 28/30（93.33%），旧组合为 30/30。`index=9/15` 两题均达到完整的 131,072-token 预算，最终答案为空；旧输出分别为 74,572/103,495 tokens 后正常停止。该差异暂保留记录，未做因果归属，本轮不继续追查。HumanEval 为 161/164（98.17%，旧 162/164、98.78%），两题退分、一题恢复：`HumanEval/116` 生成普通数值排序，未满足按二进制 1 的数量排序的要求；`HumanEval/145` 达到原定 100,000-token 预算且最终答案为空。两组输入、采样参数与请求预算均与基线核对一致，194 条模型输出均无推理接口 error，全部 judge 状态为 success；失败题为答案未通过或无最终答案，未修改评分。汇总脚本误把 HumanEval 的 acc 字段读作 accuracy，现仅修复指标读取并从已完成结果重建汇总，保留原错误记录。该轮存在精度差异，不作为精度无回退的证明；更广场景的性能复测由主对话继续，本节仅引用已完成的单档配对结果。
+
+结构化验证摘要保存于 `docs/glm5.3-qconcat-validation-20261111.json`。HumanEval/145 的思考段反复宣布结束后继续推翻，存在重复长代码片段和说明段落，最终耗尽 100K 且 final 为空；HumanEval/116、140 也有反复讨论，但均正常结束并返回未通过测试的代码。HMMT 两个 128K 截断样本不因长度本身被判作固定文本循环。算子对拍、真实服务运行、基准分数和待核查项分别记录；这些结果不能证明精度差异由哪一项改动造成。
+
+
+## 2026-11-12 PR #73 的 CI 夹具修复与基线同步
+
+本轮将 PR 同步到 adapter main `bd5eaa7`。此前 GitHub CPU 的八项失败来自离线 `test_jit_sources.py` 夹具：它只收录旧 portability 锚点，没有收录本 PR 新增的 Q kernel/launch 两个锚点，因此完整编译输入在发布前被契约检查拒绝。修复前已在隐藏 GPU、`HCU_ADAPTER_HOST=none` 的独立进程重现同一 RuntimeError。
+
+仅为现有夹具补齐两项输入，并在已有的完整 bundle 用例中断言 HCU kernel 与 launch 均进入私有编译资产；社区输入前后哈希、重复发布、损坏缓存拒绝和 spawn 发布的原有验证保留。生产端的唯一匹配检查与 fallback 未改，也没有更换算子、数学策略或量化方案。两个运行时修改文件与旧 PR head `279deab` 逐字节一致。
+
+与历史部署的字节绑定分别核对：`jit_concat_mla.py` 仍匹配历史 JSON 的 `738dc141…`；`registry.py` 已含 main 新增的六项 per-token FP8 登记，当前 SHA256 为 `981f403defe95cbaf50db6a8018687e5fcf21dd526484c38b7ffff9b086ed33a`，不匹配历史快照的 `99abd631…`。保留这些上游登记及原 JSON，不能将当前整个注册表表述为与冻结部署逐字节相同。
+
+本机针对性检查为 `tests/adapter/test_jit_sources.py` 的 21 passed / 26 skipped；跳过项需要显式指定的社区源码树。Ruff 0.12.1 按 CI 的 E9/F63/F7/F82、ignore-noqa 规则检查全部 PR Python 文件，另做语法、L0 与 `git diff --check`。完整 CPU/GPU CI 交由 GitHub 执行。旧 L1 的 kernel 超时及 aiter MoE gate 失败仍需结合新 run 判定，不能把退出清理的 ValueError 当作已确认主因。
+
+变基后的实际 P/D、MTP、Graph 与 P0/P1 小样本组合复验为 **pending**，由 [plugin #47](https://github.com/HYGON-AI/sglang-plugin-das/issues/47) 跟踪。11 月 11 日的 JSON 保留原版本和历史快照语义；局部 CPU 测试与源码相同不替代当前组合的算子、服务或模型精度验收。

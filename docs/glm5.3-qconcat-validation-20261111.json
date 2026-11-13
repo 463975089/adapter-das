@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "component": "MLA absorbed-Q concatenation",
+  "operator": {
+    "passed": true,
+    "ranks": 16,
+    "eager_and_changed_graph_bit_differences": 0,
+    "bf16_elements": 2415919104,
+    "input_capture_after_requests_enabled": true,
+    "operator_median_ms": {
+      "0": {
+        "old": 1.5260086822509766,
+        "native_hcu": 0.7680538558959962
+      },
+      "1": {
+        "old": 1.502389907836914,
+        "native_hcu": 0.7476284027099609
+      }
+    }
+  },
+  "cross_image": {
+    "passed": true,
+    "ranks": 16,
+    "old_jit_native_jit_installed_aot_bitwise_equal": true,
+    "changed_input_graph_equal": true
+  },
+  "clean_prefill_profile": {
+    "passed": true,
+    "ranks": 16,
+    "complete_gpu_batches_per_rank": 4,
+    "q_calls_per_full_batch": 39,
+    "mqa_padding_cleanup_calls": 0,
+    "q_gpu_ms_per_batch_median": {
+      "0": 30.9763845,
+      "1": 29.092624
+    },
+    "boundary_cpu_annotations_recorded_separately": true
+  },
+  "installed_native_common_ops_sha256": "07752f007a0ab720538514eb084e82297136c1d9ec9ac87353b6471766804e57",
+  "installed_candidate_q_jit_sha256": "0ede0208613ceea8888fc43e047a3e8a54b82541ff492af2d0e9f8d9cf583d7b",
+  "source_das_commit": "15c7204b7a3b6edaa222cff80018d8e5f2b2ad0e",
+  "native_q_source_sha256": "75192a37b2bcd337d412a4fc2cabf402f49fe5cd03580534364fe4f0e9971f07",
+  "limitations": [
+    "Performance is one 87K/C80 case with both Q and MQA changes, not Q alone.",
+    "Other models are not end-to-end validated."
+  ],
+  "date": "2026-11-11",
+  "framework": {
+    "version": "0.5.22",
+    "commit": "baa9befa381511cd4d56f83980951e5a45fffc6d"
+  },
+  "accuracy": {
+    "datasets": [
+      {
+        "dataset": "hmmt_nov25",
+        "correct": 28,
+        "total": 30,
+        "previous_correct": 30,
+        "coverage_complete": true,
+        "stop_reasons": {
+          "stop": 28,
+          "max_tokens": 2
+        },
+        "generation_errors": 0,
+        "regressed": [
+          9,
+          15
+        ],
+        "recovered": []
+      },
+      {
+        "dataset": "humaneval",
+        "correct": 161,
+        "total": 164,
+        "previous_correct": 162,
+        "coverage_complete": true,
+        "stop_reasons": {
+          "stop": 163,
+          "max_tokens": 1
+        },
+        "generation_errors": 0,
+        "regressed": [
+          116,
+          145
+        ],
+        "recovered": [
+          91
+        ]
+      }
+    ],
+    "no_aggregate_regression": false,
+    "raw_summary_sha256": "9f2dc22545595daffff2426a3d0d8a2b5afd58df931c76bd7783bff63eaac222",
+    "raw_audit_sha256": "fb6717576243f74cf00ae0438d9ddd15888a8210f7cdd7cd6535f84f3777976d",
+    "note": "Completed frozen adapter/plugin deployment; not a rerun of these rebased main PR heads. Differences are observed, with no causal attribution to an individual change."
+  },
+  "real_pd_profile": {
+    "passed": true,
+    "utc": "2026-11-11T03:12:22.521418+00:00",
+    "real_pd": true,
+    "prefill_ranks": 16,
+    "decode_ranks": 16,
+    "decode_graph_ranks": 16,
+    "decode_mtp_ranks": 16,
+    "decode_family_rank_counts": {
+      "RMSNorm": 16,
+      "int8_activation_quant": 16,
+      "DSA_index": 16,
+      "RoPE": 16,
+      "FP8_KV_store": 16,
+      "MLA_Q_concat": 16,
+      "FlashMLA_sparse_FP8": 16
+    },
+    "prefill_family_rank_counts": {
+      "DSA_index": 16,
+      "RMSNorm": 16,
+      "int8_activation_quant": 16,
+      "RoPE": 16,
+      "FP8_KV_store": 16,
+      "MLA_Q_concat": 16,
+      "MoE_router": 16,
+      "W4A8_normal_gemm": 16
+    },
+    "target_graph_kernel_events_visible": false,
+    "target_graph_visibility_note": "HIP_GRAPH_USE_CMD_CACHE=1 hides target Graph child-kernel callbacks. Real graph launches and changed-input MTP/Q concat are observed on all decode ranks; unchanged W4A8 and DeepEP are bound to the previous validated real P/D runtime by complete source and library comparisons."
+  },
+  "repetition_review": [
+    {
+      "dataset": "hmmt_nov25",
+      "index": 9,
+      "output_tokens": 131072,
+      "stop_reason": "max_tokens",
+      "reasoning_chars": 371305,
+      "final_chars": 0,
+      "max_repeated_normalized_paragraph_occurrences": 4,
+      "note": "Repeated reasoning and candidate code is explicit in HumanEval/145; reaching max_tokens alone is not a repetition diagnosis."
+    },
+    {
+      "dataset": "hmmt_nov25",
+      "index": 15,
+      "output_tokens": 131072,
+      "stop_reason": "max_tokens",
+      "reasoning_chars": 347283,
+      "final_chars": 0,
+      "max_repeated_normalized_paragraph_occurrences": 0,
+      "note": "Repeated reasoning and candidate code is explicit in HumanEval/145; reaching max_tokens alone is not a repetition diagnosis."
+    },
+    {
+      "dataset": "humaneval",
+      "index": 140,
+      "output_tokens": 21899,
+      "stop_reason": "stop",
+      "reasoning_chars": 85967,
+      "final_chars": 475,
+      "max_repeated_normalized_paragraph_occurrences": 6,
+      "note": "Repeated reasoning and candidate code is explicit in HumanEval/145; reaching max_tokens alone is not a repetition diagnosis."
+    },
+    {
+      "dataset": "humaneval",
+      "index": 116,
+      "output_tokens": 32524,
+      "stop_reason": "stop",
+      "reasoning_chars": 119733,
+      "final_chars": 57,
+      "max_repeated_normalized_paragraph_occurrences": 2,
+      "note": "Repeated reasoning and candidate code is explicit in HumanEval/145; reaching max_tokens alone is not a repetition diagnosis."
+    },
+    {
+      "dataset": "humaneval",
+      "index": 145,
+      "output_tokens": 100000,
+      "stop_reason": "max_tokens",
+      "reasoning_chars": 321280,
+      "final_chars": 0,
+      "max_repeated_normalized_paragraph_occurrences": 9,
+      "note": "Repeated reasoning and candidate code is explicit in HumanEval/145; reaching max_tokens alone is not a repetition diagnosis."
+    }
+  ],
+  "paired_prefill_performance": {
+    "adapter": {
+      "payload_sha256": "ef4dcda49fca6b30a74295608f46a65330506a42c1c770df3bdf4185adc59c25",
+      "cache_validated_requests": 320,
+      "warmup_requests": 160,
+      "timed_attempt": 1,
+      "timed_triton_compile_events": 0,
+      "duration_s": 96.84877283591777,
+      "new_input_tokens_per_s": 20300.51535429317,
+      "total_input_tokens_per_s": 287590.6341858199,
+      "median_ttft_ms": 23362.06272500567,
+      "p95_ttft_ms": 23546.2413192261,
+      "p99_ttft_ms": 26346.515523900747
+    },
+    "native": {
+      "payload_sha256": "ef4dcda49fca6b30a74295608f46a65330506a42c1c770df3bdf4185adc59c25",
+      "cache_validated_requests": 320,
+      "warmup_requests": 160,
+      "timed_attempt": 1,
+      "timed_triton_compile_events": 0,
+      "duration_s": 96.57684622600209,
+      "new_input_tokens_per_s": 20357.674503049344,
+      "total_input_tokens_per_s": 288400.38879319903,
+      "median_ttft_ms": 23316.84992951341,
+      "p95_ttft_ms": 24781.134936306644,
+      "p99_ttft_ms": 29163.238016841933
+    },
+    "route_ranks": {
+      "0": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "1": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    "delta_pct": -0.2807744506751586
+  },
+  "pr_base_commit": "1ab11bdc9de19b7578349c8259c02a56ab289b68",
+  "runtime_source_sha256": {
+    "hcu_adapter/jit_concat_mla.py": "738dc141f9b2a69f3a1b05e07f638942b7784cdbac0cdc3f34ca49f38766e8ea",
+    "hcu_adapter/registry.py": "99abd6313794a92064bb96cafbf4bdd67064b80bd9e055ff069727c710eb4e5b"
+  }
+}

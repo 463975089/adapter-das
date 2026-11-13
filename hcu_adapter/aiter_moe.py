@@ -15,9 +15,10 @@ DTK aiter ``aiter_moe`` kernel:
   * channelwise quant (``block_shape=None``) -> moe_c solution, keyed by
     the moe_c_configs JSONs.
 
-``get_aiter_moe_config`` returning no solution (shape absent from the
-tuned tables) is NOT an error: the bridge falls back to the stock triton
-kernel and logs the miss once per shape.
+Only the ASM and moe_c solutions are admitted by this bridge. Newer DTK
+wheels can return success with an untuned Triton default, so the status
+alone does not establish a supported solution. Missing or other solutions
+fall back to the stock triton kernel and log the miss once per shape.
 
 Validation (validation-host-18, BW200/gfx938, dtk26041 image 20261010):
   E=256 / inter=512 / K=4096 / topk=8, fp8_w8a8 blockwise, solution=asm
@@ -164,17 +165,22 @@ def try_aiter_fused_moe(
     except Exception:
         LOG.warning("HCU aiter moe: config lookup raised", exc_info=True)
         return None
-    if not status:
+    # DTK can report success for its untuned Triton fallback. Keep the
+    # bridge's validated ASM/moe_c contract; all other solutions stay on
+    # the original SGLang path, including in explicit aiter mode.
+    solution = getattr(cfg, "solution_type", None)
+    if not status or solution not in ("asm", "moe_c"):
         key = (E, N1, N2, K, top_k, block_size)
         if key not in _miss_log_once:
             _miss_log_once.add(key)
             LOG.warning(
-                "HCU aiter moe: no tuned config for E=%d N1=%d N2=%d K=%d "
-                "topk=%d block=%d -> triton kernel (log-once)", *key
+                "HCU aiter moe: no validated ASM/moe_c config for "
+                "E=%d N1=%d N2=%d K=%d topk=%d block=%d sol=%s "
+                "-> stock triton kernel (log-once)", *key, solution
             )
         if mode in _MODE_AITER_ONLY:
             LOG.warning(
-                "HCU_FUSED_MOE_IMPL=aiter but shape %s has no aiter config; "
+                "HCU_FUSED_MOE_IMPL=aiter but shape %s has no validated aiter config; "
                 "falling back to triton for this call", key
             )
         return None
