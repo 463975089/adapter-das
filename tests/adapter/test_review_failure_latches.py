@@ -138,3 +138,74 @@ def test_pcp_invalid_before_publication_can_be_corrected(pcp_state, monkeypatch)
     monkeypatch.setenv(pcp.MODE_VARIABLE, 'native')
     assert pcp.install()
     pcp.require_healthy()
+
+
+# ---------------------------------------------------------------- P2-1
+# The published name cannot be removed, so a policy change after publication is
+# irreversible: it must latch instead of returning early and reporting health.
+
+
+def test_ct_published_then_invalid_policy_latches_and_stays_failed(ct_state, monkeypatch):
+    ct.activate_extension(CTX)
+    ct.check_health()
+    monkeypatch.setenv(ct.MODE_VARIABLE, 'bogus')
+    with pytest.raises(ExtensionCommitError, match='policy invalid after publication'):
+        ct.activate_extension(CTX)
+    assert ct._failure is not None
+    # Restoring a legal value must not clear the latched failure.
+    monkeypatch.setenv(ct.MODE_VARIABLE, 'native')
+    for action in (ct.check_health, lambda: ct.activate_extension(CTX)):
+        with pytest.raises(ExtensionCommitError):
+            action()
+    assert ct_state.calls == [ct.NAME]
+
+
+@pytest.mark.parametrize('source', ['stock', 'kill'])
+def test_ct_published_then_disabled_latches(ct_state, monkeypatch, source):
+    ct.activate_extension(CTX)
+    if source == 'stock':
+        monkeypatch.setenv(ct.MODE_VARIABLE, 'stock')
+    else:
+        monkeypatch.setenv('HCU_DISABLE_OPS', ct.OP)
+    with pytest.raises(ExtensionCommitError, match='policy changed to stock after publication'):
+        ct.activate_extension(CTX)
+    assert ct._failure is not None
+    # The public selector still resolves the config, which is exactly why the
+    # process must be refused rather than silently treated as stock.
+    assert ct_state.quant.get_quantization_config(ct.NAME) is ct_state.cls
+    monkeypatch.delenv('HCU_DISABLE_OPS', raising=False)
+    monkeypatch.setenv(ct.MODE_VARIABLE, 'native')
+    for action in (ct.check_health, lambda: ct.activate_extension(CTX)):
+        with pytest.raises(ExtensionCommitError):
+            action()
+
+
+@pytest.mark.parametrize('source', ['stock', 'kill', 'invalid'])
+def test_ct_health_refuses_policy_change_after_publication(ct_state, monkeypatch, source):
+    ct.activate_extension(CTX)
+    ct.check_health()
+    if source == 'stock':
+        monkeypatch.setenv(ct.MODE_VARIABLE, 'stock')
+    elif source == 'kill':
+        monkeypatch.setenv('HCU_DISABLE_OPS', ct.OP)
+    else:
+        monkeypatch.setenv(ct.MODE_VARIABLE, 'bogus')
+    with pytest.raises(ExtensionCommitError):
+        ct.check_health()
+    monkeypatch.delenv('HCU_DISABLE_OPS', raising=False)
+    monkeypatch.setenv(ct.MODE_VARIABLE, 'native')
+    with pytest.raises(ExtensionCommitError):
+        ct.check_health()
+
+
+def test_ct_invalid_policy_before_publication_stays_correctable(ct_state, monkeypatch):
+    """A pure configuration error before anything is published can be fixed."""
+    monkeypatch.setenv(ct.MODE_VARIABLE, 'bogus')
+    with pytest.raises(ValueError):
+        ct.activate_extension(CTX)
+    assert ct._failure is None and ct._publication is None
+    assert ct_state.calls == []
+    monkeypatch.setenv(ct.MODE_VARIABLE, 'native')
+    ct.activate_extension(CTX)
+    ct.check_health()
+    assert ct_state.calls == [ct.NAME]

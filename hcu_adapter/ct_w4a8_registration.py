@@ -99,6 +99,18 @@ def check_health():
             raise ExtensionCommitError(_failure)
         if _publication is None:
             raise RuntimeError("CT W4A8 registration is not active")
+        # The published name cannot be removed, so the effective policy is part
+        # of the published state: stock, the kill switch or an unparseable value
+        # all mean this process is no longer in the state it was admitted in.
+        try:
+            mode = selected_mode()
+        except BaseException as error:
+            try:
+                _fatal("CT W4A8 policy invalid after publication")
+            except ExtensionCommitError as refusal:
+                raise refusal from error
+        if mode != "native":
+            _fatal("CT W4A8 policy changed after publication")
         quant, cls, register, resolve = _publication
         try:
             owned = (
@@ -136,11 +148,27 @@ def activate_extension(context):
         if _publishing:
             _fatal("recursive CT W4A8 activation")
         _require_release(context.vllm_version)
-        if selected_mode() == "stock":
+        # Once the public config is published, a policy change is irreversible:
+        # core cannot unregister the name, so a later stock/invalid/kill switch
+        # must latch instead of returning early and reporting a clean process.
+        # Before publication a pure configuration error stays correctable.
+        published = _publication is not None
+        try:
+            mode = selected_mode()
+        except BaseException as error:
+            if published:
+                try:
+                    _fatal("CT W4A8 policy invalid after publication; start a fresh process")
+                except ExtensionCommitError as refusal:
+                    raise refusal from error
+            raise
+        if mode == "stock":
+            if published:
+                _fatal("CT W4A8 policy changed to stock after publication; start a fresh process")
             return
         if _provider_binder is not None:
             _provider_binder()
-        if _publication is not None:
+        if published:
             try:
                 check_health()
             except BaseException as error:
