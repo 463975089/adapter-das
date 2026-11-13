@@ -71,9 +71,25 @@ def native(monkeypatch):
     from types import ModuleType
 
     selector = _NativeSelector()
-    module = ModuleType("vllm.models.deepseek_v41.amd.model")
-    module._select_dsv4_attn_cls = selector._select_dsv4_attn_cls
-    monkeypatch.setitem(sys.modules, "vllm.models.deepseek_v41.amd.model", module)
+    # `select_attention` runs `from vllm.models.deepseek_v41.amd import model`,
+    # so Python imports the whole parent chain before it reaches the leaf. A leaf
+    # stub alone is not enough: without vLLM the parents are missing, and with
+    # vLLM installed the real `amd/__init__` pulls in modules that read the leaf
+    # we replaced. Build every level with an empty __path__ so the import
+    # machinery stops at our doubles, and bind the leaf as a parent attribute.
+    leaf = "vllm.models.deepseek_v41.amd.model"
+    chain = ("vllm", "vllm.models", "vllm.models.deepseek_v41",
+             "vllm.models.deepseek_v41.amd", leaf)
+    for name in chain:
+        package = ModuleType(name)
+        package.__path__ = []
+        if name == leaf:
+            package._select_dsv4_attn_cls = selector._select_dsv4_attn_cls
+        monkeypatch.setitem(sys.modules, name, package)
+    # Bind each child as an attribute of its parent, so
+    # `from ...amd import model` resolves to the double.
+    for parent, child in zip(chain, chain[1:]):
+        setattr(sys.modules[parent], child.rsplit(".", 1)[-1], sys.modules[child])
     return selector
 
 

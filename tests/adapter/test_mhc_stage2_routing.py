@@ -5,6 +5,9 @@
 Only GPU eligibility and provider math are doubled. These are dispatch tests,
 not a GPU numeric qualification of TileLang.
 """
+import os
+import subprocess
+import sys
 from types import SimpleNamespace as NS
 from unittest.mock import Mock
 
@@ -63,7 +66,6 @@ def test_selected_tilelang_policy_cannot_be_bypassed(monkeypatch, entry, tokens,
     assert events == (['project', 'tilelang'] if capability == 'ready' else ['torch'])
     native.assert_not_called()
     legacy.assert_not_called()
-    assert not torch.cuda.is_initialized()
 
 
 def test_explicit_tilelang_opt_out_keeps_legacy_native_pre(monkeypatch):
@@ -75,3 +77,43 @@ def test_explicit_tilelang_opt_out_keeps_legacy_native_pre(monkeypatch):
     runtime.pre(residual, torch.ones(24, 4096), torch.ones(3), torch.ones(24),
                 1e-6, 1e-6, 1e-6, 1.0, 20)
     native.assert_called_once()
+
+
+def test_routing_never_initialises_cuda_in_an_isolated_process():
+    """The isolation guarantee cannot live in the shared pytest process.
+
+    L1 collects tests/kernels and tests/adapter together, so a device test that
+    ran earlier leaves CUDA initialised and no CPU-only case can restore False.
+    The property is checked where it is meaningful: a fresh interpreter with the
+    GPUs hidden.
+    """
+    program = """
+import torch
+from unittest.mock import Mock
+from types import SimpleNamespace as NS
+from hcu_adapter.kernels import mhc_aiter as mhc
+
+mhc._gpu_tensors = lambda tensors: True
+events = []
+def project(gemm, sqrsum, *a):
+    events.append('project'); gemm.fill_(1); sqrsum.fill_(1)
+def stage2(gemm, sqrsum, scale, base, residual, post, comb, layer, *a, **k):
+    events.append('tilelang'); post.fill_(2); comb.fill_(3); layer.fill_(4)
+provider = mhc.MhcAiterProvider(project=project, tilelang_pre=stage2,
+                                tilelang_enabled=True)
+runtime = mhc.MhcAiterRuntime(provider, NS(mhc_pre_torch=Mock(), mhc_post_torch=Mock()),
+                              None, None, None)
+r = torch.ones(3, 4, 1024, dtype=torch.bfloat16)
+runtime.pre(r, torch.ones(24, 4096), torch.ones(3), torch.ones(24),
+            1e-6, 1e-6, 1e-6, 1.0, 20)
+assert events == ['project', 'tilelang'], events
+assert not torch.cuda.is_initialized()
+print('isolated-routing-ok')
+"""
+    environment = dict(os.environ, HCU_ADAPTER_HOST='none')
+    for name in ('HIP_VISIBLE_DEVICES', 'CUDA_VISIBLE_DEVICES', 'ROCR_VISIBLE_DEVICES'):
+        environment[name] = ''
+    result = subprocess.run([sys.executable, '-B', '-c', program], env=environment,
+                            text=True, capture_output=True, timeout=120)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip().endswith('isolated-routing-ok')
