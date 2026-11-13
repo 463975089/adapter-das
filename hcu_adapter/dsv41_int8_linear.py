@@ -18,7 +18,10 @@ from vllm.model_executor.kernels.linear.scaled_mm.triton import (
     TritonInt8ScaledMMLinearKernel,
 )
 from vllm.model_executor.layers.fusion.quant_activation import QuantizedActivation
-from vllm.model_executor.layers.linear import register_weight_loader_v2_supported_method
+from vllm.model_executor.layers.linear import (
+    ReplicatedLinear,
+    register_weight_loader_v2_supported_method,
+)
 from vllm.model_executor.layers.quantization.compressed_tensors.compressed_tensors import (
     CompressedTensorsLinearMethod,
 )
@@ -120,10 +123,17 @@ class HcuDSV41Int8LinearMethod(CompressedTensorsLinearMethod):
         ):
             raise ValueError("empty CT INT8 requires int8 positive weak-contiguous (K,N) weights")
         k, n = weight.shape
+        # ReplicatedLinear passes its full dimensions to CT create_weights and
+        # does not expose the partition attributes owned by Row/ColumnParallel.
+        if isinstance(layer, ReplicatedLinear):
+            local_k, local_n = layer.input_size, layer.output_size
+        else:
+            local_k = layer.input_size_per_partition
+            local_n = layer.output_size_per_partition
         if (
-            k != layer.input_size_per_partition
+            k != local_k
             or n != sum(layer.output_partition_sizes)
-            or n != layer.output_size_per_partition
+            or n != local_n
         ):
             raise ValueError("empty CT INT8 finalized weight dimensions must match local partitions")
         if x.device != weight.device or x.dtype not in (
