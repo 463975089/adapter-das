@@ -86,7 +86,11 @@ def require_healthy() -> None:
         raise PcpCompatibilityError(
             "PCP publication inherited from another PID; activate in this child first"
         )
-    if selected_mode() != p.mode:
+    try:
+        mode = selected_mode()
+    except BaseException as error:
+        _refuse("PCP policy invalid after registration; start a fresh process", error)
+    if mode != p.mode:
         _refuse("PCP policy changed after registration; start a fresh process")
 
 

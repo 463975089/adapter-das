@@ -114,6 +114,18 @@ def check_health():
                 raise refusal from error
         if not owned:
             _fatal("CT W4A8 public registration changed owner")
+        try:
+            record = registry.get(OP)
+        except BaseException as error:
+            try:
+                _fatal("CT W4A8 registry record is unreadable")
+            except ExtensionCommitError as refusal:
+                raise refusal from error
+        if (record is None or record.get("implementation") != "native"
+                or record.get("target") != TARGET
+                or record.get("source") != __name__
+                or record.get("mechanism") != registry.MECH_SEAM):
+            _fatal("CT W4A8 registry record changed owner or target")
 
 
 def activate_extension(context):
@@ -165,13 +177,21 @@ def activate_extension(context):
                     except ExtensionCommitError as refusal:
                         raise refusal from error
             _publication = (quant, cls, register, resolve)
-            registry.register(
-                op=OP, impl="native", target=TARGET,
-                mechanism=registry.MECH_SEAM, source=__name__,
-                detail="distinct CT W4A8 config registered through the public "
-                       "quantization API; native CT owners are not replaced",
-            )
-            check_health()
+            # The public registry has no rollback. Everything after publishing
+            # its name is part of the same irreversible activation transaction.
+            try:
+                registry.register(
+                    op=OP, impl="native", target=TARGET,
+                    mechanism=registry.MECH_SEAM, source=__name__,
+                    detail="distinct CT W4A8 config registered through the public "
+                           "quantization API; native CT owners are not replaced",
+                )
+                check_health()
+            except BaseException as error:
+                try:
+                    _fatal("CT W4A8 adapter publication failed; restart the process")
+                except ExtensionCommitError as refusal:
+                    raise refusal from error
         finally:
             _publishing = False
 
