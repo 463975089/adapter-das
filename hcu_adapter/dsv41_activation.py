@@ -130,6 +130,15 @@ def check_health() -> None:
             raise ExtensionCommitError(_failure)
         if _publication is None:
             raise Dsv41ActivationError("DSV4.1 routing registration is not active")
+        try:
+            mode = selected_mode()
+        except Exception as error:
+            try:
+                _fatal("DSV4.1 policy invalid after publication")
+            except ExtensionCommitError as refusal:
+                raise refusal from error
+        if mode != "native":
+            _fatal("DSV4.1 policy changed after publication")
         quant, config_class, register, resolve, draft_state = _publication
         try:
             owned = (
@@ -184,15 +193,13 @@ def activate_extension(context: ExtensionContext) -> None:
             raise ExtensionCommitError(_failure)
         if _publishing:
             _fatal("recursive DSV4.1 quantization registration")
-        _require_release(context.vllm_version)
-        if selected_mode() == "stock":
-            return
-        if _provider_binder is not None:
-            _provider_binder()
         if _publication is not None:
             _publishing = True
             try:
+                _require_release(context.vllm_version)
                 check_health()
+                if _provider_binder is not None:
+                    _provider_binder()
             except BaseException as error:
                 try:
                     _fatal("DSV4.1 contract changed after public registration")
@@ -201,6 +208,11 @@ def activate_extension(context: ExtensionContext) -> None:
             finally:
                 _publishing = False
             return
+        _require_release(context.vllm_version)
+        if selected_mode() == "stock":
+            return
+        if _provider_binder is not None:
+            _provider_binder()
         _publishing = True
         try:
             try:
