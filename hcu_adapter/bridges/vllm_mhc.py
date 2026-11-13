@@ -299,7 +299,10 @@ def _load_aiter_provider():
         return backend.load_provider()
     except MhcCompatibilityError:
         raise
-    except BaseException as error:
+    except Exception as error:
+        # Only an inspection failure is reclassified. KeyboardInterrupt and
+        # SystemExit must propagate unchanged, or a real interruption reads as
+        # "AITER mHC provider inspection failed" and the cause is hidden.
         raise MhcCompatibilityError(f'AITER mHC provider inspection failed: {error}') from error
 
 
