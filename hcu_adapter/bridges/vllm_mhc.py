@@ -53,9 +53,20 @@ class _Publication:
 def selected_mode() -> str:
     if op_disabled('vllm_mhc'):
         return 'stock'
-    value, _ = hcu_env.resolve(MODE_VARIABLE)
+    value, source = hcu_env.resolve(MODE_VARIABLE, host='vllm')
     if value not in ('stock', 'torch', 'aiter'):
         raise ValueError(f'{MODE_VARIABLE} must be stock, torch or aiter')
+    if source == 'default' and _publication is None:
+        # General plugins run before model construction on every HCU host.
+        # A feature default must not impose V4.1-only admission on that host.
+        # Environment/config requests still go through the strict install checks.
+        from hcu_adapter.bridges.vllm import detect_hcu, _installed_vllm_version
+        detected = detect_hcu()
+        if not detected.detected or detected.architecture not in VALIDATED_ARCHES:
+            return 'stock'
+        version = Version(_installed_vllm_version() or '0')
+        if version.epoch or version.release[:2] != (0, 33):
+            return 'stock'
     return value
 
 

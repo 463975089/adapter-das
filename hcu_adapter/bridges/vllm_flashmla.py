@@ -45,12 +45,25 @@ _lifecycle = ProcessLocalLifecycle(runtime_action='vllm-flashmla-prefill',
                                  error_type=FlashMLACompatibilityError)
 
 
+SUPPORTED_ARCHES = ('gfx936', 'gfx938')
+
+
 def selected_mode():
     if op_disabled(OP):
         return 'stock'
-    mode, _ = hcu_env.resolve(MODE_VARIABLE, host='vllm')
+    mode, source = hcu_env.resolve(MODE_VARIABLE, host='vllm')
     if mode not in ('stock', 'native'):
         raise FlashMLACompatibilityError(MODE_VARIABLE + ' must be stock or native')
+    if source == 'default' and _publication is None:
+        # An implicit default must stay inert on hosts outside this candidate's
+        # scope. Explicit environment/config selections retain strict admission.
+        from hcu_adapter.bridges.vllm import detect_hcu, _installed_vllm_version
+        detection = detect_hcu()
+        if not detection.detected or detection.architecture not in SUPPORTED_ARCHES:
+            return 'stock'
+        version = Version(_installed_vllm_version() or '0')
+        if version.epoch or version.release[:2] != (0, 33):
+            return 'stock'
     return mode
 
 
@@ -113,7 +126,7 @@ def install():
         global _publication
         from hcu_adapter.bridges.vllm import detect_hcu, _installed_vllm_version
         detection = detect_hcu()
-        if not detection.detected or detection.architecture not in ('gfx936', 'gfx938'):
+        if not detection.detected or detection.architecture not in SUPPORTED_ARCHES:
             raise FlashMLACompatibilityError('FlashMLA prefill requires real gfx936/gfx938')
         version = Version(_installed_vllm_version())
         if version.epoch or version.release[:2] != (0, 33):

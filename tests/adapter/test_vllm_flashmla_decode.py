@@ -215,7 +215,7 @@ def test_explicit_native_unavailable_fails_closed(setup, monkeypatch, reason):
     original = target.rocm_sparse_attn_decode
     monkeypatch.setenv(bridge.MODE_VARIABLE, 'native')
     if reason == 'version': monkeypatch.setattr(host, '_installed_vllm_version', lambda: '0.32.0')
-    if reason == 'arch': monkeypatch.setattr(host, 'detect_hcu', lambda: host.HcuDetection(True, 'gfx936', ''))
+    if reason == 'arch': monkeypatch.setattr(host, 'detect_hcu', lambda: host.HcuDetection(True, 'gfx928', ''))
     if reason == 'fnuz': target.current_platform = types.SimpleNamespace(is_fp8_fnuz=lambda: True)
     if reason == 'vendor_missing': del vendor.flash_mla_with_kvcache
     if reason == 'vendor_abi':

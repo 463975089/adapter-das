@@ -261,8 +261,10 @@ def _clean_mode_environment(monkeypatch):
 
 
 def test_default_mode_is_aiter_without_any_environment(monkeypatch):
-    """Branch default: an unconfigured process selects the AITER tier."""
+    """An unconfigured supported host keeps the AITER tier."""
     _clean_mode_environment(monkeypatch)
+    monkeypatch.setattr(host,'detect_hcu',lambda:host.HcuDetection(True,'gfx938','test'))
+    monkeypatch.setattr(host,'_installed_vllm_version',lambda:'0.33.0')
     value,source=module.hcu_env.resolve(module.MODE_VARIABLE)
     assert value=='aiter' and source=='default'
     assert module.selected_mode()=='aiter'

@@ -17,6 +17,7 @@ from hcu_adapter.kill_switch import op_disabled
 from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
 
 MODE_VARIABLE = 'HCU_VLLM_FLASHMLA_DECODE'
+SUPPORTED_ARCHES = ('gfx936', 'gfx938')
 OP = 'vllm_flashmla_decode'
 TARGET_MODULE = 'vllm.models.deepseek_v41.amd.rocm'
 TARGET = TARGET_MODULE + '.rocm_sparse_attn_decode'
@@ -56,9 +57,19 @@ _lifecycle = ProcessLocalLifecycle(runtime_action='vllm-flashmla-decode',
 def selected_mode():
     if op_disabled(OP):
         return 'stock'
-    mode, _ = hcu_env.resolve(MODE_VARIABLE, host='vllm')
+    mode, source = hcu_env.resolve(MODE_VARIABLE, host='vllm')
     if mode not in ('stock', 'native'):
         raise FlashMLADecodeCompatibilityError(MODE_VARIABLE + ' must be stock or native')
+    if source == 'default' and _publication is None:
+        # An implicit default must stay inert on hosts outside this candidate's
+        # scope. Explicit environment/config selections retain strict admission.
+        from hcu_adapter.bridges.vllm import detect_hcu, _installed_vllm_version
+        detected = detect_hcu()
+        if not detected.detected or detected.architecture not in SUPPORTED_ARCHES:
+            return 'stock'
+        version = Version(_installed_vllm_version() or '0')
+        if version.epoch or version.release[:2] != (0, 33):
+            return 'stock'
     return mode
 
 
@@ -119,8 +130,9 @@ def install():
         global _publication
         from hcu_adapter.bridges.vllm import detect_hcu, _installed_vllm_version
         detected = detect_hcu()
-        if not detected.detected or detected.architecture != 'gfx938':
-            raise FlashMLADecodeCompatibilityError('packed FlashMLA decode candidate requires real gfx938')
+        if not detected.detected or detected.architecture not in SUPPORTED_ARCHES:
+            raise FlashMLADecodeCompatibilityError(
+                f'packed FlashMLA decode requires real gfx936/gfx938; got {detected.architecture!r}')
         version = Version(_installed_vllm_version())
         if version.epoch or version.release[:2] != (0, 33):
             raise FlashMLADecodeCompatibilityError('packed FlashMLA decode requires vLLM 0.33')
@@ -186,7 +198,7 @@ def install():
 
         registry.register(op=OP, impl='native', target=TARGET,
             mechanism=registry.MECH_REBIND, source=__name__,
-            detail='candidate gfx938 D512 packed FP8; no BF16 KV gather; fresh plan per call; GPU/Graph/perf pending')
+            detail='candidate gfx936/gfx938 D512 packed FP8; no BF16 KV gather; fresh plan per call; GPU/Graph/perf pending')
         module.rocm_sparse_attn_decode = routed
         _publication = _Publication(os.getpid(), module, original, routed, cls, method, epilogue)
 

@@ -11,9 +11,13 @@ from __future__ import annotations
 import torch
 
 
+SUPPORTED_ARCHES = frozenset({'gfx936', 'gfx938'})
+
+
 def _supported_device(q):
     return (q.device.type == 'cuda' and torch.version.hip is not None
-            and torch.cuda.get_device_properties(q.device).gcnArchName.split(':')[0] == 'gfx938')
+            and torch.cuda.get_device_properties(q.device).gcnArchName.split(':')[0]
+            in SUPPORTED_ARCHES)
 
 
 def _cache_supported(cache, q):

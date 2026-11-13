@@ -222,8 +222,8 @@ def test_real_cpu_input_is_not_admitted():
 def native_provider():
     if not torch.cuda.is_available() or torch.version.hip is None:
         pytest.skip('requires native HCU; CPU doubles do not qualify vendor decode')
-    if torch.cuda.get_device_properties(0).gcnArchName.split(':')[0] != 'gfx938':
-        pytest.skip('packed decode candidate is gfx938 only')
+    if torch.cuda.get_device_properties(0).gcnArchName.split(':')[0] not in ('gfx936', 'gfx938'):
+        pytest.skip('packed decode candidate requires gfx936/gfx938')
     from flash_mla.flash_mla_interface import flash_mla_with_kvcache, get_mla_metadata
     return flash_mla_with_kvcache, get_mla_metadata
 
