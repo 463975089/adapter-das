@@ -328,7 +328,10 @@ class MhcAiterRuntime:
         supported = self._pre_supported(residual, fn, hc_scale, hc_base)
         tilelang_ready = self.provider.tilelang_enabled and self.provider.tilelang_pre is not None
         t1_fallback = residual.shape[0] == 1 and not tilelang_ready
-        native = (supported and not t1_fallback
+        # Enabling TileLang rejects every legacy Pre route, including mhc_pre
+        # which can call big_fuse internally. Missing project/stage2 capability
+        # must select Torch before execution, exactly as delayed() does.
+        native = (supported and not t1_fallback and not self.provider.tilelang_enabled
                   and self.provider.pre is not None and n_splits == 1)
         staged = (supported and not t1_fallback and not native
                   and self.provider.project is not None and self.provider.stage2_ready)
