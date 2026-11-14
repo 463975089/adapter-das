@@ -560,6 +560,21 @@ def test_original_loader_and_cached_aliases_route_all_compiler_inputs(source, tm
         bridge.bind(resolver, loader, root, bundle)
 
 
+def test_include_entries_prepended_after_binding_keep_priority(source, tmp_path):
+    root, tree = source
+    bundle, _ = bridge.prepare(root, tmp_path / "cache")
+    resolver, loader, captured = _functions(root, tree)
+    bridge.bind(resolver, loader, root, bundle)
+    overlay = tmp_path / "overlay-include"
+    overlay.mkdir()
+    loader.__globals__["DEFAULT_INCLUDE"].insert(0, str(overlay))
+    with pytest.raises(_SpecCaptured):
+        loader("late-overlay", extra_include_paths=[str(tmp_path)])
+    assert captured[-1].include_paths == (
+        str(overlay), str(bundle / "include"), str(bundle / "cuda-headers"), str(tmp_path),
+    )
+
+
 def test_preflight_failure_leaves_both_entries_unmodified(source, tmp_path):
     root, tree = source
     resolver, loader, _ = _functions(root, tree)

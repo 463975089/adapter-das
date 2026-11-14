@@ -344,6 +344,21 @@ def test_merge_state_v2():
     assert d1 < 1e-3 and d2 < 1e-4, f"merge: o {d1} lse {d2}"
     print(f"PASS merge_state_v2: o={d1:.6f} lse={d2:.6f}", flush=True)
 
+    # sglang's chunked prefix path passes write-through buffers (the CUDA
+    # arity) and keeps using the returned pair; both must alias the buffers.
+    out = torch.empty_like(o1.cuda())
+    out_lse = torch.empty_like(lse1.cuda())
+    om2, lsem2 = merge_state_v2(
+        o1.cuda(), lse1.cuda(), o2.cuda(), lse2.cuda(), out, out_lse
+    )
+    assert om2.data_ptr() == out.data_ptr(), "out buffer not used in place"
+    assert lsem2.data_ptr() == out_lse.data_ptr(), "out_lse not used in place"
+    assert out.dtype == o1.dtype and out_lse.dtype == lse1.dtype
+    d3 = (om2.float().cpu() - ref_o).abs().max().item()
+    d4 = (lsem2.cpu() - ref_lse).abs().max().item()
+    assert d3 < 1e-3 and d4 < 1e-4, f"merge(out=): o {d3} lse {d4}"
+    print(f"PASS merge_state_v2 out-buffers: o={d3:.6f} lse={d4:.6f}", flush=True)
+
 
 # --- 3D packed-q decode normalization (ce53d06, #333: decode 400x fix) -----
 #

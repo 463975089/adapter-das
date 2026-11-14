@@ -335,6 +335,17 @@ def _hcu_platform_class() -> type:
                 and detection.architecture in SUPPORTED_HCU_ARCHES
             )
 
+        _worker_selector = None
+
+        @classmethod
+        def register_worker_selector(cls, selector):
+            """Let one extension specialize the default worker after Core config."""
+            if not callable(selector):
+                raise TypeError("HCU worker selector must be callable")
+            if cls._worker_selector is not None and cls._worker_selector is not selector:
+                raise RuntimeError("HCU worker selector already has an owner")
+            cls._worker_selector = staticmethod(selector)
+
         @classmethod
         def check_and_update_config(cls, vllm_config) -> None:
             require_runtime_healthy()
@@ -342,6 +353,7 @@ def _hcu_platform_class() -> type:
             from hcu_adapter.bridges.vllm_moe_aiter import configure_padding_policy
 
             configure_padding_policy(vllm_config.kernel_config.moe_backend)
+            worker_was_auto = vllm_config.parallel_config.worker_cls == "auto"
             super().check_and_update_config(vllm_config)
             from hcu_adapter.bridges.vllm_model_load import (
                 OFFICIAL_MODEL_LOAD_WORKER,
@@ -354,6 +366,10 @@ def _hcu_platform_class() -> type:
                 and parallel.distributed_executor_backend in ("uni", "mp")
             ):
                 parallel.worker_cls = POST_MODEL_LOAD_WORKER
+            if (worker_was_auto and cls._worker_selector is not None
+                    and parallel.worker_cls in ("auto", OFFICIAL_MODEL_LOAD_WORKER,
+                                                POST_MODEL_LOAD_WORKER)):
+                parallel.worker_cls = cls._worker_selector(parallel.worker_cls, vllm_config)
 
         @classmethod
         def get_attn_backend_cls(

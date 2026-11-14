@@ -584,18 +584,29 @@ def flash_attn_varlen_func(
     return o
 
 
-def merge_state_v2(o1, lse1, o2, lse2):
+def merge_state_v2(o1, lse1, o2, lse2, out=None, out_lse=None):
     """Exact log-sum-exp merge of two partial attention states.
 
     sglang feeds (o, lse) pairs straight from flash_attn_with_kvcache, so
     lse layout here is (M, H) matching this module's emu; o is (M, H, Dv).
-    Returns (o_merged, lse_merged).
+    The CUDA signature additionally takes ``out``/``out_lse`` write-through
+    buffers and always returns the merged pair; when given they are filled
+    in place and their dtype (not the input's) carries the result, since
+    sglang's chunked prefix path accumulates in the buffers it allocates.
     """
     if o1.dim() == lse1.dim() + 1:  # (M, H, Dv) with (M, H) lse
         o, lse = _merge_acc(
             o1.float(), lse1.float(), o2.float(), lse2.float()
         )
-        return o.to(o1.dtype), lse
+        if out is not None:
+            out.copy_(o)
+            o = out
+        else:
+            o = o.to(o1.dtype)
+        if out_lse is not None:
+            out_lse.copy_(lse)
+            lse = out_lse
+        return o, lse
     raise ValueError(
         f"merge_state_v2 emu: unexpected shapes o {tuple(o1.shape)} "
         f"lse {tuple(lse1.shape)}"

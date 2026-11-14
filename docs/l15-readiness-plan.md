@@ -250,6 +250,17 @@ Torch 包装仍调用原对象。以私有调用命名空间映射相对/绝对 
 BuildSpec/ninja/cache、编译参数及依赖追踪仍在使用，不转移社区 Python
 模块或改写 `__file__`。量化变换先生成 packed BF16 shuffle 分支，再由
 warp 变换把接收类型修正为 `T`，避免旧顺序造成首轮安装缺针。
+
+2026-11-11 修正：bind 原先把安装时的 `DEFAULT_INCLUDE` 快照为私有列表，
+之后插件（`hcu_sglang.jit_overlay_loader.prefer_overlay_headers`）在共享
+列表前插的 overlay include 被丢弃，overlay 源码因此读到 bundle 中同名但
+缺少 HCU 扩展的头文件。Kimi-K3.1 服务在 CUDA graph 捕获时首次编译
+`dsv3_fused_a_gemm_7168_2112` 失败，报 `sglang::host::runtime` 中无
+`set_max_dynamic_smem_per_device`（只存在于 overlay 的 `runtime.cuh`）。
+现改为每次构建读取实时 `DEFAULT_INCLUDE` 并映射，`cuda-headers` 紧随
+bundle include 插入，后加入的前置项保持优先级；绑定前仍校验 include 根。
+`test_include_entries_prepended_after_binding_keep_priority` 在修复前失败、
+修复后通过。
 补齐已有 v2 FP8 conversion needle 的治理登记，不删除 portability 修复。
 
 validation-host-b 隐藏全部 GPU 的最终缓存/环境/启动结构及 CPU 算子组合回归
@@ -276,6 +287,34 @@ warning；该结果只证明本次导入没有源码写回，不作为功能就�
 此前 validation-host-b 多次显存预检不足，确认有其他用户的 8 卡
 `all_reduce_perf` 压测，未停止其任务。节点释放后重新预检，
 物理 GPU 0 空闲显存比例 0.969343，再补齐设备验证。
+
+### fused QKV-A GEMM 最小延迟路径在 HIP 关闭（2026-11-11）
+
+include 顺序修正后，Kimi-K3.1 服务完成全部权重加载、Mamba/KV cache
+分配，在 decode CUDA graph 捕获阶段仍失败：
+`runtime.cuh:293`（`hipFuncSetAttribute(hipFuncAttributeMaxDynamicSharedMemorySize)`）
+返回 invalid argument，上层报 `Exception: Capture cuda graph failed`，
+调用链为 `prepare_qkv_latent` -> `linear_with_fused_a_gemm` ->
+`jit_dsv3_fused_a_gemm`。
+
+两个事实共同决定该路径在 HCU 不可执行：overlay 的
+`csrc/gemm/dsv3_fused_a_gemm.cuh` 是 TensorRT-LLM 的 Hopper 核，函数体
+整段位于 `__CUDA_ARCH__ >= 900` 内（16 处守卫），HIP 编译不发射任何
+device 代码；其 host 侧 `invokeFusedAGemm` 以
+`smem_stage_budget = 192 * 1024` 估算流水 stage，申请约 192 KB 动态
+LDS，而本机 `shared_memory_per_block` 为 65536，驱动直接拒绝。路径被
+选中是因为 `fused_a_gemm_weight_eligible` 以 `is_cuda() and
+get_device_sm() >= 90` 判定，而平台接缝在模型层如实回答 CUDA、SM 为 93。
+
+`hcu_adapter.fused_a_gemm_gate` 在 HIP 下把该资格判定 rebind 为 False，
+各层回落到自身 linear（模型对所有其他 shape 的既有路径），不重写
+dispatch、不改社区源码。替换对象在 gemm 模块及其已按名导入的
+`deepseek_v2` 中同步生效；`nemotron_h` 在 `_is_cuda` 下导入该名，未加载时
+以 post-load hook 覆盖。注册在发布前完成，注册被拒不会留下未上报的绑定。
+`test_fused_a_gemm_gate.py` 覆盖双命名空间、late importer、非 HIP 早退
+与注册失败四条路径（4 passed），L0 GREEN。模型级验收：全量 93 层在
+双机 TP16 上加载完成（单卡权重 101 GB）、服务就绪、chat completions 返回
+200；输出正确性未在此路线上确认。
 
 ### JIT FP8 输出存储接口与源码不变的真实 Qwen2 回归
 

@@ -241,6 +241,22 @@ def install() -> None:
                 "HCU adapter: prefill BCG gate not installed",
                 exc_info=True,
             )
+        # DeepSeek-V3 fused QKV-A GEMM min-latency path (sglang main): its
+        # eligibility predicate sees the seam's CUDA answer plus sm 93 and
+        # routes decode through a TensorRT-LLM Hopper kernel whose body is
+        # __CUDA_ARCH__ >= 900 only and which asks for ~192 KB dynamic LDS
+        # against a 64 KB/block cap -- graph capture dies in
+        # set_max_dynamic_smem (invalid argument). Eligibility -> False on
+        # HIP, each layer keeps its own linear.
+        try:
+            from hcu_adapter import fused_a_gemm_gate
+
+            fused_a_gemm_gate.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: fused A-GEMM eligibility gate not installed",
+                exc_info=True,
+            )
         # Debug tooling (default OFF): in-graph side-buffer probe for the
         # graph-vs-emu corruption hunts — see hcu_adapter/probe_side.py. Only
         # loads when HCU_SIDE_PROBE is set (replay|eager); never in production.

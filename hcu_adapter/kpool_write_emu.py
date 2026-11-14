@@ -312,7 +312,10 @@ def install_patch() -> None:
 
 def install_read_patch() -> None:
     """Route GetKAndS.aiter to the torch gather (aiter kernel dead on gfx938)."""
-    from sglang.kernels.ops.attention.dsa import index_buf_accessor as iba
+    try:
+        from sglang.kernels.ops.kvcache import dsa_index_k_cache as iba
+    except ImportError:
+        from sglang.kernels.ops.attention.dsa import index_buf_accessor as iba
 
     iba.GetKAndS.aiter = _aiter_emu_wrapper
 

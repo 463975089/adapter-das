@@ -260,21 +260,24 @@ def bind(resolver, loader, source_root, bundle):
             ]
             return resolve(paths)
 
-        includes = [mapped(p) for p in loader.__globals__["DEFAULT_INCLUDE"]]
-        if str(bundle / "include") not in includes:
+        root_include = str(bundle / "include")
+        if root_include not in [mapped(p) for p in loader.__globals__["DEFAULT_INCLUDE"]]:
             raise RuntimeError("jit_sources: default compiler include root changed")
-        includes.append(str(bundle / "cuda-headers"))
         build_spec = loader.__globals__["BuildSpec"]
 
         def compiler_spec(**fields):
+            # The live DEFAULT_INCLUDE list is read per build, so entries other
+            # components prepend after installation keep their priority.
             # Includes returned by registered dependency providers enter here
             # too, preserving the original live provider registry.
-            fields["include_paths"] = tuple(mapped(p) for p in fields["include_paths"])
+            includes = [mapped(p) for p in fields["include_paths"]]
+            if root_include in includes:
+                includes.insert(includes.index(root_include) + 1, str(bundle / "cuda-headers"))
+            fields["include_paths"] = tuple(includes)
             return build_spec(**fields)
 
         load = _original(loader, dict(
-            loader.__globals__, DEFAULT_INCLUDE=includes, resolve_sources=resolve_inputs,
-            BuildSpec=compiler_spec,
+            loader.__globals__, resolve_sources=resolve_inputs, BuildSpec=compiler_spec,
         ))
         _bind(resolver, resolve_inputs, identity)
         _bind(loader, load, identity)

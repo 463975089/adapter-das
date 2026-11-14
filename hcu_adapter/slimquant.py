@@ -51,7 +51,8 @@ import torch
 logger = logging.getLogger(__name__)
 
 _ROUTED_EXPERT_RE = re.compile(
-    r"\.mlp\.experts\.\d+\.(?:gate_proj|up_proj|down_proj)\.weight$"
+    r"\.(?:mlp\.experts\.\d+\.(?:gate_proj|up_proj|down_proj)"
+    r"|block_sparse_moe\.experts\.\d+\.w[123])\.weight$"
 )
 
 
@@ -530,7 +531,10 @@ def register_quant_config():
             from sglang.srt.layers.moe.fused_moe_triton import (
                 FusedMoeWeightScaleSupported,
             )
-            from sglang.srt.utils import set_weight_attrs
+            try:
+                from sglang.srt.layers.utils.common import set_weight_attrs
+            except ImportError:
+                from sglang.srt.utils import set_weight_attrs
 
             w13 = torch.nn.Parameter(
                 torch.empty(

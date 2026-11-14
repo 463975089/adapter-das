@@ -129,6 +129,12 @@ BACKEND_CATALOG = {
             "native": {"status": "candidate", "note": "Adapter-owned V41 PCP backends/indexer/attention; plugin injects the FP8 reference scorer and publishes the model; eager PCP2+ only, real-device gates pending"},
         },
     },
+    "vllm_dsv41_pcp_compat": {
+        "var": None,
+        "summary": "vLLM V4.1 compatibility for the opt-in PCP extension",
+        "backends": {"scoped": {"status": "candidate",
+            "note": "FP8 SHUFFLE scoring, delayed mHC and empty CT linear on the owned eager model."}},
+    },
     "vllm_sparse_indexer": {
         "var": "HCU_VLLM_SPARSE_INDEXER_IMPL",
         "summary": "vLLM 0.33 C4 sparse indexer through public OOT and official helpers",
@@ -445,6 +451,22 @@ BACKEND_CATALOG = {
         "backends": {
             "writable-copy": {"status": "production",
                               "note": "common.np.frombuffer 代理返回可写副本"},
+        },
+    },
+    "fused_a_gemm": {
+        "var": None,
+        "summary": "DeepSeek-V3 fused QKV-A GEMM 最小延迟路径 "
+                   "(deepseek_v2 prepare_qkv_latent / q_b_proj_forward、"
+                   "nemotron_h latent MLP)",
+        "backends": {
+            "cuda-only-kernel-off": {
+                "status": "candidate",
+                "note": "HIP 恒不具备：kernel 仅 __CUDA_ARCH__>=900，且申请"
+                        "约 192KB 动态 LDS（本机 64KB/block），capture 期 "
+                        "set_max_dynamic_smem 报 invalid argument；资格判定 "
+                        "rebind 为 False 后各层走自身 linear。注册/dispatch "
+                        "契约已覆盖，模型级验收归全量模型双机服务",
+            },
         },
     },
     "triton_pdl": {

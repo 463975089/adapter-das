@@ -44,16 +44,23 @@ plain AR + norm).
 
 Degradation: any failure declines per-call to the saved stock functions.
 ``HCU_AR_NORM_IMPL=stock`` keeps upstream behavior entirely.
+
+Installation is staged: bootstrap registers an AFTER hook on official
+``initialize_model_parallel`` without importing AITER's communicator. Only
+after the worker binds its device and the host builds its TP communicator
+do we admit the consumer bindings below. Admission uses the real communicator,
+not wheel-file presence, and does not prove successful kernel execution.
 """
 
 import logging
 
 from . import hcu_env
-from .registry import MECH_REBIND, register
+from .registry import MECH_REBIND, MECH_SEAM, register
 
 LOG = logging.getLogger("hcu.adapter")
 
 _ONCE = {"served": False}
+_installed = False
 
 
 def _eligible_target_world(use_attn_tp_group):
@@ -70,6 +77,66 @@ def _eligible_target_world(use_attn_tp_group):
 
 
 def install():
+    """Schedule fusion admission after the host constructs a communicator.
+
+    Do not import AITER or install layer consumers here. The host already
+    imports/constructs its selected provider after selecting the worker device.
+    Inspect that real communicator rather than treating wheel layout as proof.
+    """
+    global _installed
+    if _installed or hcu_env.resolve("HCU_AR_NORM_IMPL")[0] == "stock":
+        return
+    import torch
+
+    if not torch.version.hip:
+        return
+    from sglang.srt.plugins.hook_registry import HookRegistry, HookType
+
+    target = "sglang.srt.distributed.parallel_state.initialize_model_parallel"
+    register(
+        "allreduce", _after_model_parallel_init, target=target,
+        mechanism=MECH_SEAM,
+        detail="admit AR+RMSNorm only after device-bound communicator construction",
+    )
+    HookRegistry.register(target, _after_model_parallel_init, HookType.AFTER)
+    _installed = True
+    LOG.info("[HCU ar+norm] admission deferred until communicator initialization")
+
+
+def _after_model_parallel_init(result, *args, **kwargs):
+    # The host owns device binding, provider construction and failure policy.
+    # This AFTER hook also runs when Plugin wraps model-parallel initialization.
+    try:
+        from sglang.srt.distributed import get_tp_group
+
+        _install_for_group(get_tp_group())
+    except Exception:
+        LOG.warning("[HCU ar+norm] post-device admission failed; "
+                    "keeping upstream fusion path", exc_info=True)
+    return result
+
+
+def _install_for_group(group):
+    """Validate the actual device and communicator, without another provider."""
+    import torch
+
+    device = group.device
+    if (device.type != "cuda" or not torch.cuda.is_initialized()
+            or device.index != torch.cuda.current_device()):
+        LOG.debug("[HCU ar+norm] worker device not bound; keeping upstream path")
+        return
+    ca = getattr(group, "ca_comm", None)
+    if (ca is None or getattr(ca, "disabled", True)
+            or not any(callable(getattr(ca, name, None)) for name in (
+                "custom_fused_ar_rms", "fused_ar_rms"))
+            or not callable(getattr(group, "fused_allreduce_rmsnorm", None))):
+        LOG.debug("[HCU ar+norm] communicator has no active fusion; "
+                  "keeping upstream path")
+        return
+    _install_dispatch()
+
+
+def _install_dispatch():
     impl = hcu_env.resolve("HCU_AR_NORM_IMPL")[0]
     if impl == "stock":
         LOG.warning("[HCU ar+norm] HCU_AR_NORM_IMPL=stock"
@@ -81,8 +148,6 @@ def install():
 
         if not torch.version.hip:
             return
-        if not hcu_env.has_aiter_custom_allreduce():
-            raise ImportError("AITER custom all-reduce module unavailable")
         from sglang.srt.layers import flashinfer_comm_fusion as _fcf
         from sglang.srt.layers.layer_boundary import exit as _lb_exit
         from sglang.srt.layers.layer_boundary.fusions import (
@@ -172,9 +237,9 @@ def install():
 
             tp = get_tp_group()
             ca = getattr(tp, "ca_comm", None)
-            if ca is not None and not getattr(ca, "disabled", False) and (
-                    hasattr(ca, "custom_fused_ar_rms")
-                    or hasattr(ca, "fused_ar_rms")):
+            if ca is not None and not getattr(ca, "disabled", True) and any(
+                    callable(getattr(ca, name, None)) for name in (
+                        "custom_fused_ar_rms", "fused_ar_rms")):
                 if _eligible_target_world(use_attn_tp_group) is not None:
                     out = tp.fused_allreduce_rmsnorm(
                         input_tensor, residual, weight, eps)

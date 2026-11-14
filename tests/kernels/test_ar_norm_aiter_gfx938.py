@@ -4,9 +4,8 @@
 """R-09(1) gate: aiter fused AR+RMSNorm bridge (ar_norm_aiter).
 
 Two layers:
-  1. bridge presence -- the flashinfer seam symbol carries the wrapper
-     flag (sitecustomize installed it; HCU_AR_NORM_IMPL must resolve to
-     aiter on this stack).
+  1. bridge scheduling -- bootstrap registers post-device admission;
+     consumer bindings wait for the host's TP communicator initialization.
   2. numeric + graph-replay verdict on real ranks -- spawns
      min(4, visible) ranks; each builds the aiter GraphSafe
      CustomAllreduce (gloo handshake group, as parallel_state does) and
@@ -128,26 +127,12 @@ def _rank_worker(rank, world, master_port):
 @pytest.mark.skipif(
     not (torch.cuda.is_available() and torch_version_hip is not None),
     reason="needs HIP GPU (aiter tier)")
-def test_bridge_installed():
-    from hcu_adapter import hcu_env
+def test_bridge_scheduled():
+    from hcu_adapter import ar_norm_aiter, hcu_env
 
     if hcu_env.resolve("HCU_AR_NORM_IMPL")[0] != "aiter":
         pytest.skip("HCU_AR_NORM_IMPL did not resolve to aiter")
-    from sglang.srt.layers import flashinfer_comm_fusion as fcf
-    from sglang.srt.layers.layer_boundary.fusions import allreduce as fus
-    from sglang.srt.layers.layer_boundary.residual import add_norm as an
-
-    assert getattr(
-        fcf.flashinfer_allreduce_residual_rmsnorm,
-        "_hcu_ar_norm_aiter", False), "flashinfer dispatch not bridged"
-    # <=v0.5.21 requires the ARM copies; v0.5.22 removed that gate and uses
-    # the dispatch seam directly.
-    if hasattr(an, "apply_flashinfer_allreduce_fusion"):
-        for mod in (an, fus):
-            assert getattr(
-                mod.apply_flashinfer_allreduce_fusion,
-                "_hcu_ar_norm_arm", False), (
-                f"arm not rebound on {mod.__name__}")
+    assert ar_norm_aiter._installed, "post-device admission not scheduled"
 
 
 @pytest.mark.skipif(
@@ -166,6 +151,6 @@ def test_fused_parity_and_graph_replay():
 
 
 if __name__ == "__main__":
-    test_bridge_installed()
+    test_bridge_scheduled()
     test_fused_parity_and_graph_replay()
     print("ar_norm_aiter gate: OK")

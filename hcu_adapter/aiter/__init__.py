@@ -104,9 +104,10 @@ def _hcu_cp_gather_indexer_k_quant_cache(
     pages] (aiter's is flattened per-request; sglang passes [1, pages]);
     cu_seq_lens: [reqs+1] i32 cumulative pooled lengths.
     """
-    from sglang.kernels.ops.attention.dsa.index_buf_accessor import (
-        _get_k_and_s_triton,
-    )
+    try:
+        from sglang.kernels.ops.kvcache.dsa_index_k_cache import _get_k_and_s_triton
+    except ImportError:
+        from sglang.kernels.ops.attention.dsa.index_buf_accessor import _get_k_and_s_triton
 
     assert dst_k.shape[0] >= int(cu_seq_lens[-1].item()) if cu_seq_lens.numel() > 1 else True
     pages = page_indices if page_indices.dim() == 2 else page_indices.view(1, -1)

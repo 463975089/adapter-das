@@ -1,6 +1,6 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-12）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-14）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
@@ -90,6 +90,16 @@ vLLM 0.33 V4.1 PCP attention owned by the adapter kernel module
 | stock | candidate Default: adapter builds no PCP class |
 
 路由变量：`HCU_VLLM_PCP_IMPL`
+
+## vllm_dsv41_pcp_compat
+
+vLLM V4.1 compatibility for the opt-in PCP extension
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| scoped | candidate FP8 SHUFFLE scoring, delayed mHC and |
+
+路由变量：（auto）
 
 ## vllm_sparse_indexer
 
@@ -306,6 +316,16 @@ TP init 广播 payload（行为还原：torch2.11 dlpack 只读 BufferError）
 | 档位 | 状态 / 备注 |
 |---|---|
 | writable-copy | production common.np.frombuffer 代理返回可写副本 |
+
+路由变量：（auto）
+
+## fused_a_gemm
+
+DeepSeek-V3 fused QKV-A GEMM 最小延迟路径 (deepseek_v2 prepare_qkv_latent / q_b_proj_forward、nemotron_h latent MLP)
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| cuda-only-kernel-off | candidate HIP 恒不具备：kernel 仅 __CUDA_ARCH__>=900 |
 
 路由变量：（auto）
 
