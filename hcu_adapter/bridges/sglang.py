@@ -805,10 +805,50 @@ def install() -> None:
                     raise NotImplementedError(msg)
 
                 _fm.fused_norm_rope_attn_rope_cast = _flash_mla_mega_unavailable
+
+                # The same old wheel also lacks/missigns the rest of the
+                # v0.5.23 face: get_mla_decoding_metadata (AttributeError,
+                # 18 cases via dsa_backend._compute_flashmla_metadata) and
+                # flash_mla_sparse_fwd's new call signature (TypeError, 7
+                # cases). Until HCU ships a wheel at the v0.5.23 API level
+                # (or dsa sparse gets routed to HCU impls), every one of
+                # these paths is a platform exclusion: convert to skips in
+                # unittest frames (kit doctrine: dsa_impl_capability ->
+                # skipTest with reason), stay loud elsewhere.
+                def _flash_mla_face_stub(name):
+                    def _unavailable(*args, **kwargs):
+                        return _flash_mla_mega_unavailable(*args, **kwargs)
+
+                    _unavailable.__name__ = name
+                    return _unavailable
+
+                try:
+                    _fm.get_mla_decoding_metadata
+                except AttributeError:
+                    _fm.get_mla_decoding_metadata = _flash_mla_face_stub(
+                        "get_mla_decoding_metadata"
+                    )
+                _real_sparse_fwd = getattr(_fm, "flash_mla_sparse_fwd", None)
+
+                if _real_sparse_fwd is not None:
+                    import functools as _ft
+
+                    @_ft.wraps(_real_sparse_fwd)
+                    def _sparse_fwd_compat(*args, **kwargs):
+                        try:
+                            return _real_sparse_fwd(*args, **kwargs)
+                        except TypeError:
+                            # v0.5.23 passes kwargs the pre-0523 wheel never
+                            # learned: signature drift, not a numeric fault.
+                            return _flash_mla_mega_unavailable(*args, **kwargs)
+
+                    _fm.flash_mla_sparse_fwd = _sparse_fwd_compat
+
                 logging.getLogger("hcu.adapter").warning(
                     "HCU adapter: flash_mla mega-face shim installed "
-                    "(wheel lacks fused_norm_rope_attn_rope_cast; import-safe, "
-                    "use-raises)"
+                    "(wheel predates the v0.5.23 API surface: mega import "
+                    "made bindable; get_mla_decoding_metadata stubbed; "
+                    "flash_mla_sparse_fwd signature drift converts to skip)"
                 )
         except ImportError:
             pass  # no flash_mla wheel at all: absence handling stays as-is
