@@ -108,17 +108,43 @@ def _install_factory(factory, entry):
         return factory
 
 
-def install():
-    from . import hcu_env, registry
+def _install_targets(targets, registry):
+    """Install every target that still exists on this upstream tree.
 
-    if not hcu_env.enabled("HCU_JIT_FP8_FFI") or torch.version.hip is None:
-        return
-    for module_name, name, entry in _TARGETS:
+    Upstream releases drop or rename JIT factory attributes (v0.5.23 lost
+    moe.dsv4._jit_silu_mul_quant_contig_module while varlen remains). An
+    absent factory is skipped loudly instead of aborting the loop midway:
+    a half-installed bootstrap cascades into every downstream gate that
+    boots the bridge.
+    """
+    installed = 0
+    for module_name, name, entry in targets:
         module = importlib.import_module(module_name)
-        _install_factory(getattr(module, name), entry)
+        try:
+            factory = getattr(module, name)
+        except AttributeError:
+            LOG.warning(
+                "HCU adapter: JIT FP8 target absent on this tree, skipped: %s.%s",
+                module_name, name,
+            )
+            continue
+        _install_factory(factory, entry)
         registry.register(
             "per_token_quant", "jit-fp8-output-storage",
             target=module_name + "." + name, mechanism=registry.MECH_REBIND,
             detail="retain factory/cache aliases; only e4m3fn output viewed as uint8 at FFI",
         )
-    LOG.warning("HCU adapter: JIT FP8 output storage views installed (per-token, generic, v2, DSV4)")
+        installed += 1
+    return installed
+
+
+def install():
+    from . import hcu_env, registry
+
+    if not hcu_env.enabled("HCU_JIT_FP8_FFI") or torch.version.hip is None:
+        return
+    installed = _install_targets(_TARGETS, registry)
+    LOG.warning(
+        "HCU adapter: JIT FP8 output storage views installed (%d/%d targets;"
+        " per-token, generic, v2, DSV4)", installed, len(_TARGETS),
+    )
