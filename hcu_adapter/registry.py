@@ -61,6 +61,12 @@ TEXT_PATCH_ALLOWLIST = {
     ("per_token_quant", "#elif defined(__gfx950__) || defined(__gfx1200__) || defined(__gfx1201__)"),
     ("per_token_quant", "reinterpret_cast<__nv_fp8x2_storage_t*>(&output_buf)"),
     ("per_token_quant", "__nv_cvt_float2_to_fp8x2(outputx2, __NV_SATFINITE, __NV_E4M3)"),
+    # v0.5.23 run_packed16 bf16+fp8 fast path brace-constructs the packed
+    # pair from float2; under USE_ROCM fp8x2_e4m3_t is raw uint16_t storage
+    # (utils.cuh) with no float2 ctor — gfx936 hipcc: "no viable conversion
+    # from 'const float2' to 'Q2'". Routed to the DTK SATFINITE conversion,
+    # unclamped to keep v0.5.23's NaN-observable bf16 semantics.
+    ("per_token_quant", "out[i] = Q2{scaled};"),
     ("fused_moe", "assert _is_cuda or _is_xpu, ("),
     ("kda", "t < t_slot"),  # prefill-CP rope fused guard, same pattern
     # torch2.11 cannot infer dtype from numpy scalars (np.prod int64) when
