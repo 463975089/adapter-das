@@ -29,21 +29,32 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 try:
-    from sglang.kernels.ops.attention.dsa import index_buf_accessor as iba  # noqa: E402
-    from sglang.kernels.ops.attention.fused_store_index_cache import (  # noqa: E402
-        fused_store_index_k_cache,
-    )
+    try:
+        # Upstream v0.5.23 relocated the NSA index-buf writer face into the
+        # new kernels/ops/kvcache namespace (dsa/index_buf_accessor.py
+        # became dsa_index_k_cache.py; attention/fused_store_index_cache.py
+        # became kvcache/dsa_fused_store_index_cache.py). Verified pure
+        # relocation: the fused-store file is byte-identical and the
+        # _set_k_and_s_triton_kernel body this gate launches is
+        # line-identical between the two trees -- only neighbouring GetK
+        # machinery was dropped upstream.
+        from sglang.kernels.ops.kvcache import dsa_index_k_cache as iba  # noqa: E402
+        from sglang.kernels.ops.kvcache.dsa_fused_store_index_cache import (  # noqa: E402
+            fused_store_index_k_cache,
+        )
+    except ImportError:
+        # v0.5.22 line: the pre-reorg locations.
+        from sglang.kernels.ops.attention.dsa import index_buf_accessor as iba  # noqa: E402
+        from sglang.kernels.ops.attention.fused_store_index_cache import (  # noqa: E402
+            fused_store_index_k_cache,
+        )
 except ImportError as _upstream_face:
-    # Upstream v0.5.23 removed the NSA index-buf writer face this parity
-    # gate pins against (dsa/index_buf_accessor.py and
-    # attention/fused_store_index_cache.py are both gone). Skipping at
-    # collection keeps the rest of the kernels segment runnable on the
-    # v0.5.23 tree; re-pinning the reference to the new upstream NSA API
-    # is a tracked follow-up, not something to silently rewire here.
+    # Neither known face exists: the upstream reorg moved again. Keep the
+    # rest of the kernels segment runnable and make the drift loud.
     import pytest
 
     pytest.skip(
-        f"upstream tree lacks the DSA index-buf writer face: {_upstream_face}",
+        f"upstream tree lacks every known DSA index-buf writer face: {_upstream_face}",
         allow_module_level=True,
     )
 
