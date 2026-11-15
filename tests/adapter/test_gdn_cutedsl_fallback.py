@@ -116,8 +116,20 @@ class GdnCutedslFallbackTests(unittest.TestCase):
 
         exc = ModuleNotFoundError("No module named 'cuda'", name="cuda")
         fake_torch = types.SimpleNamespace(version=types.SimpleNamespace(hip="6.0"))
+        # A blanket __import__ side_effect also breaks assertLogs' lazy
+        # unittest.case._log import on Python 3.12+; raise only for the
+        # cutedsl module the probe targets.
+        import builtins
+
+        real_import = builtins.__import__
+
+        def cutedsl_only_import(name, *args, **kwargs):
+            if name.startswith("sglang.kernels"):
+                raise exc
+            return real_import(name, *args, **kwargs)
+
         with mock.patch.object(subject, "torch", fake_torch), mock.patch(
-            "builtins.__import__", side_effect=exc
+            "builtins.__import__", side_effect=cutedsl_only_import
         ):
             with self.assertLogs("hcu.adapter", level="INFO") as logs:
                 self.assertIsNone(subject.install())

@@ -19,7 +19,7 @@ def test_model_swiglu_limit_reaches_vendor(
     vendor = ModuleType("aiter.moe")
     vendor.MoeQuantType = SimpleNamespace(FP8_W8A8="fp8", W8A8="int8")
     vendor.get_aiter_moe_config = lambda **kwargs: (
-        True, SimpleNamespace(need_shuffle=False, solution_type="test")
+        True, SimpleNamespace(need_shuffle=False, solution_type="moe_c")
     )
 
     def execute(*args, **kwargs):
