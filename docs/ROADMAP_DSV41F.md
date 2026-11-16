@@ -101,7 +101,7 @@ das 地板目标线：rmsnorm 5.6µs｜rotary 5.6µs｜router gate 28.4µs｜sil
 ## 纪律（沿用现役）
 
 - 单件 parity（ulp 语义门）+ 微基准先行；serving 数据只集中跑（用户定向）。
-- 四门（boot/生成/精度/长文）绿才算数；REDUCTION_PATCHES.md 逐项落账。
+- 四门（boot/生成/精度/长文）绿才算数；docs/history/REDUCTION_PATCHES.md 逐项落账。
 - 不 kill 非我方进程；临时脚本用后清理；密码/坐标不落盘。
 
 ## 台阶总账

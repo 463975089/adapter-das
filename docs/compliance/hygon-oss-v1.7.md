@@ -14,7 +14,7 @@
 | §4 17 个来源待确认 | 逐一定性：9 个 fla 第三方 + `utils.py`/`fused_sigmoid_gating_recurrent.py` = 保留原声明、登记不加水头；`tests/vendor/` 3 个 = HYGON 原创，已加 H1；`engram_gate_triton.py`/`slimquant.py` = H2（HYGON Copyright + Modified by + 登记）；`aiter_moe.py` = HYGON 原创配方重实现，已加 H1 + 登记 | [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md) |
 | THIRD_PARTY_NOTICES.md 缺失 | 新建：FLA(MIT)、vLLM(Apache-2.0)、causal-conv1d(BSD-3-Clause)外部项 + sglang-das(`364fabf`/`7b91060`)、lmslim 内部血缘，全部带固定 commit/许可证/本地路径/HYGON 修改 | 根目录 |
 | README 缺许可证说明与第三方入口 | 顶部新增"许可证与第三方声明"段（LICENSE + THIRD_PARTY_NOTICES.md 链接） | [README.md](../../README.md) |
-| REDUCTION_PATCHES.md:131 品牌身份 | 两处品牌词替换为中性表述（运维凭据归属方、厂商监控栈；原词见报告 §3），全仓 grep 归零 | REDUCTION_PATCHES.md |
+| docs/history/REDUCTION_PATCHES.md:131 品牌身份 | 两处品牌词替换为中性表述（运维凭据归属方、厂商监控栈；原词见报告 §3），全仓 grep 归零 | REDUCTION_PATCHES.md |
 | 防回潮 | governance §5.0 新增"源码文件头义务"条款（新增源码必须带头或登记来源） | [governance.md §5.0](../governance.md) |
 
 ## 遗留项（需团队/管理渠道，不在本分支处理）

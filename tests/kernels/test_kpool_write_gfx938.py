@@ -156,10 +156,11 @@ def test_gather_read_roundtrip():
 
     dst_k = torch.empty(n_tok, D, dtype=torch.uint8, device=dev)
     dst_s = torch.empty(n_tok, 4, dtype=torch.uint8, device=dev)
+    # request-major ABI: one row = one request spanning pages [0, 1, 2].
     kw.cp_gather_indexer_k_quant_cache_emu(
         kv, dst_k, dst_s,
-        torch.tensor([0, 1, 2], dtype=torch.int32, device=dev),
-        torch.tensor([0, PAGE, 2 * PAGE, 3 * PAGE], dtype=torch.int32, device=dev),
+        torch.tensor([[0, 1, 2]], dtype=torch.int32, device=dev),
+        torch.tensor([0, 3 * PAGE], dtype=torch.int32, device=dev),
         True,
     )
     assert torch.equal(dst_k, q.view(torch.uint8)), "gather k mismatch"
@@ -171,7 +172,7 @@ def test_gather_read_roundtrip():
     dst_s2 = torch.empty(7, 4, dtype=torch.uint8, device=dev)
     kw.cp_gather_indexer_k_quant_cache_emu(
         kv, dst_k2, dst_s2,
-        torch.tensor([1], dtype=torch.int32, device=dev),
+        torch.tensor([[1]], dtype=torch.int32, device=dev),
         torch.tensor([0, 7], dtype=torch.int32, device=dev),
         True,
     )

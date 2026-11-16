@@ -113,8 +113,23 @@ def test_structure_gate_order_and_isolation():
     i_platform = stmt_index(lambda b, a: a == "install" and b == "platform_seam")
     assert i_platform >= 0, "platform_seam.install() call not found"
 
-    # platform_seam.install 之前不得 import sglang（common.py import 期冻结
-    # FP8_E4M3_MAX，seam 必须最先翻转语义）
+    # platform_seam.install 之前不得在 import 期 import sglang（common.py
+    # import 期冻结 FP8_E4M3_MAX，seam 必须最先翻转语义）。别的函数体按
+    # 声明处理：def 不执行，真正 import 在调用点——rebind helper
+    # （_bind_deepgemm_legacy_silu）的调用点在 seam 之后。宿主链 install()
+    # 自身的语句仍逐行扫描（gate 就在其中），类体也仍算 import 期。
+    def _deferred_function_lines(tree, keep):
+        lines = set()
+        for n in ast.walk(tree):
+            if (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and n is not keep):
+                start = n.body[0].lineno
+                end = max(
+                    (getattr(x, "end_lineno", start) or start) for x in ast.walk(n)
+                )
+                lines.update(range(start, end + 1))
+        return lines
+
     platform_lineno = None
     for n in ast.walk(gate.body[i_platform]):
         if isinstance(n, ast.Call):
@@ -122,9 +137,20 @@ def test_structure_gate_order_and_isolation():
             if a == "install" and b == "platform_seam":
                 platform_lineno = n.lineno
                 break
-    before = src.splitlines()[: platform_lineno - 1]
-    offenders = [ln.strip() for ln in before
-                 if re.match(r"(from sglang|import sglang)\b", ln.strip())]
+    install_node = next(
+        n for n in tree.body
+        if isinstance(n, ast.FunctionDef) and n.name == "install"
+    )
+    assert install_node.lineno <= platform_lineno <= (
+        install_node.end_lineno or platform_lineno
+    ), "platform_seam.install must sit inside the host-chain install()"
+    deferred = _deferred_function_lines(tree, keep=install_node)
+    offenders = [
+        ln.strip()
+        for lineno, ln in enumerate(src.splitlines()[: platform_lineno - 1], 1)
+        if lineno not in deferred
+        and re.match(r"(from sglang|import sglang)\b", ln.strip())
+    ]
     assert not offenders, f"sglang imported before platform_seam.install: {offenders}"
 
     # 每座桥的 install/install_patch 都被 try 包裹（异常隔离契约）
