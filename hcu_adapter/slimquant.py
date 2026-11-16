@@ -118,7 +118,7 @@ class _SlimquantShard:
         # Non-expert weights are dequantized to bf16 below, so their scales
         # must not reach the loader (UnquantizedLinearMethod registers no
         # weight_scale param, and the stacked-name rewrite would KeyError).
-        if name.endswith("_scale"):
+        if name.endswith(".weight_scale"):
             base = name[: -len("_scale")]
             return bool(_ROUTED_EXPERT_RE.search(base))
         return True
@@ -136,7 +136,7 @@ class _SlimquantShard:
         if not self._active:
             return self._f.get_tensor(name)
         f = self._f
-        if name.endswith("_scale"):
+        if name.endswith(".weight_scale"):
             base = name[: -len("_scale")]
             if _ROUTED_EXPERT_RE.search(base):
                 # kernel convention: stored scale is true scale / 16
