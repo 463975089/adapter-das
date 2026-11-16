@@ -209,7 +209,7 @@ top20+tail JSD 0.016584；greedy regret 为 0 不能代替分布通过。
 社区 compressed-tensors 加载器拒绝整模型 FP32 诊断配置；未放宽其限制。
 默认 CPU 参考仍拒绝量化，此显式入口不支持 INT8/MoE 或其他 FP8 格式。
 源码完整性通过；配方差异、环境与证据见
-[启动就绪记录](l15-readiness-plan.md#真实-ct-fp8-的独立-cpu-qdq-参考2026-11-04)。
+[启动就绪记录](history/l15-readiness-202611-log.md#真实-ct-fp8-的独立-cpu-qdq-参考2026-11-04)。
 
 ### 2026-11-03 社区 0.5.22 真实 Qwen3 30B Channel-INT8（validation-host-a 卡4）
 
@@ -221,7 +221,7 @@ decode graph 分配 0.021 GB；报告
 修复为补齐显式 W8A8 Linear 缺失的既有 scaled GEMM 全局符号，
 未写回社区源码。CPU FP32 工具仍拒绝量化模型参考，此项未完成完整精度/
 语义验收。cookbook 固定 commit、参数差异与实际 dirty adapter 戳见
-[启动就绪记录](l15-readiness-plan.md#真实-30b-channel-int8-模型启动与生成)。
+[启动就绪记录](history/l15-readiness-202611-log.md#真实-30b-channel-int8-模型启动与生成)。
 
 ### 10-24 validation-host-18 单测三连（P1.1/1.2/1.3，卡 7）
 - **1.1 topk_v2 ragged 转正**：96 例 parity 集合语义 0 错（rem/topk/L/offsets 正交扫，4 reps）；非确定性=atomicAppend 发射到达序（topk_impl.cuh 612/617，paged 臂同源同在跑）；2.2-2.9× 快过 legacy；`HCU_TOPK_V2_RAGGED` 默认翻 1（validation-host-18 容器 dsa_topk_backend.py 已改）。**方法论：topk parity 一律比排序后集合，双跑分离"错"与"序"。**
