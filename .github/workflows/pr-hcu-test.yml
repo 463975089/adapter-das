@@ -71,7 +71,6 @@ jobs:
     container:
       # 镜像来自 ci/ci_docker_image（前置 image job 解析），必须带 digest
       image: ${{ needs.image.outputs.image }}
-      imagePullPolicy: Always
     defaults:
       run:
         # 容器 job 的默认 shell 是 sh，set -o pipefail 是 bash 扩展，不显式指定会在第一行就退出
