@@ -291,7 +291,19 @@ def _do_rmsnorm(
 
     check_cuda_tensor(input, weight, out)
     x_2d = input.contiguous().view(-1, input.shape[-1])
-    y_2d = out.contiguous().view(-1, out.shape[-1])
+    # Aliased out= IS input is part of the upstream contract (the CUDA
+    # two-pass kernel reloads after the store pass). Whether the triton
+    # compiler preserves load-before-store ordering for same-pointer X/Y
+    # is NOT verified on-device, so the aliased case defensively routes
+    # through a scratch buffer — one extra copy, aliased calls only
+    # (the on-device anchor test passes either way; it originally failed
+    # on a test-side bug, reference snapshot taken after the rewrite).
+    aliased = out.data_ptr() == input.data_ptr()
+    y_2d = (
+        torch.empty_like(x_2d)
+        if aliased
+        else out.contiguous().view(-1, out.shape[-1])
+    )
     had_noncontig_out = y_2d.data_ptr() != out.data_ptr()
     n = x_2d.shape[-1]
     block = min(next_power_of_2(n), 8192)

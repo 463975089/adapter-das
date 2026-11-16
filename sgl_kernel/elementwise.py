@@ -20,6 +20,7 @@ from typing import Optional
 import torch
 
 from .compat import HAS_ERF, HAS_TRITON, check_cuda_tensor, next_power_of_2
+from ._native import native_op
 
 _LIGHTOP_IMPL = None  # resolved once: None=probe-pending, (~)=unavailable
 _IMPL_CHOICE = None   # cached backend choice: "lightop" | "torch" | None
@@ -138,6 +139,17 @@ if HAS_TRITON:
         )
 
 
+def _check_aot_alignment(input: torch.Tensor) -> None:
+    """16-byte tail alignment, AOT contract (upstream elementwise.py:258-260).
+
+    The CUDA kernel vectorizes to 16-byte chunks (vec_size = 16/itemsize,
+    activation.cu dispatch); the upstream python wrapper rejects misaligned
+    tails before launch -- mirrored here so bad shapes fail loudly on every
+    backend, not as silent garbage on GPU."""
+    if input.shape[-1] * input.dtype.itemsize % 16 != 0:
+        raise ValueError("The pointers must be multiple of 16 bytes.")
+
+
 def _silu_native(x: torch.Tensor) -> torch.Tensor:
     return x * torch.sigmoid(x)
 
@@ -157,6 +169,7 @@ def _gated_mul_impl(
     force_native: bool = False,
 ) -> torch.Tensor:
     """Shared gate path for silu_and_mul / gelu_and_mul / gelu_tanh_and_mul."""
+    _check_aot_alignment(input)
     d = input.shape[-1] // 2
     if out is None:
         out = torch.empty(
@@ -236,6 +249,7 @@ def gelu_tanh_and_mul(input: torch.Tensor, out: torch.Tensor = None) -> torch.Te
 
 def gelu_quick(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
     """Quick-GELU: out = input * sigmoid(1.702 * input)"""
+    _check_aot_alignment(input)
     if out is None:
         out = torch.empty_like(input)
     else:
@@ -309,3 +323,235 @@ def silu_and_mul_clamp(
     gate = gate.float().clamp(max=limit)
     up = up.float().clamp(min=-limit, max=limit)
     output.copy_((_silu_native(gate) * up).to(output.dtype))
+
+
+# ---------------------------------------------------------------------------
+# MLA concat copies + pinned H2D (upstream csrc/elementwise/concat_mla.cu,
+# copy.cu; python wrappers at upstream elementwise.py:419-440)
+# ---------------------------------------------------------------------------
+
+_MLA_NUM_HEADS = 128
+_MLA_NOPE_DIM = 128
+_MLA_ROPE_DIM = 64
+_MLA_K_DIM = _MLA_NOPE_DIM + _MLA_ROPE_DIM  # 192
+_MLA_ABSORB_A_DIM = 512
+_MLA_ABSORB_B_DIM = 64
+_COPY_NO_CE_SIZES = (32, 64, 72)
+
+
+def _check_mla_common(t, name, shape2):
+    """Shared host checks mirroring concat_mla.cu check_tensor: 3D,
+    bf16, last-dim unit stride, 16-byte pointer alignment. dim0/dim1 are
+    checked by the callers (upstream raises RuntimeError via TORCH_CHECK)."""
+    if t.dim() != 3:
+        raise RuntimeError(f"{name} must be 3-D, got {t.dim()}")
+    if t.shape[2] != shape2:
+        raise RuntimeError(f"{name} last dim must be {shape2}, got {t.shape[2]}")
+    if t.stride(2) != 1:
+        raise RuntimeError(f"{name} must have unit last-dim stride")
+    if t.dtype != torch.bfloat16:
+        raise RuntimeError(f"{name} must be bf16, got {t.dtype}")
+    if t.data_ptr() % 16 != 0:
+        raise RuntimeError(f"{name} pointer must be 16-byte aligned")
+
+
+if HAS_TRITON:
+
+    @triton.jit
+    def _concat_mla_k_kernel(
+        KN,
+        KR,
+        K,
+        nope_s0,
+        nope_s1,
+        k_s0,
+        k_s1,
+        rope_s0,
+        NOPE: tl.constexpr,
+        ROPE: tl.constexpr,
+    ):
+        # One program per (token, head): nope row copy + the broadcast
+        # k_rope tail (upstream: k_rope is (T, 1, 64), one rope vector
+        # shared by all 128 heads).
+        t = tl.program_id(0).to(tl.int64)
+        h = tl.program_id(1).to(tl.int64)
+        n_off = tl.arange(0, NOPE)
+        nope = tl.load(KN + t * nope_s0 + h * nope_s1 + n_off)
+        r_off = tl.arange(0, ROPE)
+        rope = tl.load(KR + t * rope_s0 + r_off)
+        base = K + t * k_s0 + h * k_s1
+        tl.store(base + n_off, nope)
+        tl.store(base + NOPE + r_off, rope)
+
+    @triton.jit
+    def _concat_mla_absorb_q_kernel(
+        A,
+        B,
+        OUT,
+        a_s0,
+        a_s1,
+        b_s0,
+        b_s1,
+        out_s0,
+        out_s1,
+        A_DIM: tl.constexpr,
+        B_DIM: tl.constexpr,
+    ):
+        # One program per (row0, row1): a[...:512] then b[...:64] into out.
+        i0 = tl.program_id(0).to(tl.int64)
+        i1 = tl.program_id(1).to(tl.int64)
+        a_off = tl.arange(0, A_DIM)
+        b_off = tl.arange(0, B_DIM)
+        a = tl.load(A + i0 * a_s0 + i1 * a_s1 + a_off)
+        b = tl.load(B + i0 * b_s0 + i1 * b_s1 + b_off)
+        tl.store(OUT + i0 * out_s0 + i1 * out_s1 + a_off, a)
+        tl.store(OUT + i0 * out_s0 + i1 * out_s1 + A_DIM + b_off, b)
+
+
+def concat_mla_k(k: torch.Tensor, k_nope: torch.Tensor, k_rope: torch.Tensor):
+    """In-place MLA k concat (upstream concat_mla.cu:87-110):
+
+        k[T, 128, 192] = [k_nope[T, 128, 128] | k_rope[T, 1, 64] * heads]
+
+    k_rope is ONE rope vector per token, broadcast across all 128 heads.
+    Contract checks mirror the upstream TORCH_CHECKs (3D, bf16, unit
+    last-dim stride, 16B alignment); CUDA runs a triton row-copy tier,
+    everything else the equivalent strided torch copies. In-place on k.
+    """
+    num_tokens = k.shape[0]
+    _check_mla_common(k, "k", _MLA_K_DIM)
+    _check_mla_common(k_nope, "k_nope", _MLA_NOPE_DIM)
+    _check_mla_common(k_rope, "k_rope", _MLA_ROPE_DIM)
+    if k.shape[1] != _MLA_NUM_HEADS or k_nope.shape[1] != _MLA_NUM_HEADS:
+        raise RuntimeError("k/k_nope head dim must be 128")
+    if k_rope.shape[1] != 1:
+        raise RuntimeError("k_rope head dim must be 1")
+    if k.shape[0] != k_nope.shape[0] or k.shape[0] != k_rope.shape[0]:
+        raise RuntimeError("token counts must match")
+
+    # cpp tier (setup_hip.py wheel): concat_mla_k_hcu.cu — uint4 rows need
+    # 16-byte-aligned row strides; wider strides stay on the triton tier.
+    native = native_op("concat_mla_k")
+    if (
+        native is not None
+        and k.is_cuda
+        and k.stride(0) % 8 == 0
+        and k.stride(1) % 8 == 0
+        and k_nope.stride(0) % 8 == 0
+        and k_nope.stride(1) % 8 == 0
+        and k_rope.stride(0) % 8 == 0
+    ):
+        native(k, k_nope, k_rope)
+        return
+
+    if HAS_TRITON and k.is_cuda and k_nope.is_cuda and k_rope.is_cuda:
+        _concat_mla_k_kernel[(num_tokens, _MLA_NUM_HEADS)](
+            k_nope,
+            k_rope,
+            k,
+            k_nope.stride(0),
+            k_nope.stride(1),
+            k.stride(0),
+            k.stride(1),
+            k_rope.stride(0),
+            NOPE=_MLA_NOPE_DIM,
+            ROPE=_MLA_ROPE_DIM,
+            num_warps=4,
+        )
+        return
+    k[..., :_MLA_NOPE_DIM].copy_(k_nope)
+    k[..., _MLA_NOPE_DIM:].copy_(k_rope)  # (T,1,64) broadcasts over heads
+
+
+def concat_mla_absorb_q(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """MLA absorb-mode q concat (upstream concat_mla.cu:120-190):
+
+        a[B0, B1, 512], b[B0, B1, 64] -> out[B0, B1, 576]
+
+    The python wrapper allocates and returns out (upstream
+    elementwise.py:431-440). Contract checks mirror the upstream
+    TORCH_CHECKs; CUDA runs a triton copy tier, elsewhere torch.cat.
+    """
+    _check_mla_common(a, "a", _MLA_ABSORB_A_DIM)
+    _check_mla_common(b, "b", _MLA_ABSORB_B_DIM)
+    if a.shape[0] != b.shape[0] or a.shape[1] != b.shape[1]:
+        raise RuntimeError("a/b leading dims must match")
+    batch_dims = a.shape[:-1]
+    out = torch.empty(
+        (*batch_dims, _MLA_ABSORB_A_DIM + _MLA_ABSORB_B_DIM),
+        device=a.device,
+        dtype=a.dtype,
+    )
+    # cpp tier (setup_hip.py wheel): concat_mla_absorb_q_hcu.cu — the
+    # freshly allocated out is always contiguous/aligned. The native
+    # kernel additionally requires a/b ROW strides in multiples of 8
+    # bf16 elements (uint4 vectorization, check_concat_tensor); a
+    # base-aligned but row-strided view like a=(2,3,513)[..., :512]
+    # passes _check_mla_common yet would TORCH_CHECK-fail inside the
+    # native lib — guard it here and fall through to the strided
+    # triton/torch tiers instead (review #80).
+    native = native_op("concat_mla_absorb_q")
+    if (
+        native is not None
+        and a.is_cuda
+        and a.stride(0) % 8 == 0
+        and a.stride(1) % 8 == 0
+        and b.stride(0) % 8 == 0
+        and b.stride(1) % 8 == 0
+    ):
+        native(a, b, out)
+        return out
+    if HAS_TRITON and a.is_cuda and b.is_cuda and out.is_contiguous():
+        _concat_mla_absorb_q_kernel[(a.shape[0], a.shape[1])](
+            a,
+            b,
+            out,
+            a.stride(0),
+            a.stride(1),
+            b.stride(0),
+            b.stride(1),
+            out.stride(0),
+            out.stride(1),
+            A_DIM=_MLA_ABSORB_A_DIM,
+            B_DIM=_MLA_ABSORB_B_DIM,
+            num_warps=4,
+        )
+        return out
+    return torch.cat([a, b], dim=-1)
+
+
+def copy_to_gpu_no_ce(input: torch.Tensor, output: torch.Tensor):
+    """Pinned int32 H2D copy (upstream copy.cu: N in {32, 64, 72}).
+
+    Upstream smuggles the values through kernel launch PARAMETERS to
+    bypass the copy engine (a CUDA-runtime-only trick). This tier performs
+    the identical copy via ``output.copy_(input)`` — numerically exact,
+    but the transfer uses the regular H2D path; the mechanism difference
+    is pinned in BACKEND_CATALOG (emu tier, no triton equivalent).
+    Contract checks mirror the upstream TORCH_CHECKs exactly.
+    """
+    n = input.numel()
+    if n not in _COPY_NO_CE_SIZES:
+        raise RuntimeError(f"unexpected N {n} (upstream whitelist: 32/64/72)")
+    if input.dim() != 1:
+        raise RuntimeError("input must be 1-D")
+    if not input.is_contiguous():
+        raise RuntimeError("input must be contiguous")
+    if input.dtype != torch.int32:
+        raise RuntimeError("input dtype must be int32")
+    if output.dim() != 1 or output.numel() != n:
+        raise RuntimeError("output must be 1-D with matching numel")
+    if output.dtype != torch.int32:
+        raise RuntimeError("output dtype must be int32")
+    if not input.is_cpu:
+        raise RuntimeError("input must be a CPU tensor")
+    if not output.is_cuda:
+        raise RuntimeError("output must be a CUDA tensor")
+    # cpp tier (setup_hip.py wheel): the REAL no-CE path — values ride the
+    # kernel launch parameters (copy.cu InputArray trick, works on HIP's
+    # runtime too), bypassing the copy engine entirely.
+    native = native_op("copy_to_gpu_no_ce")
+    if native is not None:
+        native(input, output)
+        return
+    output.copy_(input)

@@ -1,6 +1,6 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-12）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-13）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
@@ -184,6 +184,52 @@ topk_softmax / topk_sigmoid / moe_fused_gate (contract = torch baseline)
 | triton | production no switch needed |
 | aiter | planned moe_fused_gate_sqrtsoftplus_v41_hcu  |
 | lightop | planned fast_topk_transform_* family |
+
+路由变量：（auto）
+
+## merge_state_v2
+
+LSE-exact merge of two partial attention states (MTP verify / cascade)
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | production fp32 FMA, ±inf lse -> -inf; all-mask |
+| cpp | production setup_hip.py wheel (merge_attn_state |
+| emu | production torch fallback (CPU / no-triton); op |
+
+路由变量：（auto）
+
+## concat_mla
+
+MLA concat copies: concat_mla_k (in-place (T,128,192)), concat_mla_absorb_q (allocating (...,576))
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | production row-copy kernel; bf16/3D/unit-stride |
+| cpp | production setup_hip.py wheel: concat_mla_absor |
+| emu | production strided torch copies / torch.cat fal |
+
+路由变量：（auto）
+
+## copy_to_gpu_no_ce
+
+small pinned int32 H2D, N in {32,64,72} (upstream copy.cu)
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| cpp | production setup_hip.py wheel: the REAL no-CE p |
+| emu | production output.copy_(input); the upstream no |
+
+路由变量：（auto）
+
+## per_token_group_quant_8bit
+
+sgl_per_token_group_quant_8bit bridge, v1 + v2 variants (C-class gap: the python seam was missing entirely — callers hit AttributeError)
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| cpp | production setup_hip.py wheel: plain 16-lane-pe |
+| emu | production torch ports of both upstream kernels |
 
 路由变量：（auto）
 
