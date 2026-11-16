@@ -350,3 +350,5 @@ skills/hcu-adapter-dev/  本 skill
   skill/对应参考文档，不等最终总结；一次性环境日志只留验证证据。README
   是指针型入口，静态资产表只活在 catalog/models.md（已立规约：README
   不维护清单、不留本地任务编号）。
+
+Runner registry fork guards run before acquiring locks; rebuild child locks and reject inherited active registrations. Recheck process/ownership after predicates and factories, including false matches and successful returns. Regression tests cover a real fork with another parent thread holding the lock and forks inside callbacks.

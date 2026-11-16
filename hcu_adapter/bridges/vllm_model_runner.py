@@ -24,8 +24,9 @@ _pid = os.getpid()
 
 
 def _check_process():
-    global _pid
+    global _pid, _lock
     if os.getpid() != _pid:
+        _lock = RLock()
         if _factories:
             raise RuntimeError("active runner registry inherited across fork; use spawn")
         _pid = os.getpid()
@@ -36,6 +37,7 @@ def register_model_runner_factory(owner, *, matches, create):
     if not isinstance(owner, str) or not owner or not callable(matches) or not callable(create):
         raise ValueError("runner factory requires owner, matches and create")
     candidate = ModelRunnerFactory(owner, matches, create)
+    _check_process()
     with _lock:
         _check_process()
         current = _factories.get(owner)
@@ -48,6 +50,7 @@ def register_model_runner_factory(owner, *, matches, create):
 
 
 def require_model_runner_factory(registration):
+    _check_process()
     with _lock:
         _check_process()
         if _factories.get(registration.owner) is not registration:
@@ -56,11 +59,18 @@ def require_model_runner_factory(registration):
 
 def create_model_runner(vllm_config, device, *, default):
     global _frozen
+    _check_process()
     with _lock:
         _check_process()
         _frozen = True
         registrations = tuple(_factories.values())
-    selected = [entry for entry in registrations if entry.matches(vllm_config)]
+    selected = []
+    for entry in registrations:
+        require_model_runner_factory(entry)
+        matches = bool(entry.matches(vllm_config))
+        require_model_runner_factory(entry)
+        if matches:
+            selected.append(entry)
     if len(selected) > 1:
         raise RuntimeError("multiple plugin runner factories matched the same configuration")
     if not selected:
@@ -68,6 +78,7 @@ def create_model_runner(vllm_config, device, *, default):
     registration = selected[0]
     require_model_runner_factory(registration)
     runner = registration.create(vllm_config, device)
+    require_model_runner_factory(registration)
     if runner is None:
         raise RuntimeError("selected plugin runner factory returned no runner")
     return runner
