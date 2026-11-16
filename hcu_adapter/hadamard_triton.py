@@ -99,6 +99,7 @@ def install():
     else:
         fn = _triton_hadamard_transform
 
+    # 替代档: HCU_HADAMARD_IMPL 档挂载面（hadamard_transform 族只能在模块体上重绑）
     import sglang.kernels.ops.quantization.hadamard as had
 
     had.hadamard_transform = fn

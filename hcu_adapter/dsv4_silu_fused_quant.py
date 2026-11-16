@@ -99,6 +99,7 @@ def silu_and_mul_clamp_quant(
     output_s: torch.Tensor | None = None,
 ):
     """silu(min(gate, limit)) * clamp(up, -limit, limit) -> per-group fp8 + scale."""
+    # 替代档: 无（fp8_dtype/fp8_max 常量；模块体导出）
     from sglang.kernels.ops.quantization.fp8_kernel import fp8_dtype, fp8_max
 
     M, N2 = x.shape

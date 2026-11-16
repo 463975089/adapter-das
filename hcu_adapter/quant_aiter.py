@@ -47,6 +47,12 @@ Degradation is transparent: aiter failure falls back to the saved
 upstream function (torch inline for the missing rowwise op), log-once.
 Exotic arms (column_major_scales / scale_tma_aligned / scale_ue8m0 /
 masked_m / non-e4m3 dtypes / batched 3D inputs) always go upstream.
+
+Tier order (2026-11 policy): lightop > aiter > stock. The lightop quant
+family is catalog status ``planned`` (gate pending), so auto never selects
+it; an explicit ``HCU_QUANT_IMPL=lightop`` installs it ahead of aiter, and
+a lightop failure falls through to aiter/stock with one log. Auto keeps the
+validated aiter tier.
 """
 
 import logging
@@ -65,17 +71,43 @@ def install():
         return
     try:
         import torch
+        # 替代档: fp8_kernel 模块为 quant_aiter 桥挂载面（分档入口 HCU_QUANT_IMPL；
+        # 包面符号走 quantization 包 __init__ 的 get_kernel 分发）
+        from sglang.kernels.ops.quantization import fp8_kernel as _fk
+    except Exception:
+        LOG.warning("[HCU quant] fp8_kernel not importable (impl=%s)",
+                    impl, exc_info=True)
+        return
+
+    # aiter is the validated vendor tier (catalog candidate); lightop quant
+    # is catalog "planned", so it is reachable only by explicit request.
+    aiter_group = aiter_fused = None
+    dynamic_per_tensor_quant = dynamic_per_token_scaled_quant = None
+    try:
         from aiter import (
             dynamic_per_tensor_quant,
             dynamic_per_token_scaled_quant,
             fuse_silu_mul_per_token_quant as aiter_fused,
             per_token_group_quant_fp8 as aiter_group,
         )
-        from sglang.kernels.ops.quantization import fp8_kernel as _fk
     except Exception:
-        LOG.warning("[HCU quant] aiter fp8-quant tier not installed "
-                    "(impl=%s)", impl, exc_info=True)
-        return
+        if impl != "lightop":
+            LOG.warning("[HCU quant] aiter fp8-quant tier not installed "
+                        "(impl=%s)", impl, exc_info=True)
+            return
+        LOG.info("[HCU quant] aiter unavailable; explicit lightop tier only")
+
+    lightop_group = lightop_rowwise = lightop_fused = None
+    if impl == "lightop":
+        try:
+            from lightop import fuse_silu_mul_per_token_quant as lightop_fused
+            from lightop.quant import (
+                per_token_group_quant_fp8 as lightop_group,
+                per_token_quant_fp8 as lightop_rowwise,
+            )
+        except Exception:
+            LOG.warning("[HCU quant] HCU_QUANT_IMPL=lightop but the lightop "
+                        "wheel has no quant API; falling back", exc_info=True)
     fp8_dtype = _fk.fp8_dtype
 
     if getattr(_fk.sglang_per_token_quant_fp8, "_hcu_quant_aiter", False):
@@ -105,10 +137,22 @@ def install():
         return xq, xs
 
     def _aiter_group(x, group_size, eps):
+        if aiter_group is None:
+            raise RuntimeError("aiter per_token_group_quant_fp8 unavailable")
         xq = torch.empty(x.shape, device=x.device, dtype=fp8_dtype)
         xs = torch.empty((x.shape[0], x.shape[-1] // group_size),
                          device=x.device, dtype=torch.float32)
         aiter_group(xq, x, xs, group_size, eps)
+        return xq, xs
+
+    def _lightop_group_q(x, group_size, eps):
+        if lightop_group is None:
+            raise RuntimeError("lightop per_token_group_quant_fp8 unavailable")
+        xq = torch.empty(x.shape, device=x.device, dtype=fp8_dtype)
+        xs = torch.empty((x.shape[0], x.shape[-1] // group_size),
+                         device=x.device, dtype=torch.float32)
+        lightop_group(x, group_size, eps=eps, dtype=fp8_dtype,
+                      out_q=xq, out_scale=xs)
         return xq, xs
 
     def _torch_group_column_major(x, group_size, eps, dtype):
@@ -128,22 +172,32 @@ def install():
     def _plain(x):
         return x.dim() == 2 and x.is_contiguous() and x.shape[0] > 0
 
-    # ---- rowwise: fixes the HIP NameError, 15x on the hot path ----------
+    # ---- rowwise: lightop (explicit) then aiter, 15x on the hot path ----
     def _rowwise(x, dtype=None):
         dtype = dtype or fp8_dtype
         if dtype != fp8_dtype or not _plain(x):
             return _torch_rowwise(x, dtype)   # upstream semantics, inline
-        try:
-            xq = torch.empty(x.shape, device=x.device, dtype=fp8_dtype)
-            xs = torch.empty((x.shape[0], 1), device=x.device,
-                             dtype=torch.float32)
-            dynamic_per_token_scaled_quant(xq, x, xs)
-            return xq, xs
-        except Exception:
-            _once("rowwise")
-            return _torch_rowwise(x, dtype)
+        if lightop_rowwise is not None:
+            try:
+                xq = torch.empty(x.shape, device=x.device, dtype=fp8_dtype)
+                xs = torch.empty((x.shape[0], 1), device=x.device,
+                                 dtype=torch.float32)
+                lightop_rowwise(x, dtype=fp8_dtype, out_q=xq, out_scale=xs)
+                return xq, xs
+            except Exception:
+                _once("lightop-rowwise")
+        if dynamic_per_token_scaled_quant is not None:
+            try:
+                xq = torch.empty(x.shape, device=x.device, dtype=fp8_dtype)
+                xs = torch.empty((x.shape[0], 1), device=x.device,
+                                 dtype=torch.float32)
+                dynamic_per_token_scaled_quant(xq, x, xs)
+                return xq, xs
+            except Exception:
+                _once("rowwise")
+        return _torch_rowwise(x, dtype)
 
-    # ---- group: plain arm -> aiter; fused whole-row -> aiter fused ------
+    # ---- group: plain arm -> lightop/aiter; fused whole-row -> vendor ---
     def _group_sg(x, group_size, eps=1e-10, column_major_scales=False,
                   scale_tma_aligned=False, scale_ue8m0=False,
                   fuse_silu_and_mul=False, masked_m=None):
@@ -157,18 +211,31 @@ def install():
         if plain and fuse_silu_and_mul and x.dim() == 2 \
                 and x.is_contiguous() and x.shape[0] > 0 \
                 and group_size == x.shape[-1] // 2:
-            # R-09(2): whole-row fused silu+quant -> aiter fused kernel
-            try:
-                q, s = aiter_fused(x, dtype=fp8_dtype, topk=1)
-                return q.view(x.shape[0], group_size), \
-                    s.view(x.shape[0], 1)
-            except Exception:
-                _once("fused")
+            # R-09(2): whole-row fused silu+quant -> lightop then aiter
+            if lightop_fused is not None:
+                try:
+                    q, s = lightop_fused(x, dtype=fp8_dtype, topk=1)
+                    return q.view(x.shape[0], group_size), \
+                        s.view(x.shape[0], 1)
+                except Exception:
+                    _once("lightop-fused")
+            if aiter_fused is not None:
+                try:
+                    q, s = aiter_fused(x, dtype=fp8_dtype, topk=1)
+                    return q.view(x.shape[0], group_size), \
+                        s.view(x.shape[0], 1)
+                except Exception:
+                    _once("fused")
         elif plain and not fuse_silu_and_mul \
                 and group_size == x.shape[-1] and x.dim() == 2:
             return _rowwise(x)  # upstream whole-row shortcut target
         elif plain and not fuse_silu_and_mul \
                 and _plain(x) and x.shape[-1] % group_size == 0:
+            if lightop_group is not None:
+                try:
+                    return _lightop_group_q(x, group_size, eps)
+                except Exception:
+                    _once("lightop-group")
             try:
                 return _aiter_group(x, group_size, eps)
             except Exception:
@@ -193,6 +260,11 @@ def install():
                 and x.shape[-1] % group_size == 0:
             if group_size == x.shape[-1]:
                 return _rowwise(x)
+            if lightop_group is not None:
+                try:
+                    return _lightop_group_q(x, group_size, eps)
+                except Exception:
+                    _once("lightop-group")
             try:
                 return _aiter_group(x, group_size, eps)
             except Exception:
@@ -205,11 +277,13 @@ def install():
     # ---- scaled_fp8_quant natives: upstream's own aiter calls -----------
     def _nat(nat, aiter_fn, tag):
         def _w(output, input, scale):
-            try:
-                aiter_fn(output, input, scale)
-            except Exception:
-                _once(tag)
-                nat(output, input, scale)
+            if aiter_fn is not None:
+                try:
+                    aiter_fn(output, input, scale)
+                    return
+                except Exception:
+                    _once(tag)
+            nat(output, input, scale)
         return _w
 
     targets = {

@@ -1,7 +1,22 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Route sglang v0.5.22 layernorm JIT faces to adapter-owned HCU kernels."""
+"""Route sglang v0.5.22 layernorm JIT faces to adapter-owned HCU kernels.
+
+v0.5.22 ``layernorm/norm.py`` has four ``load_jit`` symbols; this bridge covers
+the two that have an adapter tier:
+
+    rmsnorm                            -> sgl_kernel.layernorm.rmsnorm (here)
+    fused_add_rmsnorm                  -> sgl_kernel.layernorm.fused_add_rmsnorm
+                                          (here)
+    fused_inplace_qknorm               -> JIT 唯一实现 (no AOT/sgl_kernel tier,
+                                          upstream registers no fused op)
+    fused_inplace_qknorm_across_heads  -> JIT 唯一实现 (same; see norm.py)
+
+The qknorm pair keeps sglang's own JIT path: the upstream catalog exposes no
+qknorm AOT backend and the shadow ``sgl_kernel`` has no qknorm export, so there
+is nothing to rebind until a vendor tier lands (bridge-rule exception note).
+"""
 
 from __future__ import annotations
 

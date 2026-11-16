@@ -183,6 +183,18 @@ MoE router 的有限分数并列须遵循社区较小专家 ID 优先规则，�
     同时放开 FP8/GEMM/MHA/MLA 等不相关能力。只在最窄 seam 表达真实能力，
     测试至少覆盖普通、MLA、Sparse MLA 路由以及安装态 wheel 的实际 backend 日志。
 
+14. **桥内补绑宿主算子只准 import 包面**（catalog 分档，L0
+    `ops-import-depth` 执法）：`sglang.kernels.ops.<域>` 是宿主 fused-op
+    的调度面（priority + capability）；`…ops.<域>.<模块>` 是模块体，import
+    它等于越过 catalog 钉死一个实现——CUDA 优先 JIT 时在 HCU 上直接触发
+    ninja 现编（实证：L1 kernels 段 `HCU JIT: built
+    sgl_kernel_jit_activation_... in 33s`）。例外必须同行注记：`JIT 唯一实现`
+    （无替代档）或 `替代档: <符号/文件>`（替代档存在但签名/调用形不覆盖）。
+    守卫测试锁三面：HIP 平台语义 → 解析到 AOT（对照 CUDA → JIT）、调用后
+    `load_jit` 计数为 0 且 JIT cache 无新增、档位 env（如 HCU_SILU_MUL_IMPL）
+    继续生效；不能只测"绑上了"（范本：
+    `tests/adapter/test_bridge_activation_rebind.py`）。
+
 ## 任务路由（做某类事之前先读对应参考文档）
 
 vLLM 0.33/gfx936 的 C4 indexer 候选见

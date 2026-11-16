@@ -219,6 +219,7 @@ def _clamp_silu(x2d, out, limit):
         out.copy_((torch.nn.functional.silu(g) * u).to(out.dtype))
         return out
     try:
+        # JIT 唯一实现（moe.dsv4 clamp-silu 仅 JIT 档；异常走 torch 参考）
         from sglang.kernels.ops.moe.dsv4 import silu_and_mul_clamp
 
         silu_and_mul_clamp(x2d.contiguous(), out, float(limit))
