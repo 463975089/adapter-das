@@ -164,6 +164,17 @@ DSA paged MQA logits
 
 路由变量：`1`/`triton`/`vendor`
 
+## minimax_h3_rotary_embedding
+
+MiniMax-H3 NeoX partial RoPE: DiT128/96 and VAE64/48; native preferred by plugin
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate BF16/FP16/FP32 old-native canonical  |
+| torch | candidate CPU contract and diagnostic fallback |
+
+路由变量：（auto）
+
 ## rotary_embedding
 
 RoPE NeoX triton in place; GPT-J interleave = torch

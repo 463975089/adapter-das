@@ -110,6 +110,25 @@ _PATCHES_V2 = (
     ("gemm/per_token_group_quant_8bit_v2.cuh", _NEEDLE_V2_CVT, _REPL_V2_CVT),
 )
 
+# v0.5.23's quant rework added a bf16+fp8 fast path in run_packed16 that
+# brace-constructs the packed fp8 pair straight from float2:
+#   out[i] = Q2{scaled};
+# Under USE_ROCM fp8x2_e4m3_t is raw uint16_t storage (utils.cuh) with no
+# float2 constructor — gfx936 hipcc dies with "no viable conversion from
+# 'const float2' to 'Q2'" the first time the v0.5.23 call sites instantiate
+# the bf16/u8 family (group-quant bridge + fp8 quantized-linear chains,
+# 2026-11-15 bw47 forensics). Route it through the same DTK SATFINITE
+# conversion the generic branch already uses, but WITHOUT WeightTrait's
+# +-448 pre-clamp: v0.5.23's bf16 semantics deliberately keep NaN observable
+# (see the trait comment in-place); __HIP_SATFINITE saturates infinities and
+# out-of-range finites on both stacks, so unclamped conversion is the
+# bit-faithful equivalent of CUDA's Q2{scaled}.
+_NEEDLE_BF16_FAST = "out[i] = Q2{scaled};"
+_REPL_BF16_FAST = (
+    "out[i] = (Q2)__hip_cvt_float2_to_fp8x2(scaled, __HIP_SATFINITE, __HIP_E4M3);"
+    "  // HCU: raw-uint16 fp8x2 has no float2 ctor; unclamped SATFINITE == CUDA brace-init"
+)
+
 # The community DSV4 software converter saturates exp8 >= 15, collapsing
 # the valid OCP top segment [256, 448] to 448. On verified gfx938, use
 # DTK's OCP conversion branch, as already used by generic/v2 quantization.
@@ -185,6 +204,28 @@ def _apply(root, register):
         raise RuntimeError("jit_quant_fp8: upstream needles changed: " + ",".join(missing))
 
     import hcu_adapter.registry as _reg
+
+    # v0.5.23+ only: the bf16 packed fast-path store (see _NEEDLE_BF16_FAST).
+    # Pre-v0.5.23 trees legitimately lack the path, so tolerate absence (one
+    # transform bundle serves both lines) and register only when the patch is
+    # actually live on this tree.
+    _p_fast = csrc / "gemm/per_token_group_quant.cuh"
+    _text_fast = _p_fast.read_text(encoding="utf-8")
+    if _REPL_BF16_FAST in _text_fast:
+        pass  # already applied (re-run over a patched staging copy)
+    elif _NEEDLE_BF16_FAST in _text_fast:
+        from hcu_adapter.atomic_io import atomic_write
+
+        atomic_write(_p_fast, _text_fast.replace(_NEEDLE_BF16_FAST, _REPL_BF16_FAST))
+        register(
+            "per_token_quant",
+            "gfx936-hipcc-fp8-cvt",
+            target="text:sglang/kernels/jit/csrc/gemm/per_token_group_quant.cuh",
+            mechanism=_reg.MECH_TEXT,
+            detail=_NEEDLE_BF16_FAST,
+        )
+    else:
+        LOG.info("jit_quant_fp8: bf16 packed fast path absent (pre-v0.5.23 cuh)")
 
     # TEXT_PATCH_ALLOWLIST keys are (op, exact needle); the registry gate
     # fingerprints a text patch by its detail, so each needle registers as
