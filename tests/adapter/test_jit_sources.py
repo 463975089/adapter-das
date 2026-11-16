@@ -551,6 +551,21 @@ def test_original_loader_and_cached_aliases_route_all_compiler_inputs(source, tm
         str(bundle / "include"), str(bundle / "cuda-headers"),
         str(bundle / "include/sgl_kernel"), str(tmp_path),
     )
+    defaults = loader.__globals__["DEFAULT_INCLUDE"]
+    overlay = str(tmp_path / "plugin-include")
+    defaults.insert(0, overlay)
+    with pytest.raises(_SpecCaptured):
+        cached_loader("late-plugin", extra_dependencies=["late-provider"])
+    assert captured[-1].include_paths == (
+        overlay, str(bundle / "include"), str(bundle / "cuda-headers"),
+        str(bundle / "include/sgl_kernel"), str(tmp_path),
+    )
+    defaults.remove(overlay)
+    with pytest.raises(_SpecCaptured):
+        cached_loader("plugin-disabled")
+    assert captured[-1].include_paths == (
+        str(bundle / "include"), str(bundle / "cuda-headers"),
+    )
     bridge.bind(resolver, loader, root, bundle)
     assert loader.__globals__["DEFAULT_INCLUDE"] == [str(root / "include")]
     assert resolver.__globals__["KERNEL_PATH"] == root

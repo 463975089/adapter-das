@@ -26,12 +26,14 @@ from hcu_adapter.slimquant import _wrap_safe_open
 Q_KEY = "model.layers.0.self_attn.q_proj.weight"
 S_KEY = Q_KEY + "_scale"
 NORM_KEY = "model.layers.0.input_layernorm.weight"
+MHC_SCALE_KEY = "layers.0.hc_attn_scale"
 EXP_W_KEY = "model.layers.0.mlp.experts.3.down_proj.weight"
 EXP_S_KEY = EXP_W_KEY + "_scale"
 
 _W = torch.tensor([[127, -128, 3, 0]], dtype=torch.int8)
 _S = torch.tensor([[0.03125]], dtype=torch.bfloat16)
 _NORM = torch.linspace(-1, 1, 4, dtype=torch.bfloat16).unsqueeze(0)
+_MHC_SCALE = torch.tensor([2.0, 0.02, 0.25], dtype=torch.float32)
 _EXP_W = torch.tensor([[13, -14, 15, -16], [1, 2, 3, 4]], dtype=torch.int8)
 _EXP_S = torch.tensor([[0.5], [0.25]], dtype=torch.bfloat16)
 
@@ -47,6 +49,7 @@ def _make_ckpt(root, quant_config):
             Q_KEY: _W.clone(),
             S_KEY: _S.clone(),
             NORM_KEY: _NORM.clone(),
+            MHC_SCALE_KEY: _MHC_SCALE.clone(),
             EXP_W_KEY: _EXP_W.clone(),
             EXP_S_KEY: _EXP_S.clone(),
         },
@@ -80,6 +83,8 @@ def _assert_transformed(f):
     stored scale is returned x16 (kernel convention)."""
     assert S_KEY not in f.keys()
     assert EXP_S_KEY in f.keys()
+    assert MHC_SCALE_KEY in f.keys()
+    assert torch.equal(f.get_tensor(MHC_SCALE_KEY), _MHC_SCALE)
     w = f.get_tensor(Q_KEY)
     assert w.dtype == torch.bfloat16, f"expected bf16 dequant, got {w.dtype}"
     ref = (_W.float() * _S.float()).to(torch.bfloat16)

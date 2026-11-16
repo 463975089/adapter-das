@@ -65,18 +65,23 @@ def test_vendor_failure_is_not_hidden_by_fallback(monkeypatch):
         kvcacheio.hcu_get_last_loc(None, None, None)
 
 
-def test_speculative_cache_write_fallback():
-    pool = torch.full((1, 4), -1, dtype=torch.int64)
+def test_speculative_cache_read_fallback():
+    pool = torch.arange(24, dtype=torch.int32).reshape(3, 8)
+    original = pool.clone()
+    output = torch.full((6,), -2, dtype=torch.int64)
+
     kvcacheio.hcu_assign_extend_cache_locs(
-        torch.tensor([0]),
+        torch.tensor([2, 1, 0]),
         pool,
-        torch.tensor([1]),
-        torch.tensor([3]),
-        torch.tensor([7, 8]),
-        pool_len=4,
-        bs=1,
+        torch.tensor([1, 2, 3]),
+        torch.tensor([4, 2, 6]),
+        output,
+        pool_len=8,
+        bs=3,
     )
-    assert pool.tolist() == [[-1, 7, 8, -1]]
+
+    assert output.tolist() == [17, 18, 19, 3, 4, 5]
+    torch.testing.assert_close(pool, original)
 
 
 class _Kernel:

@@ -214,3 +214,28 @@ def test_install_is_a_noop_when_no_host_is_available(monkeypatch):
 
     assert events == []
     assert ACTIVE_HOST_ENV not in bootstrap.os.environ
+
+
+@pytest.mark.parametrize("host", ["sglang", "vllm", "deepinfer"])
+def test_scheduler_device_selection_precedes_gpu_initializing_bridges(monkeypatch, host):
+    from hcu_adapter import sglang_spawn_device
+
+    events = _arm_install(monkeypatch, available=(host,))
+    monkeypatch.setattr(sglang_spawn_device, "select_inherited_device",
+                        lambda: events.append("select-device"))
+    bootstrap.install()
+    expected = ["select-device", "common", host] if host == "sglang" else (
+        [host] if host == "deepinfer" else ["common", host])
+    assert events == expected
+
+
+def test_device_selection_failure_does_not_enter_gpu_initializing_bridges(monkeypatch):
+    from hcu_adapter import sglang_spawn_device
+
+    events = _arm_install(monkeypatch)
+    def fail():
+        raise RuntimeError("assigned device unavailable")
+    monkeypatch.setattr(sglang_spawn_device, "select_inherited_device", fail)
+    with pytest.raises(RuntimeError, match="assigned device unavailable"):
+        bootstrap.install()
+    assert events == []

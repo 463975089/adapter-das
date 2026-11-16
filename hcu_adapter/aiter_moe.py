@@ -189,12 +189,15 @@ def try_aiter_fused_moe(
     aw2 = _shuffled(w2) if getattr(cfg, "need_shuffle", False) else w2
 
     routed = getattr(moe_runner_config, "routed_scaling_factor", None)
+    gemm1_limit = getattr(moe_runner_config, "swiglu_limit", None)
+    if gemm1_limit is None:
+        gemm1_limit = getattr(moe_runner_config, "gemm1_clamp_limit", None)
     if len(_hit_log) < 3:
         _hit_log.add((E, N1, N2, K, top_k, block_size))
         LOG.warning(
             "HCU aiter moe: kernel ENGAGED E=%d N1=%d N2=%d K=%d topk=%d "
-            "block=%d sol=%s", E, N1, N2, K, top_k, block_size,
-            getattr(cfg, "solution_type", "?"))
+            "block=%d sol=%s limit=%s", E, N1, N2, K, top_k, block_size,
+            getattr(cfg, "solution_type", "?"), gemm1_limit)
     output = aiter_moe(
         hidden_states,
         aw1,
@@ -216,7 +219,7 @@ def try_aiter_fused_moe(
         float(routed) if routed is not None else 1.0,
         output_dtype=hidden_states.dtype,
         gemm1_alpha=getattr(moe_runner_config, "gemm1_alpha", None),
-        gemm1_limit=getattr(moe_runner_config, "gemm1_clamp_limit", None),
+        gemm1_limit=gemm1_limit,
     )
     if bool(getattr(moe_runner_config, "inplace", False)):
         return hidden_states
