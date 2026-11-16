@@ -290,6 +290,8 @@ gfx936 当前没有可执行的 AITER channel-FP8 MoE provider，测试在执行
 前明确 skip；不在模块收集阶段初始化设备。其他架构继续要求 AITER 实际执行，
 并保留原数值阈值与变输入 Graph 检查，不能因 provider 返回 None 而通用跳过。
 
+
+
 Mamba2 graph 数值门见 `test_l15_execution_chains.py` 的
 `test_mamba2_decode_fresh_input_graph`：独立 CPU FP32 计算投影、卷积、
 SSM 与门控归一化，保留激活存储 dtype。捕获后连续三轮改变输入与
@@ -348,7 +350,6 @@ def test_xxx(...):
 `HOST=none` 只关闭桥安装，不阻止 sitecustomize 提前导入已安装的 Adapter；
 脚本运行后再改 sys.path 可能混用已缓存包。缺桥的 skip 单列，不能算设备通过。
 
-<<<<<<< HEAD
 ## DeepEP 调用方缩放契约
 
 `tools/ct_w4a8_caller_contract.py --up-tree <community-checkout> --out <external-report>`
@@ -1079,7 +1080,7 @@ SHA256 `71cbc0c5e9e521a595988a3c4bd8463e29fd4574dd7362cd0a871bb52a8d9d8c`。
 - vendor 压测 BHTD→THD 使用 transpose；Tq>Tk 的 causal 全遮蔽行参考输出零。
   Graph CU 在设备上按 shape 构造，避免 pageable CPU 长度复制，保留原数值阈值。
   快关优先级由 `test_env_guards.py` 验证；算子通过不替代实际六步生成。
-=======
+
 Mamba verify-state scatter 的回归位于 `tests/kernels/test_mamba_state_scatter.py`
 和 `tests/adapter/test_mamba_state_scatter_bridge.py`：复制路径要求完整目标状态按位
 相等，覆盖非 identity source-row、无效 source/destination/step、entry 尾块和外层
@@ -1087,4 +1088,4 @@ stride；Graph 同时改变输入值与映射元数据。桥接测试保留已�
 并验证 fresh-process 显式快关与 spawn 子进程。真实桥接夹具必须兼容自动 bootstrap
 已经安装路由的进程：隔离原始 JIT 后测试，再恢复进入测试前的绑定，不能把
 HOSTnone 单独通过误作完整 suite 兼容证据。
->>>>>>> 58deb4e0 (perf(mamba): flatten request/block grid for gfx936 state scatter (#107))
+

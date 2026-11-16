@@ -751,6 +751,22 @@ BACKEND_CATALOG = {
                               "强制上游核"} ,
         },
     },
+    "linear_attn_gdn_verify": {
+        "var": "HCU_LINEAR_ATTN_GDN_VERIFY",
+        "summary": "SGLang GDN MTP target verification",
+        "backends": {
+            "auto": {"status": "production",
+                     "note": "default policy: qualified gfx936/DTK2610 stack, BF16 packed "
+                             "H8/HV24, FP32 state/snapshots, N1..18, draft4 -> AITER; "
+                             "other environments/contracts retain upstream"},
+            "triton": {"status": "production",
+                       "note": "explicit upstream rollback; also auto fallback"},
+            "aiter": {"status": "validated",
+                      "note": "vendor verify bridge in gdn_aiter.py; BF16 K=V=128, FP32 "
+                              "contiguous state/snapshots; gfx936 eager/Graph reference "
+                              "and Qwen3.6 TP2 MATH500/serving passed 2026-11-14"},
+        },
+    },
     "fused_moe": {
         "var": "HCU_FUSED_MOE_IMPL",
         "summary": "w8a8 fused MoE experts (standard dispatch, "

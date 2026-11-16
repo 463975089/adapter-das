@@ -513,6 +513,18 @@ GDN/gated-delta-rule 线性注意力（sglang fla 面）
 
 路由变量：`HCU_LINEAR_ATTN_GDN`
 
+## linear_attn_gdn_verify
+
+SGLang GDN MTP target verification
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | production explicit upstream rollback; also aut |
+| aiter | validated vendor verify bridge in gdn_aiter.py |
+| auto | production default policy: qualified gfx936/DTK |
+
+路由变量：`HCU_LINEAR_ATTN_GDN_VERIFY`
+
 ## fused_moe
 
 w8a8 fused MoE experts (standard dispatch, triton runner entry; deepep runner unaffected)

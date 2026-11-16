@@ -525,6 +525,13 @@ REGISTRY = {
                  "aiter=显式 CK 路由（fwd_h 状态递推 + packed decode；"
                  "K=V=128，state pool gather/scatter）",
     },
+    "HCU_LINEAR_ATTN_GDN_VERIFY": {
+        "env": "HCU_LINEAR_ATTN_GDN_VERIFY", "default": "auto",
+        "about": "GDN target_verify: auto=qualified gfx936/DTK2610 build and packed "
+                 "BF16 H8/HV24 N<=18/draft4 with FP32 state/snapshots -> AITER; "
+                 "others upstream. triton=upstream rollback, aiter=manual provider. "
+                 "Independent of prefill/packed decode; startup/capture policy",
+    },
     "HCU_DSA_PRESHUFFLE": {
         "env": "HCU_DSA_PRESHUFFLE", "default": "1",
         "about": "DSA aiter-preshuffle 路径（DTK wheel 内核可用时）；=0 回 legacy",
