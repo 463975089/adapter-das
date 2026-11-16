@@ -346,6 +346,90 @@ BACKEND_CATALOG = {
                         "note": "fast_topk_transform_* family"},
         },
     },
+    "merge_state_v2": {
+        "var": None,
+        "summary": "LSE-exact merge of two partial attention states "
+                   "(MTP verify / cascade)",
+        "backends": {
+            "triton": {"status": "production",
+                       "note": "fp32 FMA, ±inf lse -> -inf; all-masked "
+                               "rows -> 0/-inf (FA emu contract; upstream "
+                               "CUDA wheel emits NaN there — anchored "
+                               "divergence, see "
+                               "tests/kernels/test_aot_contract_b_class.py)"},
+            "cpp": {"status": "production",
+                    "note": "setup_hip.py wheel (merge_attn_states.cu port "
+                            "from sglang-das); all-masked rows arrive NaN "
+                            "from the kernel and are nan_to_num'd to the "
+                            "pinned 0/-inf in the python wrapper"},
+            "emu": {"status": "production",
+                    "note": "torch fallback (CPU / no-triton); optional "
+                            "v_merged/s_merged out params per upstream "
+                            "python wrapper"},
+        },
+    },
+    "concat_mla": {
+        "var": None,
+        "summary": "MLA concat copies: concat_mla_k (in-place "
+                   "(T,128,192)), concat_mla_absorb_q (allocating "
+                   "(...,576))",
+        "backends": {
+            "triton": {"status": "production",
+                       "note": "row-copy kernel; bf16/3D/unit-stride/16B "
+                               "contract checks mirror concat_mla.cu"},
+            "cpp": {"status": "production",
+                    "note": "setup_hip.py wheel: concat_mla_absorb_q_hcu.cu "
+                            "(as-is from sglang-das) + concat_mla_k_hcu.cu "
+                            "(plain uint4 rewrite — the CUDA original rides "
+                            "NV PTX no-allocate intrinsics)"},
+            "emu": {"status": "production",
+                    "note": "strided torch copies / torch.cat fallback"},
+        },
+    },
+    "copy_to_gpu_no_ce": {
+        "var": None,
+        "summary": "small pinned int32 H2D, N in {32,64,72} "
+                   "(upstream copy.cu)",
+        "backends": {
+            "emu": {"status": "production",
+                    "note": "output.copy_(input); the upstream no-CE trick "
+                            "(values in kernel launch params) is "
+                            "CUDA-runtime-only — numerically identical, "
+                            "mechanism differs (no triton equivalent)"},
+            "cpp": {"status": "production",
+                    "note": "setup_hip.py wheel: the REAL no-CE path "
+                            "(copy.cu InputArray — values ride the kernel "
+                            "launch parameters, which the HIP runtime "
+                            "supports too)"},
+        },
+    },
+    "per_token_group_quant_8bit": {
+        "var": None,
+        "summary": "sgl_per_token_group_quant_8bit bridge, v1 + v2 "
+                   "variants (C-class gap: the python seam was missing "
+                   "entirely — callers hit AttributeError)",
+        "backends": {
+            "emu": {"status": "production",
+                    "note": "torch ports of both upstream kernels; v1: "
+                            "eps-floor amax, x/y_s division, int8 cast "
+                            "TRUNCATES; v2: eps==1e-10 enforced, min/max "
+                            "must match dst dtype, two scale directions "
+                            "(stored dequant scale_inv; the quant "
+                            "multiplier is its reciprocal), ue8m0 via "
+                            "DeepEP fast_log2_ceil bits, fuse_silu_and_mul "
+                            "in input dtype, DeepEP masked_m layout read "
+                            "ON DEVICE (graph-capturable). "
+                            "Contract anchors: "
+                            "tests/kernels/test_aot_contract_quant.py"},
+            "cpp": {"status": "production",
+                    "note": "setup_hip.py wheel: plain 16-lane-per-group "
+                            "ports of both variants (no flashinfer vec_t / "
+                            "PDL / NV PTX); contracts bit-identical incl. "
+                            "int8 truncation and packed ue8m0 column-major "
+                            "scales; masked_m row limit read on device "
+                            "(per-expert row guard) — graph-capturable"},
+        },
+    },
     "platform_detect": {
         "var": "HCU_PLATFORM_SEMANTICS",
         "summary": "sglang 平台判定语义（§0.5 is_cuda 路线的落地点）",

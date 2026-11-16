@@ -50,6 +50,9 @@ import os
 
 import torch
 
+from .compat import HAS_TRITON, next_power_of_2
+from ._native import native_op
+
 __all__ = [
     "flash_attn_varlen_func",
     "flash_attn_with_kvcache",
@@ -584,30 +587,168 @@ def flash_attn_varlen_func(
     return o
 
 
-def merge_state_v2(o1, lse1, o2, lse2, out=None, out_lse=None):
+if HAS_TRITON:
+    import triton
+    import triton.language as tl
+
+    @triton.jit
+    def _merge_state_v2_kernel(
+        VA, SA, VB, SB, VO, SO,
+        D,
+        BLOCK: tl.constexpr,
+    ):
+        # One program per (token, head) row: pid covers the flattened
+        # (M, H) lse grid and the row-aligned v rows (M, H, D contiguous).
+        pid = tl.program_id(0).to(tl.int64)
+        sa = tl.load(SA + pid)
+        sb = tl.load(SB + pid)
+        m = tl.maximum(sa, sb)
+        # ±inf normalization (upstream merge_attn_states.cu treats any inf
+        # lse as fully masked); with both lanes -inf the weights vanish.
+        m_safe = tl.where(m == float("-inf"), 0.0, m)
+        wa = tl.exp(sa - m_safe)
+        wb = tl.exp(sb - m_safe)
+        denom = wa + wb
+        offs = tl.arange(0, BLOCK)
+        mask = offs < D
+        va = tl.load(VA + pid * D + offs, mask=mask, other=0.0).to(tl.float32)
+        vb = tl.load(VB + pid * D + offs, mask=mask, other=0.0).to(tl.float32)
+        v = (va * wa + vb * wb) / denom
+        # All-masked rows: this package pins 0/-inf (the FA emu contract
+        # its consumers rely on); the upstream CUDA wheel emits NaN/0
+        # there (no special case in merge_attn_states.cu) — divergence
+        # documented in the anchor tests and the PR notes.
+        v = tl.where(denom > 0.0, v, 0.0)
+        lse = m + tl.log(denom)  # denom == 0 -> -inf
+        tl.store(VO + pid * D + offs, v.to(VO.dtype.element_ty), mask=mask)
+        tl.store(SO + pid, lse)
+
+
+def merge_state_v2(v_a, s_a, v_b, s_b, v_merged=None, s_merged=None):
     """Exact log-sum-exp merge of two partial attention states.
 
-    sglang feeds (o, lse) pairs straight from flash_attn_with_kvcache, so
-    lse layout here is (M, H) matching this module's emu; o is (M, H, Dv).
-    The CUDA signature additionally takes ``out``/``out_lse`` write-through
-    buffers and always returns the merged pair; when given they are filled
-    in place and their dtype (not the input's) carries the result, since
-    sglang's chunked prefix path accumulates in the buffers it allocates.
+    Upstream python wrapper ABI: ``merge_state_v2(v_a, s_a, v_b, s_b,
+    v_merged=None, s_merged=None)`` with OPTIONAL destination tensors
+    (sglang's chunked prefix path passes both positionally); the lse
+    output is fp32 regardless of the v dtype. Layout: v (M, H, Dv) with
+    (M, H) lse (this module's emu convention), contiguous. ±inf lse
+    lanes normalize to -inf
+    (upstream convention). All-masked rows emit 0 with -inf lse (FA emu
+    contract; the upstream CUDA kernel emits NaN there — pinned and
+    restored, see the kernel/tier comments).
+
+    Returns (v_merged, s_merged): the caller's buffers when given, fresh
+    tensors otherwise.
     """
-    if o1.dim() == lse1.dim() + 1:  # (M, H, Dv) with (M, H) lse
-        o, lse = _merge_acc(
-            o1.float(), lse1.float(), o2.float(), lse2.float()
+    if v_a.dim() != s_a.dim() + 1 or tuple(v_a.shape[:-1]) != tuple(s_a.shape):
+        raise RuntimeError(
+            f"merge_state_v2: unexpected shapes v {tuple(v_a.shape)} "
+            f"lse {tuple(s_a.shape)}"
         )
-        if out is not None:
-            out.copy_(o)
-            o = out
-        else:
-            o = o.to(o1.dtype)
-        if out_lse is not None:
-            out_lse.copy_(lse)
-            lse = out_lse
-        return o, lse
-    raise ValueError(
-        f"merge_state_v2 emu: unexpected shapes o {tuple(o1.shape)} "
-        f"lse {tuple(lse1.shape)}"
+    if v_b.shape != v_a.shape or s_b.shape != s_a.shape:
+        raise RuntimeError(
+            f"merge_state_v2: mismatched states "
+            f"({tuple(v_a.shape)}/{tuple(s_a.shape)} vs "
+            f"{tuple(v_b.shape)}/{tuple(s_b.shape)})"
+        )
+    if v_merged is None:
+        v_merged = torch.empty_like(v_a)
+    else:
+        if v_merged.shape != v_a.shape or v_merged.dtype != v_a.dtype:
+            raise RuntimeError(
+                f"merge_state_v2: v_merged must be {tuple(v_a.shape)} "
+                f"{v_a.dtype}, got {tuple(v_merged.shape)} {v_merged.dtype}"
+            )
+    if s_merged is None:
+        s_merged = torch.empty(
+            s_a.shape, dtype=torch.float32, device=v_a.device
+        )
+    else:
+        if tuple(s_merged.shape) != tuple(s_a.shape):
+            raise RuntimeError(
+                f"merge_state_v2: s_merged must be {tuple(s_a.shape)}, "
+                f"got {tuple(s_merged.shape)}"
+            )
+        # The lse output is fp32 regardless of the v dtype (upstream
+        # merge_attn_states TORCH_CHECKs fp32 lse). A `.float()` rebind
+        # would silently detach the caller's buffer (the merge writes a
+        # private copy and the out-argument contract breaks); reject the
+        # dtype instead (review #80).
+        if s_merged.dtype != torch.float32:
+            raise RuntimeError(
+                f"merge_state_v2: s_merged must be float32, got {s_merged.dtype}"
+            )
+    # Normalize ±inf lse to -inf BEFORE merging (upstream convention:
+    # any inf lane counts as fully masked, not as an infinite weight).
+    neg_inf = float("-inf")
+    s_a_n = torch.where(
+        torch.isposinf(s_a), torch.full_like(s_a, neg_inf), s_a
+    ).float()
+    s_b_n = torch.where(
+        torch.isposinf(s_b), torch.full_like(s_b, neg_inf), s_b
+    ).float()
+
+    rows = s_a.numel()
+    d = v_a.shape[-1]
+
+    # cpp tier (setup_hip.py wheel): merge_attn_states.cu port. Constraints
+    # mirror its TORCH_CHECKs: contiguous fp32/fp16/bf16 v, fp32 lse, and
+    # head_size % (16/itemsize) == 0 (the 128-bit pack loop).
+    native = native_op("merge_state_v2")
+    if (
+        native is not None
+        and v_a.is_cuda
+        and v_merged.dtype in (torch.float32, torch.float16, torch.bfloat16)
+        and s_merged.dtype == torch.float32  # native TORCH_CHECKs fp32 lse
+        and v_a.is_contiguous()
+        and v_b.is_contiguous()
+        and v_merged.is_contiguous()
+        and s_merged.is_contiguous()
+        and s_a_n.is_contiguous()
+        and s_b_n.is_contiguous()
+        and d % (16 // v_merged.dtype.itemsize) == 0
+    ):
+        native(v_a, s_a_n, v_b, s_b_n, v_merged, s_merged)
+        # The native kernel has NO all-masked special case (upstream emits
+        # NaN there); this package pins 0/-inf (FA emu contract). Restore
+        # the pinned semantics without a host sync.
+        torch.nan_to_num(v_merged, nan=0.0, out=v_merged)
+        torch.nan_to_num(s_merged, nan=float("-inf"), posinf=float("-inf"), out=s_merged)
+        return v_merged, s_merged
+
+    use_triton = (
+        HAS_TRITON
+        and v_a.is_cuda
+        and v_a.dtype in (torch.float32, torch.float16, torch.bfloat16)
+        and v_a.is_contiguous()
+        and v_b.is_contiguous()
+        and s_a_n.is_contiguous()
+        and s_b_n.is_contiguous()
+        and v_merged.is_contiguous()
+        and s_merged.is_contiguous()
     )
+    if use_triton:
+        block = next_power_of_2(d)
+        _merge_state_v2_kernel[(rows,)](
+            v_a,
+            s_a_n,
+            v_b,
+            s_b_n,
+            v_merged,
+            s_merged,
+            d,
+            BLOCK=block,
+            num_warps=4 if block < 1024 else 8,
+        )
+        return v_merged, s_merged
+
+    o, lse = _merge_acc(v_a.float(), s_a_n, v_b.float(), s_b_n)
+    # All-masked rows: pin 0/-inf (FA emu contract) in the torch tier too.
+    both_masked = torch.isinf(s_a_n) & torch.isinf(s_b_n)
+    o = torch.nan_to_num(o, nan=0.0)
+    lse = torch.nan_to_num(lse, nan=float("-inf"), posinf=float("-inf"))
+    # Pin LAST (some torch builds fold -inf through nan_to_num to -FLT_MAX).
+    lse = torch.where(both_masked, torch.full_like(lse, float("-inf")), lse)
+    v_merged.copy_(o.to(v_merged.dtype))
+    s_merged.copy_(lse)
+    return v_merged, s_merged
