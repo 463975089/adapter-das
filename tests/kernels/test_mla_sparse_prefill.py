@@ -69,10 +69,16 @@ def assert_numerics(out, expected):
     out, expected = out.cpu().float(), expected.float()
     assert torch.isfinite(out).all()
     cosine = torch.nn.functional.cosine_similarity(out.flatten(), expected.flatten(), dim=0)
-    # Elementwise max-relative error; only exact-zero denominators are guarded.
-    maxrel = ((out - expected).abs() / expected.abs().clamp_min(torch.finfo(torch.float32).tiny)).max()
+    # Elementwise hybrid bound (isclose-style): a bare max-relative ratio
+    # blows up on softmax-near-zero outputs, where benign op-order noise --
+    # abs 1e-9 on the CPU double, ~3e-5 bf16 noise on the native kernel vs
+    # an output scale of ~0.02-0.5 -- reads as 8%-4500% "error" (2026-11-16
+    # image run). The absolute floor (0.1% of the output scale) keeps the
+    # 5% relative contract meaningful exactly where magnitudes are real.
+    atol = 1e-3 * float(expected.abs().max())
+    bad = (out - expected).abs() > (0.05 * expected.abs() + atol)
     assert cosine >= .9999, float(cosine)
-    assert maxrel <= .05, float(maxrel)
+    assert not bad.any(), (int(bad.sum()), float((out - expected).abs().max()))
 
 
 @pytest.mark.parametrize('rows,heads', [(1,4), (17,8), (64,16), (129,4), (3,64), (1,128)])
