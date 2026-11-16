@@ -171,8 +171,15 @@ if torch.cuda.is_available():
             "md = (got.float() - ref).abs().max().item();"
             "print('MAXDIFF', md)"
         )
-        env = dict(os.environ, HCU_CONFIG=pcfg, HIP_VISIBLE_DEVICES=os.environ.get(
-            "HIP_VISIBLE_DEVICES", "6"))
+        # Fresh-process tier parity only: skip the host-bridge install
+        # (HCU_ADAPTER_HOST=none). The bridges double subprocess startup
+        # (26s -> 52s measured, 2026-11-16 image) via sglang patching that
+        # this parity never exercises, and 4 such spawns blew the 300s
+        # gate budget -- the gate died mid parity-silu-lightop with every
+        # in-gate tag green.
+        env = dict(os.environ, HCU_CONFIG=pcfg, HCU_ADAPTER_HOST="none",
+                   HIP_VISIBLE_DEVICES=os.environ.get(
+                       "HIP_VISIBLE_DEVICES", "6"))
         r = subprocess.run([sys.executable, "-c", code], capture_output=True,
                            text=True, timeout=300, env=env)
         md = None
