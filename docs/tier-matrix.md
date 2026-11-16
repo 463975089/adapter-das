@@ -1,6 +1,6 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-13）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-16）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
@@ -98,6 +98,47 @@ vLLM V4.1 compatibility for the opt-in PCP extension
 | 档位 | 状态 / 备注 |
 |---|---|
 | scoped | candidate FP8 SHUFFLE scoring, delayed mHC and |
+
+路由变量：（auto）
+
+## qsa_prefill
+
+QSA sparse prefill launch geometry on HCU
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate gfx936 uses 64/1 through 64 rows and |
+
+路由变量：（auto）
+
+## qsa_mqa
+
+QSA indexer MQA on HCU
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| torch | candidate Official Torch reference for unsuppo |
+| boltops | candidate gfx936 BF16 QSA indexer with four 12 |
+
+路由变量：（auto）
+
+## qsa_scatter
+
+QSA state and compressed-key row stores on HCU
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate No host sync; duplicate destination  |
+
+路由变量：（auto）
+
+## mapped_host_view
+
+DTK mapped CPU allocation exposed as a device tensor
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| dtk | candidate INT8/BF16/FP8 live-ID Graph replay p |
 
 路由变量：（auto）
 
