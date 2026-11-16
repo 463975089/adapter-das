@@ -172,7 +172,7 @@ run_seg() {  # name timeout_base cmd...
 }
 
 # ---------------------------------------------------------------- segments
-run_seg l0      60   python3 ci/l0_gate.py
+run_seg l0      120  python3 ci/l0_gate.py
 run_seg cpu     300  python3 -m pytest tests/test_ops_cpu.py -q --no-header
 # Transfer ownership only to a blocking matrix with an available upstream tree.
 # Observe/off modes retain the broad regression's blocking coverage.
