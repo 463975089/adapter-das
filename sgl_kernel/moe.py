@@ -291,12 +291,20 @@ def _moe_align_block_size_torch(
     block_counts = (counts + block_size - 1) // block_size * block_size
     cumsum = torch.zeros(nb + 1, dtype=torch.int32, device=topk_ids.device)
     cumsum[1:] = block_counts.cumsum(0).to(torch.int32)
-
-    if cumsum_buffer.shape[0] >= nb:
-        cumsum_buffer[:nb].copy_(cumsum[:nb])
-    else:
-        cumsum_buffer.copy_(cumsum[: cumsum_buffer.shape[0]])
     total = int(cumsum[nb].item())
+
+    # Mirror the triton scan kernel exactly: slots 0..nb-1 carry the
+    # exclusive block-aligned prefix, slot nb mirrors the grand total
+    # (always written), and slot nb+1 repeats it only when the caller
+    # sized the buffer past nb+1 (WRITE_EXTRA). The old code stopped at
+    # [:nb] and left the total slot stale on the CPU/torch tier.
+    avail = cumsum_buffer.shape[0]
+    if avail >= nb:
+        cumsum_buffer[:nb].copy_(cumsum[:nb])
+        for slot in range(nb, min(avail, nb + 2)):
+            cumsum_buffer[slot] = total
+    else:
+        cumsum_buffer.copy_(cumsum[:avail])
     num_tokens_post_pad.fill_(total)
 
     max_blocks = experts_ids.shape[0]
@@ -389,7 +397,10 @@ def moe_align_block_size(
     # combine). NB_ = number of buckets = real experts + sentinel bucket.
     nb = num_experts + 1
     block_e = max(16, next_power_of_2(nb))
-    write_extra = 1 if cumsum_buffer.shape[0] > nb else 0
+    # WRITE_EXTRA defines slot nb+1; that slot only EXISTS when the buffer
+    # is longer than nb+1 (the runner's E+2 buffer has none — writing it
+    # was a one-past-the-end store).
+    write_extra = 1 if cumsum_buffer.shape[0] > nb + 1 else 0
 
     # Small shapes (every decode step: ~96-576 lanes) go through ONE
     # single-CTA kernel instead of the 6-launch quartet (2 aten setup

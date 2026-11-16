@@ -139,17 +139,27 @@ case "$TSCALE" in ''|*[!0-9]*) TSCALE=1;; esac
 
 run_seg() {  # name timeout_base cmd...
     local name="$1"; local tmo=$(( $2 * TSCALE )); shift 2
+    local log="/tmp/l1_${name}.log"
+    : > "$log"
     echo "L1: === $name (timeout ${tmo}s) ==="
     # heartbeat: one line/60s = elapsed + last JIT journal entry, so a long
     # compile storm (journal keeps advancing) is tellable from a wedge
     # (frozen last line) without waiting for the timeout. Cancelled after
     # the segment, so short segments just never print one.
-    ( t0=$(date +%s)
+    ( t0=$(date +%s); shown=0
       while sleep 60; do
           last="$(tail -n 1 "$JPROG" 2>/dev/null)"
           echo "L1 heartbeat [$name]: elapsed=$(( $(date +%s) - t0 ))s last=${last:-none}"
+          # Surface completed log lines while the segment is still running.
+          # A timeout must retain the active nodeid and faulthandler stack,
+          # rather than only a row of dots after the entire job finishes.
+          lines=$(wc -l < "$log")
+          if [ "$lines" -gt "$shown" ]; then
+              sed -n "$((shown + 1)),${lines}p" "$log" | sed 's/^/    /'
+              shown=$lines
+          fi
       done ) & hbpid=$!
-    if timeout "$tmo" "$@" > "/tmp/l1_${name}.log" 2>&1; then
+    if timeout "$tmo" "$@" > "$log" 2>&1; then
         echo "L1: $name PASS"
     else
         local rc=$?
@@ -194,7 +204,8 @@ PY
     done <<< "$family_nodes"
     echo "L1: kernels transfers $((${#FAMILY_DESELECT[@]} / 2)) cases to blocking matrix"
 fi
-run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -q --no-header \
+run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -vv --no-header \
+    --tb=short -o faulthandler_timeout=120 \
     "${FAMILY_DESELECT[@]}"
 
 # L1.5: upstream attention-unittest selection (dsa + kda + dense + mla

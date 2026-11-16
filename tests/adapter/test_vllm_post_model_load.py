@@ -91,6 +91,28 @@ def test_platform_super_first_known_only_and_idempotent(monkeypatch, choice, bac
     assert cfg.parallel_config.worker_cls == expected
 
 
+@pytest.mark.parametrize(("requested", "expected"), [
+    ("auto", "extension.Worker"),
+    (host.OFFICIAL_MODEL_LOAD_WORKER, host.POST_MODEL_LOAD_WORKER),
+    (host.POST_MODEL_LOAD_WORKER, host.POST_MODEL_LOAD_WORKER),
+    ("custom.Worker", "custom.Worker"),
+])
+def test_worker_selector_only_specializes_auto(requested, expected):
+    class Platform(bridge.HcuPlatform):
+        pass
+
+    cfg = config("mp")
+    cfg.parallel_config.worker_cls = requested
+    selector = Mock(return_value="extension.Worker")
+    Platform.register_worker_selector(selector)
+    Platform.check_and_update_config(cfg)
+    assert cfg.parallel_config.worker_cls == expected
+    if requested == "auto":
+        selector.assert_called_once_with(host.POST_MODEL_LOAD_WORKER, cfg)
+    else:
+        selector.assert_not_called()
+
+
 def test_super_failure_does_not_rewrite_worker(monkeypatch):
     cfg = config()
     cfg.parallel_config.worker_cls = host.OFFICIAL_MODEL_LOAD_WORKER

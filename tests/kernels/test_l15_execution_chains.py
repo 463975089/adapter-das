@@ -158,11 +158,17 @@ def check(actual, expected, *, atol=0.02):
 
 def replay_three(run, inputs, reference):
     """Capture once, mutate the same storage, and check three distinct waves."""
-    for _ in range(2):
-        run()
+    # This DTK hipBLASLt path requires warmup on the actual capture stream.
+    # Warming only the default stream caused error 900 and a blocked native
+    # scaled_mm call when capture switched streams.
+    capture_stream = torch.cuda.Stream()
+    capture_stream.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(capture_stream):
+        for _ in range(2):
+            run()
     torch.cuda.synchronize()
     graph = torch.cuda.CUDAGraph()
-    with torch.cuda.graph(graph):
+    with torch.cuda.graph(graph, stream=capture_stream):
         output = run()
     previous = reference()
     for wave in range(1, 4):

@@ -1,7 +1,70 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Legacy sglang compatibility chain behind an explicit install boundary."""
+"""Legacy sglang compatibility chain behind an explicit install boundary.
+
+Bridge rule (see skills/hcu-adapter-dev): when rebinding a host operator that
+has a tier in sglang's kernel catalog, import the PACKAGE face
+(``sglang.kernels.ops.<domain>``) so the fused-op dispatch picks the backend.
+Importing the module body (``sglang.kernels.ops.<domain>.<module>``) bypasses
+that dispatch and pins one implementation; it is allowed only with an
+inline ``JIT 唯一实现`` note (or a pointer to the alternative tier).
+"""
+
+_JIT_BODY = "sglang.kernels.ops.activation.activation"
+
+
+def _bind_deepgemm_legacy_silu() -> bool:
+    """Rebind the DeepGEMM runner's `_legacy_silu_and_mul` through the package face.
+
+    Upstream binds ``_legacy_silu_and_mul`` at import time:
+
+        if not (_is_npu or _is_hip) and _is_cuda:   # JIT module body
+        elif _is_musa: ...
+        else: _legacy_silu_and_mul = None            # HIP pre-seam
+
+    The adapter's platform seam answers CUDA for sglang, so ``is_hip()`` is
+    False by the time the runner is imported and upstream binds the JIT module
+    body — that is the 33s ninja build (``sgl_kernel_jit_activation_*``)
+    observed in the L1 kernels segment. Only a boot order that imports the
+    runner before the seam leaves ``None``.
+
+    The bridge therefore replaces **exactly the JIT module-body function** with
+    the PACKAGE face (``sglang.kernels.ops.activation``). The fused-op dispatch
+    then runs on the real platform: its JIT candidate is CUDA-only and the
+    fused-op capability gate keeps upstream's HIP truth (see the capability
+    bridge below), so the call resolves to AOT = our shadow ``sgl_kernel`` op
+    and continues through HCU_SILU_MUL_IMPL (auto = lightop > aiter > triton;
+    explicit lightop|aiter|triton|torch) like every other ``silu_and_mul``
+    call. Any other host binding is left untouched.
+    If upstream reorders the priority the package face follows automatically;
+    the bridge never pins an implementation.
+
+    Returns True when the runner carries a usable binding after the call,
+    False when the host package is absent.
+    """
+    import logging
+
+    log = logging.getLogger("hcu.adapter")
+    try:
+        import sglang.srt.layers.moe.moe_runner.deep_gemm as _dgr
+
+        bound = getattr(_dgr, "_legacy_silu_and_mul", None)
+        if bound is not None and getattr(bound, "__module__", "") != _JIT_BODY:
+            return True
+        from sglang.kernels.ops.activation import silu_and_mul as _hcu_silu
+    except ImportError:
+        return False
+    except Exception:
+        log.warning("HCU adapter: silu_and_mul binding failed", exc_info=True)
+        return False
+
+    _dgr._legacy_silu_and_mul = _hcu_silu
+    log.info(
+        "HCU DeepGEMM bridge: _legacy_silu_and_mul bound to "
+        "sglang silu_and_mul (replaced %s)", "JIT body" if bound else "None"
+    )
+    return True
 
 
 def install() -> None:
@@ -241,6 +304,22 @@ def install() -> None:
                 "HCU adapter: prefill BCG gate not installed",
                 exc_info=True,
             )
+        # DeepSeek-V3 fused QKV-A GEMM min-latency path (sglang main): its
+        # eligibility predicate sees the seam's CUDA answer plus sm 93 and
+        # routes decode through a TensorRT-LLM Hopper kernel whose body is
+        # __CUDA_ARCH__ >= 900 only and which asks for ~192 KB dynamic LDS
+        # against a 64 KB/block cap -- graph capture dies in
+        # set_max_dynamic_smem (invalid argument). Eligibility -> False on
+        # HIP, each layer keeps its own linear.
+        try:
+            from hcu_adapter import fused_a_gemm_gate
+
+            fused_a_gemm_gate.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: fused A-GEMM eligibility gate not installed",
+                exc_info=True,
+            )
         # Debug tooling (default OFF): in-graph side-buffer probe for the
         # graph-vs-emu corruption hunts — see hcu_adapter/probe_side.py. Only
         # loads when HCU_SIDE_PROBE is set (replay|eager); never in production.
@@ -429,6 +508,7 @@ def install() -> None:
             if not hasattr(_sk, "apply_token_bitmask_inplace_cuda"):
                 # sglang's xgrammar shim takes the HIP branch and imports this from
                 # sgl_kernel; bridge it to the in-tree triton op (CUDA branch).
+                # 替代档: 本文件 remap 到 triton（sgl_kernel 无 HIP bitmask 符号）
                 from sglang.kernels.ops.grammar.bitmask_ops import (
                     apply_token_bitmask_inplace_triton as _bitmask_triton,
                 )
@@ -475,6 +555,7 @@ def install() -> None:
         # this; the native fallback doesn't. Bridge: align scale to the padded
         # row count before quant (graph-safe: same buffers, no host sync).
         try:
+            # 替代档: fp8_kernel 模块=quant 桥挂载面（包面 per_token_group_quant 走分档）
             import sglang.kernels.ops.quantization.fp8_kernel as _fpk
 
             # is_cuda-seam ordering guard: this module reads is_cuda()/is_hip()
@@ -490,7 +571,14 @@ def install() -> None:
                 _fpk._is_hip = False
                 if not hasattr(_fpk, "per_token_group_quant"):
                     try:
-                        from sglang.kernels.ops.quantization.per_token_group_quant import (
+                        # Package face: the catalog's JIT wrapper for this
+                        # symbol (same call shape, including masked/fused-silu
+                        # tri-state kwargs). The AOT alternative
+                        # sgl_kernel.sgl_per_token_group_quant_8bit does NOT
+                        # cover this call shape: it requires eps/fp8_min/
+                        # fp8_max and returns None, while fp8_kernel passes
+                        # (x, x_q, x_s, group_size) + kwargs.
+                        from sglang.kernels.ops.quantization import (
                             per_token_group_quant as _ptgq,
                         )
 
@@ -555,6 +643,7 @@ def install() -> None:
         # fp8 view (zero-copy reinterpret) so downstream GEMM callers keep
         # seeing the expected dtype.
         try:
+            # 替代档: fp8_kernel 模块=quant 桥挂载面（fp8-out 特化绕 dtype 门）
             import sglang.kernels.ops.quantization.fp8_kernel as _fpk2
 
             # The JIT per_token_group_quant kernel binds Q as uint8 (HIP fp8 is
@@ -589,6 +678,7 @@ def install() -> None:
                 # bypass the dtype gate by pre-specializing through the private
                 # loader with out_dtype=fp8 (the JIT itself binds bytes under
                 # the HIP alias) — via the module function with fp8 dtype.
+                # JIT 唯一实现（fp8-out 特化；私有 _SUPPORTED_OUTPUT_DTYPES 仅模块体可见）
                 import sglang.kernels.ops.quantization.per_token_group_quant as _ptg
                 import torch as _t
 
@@ -639,6 +729,28 @@ def install() -> None:
                 return _orig_sat(self, platform)
 
             _CR.is_satisfied_by = _hcu_is_satisfied_by
+
+            # Scope the relaxation away from kernel *dispatch*. The fused-op
+            # priority lists JIT before AOT, and its capability gate must keep
+            # upstream's HIP truth: inheriting the CUDA->HIP relaxation above
+            # makes a CUDA-only JIT backend auto-select on HIP even when AOT
+            # (our sgl_kernel) is registered for HIP — the 33s
+            # sgl_kernel_jit_activation build observed in the L1 kernels
+            # segment. The relaxation exists for the fixed-path selector
+            # (select_kernel, below), not for choosing a provenance; rebind
+            # the capability predicate imported into fused_op so only that
+            # module keeps the original check. HIP-native backends (AOT =
+            # CUDA+HIP, AITER = HIP) stay eligible, CUDA-only JIT does not.
+            import sglang.kernels.fused_op as _fop
+
+            def _hcu_fused_capabilities_satisfied(capabilities, platform):
+                if isinstance(capabilities, _CR):
+                    capabilities = (capabilities,)
+                return (not capabilities) or any(
+                    _orig_sat(c, platform) for c in capabilities
+                )
+
+            _fop.capabilities_satisfied = _hcu_fused_capabilities_satisfied
 
             # The relaxation above can make upstream CUDA-declared specs eligible
             # alongside a spec that natively declares HIP — e.g. moe.topk_softmax
@@ -759,6 +871,7 @@ def install() -> None:
 
             if _henv.enabled("HCU_FA3_EMU"):
                 os.environ.setdefault("SGLANG_USE_SGL_FA3_KERNEL", "1")
+                # 替代档: fa3 emu 门翻转挂载面（HCU_FA3_EMU；包面无该门出口）
                 import sglang.kernels.ops.attention.flash_attention_v3 as _fa3v
 
                 _fa3v._is_fa3_supported = lambda device=None: True
@@ -821,6 +934,7 @@ def install() -> None:
                         try:
                             import torch.nn.functional as F
 
+                            # 替代档: 无（审计参考；包面未导出 per_token_quant_int8）
                             from sglang.kernels.ops.quantization.int8_kernel import (
                                 per_token_quant_int8,
                             )
@@ -1152,6 +1266,7 @@ def install() -> None:
 
                 import sgl_kernel.elementwise as _ew
 
+                # 替代档: sgl_kernel.elementwise.silu_and_mul_clamp（本处 replug）
                 import sglang.kernels.ops.moe.dsv4 as _dsv4
 
                 _dsv4.silu_and_mul_clamp = _ew.silu_and_mul_clamp
@@ -1262,6 +1377,7 @@ def install() -> None:
         # sure). The FP4-indexer arm keeps its loud CUDA-only raise (we don't
         # enable enable_deepseek_v4_fp4_indexer).
         try:
+            # 替代档: sgl_kernel dsv4_*（DTK AOT；本处仅 rebind 模块常量）
             import sglang.kernels.ops.attention.dsv4.elementwise as _dsew
             from sglang.srt.utils import common as _seam_common  # noqa: F401
 
@@ -2009,28 +2125,10 @@ def install() -> None:
 
                 # DeepEP-normal (bf16 contiguous) MoE runner: upstream computes
                 # `_legacy_silu_and_mul = silu_and_mul` only on CUDA, so HIP
-                # runs carry None and the prefill path dies on call. sglang's
-                # native silu_and_mul(input, out=None, ...) matches the runner's
-                # (x, out) call and lands on our AOT sgl_kernel op.
-                try:
-                    import sglang.srt.layers.moe.moe_runner.deep_gemm as _dgr
-
-                    if getattr(_dgr, "_legacy_silu_and_mul", None) is None:
-                        from sglang.kernels.ops.activation.activation import (
-                            silu_and_mul as _hcu_silu,
-                        )
-
-                        _dgr._legacy_silu_and_mul = _hcu_silu
-                        logging.getLogger("hcu.adapter").info(
-                            "HCU DeepGEMM bridge: _legacy_silu_and_mul bound to "
-                            "sglang silu_and_mul (upstream None on HIP)"
-                        )
-                except ImportError:
-                    pass
-                except Exception:
-                    logging.getLogger("hcu.adapter").warning(
-                        "HCU adapter: silu_and_mul binding failed", exc_info=True
-                    )
+                # runs carry None and the prefill path dies on call. The helper
+                # imports the PACKAGE face (fused-op dispatch -> AOT on HIP);
+                # see its docstring for why the module body is forbidden.
+                _bind_deepgemm_legacy_silu()
 
                 logging.getLogger("hcu.adapter").info(
                     "HCU DeepGEMM bridge: deep_gemm -> DTK deepgemm alias + "
@@ -2043,14 +2141,13 @@ def install() -> None:
                 "HCU adapter: deepgemm bridge not installed", exc_info=True
             )
 
-        # HCU kpool write emu (2026-10-15): the three pooled index-K write kernels
-        # (softmax_rotate / decode_update / tail scatter) mis-compile their int64
-        # scalar loads on gfx938 — every value arrives divided by four (signature
-        # probe: loc=[64,128,192,256] all lands at page0 tok 16/32/48/64), so the
-        # index KV cache reads back zero and GLM-5.3's DSA attention flatlines.
-        # The torch emu reproduces the healthy math bf16-round-trips/hadamard/e4m3
-        # exactly; HCU_KPOOL_WRITE_EMU=0 keeps the triton path (red gate test
-        # kernels/test_kpool_write_gfx938.py stays on watch for the DTK fix).
+        # HCU kpool write tier: the stock triton writer family is the default
+        # (2026-10-15 初判 int64 scalar-load div-4 bug was later traced to a
+        # probe-side buf layout error; the kernels are healthy on the real 2-D
+        # (pages, page_size*(D+S)) layout — see
+        # tests/kernels/test_kpool_write_gfx938.py). HCU_KPOOL_WRITE_EMU=1
+        # keeps the bit-equal torch emu as an explicit A/B fallback / DTK
+        # regression watch.
         try:
             from hcu_adapter import hcu_env as _kpw_env
 
@@ -2060,32 +2157,43 @@ def install() -> None:
                 kpool_write_emu.install_patch()
                 logging.getLogger("hcu.adapter").info(
                     "HCU adapter: kpool index-K write kernels routed to torch emu "
-                    "(gfx938 DTK int64 scalar-load div-4 bug)"
+                    "(explicit fallback; stock triton is the default)"
                 )
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: kpool write emu not installed", exc_info=True
             )
-        # HCU kpool read emu (2026-10-15): aiter's cp_gather_indexer_k_quant_cache
+        # HCU kpool read tiers: aiter's cp_gather_indexer_k_quant_cache
         # (GetKAndS.aiter preshuffle arm) illegal-addresses / returns zeros on
-        # gfx938, zeroing the prefill topk score chain. torch gather with the same
-        # 16-wide tile map as the writer replaces it. HCU_KPOOL_READ_EMU=0 keeps
-        # the aiter kernel.
+        # gfx93x. Default on gfx93x is the preshuffle-aware triton gather
+        # (kpool_read_triton.py, one launch, same 16-tile map as the writer);
+        # HCU_KPOOL_READ_EMU=1 keeps the torch reference as an explicit A/B
+        # fallback. Non-gfx93 platforms keep the upstream aiter kernel.
         try:
             from hcu_adapter import hcu_env as _kpr_env
 
             if _kpr_env.enabled("HCU_KPOOL_READ_EMU"):
+                mode = "emu"
+            elif _kpr_env.arch_name().startswith("gfx93"):
+                mode = "triton"
+            else:
+                mode = "aiter"
+            if mode != "aiter":
                 from hcu_adapter import kpool_write_emu as _kwe
 
-                _kwe.install_read_patch()
-                print("[HCU kprd] read-emu installed", flush=True)
+                _kwe.install_read_patch(mode)
                 logging.getLogger("hcu.adapter").info(
-                    "HCU adapter: index-K cache gather (GetKAndS.aiter) routed to "
-                    "torch emu (aiter kernel dead on gfx938)"
+                    "HCU adapter: index-K cache gather (GetKAndS.aiter) routed "
+                    "to %s tier (aiter kernel dead on gfx93x)", mode
+                )
+            else:
+                logging.getLogger("hcu.adapter").info(
+                    "HCU adapter: index-K cache gather keeps upstream aiter "
+                    "(non-gfx93 platform)"
                 )
         except Exception:
             logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: kpool read emu not installed", exc_info=True
+                "HCU adapter: kpool read tier not installed", exc_info=True
             )
         # HCU read-scope probe (2026-10-15): GetKAndS never fires on this stack —
         # watch the cache-level read hub instead and dump both branches' output.
@@ -2653,6 +2761,7 @@ def install() -> None:
         #      `from ...mhc import hc_pre` would otherwise bind the original.
         if os.environ.get("HCU_DUMP_MHC") == "1":
             try:
+                # 替代档: mhc dump 探针挂载面（HCU_DUMP_MHC；包面无该出口）
                 import sglang.kernels.ops.layernorm.mhc as _mhcmod
 
                 _mhcd = {
@@ -2933,6 +3042,7 @@ def install() -> None:
             try:
                 import torch.nn.functional as _Fm
 
+                # JIT 唯一实现（hc_combine 无替代档；供应商预编译提报线）
                 import sglang.kernels.ops.elementwise.hc_combine as _hcc
                 import sglang.srt.layers.hyperconnection as _hy
 

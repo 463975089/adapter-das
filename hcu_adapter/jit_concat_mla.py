@@ -111,6 +111,83 @@ _DLDEVICE_NEEDLE = "        .with_device<kDLCUDA>(device)"
 _DLDEVICE_REPL = "        .with_device<kDLROCM>(device)"
 
 
+_Q_KERNEL_NEEDLE = "template <bool kUsePDL>\n__global__ void concat_mla_absorb_q_kernel("
+_Q_LAUNCH_NEEDLE = "    LaunchKernel(grid_size, block_size, device.unwrap())\n        .enable_pdl(kUsePDL)("
+_NATIVE_Q_KERNEL = r"""// Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+// SPDX-License-Identifier: Apache-2.0
+
+constexpr int64_t kALastDim = 512;
+constexpr int64_t kBLastDim = 64;
+constexpr int64_t kOutLastDim = kALastDim + kBLastDim;
+constexpr int64_t kBf16PerVec = 8;
+constexpr int64_t kAVecsPerRow = kALastDim / kBf16PerVec;
+constexpr int64_t kBVecsPerRow = kBLastDim / kBf16PerVec;
+constexpr int kWaveSize = 64;
+constexpr int kThreads = 256;
+constexpr int kWavesPerBlock = kThreads / kWaveSize;
+constexpr int kRowsPerWave = 8;
+constexpr int kRowsPerBlock = kWavesPerBlock * kRowsPerWave;
+
+static_assert(sizeof(uint4) == 16, "uint4 must be a 16-byte vector");
+static_assert(kAVecsPerRow == kWaveSize, "one wave must cover one a row");
+static_assert(kWavesPerBlock == 4, "one block must contain four waves");
+
+template <bool kUsePDL>
+__global__ void concat_mla_absorb_q_hcu_kernel(
+    const bf16_t* __restrict__ a,
+    const bf16_t* __restrict__ b,
+    bf16_t* __restrict__ out,
+    int64_t num_rows,
+    int64_t dim_1,
+    int64_t a_stride_0,
+    int64_t a_stride_1,
+    int64_t b_stride_0,
+    int64_t b_stride_1,
+    int64_t out_stride_0,
+    int64_t out_stride_1) {
+  const int lane = threadIdx.x & (kWaveSize - 1);
+  const int wave = threadIdx.x / kWaveSize;
+  const int64_t first_row = static_cast<int64_t>(blockIdx.x) * kRowsPerBlock + wave * kRowsPerWave;
+
+#pragma unroll
+  for (int row_in_wave = 0; row_in_wave < kRowsPerWave; ++row_in_wave) {
+    const int64_t row = first_row + row_in_wave;
+    if (row >= num_rows) return;
+
+    const int64_t idx_0 = row / dim_1;
+    const int64_t idx_1 = row - idx_0 * dim_1;
+    const auto* a_row = a + idx_0 * a_stride_0 + idx_1 * a_stride_1;
+    auto* out_row = out + idx_0 * out_stride_0 + idx_1 * out_stride_1;
+    reinterpret_cast<uint4*>(out_row)[lane] = reinterpret_cast<const uint4*>(a_row)[lane];
+
+    if (lane < kBVecsPerRow) {
+      const auto* b_row = b + idx_0 * b_stride_0 + idx_1 * b_stride_1;
+      reinterpret_cast<uint4*>(out_row)[kAVecsPerRow + lane] = reinterpret_cast<const uint4*>(b_row)[lane];
+    }
+  }
+}
+
+"""
+_NATIVE_Q_LAUNCH = """    const bool native_layout = !kUsePDL &&
+        S0_a.unwrap() % kBf16PerVec == 0 && S1_a.unwrap() % kBf16PerVec == 0 &&
+        S0_b.unwrap() % kBf16PerVec == 0 && S1_b.unwrap() % kBf16PerVec == 0 &&
+        S0_out.unwrap() % kBf16PerVec == 0 && S1_out.unwrap() % kBf16PerVec == 0 &&
+        reinterpret_cast<uintptr_t>(a.data_ptr()) % 16 == 0 &&
+        reinterpret_cast<uintptr_t>(b.data_ptr()) % 16 == 0 &&
+        reinterpret_cast<uintptr_t>(out.data_ptr()) % 16 == 0;
+    if (native_layout) {
+      LaunchKernel(div_ceil(num_items, kRowsPerBlock), kThreads, device.unwrap())(
+          concat_mla_absorb_q_hcu_kernel<kUsePDL>,
+          static_cast<const bf16_t*>(a.data_ptr()),
+          static_cast<const bf16_t*>(b.data_ptr()),
+          static_cast<bf16_t*>(out.data_ptr()),
+          num_items, dim_1, S0_a.unwrap(), S1_a.unwrap(),
+          S0_b.unwrap(), S1_b.unwrap(), S0_out.unwrap(), S1_out.unwrap());
+      return;
+    }
+"""
+
+
 def _apply(root, register):
     """Transform adapter-owned staging files; never pass a community root."""
 
@@ -131,6 +208,12 @@ def _apply(root, register):
     if n_dev:
         text = text.replace(_DLDEVICE_NEEDLE, _DLDEVICE_REPL)
         registered.extend([_DLDEVICE_NEEDLE] * n_dev)
+    if _NATIVE_Q_KERNEL not in text:
+        if text.count(_Q_KERNEL_NEEDLE) != 1 or text.count(_Q_LAUNCH_NEEDLE) != 1:
+            raise RuntimeError("jit_concat_mla: absorb Q kernel or launch contract changed")
+        text = text.replace(_Q_KERNEL_NEEDLE, _NATIVE_Q_KERNEL + _Q_KERNEL_NEEDLE)
+        text = text.replace(_Q_LAUNCH_NEEDLE, _NATIVE_Q_LAUNCH + _Q_LAUNCH_NEEDLE)
+        registered.extend((_Q_KERNEL_NEEDLE, _Q_LAUNCH_NEEDLE))
     from hcu_adapter.atomic_io import atomic_write
 
     atomic_write(p, text)

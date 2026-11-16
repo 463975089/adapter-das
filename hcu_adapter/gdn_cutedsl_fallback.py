@@ -73,6 +73,7 @@ def install():
     if not getattr(torch.version, "hip", None):
         return
     from sglang.kernels.ops.attention import cutedsl_gdn_mtp_ring as cute
+    # 替代档: 本文件 triton fallback（cute dsl 档不可用时）
     from sglang.kernels.ops.attention.fla import fused_sigmoid_gating_recurrent as fla
 
     original = cute.gated_delta_rule_mtp

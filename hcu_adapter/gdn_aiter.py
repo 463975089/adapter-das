@@ -31,8 +31,10 @@ What this bridge does (MECH_REBIND, two import sites per face):
   upstream ``(out, final_state)`` contract. Gate math (softplus of
   ``-exp(A_log)*dt + dt_bias``) belongs to the kernel on both sides.
 
-Gate: HCU_LINEAR_ATTN_GDN = auto|aiter|triton (auto = triton until the
-numerics gate + e2e row graduate this to candidate/production).
+Gate: HCU_LINEAR_ATTN_GDN = auto|aiter|triton. auto now follows the adapter
+ladder (aiter > triton): the CK route passed the 6/6 numerics gate + Qwen3.5
+TP4 e2e, so it is tried first; import/install failure keeps upstream triton.
+=triton forces the upstream fla kernels.
 """
 
 import logging
@@ -64,7 +66,9 @@ def _scatter_states(pool, indices, local_indices, states):
 def _install_fwd_h_aiter(registry):
     """Swap sglang.kernels...fla.chunk_delta_h.chunk_gated_delta_rule_fwd_h
     for the aiter CK state recursion; rebind the chunk.py consumer too."""
+    # 替代档: aiter CK（本文件 rebind 宿主 fla 档）
     from sglang.kernels.ops.attention.fla import chunk_delta_h as _cdh
+    # 替代档: aiter CK（本文件 rebind 宿主 fla 档）
     from sglang.kernels.ops.attention.fla import chunk as _chunk_mod
 
     _orig_fwd_h = _cdh.chunk_gated_delta_rule_fwd_h
@@ -94,6 +98,7 @@ def _install_fwd_h_aiter(registry):
         import aiter.ops.fla as _afla
 
         if chunk_indices is None and cu_seqlens is not None:
+            # 替代档: 宿主 fla helper（本文件 aiter 链路复用）
             from sglang.kernels.ops.attention.fla.index import (
                 prepare_chunk_indices,
             )
@@ -154,6 +159,7 @@ def _install_packed_decode_aiter(registry):
     """Swap the packed decode fused kernel for aiter's triton fla variant
     (same contract incl. state-pool indices — the operator team's own
     sglang alignment; drop-in rebind)."""
+    # 替代档: aiter triton fla（本文件 packed-decode rebind）
     from sglang.kernels.ops.attention.fla import fused_recurrent as _fr
     from aiter.ops.triton.fla.fused_recurrent import (
         fused_recurrent_gated_delta_rule_packed_decode as _aiter_decode,
@@ -178,24 +184,39 @@ def install():
     from hcu_adapter import hcu_env
 
     mode, _src = hcu_env.resolve("HCU_LINEAR_ATTN_GDN")
-    if mode != "aiter":
+    if mode == "triton":
         LOG.warning(
-            "HCU adapter: HCU_LINEAR_ATTN_GDN=%s -- GDN stays on the "
+            "HCU adapter: HCU_LINEAR_ATTN_GDN=triton -- GDN stays on the "
             "upstream triton fla kernels (aiter route available via =aiter)",
-            mode,
         )
         return
+    # auto (new default) and aiter both take the validated CK route; any
+    # import/install failure leaves the upstream triton fla faces intact.
     try:
         import aiter  # noqa: F401
         import aiter.ops.fla  # noqa: F401
     except Exception:
-        LOG.warning(
-            "HCU adapter: aiter not importable; GDN stays on triton fla",
-            exc_info=True,
-        )
+        if mode == "aiter":
+            LOG.warning(
+                "HCU adapter: HCU_LINEAR_ATTN_GDN=aiter but aiter is not "
+                "importable; GDN stays on triton fla",
+                exc_info=True,
+            )
+        else:
+            LOG.info(
+                "HCU adapter: GDN auto: aiter not importable; stays on "
+                "upstream triton fla",
+            )
         return
 
     from hcu_adapter import registry
 
-    _install_fwd_h_aiter(registry)
-    _install_packed_decode_aiter(registry)
+    try:
+        _install_fwd_h_aiter(registry)
+        _install_packed_decode_aiter(registry)
+    except Exception:
+        LOG.warning(
+            "HCU adapter: GDN aiter install failed; keeping upstream triton "
+            "fla faces",
+            exc_info=True,
+        )

@@ -258,7 +258,7 @@ jobs:
     needs: [image]
     runs-on: hygon-bw1100-4card
     # 每个模型最多等 1500s 启动 + 四判定；再加 30 分钟等卡
-    timeout-minutes: 180
+    timeout-minutes: 720
     container:
       image: ${{ needs.image.outputs.image }}
     defaults:

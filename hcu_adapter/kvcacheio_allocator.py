@@ -36,6 +36,7 @@ def _hcu_alloc_decode_kernel_fallback(
     page_size: int,
 ) -> None:
     """Use the upstream Triton allocator when the HCU op is absent."""
+    # 替代档: sgl_kernel.alloc_decode_kernel（HCU cpp 档；此处为 absent 回退）
     from sglang.kernels.ops.memory.allocator import alloc_decode_kernel
 
     alloc_decode_kernel[(bs,)](
@@ -58,6 +59,7 @@ def _hcu_alloc_extend_kernel_fallback(
     page_size: int,
 ) -> None:
     """Use the upstream Triton allocator when the HCU op is absent."""
+    # 替代档: sgl_kernel.alloc_extend_kernel（HCU cpp 档；此处为 absent 回退）
     from sglang.kernels.ops.memory.allocator import alloc_extend_kernel
 
     alloc_extend_kernel[(bs,)](

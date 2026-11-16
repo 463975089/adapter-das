@@ -75,11 +75,16 @@ def install():
     from hcu_adapter import registry
     import sglang.srt.utils.common as common
 
-    _install_function(common.broadcast_pyobj)
+    if hasattr(common, "broadcast_pyobj"):
+        owner = common
+    else:
+        from sglang.srt.utils import process_group as owner
+
+    _install_function(owner.broadcast_pyobj)
     registry.register(
         "dist_broadcast",
         "writable-numpy-broadcast-buffer",
-        target="sglang.srt.utils.common.broadcast_pyobj",
+        target=f"{owner.__name__}.broadcast_pyobj",
         mechanism=registry.MECH_REBIND,
         detail="private numpy facade; existing function aliases retained; no source writes",
     )

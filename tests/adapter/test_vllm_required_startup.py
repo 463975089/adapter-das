@@ -35,6 +35,10 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     from hcu_adapter.bridges import vllm_fp8
     monkeypatch.setattr(vllm_fp8, "install", lambda: False)
+    # AllReduce preparation has dedicated runtime/ABI tests; keep these
+    # required-policy fixtures independent of its configuration and providers.
+    from hcu_adapter.bridges import vllm_allreduce
+    monkeypatch.setattr(vllm_allreduce, "prepare_runtime", lambda: None)
     # Required-policy CPU fixtures isolate operator activation. The real C4
     # publication, health and startup paths have their own contracts/probes.
     from hcu_adapter.bridges import vllm_sparse_indexer

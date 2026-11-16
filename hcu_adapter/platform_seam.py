@@ -189,6 +189,76 @@ def _rebind_stale_is_cuda(hcu_is_cuda, registry):
         )
 
 
+# custom AR 通信器选型是硬件问题：custom_all_reduce 在 import 时把
+# is_cuda()/is_hip() 冻结进 _is_cuda/_is_hip/_is_musa，dispatch 与
+# _use_amd_deterministic_impl 都读它们。首次 import 早于 seam 时冻结为 HIP
+# 真值（aiter CA 生效）；#58 后首次 import 挪到 seam 之后（ar_norm_aiter ->
+# _auto_aiter_ar），冻结为 CUDA 语义，dispatch 落到原生 CA 的 NVLink/NVML
+# 探测失败，整组回退 RCCL（S1 Hy4 2026-11-09）。不论 import 先后都钉回硬件
+# 真值。
+_AR_MODULE = "sglang.srt.distributed.device_communicators.custom_all_reduce"
+_AR_HW_FLAGS = (("_is_cuda", False), ("_is_hip", True), ("_is_musa", False))
+
+
+def _pin_ar_hw_truth(module, registry):
+    for _attr, _val in _AR_HW_FLAGS:
+        if module.__dict__.get(_attr) is _val:
+            continue
+        setattr(module, _attr, _val)
+        registry.register(
+            "platform_detect",
+            _val,
+            target=f"{module.__name__}:{_attr}",
+            mechanism=registry.MECH_REBIND,
+            detail="custom AR dispatch keeps HIP hardware truth (aiter CA)",
+        )
+
+
+class _ArHwTruthLoader:
+    def __init__(self, inner, registry):
+        self._inner = inner
+        self._registry = registry
+
+    def create_module(self, spec):
+        return self._inner.create_module(spec)
+
+    def exec_module(self, module):
+        self._inner.exec_module(module)
+        _pin_ar_hw_truth(module, self._registry)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+class _ArHwTruthFinder:
+    def __init__(self, registry):
+        self._registry = registry
+
+    def find_spec(self, fullname, path=None, target=None):
+        import sys as _sys
+
+        if fullname != _AR_MODULE:
+            return None
+        if self in _sys.meta_path:
+            _sys.meta_path.remove(self)  # one-shot; also stops recursion below
+        import importlib.util as _iu
+
+        spec = _iu.find_spec(fullname)
+        if spec is not None and spec.loader is not None:
+            spec.loader = _ArHwTruthLoader(spec.loader, self._registry)
+        return spec
+
+
+def _install_ar_hw_truth(registry):
+    import sys as _sys
+
+    mod = _sys.modules.get(_AR_MODULE)
+    if mod is not None:
+        _pin_ar_hw_truth(mod, registry)
+    elif not any(isinstance(f, _ArHwTruthFinder) for f in _sys.meta_path):
+        _sys.meta_path.insert(0, _ArHwTruthFinder(registry))
+
+
 def install():
     import os
     import time
@@ -240,6 +310,23 @@ def install():
     from sglang.srt import platforms as _pf
     from sglang.srt.utils import common as _common
 
+    # sglang v0.5.22 没有 utils/device.py（main #48781 拆 common.py 才引入）
+    # ——无守卫 import 会在这里 ImportError，把整个 platform seam（含上方
+    # is_cuda 语义翻转）一并炸掉，L1 现产 0.5.22 线即此红（review #98）。
+    try:
+        from sglang.srt.utils import device as _device
+    except ImportError:
+        _device = None
+
+    # Restore moved helpers for callers that still use the common namespace.
+    if _device is not None and hasattr(_device, "get_nvgpu_memory_capacity"):
+        for name in (
+            "get_nvgpu_memory_capacity", "get_device_sm", "get_device_capability",
+            "get_device_core_count",
+        ):
+            if not hasattr(_common, name):
+                setattr(_common, name, getattr(_device, name))
+
     #这两个 import 本身会执行 common.py 顶层 `if is_hip():` ——彼时判定
     # 还是原函数，fnuz 常量已被冻结并写进 builtins；patch 后必须重算
     # （CUDA 语义 = e4m3fn，max 448）。
@@ -273,6 +360,10 @@ def install():
         return False
 
     _common.is_flashinfer_available = _hcu_fi_available
+    if _device is not None:  # v0.5.22: no utils/device module (review #98)
+        _device.is_flashinfer_available = _hcu_fi_available
+    from sglang.srt.utils import log_utils as _log_utils
+    _log_utils.is_flashinfer_available = _hcu_fi_available
 
     original_memory_capacity = _common.get_nvgpu_memory_capacity
 
@@ -367,6 +458,8 @@ def install():
     import sglang.srt.utils as _pkg_utils
 
     _gates = _replace_version_gates(_common, _pkg_utils)
+    if _device is not None:  # v0.5.22: no utils/device module (review #98)
+        _gates += _replace_version_gates(_device, _pkg_utils)
     if _gates:
         LOG.warning(
             "HCU adapter: %d CUDA version gates -> False (common + utils"
@@ -422,6 +515,8 @@ def install():
         "is_flashinfer_available": _hcu_fi_available,
     }
     for _n, _fn in _sync.items():
+        if _device is not None and hasattr(_device, _n):
+            setattr(_device, _n, _fn)
         if getattr(_pkg_utils, _n, None) is not _fn:
             setattr(_pkg_utils, _n, _fn)
 
@@ -437,6 +532,8 @@ def install():
         LOG.warning("HCU adapter: shared-read event seam not installed", exc_info=True)
 
     _rebind_stale_is_cuda(_hcu_is_cuda, registry)
+    if torch.version.hip:
+        _install_ar_hw_truth(registry)
     LOG.warning(
         "HCU adapter: platform semantics seam installed "
         "(sglang answers CUDA; hw layers stay HIP-truthful)"

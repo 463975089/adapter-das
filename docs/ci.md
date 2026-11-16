@@ -25,7 +25,7 @@ L1.5 v2/代表矩阵的下列 HCU 计数是**拆分前兼容快照的历史证�
 
 | 层 | 内容 | 环境 | 耗时 | 触发 |
 |---|---|---|---|---|
-| **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性、治理三规则（`glue-numerics`=sitecustomize 无 triton 数学 / `text-patch`=源码补丁必在 TEXT_PATCH_ALLOWLIST / `registry-ops`=register 的 op 必须 catalog）；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（托管平台 CI 云端） |
+| **L0 结构门禁** | `ci/l0_gate.py`：全仓 py 语法、.sh LF-only（CRLF 曾静默毁 bash）、密钥扫描、REGISTRY↔docs/env-vars.md↔BACKEND_CATALOG 交叉一致、sitecustomize 引用完整性、example yaml 键合法性、宿主 `sglang.kernels.ops.<域>.<模块>` 深度 import 必带档位注记（`ops-import-depth`：仅包面可走 catalog 分档；2026-11-12 起两种等价写法同查——`import …<域>.<模块>` 直查，`from …<域> import <模块>` 在与域同名或仓内深度 import 证明为模块体时查，同名包面再导出（quantization.per_token_group_quant）豁免）、治理三规则（`glue-numerics`=sitecustomize 无 triton 数学 / `text-patch`=源码补丁必在 TEXT_PATCH_ALLOWLIST / `registry-ops`=register 的 op 必须 catalog）；软警告=裸读 os.environ/CRLF py | 任何机器，零依赖 | <5s | 每次 push / MR（托管平台 CI 云端） |
 | **L1 GPU 数值门禁** | `ci/l1_gpu_gate.sh`：L0 + pytest（test_ops_cpu / kernels / adapter）+ 精选 tools 门禁（config 目录、fa3-emu CP 形状、rope 三路一致、aiter-MoE 分发、deepgemm contiguous triton）+ vendor wheel 探针（WARN 级） | HCU 容器，1 卡，自动挑空闲（VRAM<5%） | 5-15min | 容器侧手动/定时执行，结果回帖 MR（自动化触发器随托管平台重接） |
 | **L1.5 上游单测精选（已落地 l15_upstream 段）** | sglang 官方 `test/registered/attention/unittests` 的 dsa+kda+dense+mla 四目录（`-k "not tilelang"`）：**88 绿/2 排除/101 合法 skip（fa4/flashinfer/trtllm 平台性）/208 子用例，暖缓存 ~1min、冷缓存 ~35min**。首役战果（2026-10-17）：五修打通——shfl `__shfl_*_sync`→非 sync（dpsk_v4_topk 编译复活）、`get_mla_metadata` 新 API、`flash_mla_with_kvcache` 输出秩随输入、flashinfer `_grouped_size` ABSENT+deny 组合、`attn_backend_gate`（fa4/flashinfer 构造期 ImportError→kit 优雅 skip）。mla 加餐（2026-10-18）：首跑 8 失败同根——flashmla 后端 unified 模式的 extend 路径整体委托 flashinfer 父类（`forward_extend`→`super()`），flashinfer 桩 `__getattr__` 记 FAIL；修法=桩内 `_hcu_stub_raise`（unittest 栈帧→SkipTest，serving 栈保持 NotImplementedError），8 失败→25 合法 skip、26 绿全保（flash_mla 移植面获正面检验）。**判定：MTP/fp8-KV/DSA 内核面全绿 → serving 层病在 srt 状态机**。**环境铁律**：容器两份 sglang（pip dist-packages vs `/sglang-v0521` 源码树，serving 与 JIT include 均指后者）；pytest 必须显式 `PYTHONPATH=/sglang-v0521/python:$ROOT`（缺一静默测错树/adapter 不加载）+ `-e HCU_DEEPGEMM_BRIDGE=1`；**多线放大版（R-17 三绑定铁律）**：rel/v0.5.22 线的一切门禁须在 `/sglang-v0522` 树+对应容器跑——`ci/l1_gpu_gate.sh` 已支持 `--up-tree <path>`/`HCU_UP_TREE` 显式指树（指定不存在即 loud fail 不静默落回自动探测），错树假绿=双线模型第一杀手；JIT 内核首编 ~5min/颗（ninja 编译非挂死）。tilelang 两用例=DTK 0.1.12+dtk2604 warp 划分 bug（threads=384→6 warp 不整除，编译期 InternalError），平台已知红待 DTK 修 | HCU 容器，1 卡 | 暖 ~2min / 冷 ~35min | 与 L1 同车（`ci/l1_gpu_gate.sh` l15_upstream 段自动发现上游树，无树则 SKIP） |
 | **L1.5b 上游机制目录（l15_mech 段，R-14 批 A）** | unittests 六机制目录 gdn/hybrid_linear/mamba/swa/lightning/dsv4（旧树无目录自动 SKIP），env 契约同 l15_upstream（`PYTHONPATH=/sglang-v0521/python:$ROOT` + `HCU_DEEPGEMM_BRIDGE=1` + `-k "not tilelang"`），另加 `-rs` 列 skip 理由。**known-fail 预算绊线**：段判绿按计数不按 pytest rc=1——`passed≥90 且 failed≤42`（基线 38/99 的 ±10%）才 PASS，越线/超时(124)即红进 FAILS，防"登记失败"膨胀成"回归自由"；账本见下节。首跑 826s（dsv4 JIT 败三连不缓存，每跑重付编译尝试） | HCU 容器，1 卡 | 暖 ~5-14min | 与 L1 同车（`ci/l1_gpu_gate.sh`） |
@@ -65,7 +65,7 @@ manifest 保持不变；新增打包验证后，远端隐藏 GPU 的 CPU 回归�
 2026-11-03 原样源码迭代：严格组件和模型入口增加 Git blob 字节完整性检查，
 已有改写在 GPU 预检前拒绝，执行后改写也不能算通过。当时共享社区树审计
 发现 30 个历史改写文件，因此旧通过记录只证明旧组合，尚不满足新要求；
-详见 [源码完整性门禁](l15-readiness-plan.md#源码完整性门禁)。
+详见 [源码完整性门禁](history/l15-readiness-202611-log.md#源码完整性门禁)。
 
 ### L1.5b KNOWN_FAILURES 账本（l15_mech 六机制目录，2026-10-19 首跑分诊）
 
@@ -431,7 +431,54 @@ gfx936/20261016 镜像 + dtk26.04.1 的 HSA 栈上无法完整跑完（楔死非
 
 - CI keeper 状态记在 `~/hcu_ci/`（sha/status/rc）；清掉即全部重测。
 - L1 各段日志在容器 `/tmp/l1_<段名>.log`。
+- 每分钟 heartbeat 同步新增的完整日志行。`kernels` 使用逐用例名称输出，
+  单个用例执行超过 120 秒时由 pytest faulthandler 输出线程栈；该诊断
+  不改变用例、断言或分段超时预算，完整日志仍由 CI artifact 保存。
 - L1 测试本身不写远端——无令牌只影响回帖能力。
+
+### FP8 Linear graph 捕获超时（2026-11-12）
+
+gfx938、DTK 26.10、Torch 2.13.0 的 MR CI 在
+`test_quantized_linear_chain[1-fp8]` 停滞。现场栈指向
+`apply_fp8_linear → _apply_fallback_scaled_mm → torch._scaled_mm`，
+位于 `replay_three` 的 graph 捕获体内；eager 和预热已完成。
+隔离进程对照保持原输入、数学和断言，仅改变预热 stream：默认 stream
+预热后换 stream 捕获，hipBLASLt 报 error 900（`operation not permitted
+when stream is capturing`）并阻塞；在实际捕获 stream 预热后，原用例及
+三轮变输入 replay 通过。因此 helper 显式创建同一 stream 用于预热和
+捕获，并先等待输入所在 stream；不修改 FP8 量化或生产 GEMM 分发。
+对照日志见 [CI run 43194609535](https://github.com/HYGON-AI/adapter-das/actions/runs/43194609535/job/131103153076)。
+修正后的两次同 stream 预热在
+[CI run 43196120630](https://github.com/HYGON-AI/adapter-das/actions/runs/43196120630/job/131108225814)
+通过 INT8、FP8、CT-FP8 × 1/17/33 token 的全部 9 个 Linear 节点，
+每个节点保留三轮变输入 replay 和原精度断言；其余失败不计为已修复。
+同轮定向段在 122.17 秒完成，完整结果是 **9 passed / 4 failed**：
+三个 compression 节点均在检查社区原测试文件时失败，wheel 安装位置下
+缺少 `test/registered/attention/unittests/dsv4/test_dsv41_fused_compress.py`，
+尚未执行压缩算子；INT8 MoE `[33-2]` 则在变输入 replay 比较中出现
+1/4224 个元素超差，最大绝对差 0.0224609375（原 `atol=0.02`）。
+现场记录其分发进入 Aiter 的未调优 `solution_type=triton`，不能将该失败
+解释为原 Q 拼接内核错误，也不能通过放宽精度或跳过原测试消除。
+在同镜像的
+[CI run 43199988553](https://github.com/HYGON-AI/adapter-das/actions/runs/43199988553/job/131121528672)
+中，仅设已有 `HCU_FUSED_MOE_IMPL=triton` 关闭 Aiter 桥，原 INT8 MoE
+`[33-2]` 用例及三轮变输入 replay 在 39.63 秒通过。实际安装的
+`aiter/moe.py` SHA256 为
+`975eaecbdb6f9934695ad785bef97535e2e9b364c5f6d8e850a2f99f3715f147`；
+其 `get_aiter_moe_config` 在所有调优候选缺失后，对默认未调优 Triton
+配置仍返回 `True`，INT8 小形状和 GLM FP8 形状均现场复现。
+现有桥仅检查 status，因而接管了本应保留社区路径的调用；这同时解释
+`_test_aiter_moe_gate` 的 `B1-should-fallback` 失败。此轮仅定位该分发
+合同差异，未修改生产 MoE 算法、精度或全局配置，也未将 CI 记为全绿。
+
+随后修正 `hcu_adapter.aiter_moe` 的配置准入：同时检查 status 和
+`solution_type`，只接管已有的 `asm` / `moe_c` 路径；Triton（包括
+默认未调优配置）、未知实现或配置缺失均返回 `None`，由原 SGLang
+`fused_experts` 执行。显式 `HCU_FUSED_MOE_IMPL=aiter` 同样保留准入
+限制，原 ASM/moe_c 的权重布局、量化、scale、激活与归约参数透传不变。
+该修改不改算子数学或测试容差，复用现有 INT8 MoE 三个参数节点及
+`_test_aiter_moe_gate.py` 在 GitHub GPU CI 验证；压缩测试源码缺失
+属于独立问题。
 
 ## 测试怎么归层（给提 MR 的人）
 

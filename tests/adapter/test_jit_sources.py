@@ -44,6 +44,8 @@ def _synthetic(root):
         for needle, _ in module._PATCHES:
             add("csrc/" + module._RELPATH, needle)
     add("csrc/" + jit_concat_mla._RELPATH, jit_concat_mla._DLDEVICE_NEEDLE)
+    add("csrc/" + jit_concat_mla._RELPATH, jit_concat_mla._Q_KERNEL_NEEDLE)
+    add("csrc/" + jit_concat_mla._RELPATH, jit_concat_mla._Q_LAUNCH_NEEDLE)
     add("csrc/" + jit_ptgq._RELPATH, jit_ptgq._NEEDLE)
     for name, pairs in jit_dpskmeta._PATCHES.items():
         for needle, _ in pairs:
@@ -135,6 +137,11 @@ def test_complete_bundle_preserves_sources_and_all_transforms(source, tmp_path):
     warp = (bundle / "include/sgl_kernel/warp.cuh").read_text()
     assert "T _v;" in warp and "__hip_bfloat162 _v;" not in warp
     assert "__shfl_up_sync(active_mask" not in warp
+    from hcu_adapter import jit_concat_mla
+
+    concat = (bundle / "csrc" / jit_concat_mla._RELPATH).read_text()
+    assert jit_concat_mla._NATIVE_Q_KERNEL in concat
+    assert jit_concat_mla._NATIVE_Q_LAUNCH in concat
     assert (bundle / "cuda-headers/cuda_fp8.h").is_file()
     for primitive in ("load", "store", "scan"):
         body = (bundle / f"cuda-headers/cub/block/block_{primitive}.cuh").read_text()
@@ -551,6 +558,21 @@ def test_original_loader_and_cached_aliases_route_all_compiler_inputs(source, tm
     loader.__code__ = (lambda *a, **k: None).__code__
     with pytest.raises(RuntimeError, match="changed after"):
         bridge.bind(resolver, loader, root, bundle)
+
+
+def test_include_entries_prepended_after_binding_keep_priority(source, tmp_path):
+    root, tree = source
+    bundle, _ = bridge.prepare(root, tmp_path / "cache")
+    resolver, loader, captured = _functions(root, tree)
+    bridge.bind(resolver, loader, root, bundle)
+    overlay = tmp_path / "overlay-include"
+    overlay.mkdir()
+    loader.__globals__["DEFAULT_INCLUDE"].insert(0, str(overlay))
+    with pytest.raises(_SpecCaptured):
+        loader("late-overlay", extra_include_paths=[str(tmp_path)])
+    assert captured[-1].include_paths == (
+        str(overlay), str(bundle / "include"), str(bundle / "cuda-headers"), str(tmp_path),
+    )
 
 
 def test_preflight_failure_leaves_both_entries_unmodified(source, tmp_path):

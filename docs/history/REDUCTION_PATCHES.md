@@ -1,5 +1,11 @@
 # REDUCTION_PATCHES — 减核役批量账（emu→triton/融合，单测先行，serving 集中验证）
 
+
+> **归档说明（2026-11-13）**：本卷为 2026-10 减核役完整批次账，正文原文保留。
+> 未竟项由 [ROADMAP_DSV41F.md](../ROADMAP_DSV41F.md) P0 节持续跟踪（0.1/0.2′/0.5 与本账逐项对应）；
+> 归因方法论（§2）仍然可复用。新批次账不再追加到本文件。
+
+
 单批工作流（用户定向）：逐项 parity（含 fp8 ulp 语义门）+ 秒级微基准 → 批量完成后
 **一次**集中 serving A/B（validation-host-18 dsv41f dp8ep8+DSPARK，四门 + bench_step p50）。
 不做逐项 boot 对比实验（用户 2026-10-23 指令：prof 发现问题直接解）。
