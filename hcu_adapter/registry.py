@@ -72,6 +72,10 @@ TEXT_PATCH_ALLOWLIST = {
     # bindings into HIP_vector_type (anonymous union). Patch both to
     # portable equivalents at JIT-source-read time.
     ("rotary_embedding", "  __syncwarp();  // to avoid warp divergence"),
+    (
+        "rotary_embedding",
+        "    const auto [i0, i1] = cast<fp32x2_t>(bf16x2_t{i0_bf16, i1_bf16});",
+    ),
     ("rotary_embedding", "      const auto [x0, x1] = cast<fp32x2_t>(input_vec_x[j]);"),
     # JIT per-token-group-quant fp8: the CUDA DTypeTrait<fp8>::kFloatMax
     # member is compiled out under USE_ROCM; the HIP-side packed convert is

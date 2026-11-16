@@ -84,6 +84,48 @@ _PATCHES = (
     ),
 )
 
+# MiniMax's 0.5.23 fused Q/K path has the same HIP float2 ABI issue.
+_MINIMAX_SOURCE = "minimax/fused_gemma_qknorm_rope.cuh"
+_MINIMAX_PATCHES = tuple(
+    (
+        f"    const auto [{kind}{x}, {kind}{y}] = cast<fp32x2_t>"
+        f"(bf16x2_t{{{kind}{x}_bf16, {kind}{y}_bf16}});",
+        f"    const auto {kind}{x}{y} = cast<fp32x2_t>"
+        f"(bf16x2_t{{{kind}{x}_bf16, {kind}{y}_bf16}});\n"
+        f"    const auto {kind}{x} = {kind}{x}{y}.x, {kind}{y} = {kind}{x}{y}.y;",
+    )
+    for kind in ("i", "w")
+    for x, y in ((0, 1), (2, 3))
+)
+
+
+def _apply_minimax(csrc, register):
+    p = csrc / _MINIMAX_SOURCE
+    if not p.exists():  # older SGLang releases do not ship this kernel
+        return 0
+    from hcu_adapter.atomic_io import atomic_write
+    from hcu_adapter.registry import MECH_TEXT
+
+    original = p.read_text(encoding="utf-8")
+    text = original
+    for needle, repl in _MINIMAX_PATCHES:
+        if repl in text:
+            continue
+        if text.count(needle) != 1:
+            raise RuntimeError(f"jit_rope: expected one {_MINIMAX_SOURCE} needle: {needle!r}")
+        text = text.replace(needle, repl)
+    if text != original:
+        atomic_write(p, text)
+    register(
+        "rotary_embedding",
+        "minimax-qknorm-hipcc-portability",
+        target=f"text:sglang/kernels/jit/csrc/{_MINIMAX_SOURCE}",
+        mechanism=MECH_TEXT,
+        detail=_MINIMAX_PATCHES[0][0],
+    )
+    return len(_MINIMAX_PATCHES)
+
+
 # shim appended to rope.cuh: mask-form syncwarp for HIP; identity on CUDA
 # (nvcc's __builtin has the mask overload; define only under __HIP__).
 _SHIM = """/*
@@ -140,6 +182,7 @@ def _apply(root, register):
         mechanism=_reg.MECH_TEXT,
         detail="  __syncwarp();  // to avoid warp divergence",
     )
+    applied += _apply_minimax(csrc, register)
     LOG.warning(
         "HCU adapter: JIT rope portability patch installed (%d edits + shim)",
         applied,
