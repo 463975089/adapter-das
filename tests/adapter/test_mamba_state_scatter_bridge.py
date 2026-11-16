@@ -84,10 +84,11 @@ def test_upstream_drift_refuses_without_mutation(monkeypatch,drift):
     assert getattr(mod,bridge._SYMBOL) is old
 
 
+@pytest.mark.parametrize("arch", ["gfx936", "gfx938"])
 @pytest.mark.parametrize("case",["arch","probe","dtype","device","cpu","small"])
-def test_decline_keeps_original_launch_and_arguments(case):
+def test_decline_keeps_original_launch_and_arguments(case, arch):
     old,new=Kernel("stock"),Kernel("flat")
-    api=make_torch(arch="gfx938" if case=="arch" else "gfx936",error=case=="probe")
+    api=make_torch(arch="gfx942" if case=="arch" else arch,error=case=="probe")
     src,dst=tensor(),tensor()
     if case=="dtype":src.dtype="bf16"
     if case=="device":dst.device="cuda:0"
@@ -127,8 +128,8 @@ def test_real_upstream_alias_graph_and_strided_indices(monkeypatch):
     import importlib
     import torch
     if not torch.cuda.is_available():pytest.skip("requires assigned HCU")
-    if torch.cuda.get_device_properties(0).gcnArchName.split(":")[0]!="gfx936":
-        pytest.skip("flattened route validated on gfx936")
+    if torch.cuda.get_device_properties(0).gcnArchName.split(":")[0] not in ("gfx936", "gfx938"):
+        pytest.skip("requires gfx936 or gfx938 HCU")
     from hcu_adapter import registry,kill_switch
     monkeypatch.setattr(kill_switch,"op_disabled",lambda op: False)
     monkeypatch.setattr(registry,"_RECORDS",{})
@@ -244,8 +245,8 @@ def test_spawn_process_installs_route_and_preserves_source_rows(monkeypatch):
 
     if not torch.cuda.is_available():
         pytest.skip("requires assigned HCU")
-    if torch.cuda.get_device_properties(0).gcnArchName.split(":")[0] != "gfx936":
-        pytest.skip("flattened route validated on gfx936")
+    if torch.cuda.get_device_properties(0).gcnArchName.split(":")[0] not in ("gfx936", "gfx938"):
+        pytest.skip("requires gfx936 or gfx938 HCU")
     # Child explicitly selects its device before the bridge loads providers.
     monkeypatch.setenv("HCU_ADAPTER_HOST", "none")
     monkeypatch.setenv("_HCU_ADAPTER_ACTIVE_HOST", "none")
@@ -264,3 +265,51 @@ def test_spawn_process_installs_route_and_preserves_source_rows(monkeypatch):
     queue.close()
     queue.join_thread()
     assert result == {"correct": True, "alias_retained": True, "fast_calls": 1}
+
+
+@pytest.mark.parametrize("arch", [
+    "gfx936", "gfx936:sramecc+:xnack-", "gfx938", "gfx938:sramecc+:xnack-",
+])
+def test_supported_architecture_preserves_alias_and_launch_contract(monkeypatch, arch):
+    mod, old = module(monkeypatch)
+    alias = mod.fused_mamba_state_scatter_with_mask
+    replacement, api = Kernel("flat"), make_torch(arch=arch)
+    records = []
+    dispatch = bridge._bind(mod, replacement, api, lambda *a, **kw: records.append((a, kw)))
+    source_rows = object()
+    src, dst = tensor(), tensor()
+    assert alias(dst, src, [3], [1], source_rows) == "flat"
+    assert alias is mod.fused_mamba_state_scatter_with_mask
+    assert replacement.calls[0][0] == (6144, 48, 1)
+    assert replacement.calls[0][1][0] is src
+    assert replacement.calls[0][1][1] is dst
+    assert replacement.calls[0][1][4] is source_rows
+    assert replacement.calls[0][2] == {"BLOCK_SIZE": 1024}
+    assert dispatch.fast_calls == 1 and old.calls == []
+    assert len(records) == 1
+
+
+@pytest.mark.parametrize("arch", ["gfx90a", "gfx942", "gfx950", "gfx9360", "gfx9380", "", None])
+def test_unreviewed_architecture_keeps_original_jit(arch):
+    old, replacement = Kernel("stock"), Kernel("flat")
+    dispatch = bridge._GridDispatcher(old, replacement, make_torch(arch=arch))
+    args = (tensor(), tensor(), object(), object(), object(), 393216)
+    assert dispatch[(64, 48, 384)](*args, BLOCK_SIZE=1024) == "stock"
+    assert old.calls == [((64, 48, 384), args, {"BLOCK_SIZE": 1024})]
+    assert replacement.calls == []
+
+
+def test_architecture_cache_is_scoped_to_each_input_device():
+    probes = []
+    arches = {"cuda:0": "gfx942", "cuda:1": "gfx938:xnack-", "cuda:2": "gfx936"}
+    def properties(device):
+        probes.append(device)
+        return types.SimpleNamespace(gcnArchName=arches[device])
+    api = types.SimpleNamespace(float32="fp32", cuda=types.SimpleNamespace(get_device_properties=properties))
+    old, replacement = Kernel("stock"), Kernel("flat")
+    dispatch = bridge._GridDispatcher(old, replacement, api)
+    for device, expected in [("cuda:0", "stock"), ("cuda:1", "flat"), ("cuda:2", "flat"), ("cuda:1", "flat"), ("cuda:0", "stock")]:
+        args = (tensor(device=device), tensor(device=device), None, None, None, 393216)
+        assert dispatch[(64, 48, 384)](*args, BLOCK_SIZE=1024) == expected
+    assert probes == ["cuda:0", "cuda:1", "cuda:2"]
+    assert dispatch.fast_calls == 3 and dispatch.stock_calls == 2

@@ -145,8 +145,9 @@ BACKEND_CATALOG = {
         "backends": {
             "triton": {
                 "status": "candidate",
-                "note": "gfx936 FP32 entries >=1024: flatten request/block grid, "
+                "note": "gfx936/gfx938 FP32 entries >=1024: flatten request/block grid, "
                         "retain source-row mapping and upstream validation. "
+                        "gfx938 bitwise/Graph/spawn and TP2 MTP checked; see docs for scope. "
                         "Other contracts keep stock. Startup fallback: "
                         "HCU_DISABLE_OPS=mamba_state_scatter.",
             },

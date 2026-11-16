@@ -107,7 +107,7 @@ SGLang Mamba verify-state copy launch geometry
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| triton | candidate gfx936 FP32 entries >=1024: flatten  |
+| triton | candidate gfx936/gfx938 FP32 entries >=1024: f |
 
 路由变量：（auto）
 

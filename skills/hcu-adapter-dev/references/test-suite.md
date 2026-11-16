@@ -1089,3 +1089,10 @@ stride；Graph 同时改变输入值与映射元数据。桥接测试保留已�
 已经安装路由的进程：隔离原始 JIT 后测试，再恢复进入测试前的绑定，不能把
 HOSTnone 单独通过误作完整 suite 兼容证据。
 
+
+Mamba scatter routing CPU regressions exercise exact gfx936/gfx938 architecture names
+and feature suffixes, per-input-device probe caching, retained aliases and source-row
+arguments, plus rejection of other architectures and dtype/device/size contracts.
+The real wrapper/Graph and spawn probes accept either supported HCU architecture;
+a CPU skip does not validate gfx938 device execution or serving.
+

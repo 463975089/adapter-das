@@ -11,6 +11,7 @@ import logging
 LOG = logging.getLogger("hcu.adapter")
 _MODULE = "sglang.kernels.ops.mamba.mamba_state_scatter_triton"
 _SYMBOL = "_fused_mamba_state_scatter_with_mask_kernel"
+_SUPPORTED_ARCHES = frozenset({"gfx936", "gfx938"})
 _UPSTREAM_SHA256 = "e4b3b5206d2a28489ce3b422b7f60d0ae811ca2bd603cf97b79f687dfef12795"
 _ARGUMENTS = (
     "src_ptr", "dst_ptr", "dst_indices_raw_ptr", "step_indices_raw_ptr",
@@ -56,7 +57,7 @@ class _GridDispatcher:
             except Exception:
                 arch = None
             self.device_arches[device] = arch
-        return self.device_arches[device] == "gfx936"
+        return self.device_arches[device] in _SUPPORTED_ARCHES
 
     def __getitem__(self, grid):
         stock = self.original[grid]
@@ -71,7 +72,8 @@ class _GridDispatcher:
                 return stock(*args, **kwargs)
             if self.fast_calls == 0:
                 LOG.warning("HCU adapter: Mamba state scatter executing flattened "
-                            "grid %s -> %s; source-row mapping retained",
+                            "grid on %s: %s -> %s; source-row mapping retained",
+                            self.device_arches[args[0].device],
                             tuple(grid), (grid[0] * grid[2], grid[1], 1))
             self.fast_calls += 1
             # Never retry the stock kernel after a launched candidate fails.
@@ -100,7 +102,7 @@ def _bind(module, replacement, torch_api, register):
         register(
             "mamba_state_scatter", replacement,
             target=_MODULE + "." + _SYMBOL, mechanism="rebind",
-            detail="gfx936 FP32 entries >=1024; flattened request/block grid; "
+            detail="gfx936/gfx938 FP32 entries >=1024; flattened request/block grid; "
                    "upstream wrapper, source-row mapping and cached aliases retained; "
                    "other contracts use original JIT",
         )
@@ -131,5 +133,5 @@ def install():
                     "contract preflight refusal", exc_info=True)
         return False
     LOG.warning("HCU adapter: Mamba state scatter flattened-grid route installed; "
-                "gfx936 FP32 only; no source writes")
+                "gfx936/gfx938 FP32 only; no source writes")
     return dispatch
