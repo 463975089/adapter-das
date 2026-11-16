@@ -333,12 +333,21 @@ def _spawn_worker(source, queue):
 def test_spawned_interpreter_adapts_its_own_original_loader(source):
     import multiprocessing
 
+    # The spawned interpreter builds its own fake framework module tree;
+    # the auto-installed real host bridge only adds a ~25s sglang import
+    # to child startup (2026-11-16 image) and once pushed it past the old
+    # 40s queue budget. Skip the bridge for the child only (restored so
+    # later tests in this interpreter keep auto-host detection) and keep
+    # a 90s budget for cold filesystems.
+    from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
+        saved_host = os.environ.get(HOST_ENV)
+    os.environ[HOST_ENV] = "none"
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
     process = context.Process(target=_spawn_worker, args=(source, queue))
     process.start()
     try:
-        assert queue.get(timeout=40) is True
+        assert queue.get(timeout=90) is True
         process.join(timeout=20)
         assert process.exitcode == 0
     finally:
@@ -346,6 +355,10 @@ def test_spawned_interpreter_adapts_its_own_original_loader(source):
             process.terminate()
             process.join(timeout=10)
         queue.close()
+        if saved_host is None:
+            os.environ.pop(HOST_ENV, None)
+        else:
+            os.environ[HOST_ENV] = saved_host
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires remote GPU")
