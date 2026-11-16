@@ -3,18 +3,25 @@
 该候选恢复官方已有的 mHC pre/post-pre 语义，归 Adapter；Plugin 不增加重复
 owner。Core 运行时代码、原始 `MHCPostOp` 和 `HCHeadOp` 保持官方实现。
 
-显式 opt-in 配置（尚未晋级默认）：
+当前默认配置：
 
 ```yaml
 version: 1
 ops:
-  vllm_mhc: torch
+  vllm_mhc: aiter
 ```
 
-调试覆盖 `HCU_VLLM_MHC_IMPL=torch|stock`，默认 `stock`。
+调试覆盖 `HCU_VLLM_MHC_IMPL=aiter|torch|stock`，默认 `aiter`。
+`HCU_VLLM_MHC_IMPL=stock` 或 `HCU_DISABLE_OPS=vllm_mhc` 仍可显式回退到原始官方路径。
 `HCU_DISABLE_OPS=vllm_mhc` 在启动时优先恢复原始官方路径；它不证明已知失败的
 原始 TileLang pre/fused 正确。注册后不能在原进程切换，须启动新进程。
-仅准入已测 gfx936、vLLM 0.33 release line；不扩大平台/DTK 通用门禁。
+仅准入 gfx936/gfx938、vLLM 0.33 release line；不扩大平台/DTK 通用门禁。
+
+AITER 模式的 delayed Pre 保持两段式：stage1 使用 `mhc_pre_gemm_sqrsum`，stage2
+默认使用 TileLang `pre_big_fuse_tilelang`
+（`VLLM_HCU_USE_AITER_TILELANG_MHC=1`）。显式设为 `0` 仅用于诊断旧
+`mhc_pre_big_fuse`；默认开启但 TileLang 不可用时回退官方 Torch，不落回旧实现。
+`hidden=5120` 的 Post 继续走官方 Torch，原 `MHCPostOp`/`HCHeadOp` 语义不扩大。
 
 ## 调用与生命周期
 
@@ -45,6 +52,18 @@ ops:
 该派生键不是操作员配置项。
 
 ## 已有证据与剩余门禁
+
+2026-11-10，gfx938、DeepSeek-V4.1-Flash W4A8、`--enforce-eager`：
+
+- 原 AITER `mhc_pre_big_fuse` 在单 token 和奇数 token 的 Sinkhorn 阶段输出约
+  `0.25` 的均匀值；真实 dump 输入下 `comb` 最大相对误差约 `0.75`。
+  替换为 TileLang 后，m=1/2/3/5/7/16/76/128 及真实 seq320 输入均通过，
+  `comb` 最大相对误差不超过 `2.75e-7`，stage2 耗时约 13.0–13.7 us。
+- HumanEval 全量 164 题官方报告为 `0.9756`（160/164）；空输出、连续重复、
+  非 ASCII、超长及请求超时均为 0。平均端到端延迟 58.96 s；同配置仅将
+  big_fuse 回退 Torch 的诊断臂为 83.68 s。该性能对比只适用于本次 eager 配方。
+- 本轮证据不覆盖 CUDA Graph、其他量化/模型或 gfx936 的 TileLang 复验；
+  catalog 保持 candidate，不据此标 validated/production。
 
 2026-11-04，真实 gfx936、Flash H4096/Pro H7168 layer0 attn/FFN 权重：
 
@@ -81,8 +100,8 @@ vLLM 0.33 draft-update 会遍历 draft module；CPU 测试夹具须返回空
 `torch.nn.Module`，不能用无 `modules()` 的 namespace，亦不能替换官方
 LM-head 遍历来掩盖该前置条件。
 
-仍需完整仓内门禁、四质量维度（cos/maxrel、layer/e2e golden）、
-真实 V4 编译/Graph/HumanEval32、性能及其他架构验证。
+仍需完整仓内门禁、真实 V4 编译/Graph、其他量化与模型、生产配置性能及
+gfx936 的 TileLang 复验。gfx938 W4A8 eager HumanEval164 已完成，见本节开头。
 catalog 为 candidate，不标 validated/production，不提升 last-good。
 
 宿主回归补证：vLLM 专项335项通过。混合节点门禁必须用完整 SGLang

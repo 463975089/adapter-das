@@ -33,11 +33,20 @@ LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
+    "vllm_flashmla_decode": ("vLLM V4.1 native packed sparse decode; fresh-process stock fallback", None),
+    "vllm_flashmla_prefill": ("vLLM V4.1 native sparse prefill; fresh-process stock fallback", None),
+    "vllm_fp4_indexer": ("V41 FP4 model/cache/producer/reader; fresh-process FP8 rollback", "HCU_VLLM_FP4_INDEXER_IMPL"),
+    "vllm_fp4_packer": ("Plugin E2M1 lowering; fresh-process original-binding rollback", "HCU_VLLM_FP4_PACKER_IMPL"),
+    "vllm_scaled_mm": ("vLLM LightOp FP8/INT8 execution bridge; startup Triton fallback", None),
     "minimax_h3_rotary_embedding": ("H3 candidate RoPE to torch reference", None),
     "w4a8_contiguous_gemm": ("Optional DTK W4A8 HIPC COV5 ABI repair (startup only)", None),
+    "vllm_dsv41_channel_fp8": ("vLLM V4.1 channel-FP8 config registration; fresh-process stock fallback", "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL"),
+    "vllm_ct_w4a8": ("vLLM V4.1 CT W4A8 config registration; fresh-process stock fallback", "HCU_VLLM_CT_W4A8_IMPL"),
+    "vllm_pcp": ("vLLM V4.1 PCP attention ownership; fresh-process stock fallback", "HCU_VLLM_PCP_IMPL"),
     "qsa_mqa": ("QSA MQA BoltOPs dispatch (falls back to Torch reference)", None),
     "vllm_sparse_indexer": ("vLLM C4 indexer public OOT compatibility; fresh-process stock fallback", "HCU_VLLM_SPARSE_INDEXER_IMPL"),
-    "vllm_mhc": ("vLLM official Torch mHC compatibility registration (startup only)", None),    "deep_ep": ("DeepInfer DeepEP compatibility surface", None),
+    "vllm_mhc": ("vLLM official Torch/AITER mHC compatibility registration (startup only)", "HCU_VLLM_MHC_IMPL"),
+    "deep_ep": ("DeepInfer DeepEP compatibility surface", None),
     "worker.runtime": ("DeepInfer worker lifecycle adaptation", None),
     "deep_gemm": ("DeepInfer GEMM/MQA/mHC compatibility surface", None),
     "flash_attn.cute.interface._flash_attn_fwd": ("DeepInfer ViT attention", None),

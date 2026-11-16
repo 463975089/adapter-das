@@ -76,6 +76,62 @@ BACKEND_CATALOG = {
             },
         },
     },
+    "vllm_flashmla_decode": {
+        "var": "HCU_VLLM_FLASHMLA_DECODE",
+        "summary": "vLLM 0.33 V4.1 native packed-FP8 sparse decode without BF16 KV gather",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: original decode global, metadata and backend selection"},
+            "native": {"status": "candidate", "note": "Default gfx938 D512 OCP 584-byte cache; fresh per-call native plan; original MXFP8 epilogue; GPU/Graph/model/performance pending"},
+        },
+    },
+    "vllm_flashmla_prefill": {
+        "var": "HCU_VLLM_FLASHMLA_PREFILL",
+        "summary": "vLLM 0.33 V4.1 gathered-BF16 sparse prefill via native FlashMLA",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: unchanged official ROCm dispatch"},
+            "native": {"status": "candidate", "note": "Default gfx936/gfx938 D512 BF16 dense-index prefill; DTK FlashMLA, no FP32 API; device/model/performance gates pending"},
+        },
+    },
+    "vllm_fp4_indexer": {
+        "var": "HCU_VLLM_FP4_INDEXER_IMPL",
+        "summary": "V41 LightOp FP4 indexer with zero-copy 64-record cache pages",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: existing FP8 behavior"},
+            "lightop": {"status": "candidate", "note": "Default: applies only when the model has an FP4 indexer cache (indexer_kv_dtype=mxfp4); eager or PIECEWISE breakable Graph; logical 64-record pages, ratio2 physical 32 records staged for decode; mixed ratios and model acceptance pending"},
+        },
+    },
+    "vllm_fp4_packer": {
+        "var": "HCU_VLLM_FP4_PACKER_IMPL",
+        "summary": "Plugin-owned vLLM 0.33 E2M1 arithmetic lowering",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Explicit stock fallback: audited upstream bindings; no lowering installed"},
+            "triton": {"status": "candidate", "note": "Default: gfx938 Plugin packer; CPU contracts only; native, Graph and model gates pending"},
+        },
+    },
+    "vllm_dsv41_channel_fp8": {
+        "var": "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL",
+        "summary": "vLLM 0.33 V4.1 channel-wise FP8 config via the public quantization API",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Do not register the distinct config; upstream FP8/CT selection is untouched"},
+            "native": {"status": "candidate", "note": "Register hcu_dsv41_channel_fp8 without replacing FP8/CT/oracle owners; checkpoint loading and GPU gates pending"},
+        },
+    },
+    "vllm_ct_w4a8": {
+        "var": "HCU_VLLM_CT_W4A8_IMPL",
+        "summary": "vLLM 0.33 V4.1 compressed-tensors W4A8 config via the public quantization API",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Do not register the distinct config; native CT remains the owner"},
+            "native": {"status": "candidate", "note": "Register hcu_dsv41_ct_w4a8; HCU MoE execution stays plugin-private; model/GPU gates pending"},
+        },
+    },
+    "vllm_pcp": {
+        "var": "HCU_VLLM_PCP_IMPL",
+        "summary": "vLLM 0.33 V4.1 PCP attention owned by the adapter kernel module",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Default: adapter builds no PCP classes; the plugin keeps its native path"},
+            "native": {"status": "candidate", "note": "Adapter-owned V41 PCP backends/indexer/attention; plugin injects the FP8 reference scorer and publishes the model; eager PCP2+ only, real-device gates pending"},
+        },
+    },
     "vllm_dsv41_pcp_compat": {
         "var": None,
         "summary": "vLLM V4.1 compatibility for the opt-in PCP extension",
@@ -113,10 +169,20 @@ BACKEND_CATALOG = {
     },
     "vllm_mhc": {
         "var": "HCU_VLLM_MHC_IMPL",
-        "summary": "vLLM 0.33 mHC compatibility; official Torch math via public OOT",
+        "summary": "vLLM 0.33 mHC via public OOT; AITER project with TileLang stage2 by default",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default unchanged upstream; diagnostic rollback, known gfx936 pre/fused failures"},
-            "torch": {"status": "candidate", "note": "Opt-in gfx936 official pre/post and public IR RMS; post/head unchanged; installed/model gates pending"},
+            "stock": {"status": "candidate", "note": "No longer the adapter default; explicit opt-out to the upstream path, diagnostic rollback, known gfx936 pre/fused failures"},
+            "torch": {"status": "candidate", "note": "Opt-in gfx936/gfx938 official pre/post and public IR RMS; post/head unchanged; independent model gates remain candidate"},
+            "aiter": {"status": "candidate", "note": "Default gfx936/gfx938 AITER project plus TileLang pre_big_fuse stage2 through public OOT; missing TileLang uses official Torch rather than legacy big_fuse; gfx938 W4A8 eager operator parity and HumanEval 160/164 passed; Graph and other models pending"},
+        },
+    },
+    "vllm_scaled_mm": {
+        "var": None,
+        "summary": "vLLM native FP8/INT8 Linear execution through LightOp with official Triton fallback",
+        "backends": {
+            "auto": {"status": "candidate", "note": "LightOp when installed: INT8 gfx936/gfx938, E4M3FN gfx938; metadata fallback to official Triton; model/performance gates pending"},
+            "lightop": {"status": "candidate", "note": "Require LightOp wheel; native quantization/loading and asymmetric INT8 correction preserved; unsupported contracts use Triton"},
+            "triton": {"status": "validated", "note": "Preserve official providers without execution rebinding; diagnostic startup rollback"},
         },
     },
     "vllm_fp8_linear": {

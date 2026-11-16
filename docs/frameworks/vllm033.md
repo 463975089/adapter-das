@@ -38,7 +38,27 @@ Plugin 类路径。普通 MHA/GQA 的默认 Triton 选型不覆盖 MLA/Sparse ML
 普通 AR 可审计公开 communicator 类选择入口；融合 AR 的注册、pass 与
 Graph 生命周期仍需单独证明，不能由普通 AR 的可达性推定支持。
 
+## 普通 FP8/INT8 Linear 的 LightOp 接入
+
+通用 scaled-MM 执行桥见 [LightOp Linear](vllm-scaled-mm-lightop.md)。保留官方
+FP8 fallback 的公开注册、内核优先级、权重加载、量化和 INT8 非对称修正；
+仅将选中的 Triton provider 的共享 GEMM 调用点路由至 LightOp。
+`ops.vllm_scaled_mm` 支持 `auto`（默认）、`lightop`（要求 wheel）和 `triton`。
+`HCU_DISABLE_OPS=vllm_scaled_mm` 在新进程中跳过接入。INT8 覆盖 gfx936/gfx938，
+E4M3FN 仅 gfx938；不覆盖布局/尺度/对齐时保留官方 Triton 行为。候选状态不表示
+DSV41 整模型或性能验收完成。该后端不处理 CT W4A8 MoE 的 INT4 packing/HIPC。
+
 ## 验证
+
+FlashMLA prefill/decode 的隐式 `native` 默认只在实际 vendor wheel 与调用 ABI
+均可用时接入；缺包、缺符号或签名漂移保留官方 stock，且不锁存启动失败，
+不应让普通 BF16 模型依赖可选 V4.1 provider。环境或配置中显式选择 `native`
+仍严格拒绝不可用的 provider；发布后健康检查与失败锁存保持不变。
+
+原生 packed decode 测试从有限 BF16 KV 经官方 cache writer 生成 page-flat
+FP8/UE8M0 数据，并在每次改输入 Graph replay 后对拍独立 CPU FP64 attention。
+CPU recorder 使用合法的固定尺度 packed 夹具，另验实际被选中的 KV 为有限值。
+这些 CPU 契约与测试代码不等于原生 decode、Graph 或 V4.1 模型验收。
 
 BF16/FP16 AITER 的可选公开平台 ABI 候选与限制见
 [unquantized AITER compatibility](vllm033-aiter-moe.md)。组件通过不代表模型验收。

@@ -118,7 +118,8 @@ def main() -> int:
             )
             return 1
         return 0
-    DOC.write_text(out, encoding="utf-8", newline="\n")
+    with open(DOC, "w", encoding="utf-8", newline="\n") as f:
+        f.write(out)
     print(f"wrote {DOC.relative_to(ROOT)} ({out.count(chr(10))} lines)")
     return 0
 

@@ -36,13 +36,23 @@ def seams(monkeypatch):
         def forward_hip(self,x,residual,post_layer_mix,comb_res_mix,fn,hc_scale,hc_base,
                         rms_eps,hc_pre_eps,hc_sinkhorn_eps,hc_post_mult_value,sinkhorn_repeat,
                         n_splits=1,tile_n=1,norm_weight=None,norm_eps=0.0):pass
+    class Delayed(Base):
+        def _maybe_post(self,residual,sublayer_out,post_layer_mix,comb_res_mix):return residual
+        def forward_hip(self,residual,fn,hc_scale,hc_base,rms_eps,hc_pre_eps,hc_sinkhorn_eps,
+                        hc_post_mult_value,sinkhorn_repeat,pre_mix=None,x=None,norm_weight=None,
+                        norm_eps=1e-6,sublayer_out=None,post_layer_mix=None,comb_res_mix=None):pass
+    class Post(Base):
+        def forward_hip(self,x,residual,post_layer_mix,comb_res_mix):pass
     def pre(residual,fn,hc_scale,hc_base,rms_eps,hc_pre_eps,hc_sinkhorn_eps,hc_post_mult_value,
             sinkhorn_repeat,n_splits=1):raise AssertionError('offline math forbidden')
     def post(x,residual,post_layer_mix,comb_res_mix):raise AssertionError('offline math forbidden')
     def register(name,function,*,mutates_args,fake_impl):calls.append(name)
     class ReplacementPre(Pre):pass
     class ReplacementFused(Fused):pass
-    mhc=SimpleNamespace(MHCPreOp=Pre,MHCFusedPostPreOp=Fused)
+    class ReplacementDelayed(Delayed):pass
+    class ReplacementPost(Post):pass
+    mhc=SimpleNamespace(MHCPreOp=Pre,MHCFusedPostPreOp=Fused,
+                        MHCPreDelayedOp=Delayed,MHCPostOp=Post)
     envs=SimpleNamespace(environment_variables={})
     kernels=SimpleNamespace(mhc_pre_torch=pre,mhc_post_torch=post)
     modules={'vllm.model_executor.layers.mhc':mhc,
@@ -51,7 +61,8 @@ def seams(monkeypatch):
         'vllm.utils.torch_utils':SimpleNamespace(direct_register_custom_op=register)}
     monkeypatch.setattr(m,'import_module',modules.__getitem__)
     monkeypatch.setattr(m.inspect,'getfile',lambda obj:__file__)
-    monkeypatch.setattr(m,'_declare',lambda *args:((pre,object(),ReplacementPre),(post,object(),ReplacementFused)))
+    monkeypatch.setattr(m,'_declare',lambda *args:((pre,object(),ReplacementPre),
+        (post,object(),ReplacementFused),(None,None,ReplacementPost),(None,None,ReplacementDelayed)))
     monkeypatch.setattr(m,'torch',SimpleNamespace(__version__='test',version=SimpleNamespace(hip='test')),raising=False)
     monkeypatch.setattr(registry,'register',lambda **kw:records.append(kw))
     yield SimpleNamespace(m=m,selection=selection,calls=calls,records=records,mhc=mhc,envs=envs,modules=modules)
@@ -59,8 +70,10 @@ def seams(monkeypatch):
     importlib.reload(module)
 
 
-def test_stock_and_kill_switch_import_no_framework(seams,monkeypatch):
+@pytest.mark.parametrize('arch',['gfx936','gfx938'])
+def test_stock_and_kill_switch_import_no_framework(seams,monkeypatch,arch):
     s=seams
+    monkeypatch.setattr(host,'detect_hcu',lambda:host.HcuDetection(True,arch,'test'))
     monkeypatch.setenv('HCU_VLLM_MHC_IMPL','stock')
     monkeypatch.setattr(s.m,'import_module',lambda name:pytest.fail('stock imported '+name))
     assert not s.m.install()
@@ -97,11 +110,35 @@ def test_publication_once_and_stable_cache_factor(seams):
     assert s.envs.environment_variables[s.m.COMPILE_FACTOR]().startswith('official-torch:')
 
 
-@pytest.mark.parametrize('arch',['gfx928','gfx92a','gfx938','gfx942',None])
+@pytest.mark.parametrize('arch',['gfx936','gfx938'])
+def test_admitted_arch_publishes_official_torch_candidate(seams,monkeypatch,arch):
+    s=seams
+    monkeypatch.setattr(host,'detect_hcu',lambda:host.HcuDetection(True,arch,'test'))
+    assert s.m.install()
+    s.m.require_healthy()
+    assert s.calls==['hcu_adapter_mhc_pre','hcu_adapter_mhc_fused']
+    assert len(s.records)==1 and s.records[0]['impl']=='torch'
+    assert type(s.mhc.MHCPreOp()) is s.selection[s.mhc.MHCPreOp]
+    assert type(s.mhc.MHCFusedPostPreOp()) is s.selection[s.mhc.MHCFusedPostPreOp]
+    assert s.envs.environment_variables[s.m.COMPILE_FACTOR]().startswith('official-torch:')
+
+
+@pytest.mark.parametrize('arch',['gfx928','gfx92a','gfx942',None])
 def test_unvalidated_arch_rejected_before_import(seams,monkeypatch,arch):
     monkeypatch.setattr(host,'detect_hcu',lambda:host.HcuDetection(True,arch,'test'))
-    with pytest.raises(seams.m.MhcCompatibilityError,match='gfx936'):seams.m.install()
-    assert not seams.calls
+    monkeypatch.setattr(seams.m,'import_module',lambda name:pytest.fail('unvalidated arch imported '+name))
+    with pytest.raises(seams.m.MhcCompatibilityError) as failure:seams.m.install()
+    assert f'got detected=True, arch={arch!r}' in str(failure.value)
+    assert not seams.calls and not seams.records
+
+
+@pytest.mark.parametrize('arch',['gfx936','gfx938'])
+def test_arch_name_without_detected_hcu_rejected_before_import(seams,monkeypatch,arch):
+    monkeypatch.setattr(host,'detect_hcu',lambda:host.HcuDetection(False,arch,'test'))
+    monkeypatch.setattr(seams.m,'import_module',lambda name:pytest.fail('non-HCU imported '+name))
+    with pytest.raises(seams.m.MhcCompatibilityError) as failure:seams.m.install()
+    assert f'got detected=False, arch={arch!r}' in str(failure.value)
+    assert not seams.calls and not seams.records
 
 
 @pytest.mark.parametrize('version',['0.32.1','1!0.33.0','0.34.0'])
@@ -215,3 +252,96 @@ def test_successful_fork_requires_child_activation_then_adopts_without_registeri
         os._exit(0)
     _,status=os.waitpid(pid,0);assert os.waitstatus_to_exitcode(status)==0
     s.m.require_healthy()
+
+
+def _clean_mode_environment(monkeypatch):
+    """Remove every knob that could outrank the registry default."""
+    for name in ('HCU_VLLM_MHC_IMPL','HCU_DISABLE_OPS','HCU_CONFIG'):
+        monkeypatch.delenv(name,raising=False)
+
+
+def test_default_mode_is_aiter_without_any_environment(monkeypatch):
+    """An unconfigured supported host keeps the AITER tier."""
+    _clean_mode_environment(monkeypatch)
+    monkeypatch.setattr(host,'detect_hcu',lambda:host.HcuDetection(True,'gfx938','test'))
+    monkeypatch.setattr(host,'_installed_vllm_version',lambda:'0.33.0')
+    value,source=module.hcu_env.resolve(module.MODE_VARIABLE)
+    assert value=='aiter' and source=='default'
+    assert module.selected_mode()=='aiter'
+    assert module.selected_split_k('aiter')=='auto'
+
+
+def test_tilelang_stage2_is_default_on_with_explicit_opt_out(monkeypatch):
+    _clean_mode_environment(monkeypatch)
+    monkeypatch.delenv('VLLM_HCU_USE_AITER_TILELANG_MHC',raising=False)
+    value,source=module.hcu_env.resolve('VLLM_HCU_USE_AITER_TILELANG_MHC')
+    assert value=='1' and source=='default'
+    assert module.hcu_env.enabled('VLLM_HCU_USE_AITER_TILELANG_MHC')
+    monkeypatch.setenv('VLLM_HCU_USE_AITER_TILELANG_MHC','0')
+    assert not module.hcu_env.enabled('VLLM_HCU_USE_AITER_TILELANG_MHC')
+
+
+def test_kill_switch_still_forces_stock_over_the_default(monkeypatch):
+    """HCU_DISABLE_OPS outranks the new default, not the other way round."""
+    _clean_mode_environment(monkeypatch)
+    monkeypatch.setenv('HCU_DISABLE_OPS','vllm_mhc')
+    assert module.selected_mode()=='stock'
+
+
+def test_explicit_stock_still_opts_out(monkeypatch):
+    """Explicit HCU_VLLM_MHC_IMPL=stock remains a valid opt-out."""
+    _clean_mode_environment(monkeypatch)
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL','stock')
+    assert module.selected_mode()=='stock'
+
+
+# The AR host check runs INSIDE the host runtime callback, i.e. before the
+# owner install steps that same callback performs. Owner aggregation there is
+# a boot-order fact, not a failure; the post-activation gate stays the real
+# "requested but never activated" defense.
+_OWNER_BOOT_CASES=(
+    ('mhc-aiter',{'HCU_VLLM_MHC_IMPL':'aiter','HCU_VLLM_SPARSE_INDEXER_IMPL':'stock'}),
+    ('indexer-native',{'HCU_VLLM_MHC_IMPL':'stock','HCU_VLLM_SPARSE_INDEXER_IMPL':'native'}),
+)
+
+
+def _owner_modules(monkeypatch,env):
+    monkeypatch.delenv('HCU_DISABLE_OPS',raising=False)
+    monkeypatch.delenv('HCU_CONFIG',raising=False)
+    for name,value in env.items():
+        monkeypatch.setenv(name,value)
+    importlib.reload(module)
+    indexer=importlib.import_module('hcu_adapter.bridges.vllm_sparse_indexer')
+    importlib.reload(indexer)
+    assert module._publication is None and indexer._publication is None
+    return indexer
+
+
+@pytest.fixture
+def booting(monkeypatch):
+    """A fresh host lifecycle, so boot-order cases do not share latches."""
+    actions=host.ProcessLocalActions()
+    monkeypatch.setattr(host,'_RUNTIME_ACTIONS',actions)
+    return actions
+
+
+@pytest.mark.parametrize('label,env',_OWNER_BOOT_CASES)
+def test_boot_time_host_health_check_precedes_owner_install(booting,monkeypatch,label,env):
+    """RED before the ordering fix: the host check refused an uninstalled owner."""
+    _owner_modules(monkeypatch,env)
+    checked=[]
+    def during_boot():
+        host.require_runtime_healthy()
+        checked.append(label)
+    booting.run_once('vllm-runtime',during_boot)
+    assert checked==[label]
+
+
+@pytest.mark.parametrize('label,env',_OWNER_BOOT_CASES)
+def test_post_activation_host_health_check_still_refuses_unactivated_owner(
+        booting,monkeypatch,label,env):
+    """The fix must not narrow the gate that runs after activation."""
+    _owner_modules(monkeypatch,env)
+    booting.run_once('vllm-runtime',lambda:None)
+    with pytest.raises(RuntimeError,match='before runtime activation'):
+        host.require_runtime_healthy()

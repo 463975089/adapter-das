@@ -24,7 +24,8 @@ from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
 
 MODE_VARIABLE = 'HCU_VLLM_MHC_IMPL'
 COMPILE_FACTOR = 'VLLM_HCU_ADAPTER_MHC_IMPLEMENTATION'
-VALIDATED_ARCHES = frozenset({'gfx936'})
+SPLIT_VARIABLE = 'HCU_VLLM_MHC_PRE_SPLIT_K'
+VALIDATED_ARCHES = frozenset({'gfx936', 'gfx938'})
 
 
 class MhcCompatibilityError(RuntimeError):
@@ -44,14 +45,37 @@ class _Publication:
     envs: object
     factor_getter: object
     factor: str
+    mode: str
+    split_k: str
+    provider: object = None
 
 
 def selected_mode() -> str:
     if op_disabled('vllm_mhc'):
         return 'stock'
-    value, _ = hcu_env.resolve(MODE_VARIABLE)
-    if value not in ('stock', 'torch'):
-        raise ValueError(f'{MODE_VARIABLE} must be stock or torch')
+    value, source = hcu_env.resolve(MODE_VARIABLE, host='vllm')
+    if value not in ('stock', 'torch', 'aiter'):
+        raise ValueError(f'{MODE_VARIABLE} must be stock, torch or aiter')
+    if source == 'default' and _publication is None:
+        # General plugins run before model construction on every HCU host.
+        # A feature default must not impose V4.1-only admission on that host.
+        # Environment/config requests still go through the strict install checks.
+        from hcu_adapter.bridges.vllm import detect_hcu, _installed_vllm_version
+        detected = detect_hcu()
+        if not detected.detected or detected.architecture not in VALIDATED_ARCHES:
+            return 'stock'
+        version = Version(_installed_vllm_version() or '0')
+        if version.epoch or version.release[:2] != (0, 33):
+            return 'stock'
+    return value
+
+
+def selected_split_k(mode):
+    if mode != 'aiter':
+        return '1'
+    value, _ = hcu_env.resolve(SPLIT_VARIABLE)
+    if value not in ('auto', '1', '2', '4', '8', '16', '32'):
+        raise ValueError(f'{SPLIT_VARIABLE} must be auto or 1/2/4/8/16/32')
     return value
 
 
@@ -69,8 +93,10 @@ def _refuse(reason, error=None):
 
 
 def _check_publication(p):
-    if selected_mode() != 'torch':
+    if selected_mode() != p.mode or selected_split_k(p.mode) != p.split_k:
         _refuse('mHC startup policy changed after registration; start a fresh process')
+    if p.provider is not None:
+        p.provider.require_healthy()
     for original, replacement in zip(p.originals, p.replacements):
         # Execute the public allocation/selection step without __init__, which
         # needs a current VllmConfig. No private OOT registry access is needed.
@@ -87,7 +113,7 @@ def require_healthy() -> None:
         raise MhcCompatibilityError(_failure)
     p = _publication
     if p is None:
-        if selected_mode() == 'torch':
+        if selected_mode() in ('torch', 'aiter'):
             raise MhcCompatibilityError('mHC compatibility requested before runtime activation')
         return
     if p.pid != os.getpid():
@@ -116,9 +142,10 @@ def _declare(mhc, kernels, ir):
         require_healthy()
         post, comb, layer = kernels.mhc_pre_torch(residual, fn, hc_scale, hc_base,
             rms_eps, hc_pre_eps, hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat, n_splits)
+        normed = layer
         if norm_weight is not None:
-            layer = ir.ops.rms_norm(layer, norm_weight, norm_eps)
-        return post, comb, layer
+            normed = ir.ops.rms_norm(layer, norm_weight, norm_eps)
+        return post, comb, normed
 
     def fused(x: torch.Tensor, residual: torch.Tensor, post_layer_mix: torch.Tensor, comb_res_mix: torch.Tensor,
               fn: torch.Tensor, hc_scale: torch.Tensor, hc_base: torch.Tensor,
@@ -128,8 +155,10 @@ def _declare(mhc, kernels, ir):
               ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         require_healthy()
         updated = kernels.mhc_post_torch(x, residual, post_layer_mix, comb_res_mix)
-        return (updated, *pre(updated, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
-            hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat, n_splits, norm_weight, norm_eps))
+        rest = pre(updated, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                   hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat, n_splits,
+                   norm_weight, norm_eps)
+        return (updated, *rest)
 
     def pre_fake(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
                  hc_post_mult_value, sinkhorn_repeat, n_splits=1, norm_weight=None, norm_eps=0.0):
@@ -160,6 +189,123 @@ def _declare(mhc, kernels, ir):
     return (pre, pre_fake, HcuMHCPreOp), (fused, fused_fake, HcuMHCFusedPostPreOp)
 
 
+
+def _declare_aiter(mhc, kernels, ir, backend, provider, split_k):
+    global torch
+    torch = import_module('torch')
+    runtime = backend.MhcAiterRuntime(provider, kernels, ir.ops.rms_norm,
+        torch.ops.vllm.mhc_pre_mix_triton, torch.ops.vllm.hc_collapse_triton, split_k)
+
+    def execute(function, *args):
+        require_healthy()
+        try:
+            return function(*args)
+        except BaseException as error:
+            _refuse('mHC AITER candidate execution failed; start a fresh process', error)
+
+    def pre(residual: torch.Tensor, fn: torch.Tensor, hc_scale: torch.Tensor, hc_base: torch.Tensor,
+            rms_eps: float, hc_pre_eps: float, hc_sinkhorn_eps: float, hc_post_mult_value: float,
+            sinkhorn_repeat: int, n_splits: int = 1, norm_weight: torch.Tensor | None = None,
+            norm_eps: float = 0.0) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return execute(runtime.pre, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+            hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat, n_splits, norm_weight, norm_eps)
+
+    def fused(x: torch.Tensor, residual: torch.Tensor, post_layer_mix: torch.Tensor, comb_res_mix: torch.Tensor,
+              fn: torch.Tensor, hc_scale: torch.Tensor, hc_base: torch.Tensor,
+              rms_eps: float, hc_pre_eps: float, hc_sinkhorn_eps: float, hc_post_mult_value: float,
+              sinkhorn_repeat: int, n_splits: int = 1, tile_n: int = 1,
+              norm_weight: torch.Tensor | None = None, norm_eps: float = 0.0
+              ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        return execute(runtime.fused, x, residual, post_layer_mix, comb_res_mix, fn, hc_scale,
+            hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps, hc_post_mult_value,
+            sinkhorn_repeat, n_splits, tile_n, norm_weight, norm_eps)
+
+    def delayed(residual: torch.Tensor, fn: torch.Tensor, hc_scale: torch.Tensor, hc_base: torch.Tensor,
+                rms_eps: float, hc_pre_eps: float, hc_sinkhorn_eps: float, hc_post_mult_value: float,
+                sinkhorn_repeat: int, pre_mix: torch.Tensor | None = None,
+                x: torch.Tensor | None = None, norm_weight: torch.Tensor | None = None,
+                norm_eps: float = 1e-6) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        return execute(runtime.delayed, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+            hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat, pre_mix, x, norm_weight, norm_eps)
+
+    def post(x: torch.Tensor, residual: torch.Tensor, post_layer_mix: torch.Tensor,
+             comb_res_mix: torch.Tensor) -> torch.Tensor:
+        return execute(runtime.post, x, residual, post_layer_mix, comb_res_mix)
+
+    def pre_fake(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
+                 hc_post_mult_value, sinkhorn_repeat, n_splits=1, norm_weight=None, norm_eps=0.0):
+        *outer, c, h = residual.shape
+        return (residual.new_empty((*outer,c,1), dtype=torch.float32),
+                residual.new_empty((*outer,c,c), dtype=torch.float32), residual.new_empty((*outer,h)))
+
+    def fused_fake(x, residual, post_layer_mix, comb_res_mix, fn, hc_scale, hc_base,
+                   rms_eps, hc_pre_eps, hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                   n_splits=1, tile_n=1, norm_weight=None, norm_eps=0.0):
+        return torch.empty_like(residual), *pre_fake(residual,fn,hc_scale,hc_base,rms_eps,
+            hc_pre_eps,hc_sinkhorn_eps,hc_post_mult_value,sinkhorn_repeat,n_splits,norm_weight,norm_eps)
+
+    def delayed_fake(residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
+                     hc_post_mult_value, sinkhorn_repeat, pre_mix=None, x=None, norm_weight=None, norm_eps=1e-6):
+        *outer, c, _ = residual.shape
+        return (*pre_fake(residual,fn,hc_scale,hc_base,rms_eps,hc_pre_eps,hc_sinkhorn_eps,
+                          hc_post_mult_value,sinkhorn_repeat),
+                residual.new_empty((*outer,c), dtype=torch.float32))
+
+    def post_fake(x, residual, post_layer_mix, comb_res_mix):
+        return torch.empty_like(residual)
+
+    class HcuMHCPreOp(mhc.MHCPreOp):
+        def forward_hip(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps,
+                        hc_post_mult_value, sinkhorn_repeat, n_splits=1, norm_weight=None, norm_eps=0.0):
+            return torch.ops.vllm.hcu_adapter_mhc_pre(residual,fn,hc_scale,hc_base,rms_eps,
+                hc_pre_eps,hc_sinkhorn_eps,hc_post_mult_value,sinkhorn_repeat,n_splits,norm_weight,norm_eps)
+
+    class HcuMHCFusedPostPreOp(mhc.MHCFusedPostPreOp):
+        def forward_hip(self, x, residual, post_layer_mix, comb_res_mix, fn, hc_scale, hc_base,
+                        rms_eps, hc_pre_eps, hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                        n_splits=1, tile_n=1, norm_weight=None, norm_eps=0.0):
+            return torch.ops.vllm.hcu_adapter_mhc_fused(x,residual,post_layer_mix,comb_res_mix,
+                fn,hc_scale,hc_base,rms_eps,hc_pre_eps,hc_sinkhorn_eps,hc_post_mult_value,
+                sinkhorn_repeat,n_splits,tile_n,norm_weight,norm_eps)
+
+    class HcuMHCPreDelayedOp(mhc.MHCPreDelayedOp):
+        def forward_hip(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                        hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat, pre_mix=None,
+                        x=None, norm_weight=None, norm_eps=1e-6, sublayer_out=None,
+                        post_layer_mix=None, comb_res_mix=None):
+            require_healthy()
+            residual = self._maybe_post(residual,sublayer_out,post_layer_mix,comb_res_mix)
+            return residual, *torch.ops.vllm.hcu_adapter_mhc_delayed(residual,fn,hc_scale,hc_base,
+                rms_eps,hc_pre_eps,hc_sinkhorn_eps,hc_post_mult_value,sinkhorn_repeat,
+                pre_mix,x,norm_weight,norm_eps)
+
+    class HcuMHCPostOp(mhc.MHCPostOp):
+        def forward_hip(self, x, residual, post_layer_mix, comb_res_mix):
+            return torch.ops.vllm.hcu_adapter_mhc_post(x,residual,post_layer_mix,comb_res_mix)
+
+    return ((pre, pre_fake, HcuMHCPreOp), (fused, fused_fake, HcuMHCFusedPostPreOp),
+            (delayed, delayed_fake, HcuMHCPreDelayedOp), (post, post_fake, HcuMHCPostOp))
+
+
+def _load_aiter_provider():
+    """Probe the real HIP provider; absent capability is documented fallback.
+
+    A missing package selects the injected Torch reference before dispatch.
+    A present but incompatible provider (broken import inside the module,
+    non-callable symbol, drifted signature) is refused instead of downgraded.
+    """
+    backend = import_module('hcu_adapter.kernels.mhc_aiter')
+    try:
+        return backend.load_provider()
+    except MhcCompatibilityError:
+        raise
+    except Exception as error:
+        # Only an inspection failure is reclassified. KeyboardInterrupt and
+        # SystemExit must propagate unchanged, or a real interruption reads as
+        # "AITER mHC provider inspection failed" and the cause is hidden.
+        raise MhcCompatibilityError(f'AITER mHC provider inspection failed: {error}') from error
+
+
 def install() -> bool:
     """Called only after the host's canonical version/platform/native guards."""
     global _publication
@@ -171,6 +317,7 @@ def install() -> bool:
         if _publication is not None:
             _refuse('mHC policy invalid after registration; start a fresh process', error)
         raise
+    # Stock stays untouched (pure upstream).
     if mode == 'stock' and _publication is None:
         return False
 
@@ -179,7 +326,9 @@ def install() -> bool:
         from hcu_adapter.bridges.vllm import detect_hcu, _installed_vllm_version
         detected = detect_hcu()
         if not detected.detected or detected.architecture not in VALIDATED_ARCHES:
-            raise MhcCompatibilityError('official Torch mHC is only tested on real gfx936')
+            raise MhcCompatibilityError(
+                f'official Torch mHC requires real HCU arch in {sorted(VALIDATED_ARCHES)}; '
+                f'got detected={detected.detected}, arch={detected.architecture!r}')
         parsed = Version(_installed_vllm_version())
         if parsed.epoch or parsed.release[:2] != (0,33):
             raise MhcCompatibilityError('official Torch mHC requires the vLLM 0.33 release line')
@@ -202,32 +351,73 @@ def install() -> bool:
             dict(**defaults,tile_n=1))
         _require_parameters(kernels.mhc_pre_torch, pre_names[:10], dict(n_splits=1))
         _require_parameters(kernels.mhc_post_torch, ('x','residual','post_layer_mix','comb_res_mix'), {})
-        for original in (mhc.MHCPreOp, mhc.MHCFusedPostPreOp):
+        # Both tiers wrap these two entries: deepseek_v41 calls MHCPreDelayedOp
+        # and MHCPostOp, never MHCPreOp/MHCFusedPostPreOp.
+        _require_parameters(mhc.MHCPreDelayedOp.forward_hip,
+            ('self',*pre_names[:9],'pre_mix','x','norm_weight','norm_eps',
+             'sublayer_out','post_layer_mix','comb_res_mix'),
+            dict(pre_mix=None,x=None,norm_weight=None,norm_eps=1e-6,
+                 sublayer_out=None,post_layer_mix=None,comb_res_mix=None))
+        _require_parameters(mhc.MHCPostOp.forward_hip,
+            ('self','x','residual','post_layer_mix','comb_res_mix'), {})
+        for attribute in ('_maybe_post',):
+            if not callable(getattr(mhc.MHCPreDelayedOp, attribute, None)):
+                raise MhcCompatibilityError(f'official mHC delayed ABI changed: {attribute}')
+        aiter_mode = mode == 'aiter'
+        if aiter_mode:
+            provider = _load_aiter_provider()
+            split_k = selected_split_k(mode)
+        else:
+            provider = None
+            split_k = '1'
+        owners = ((mhc.MHCPreOp, mhc.MHCFusedPostPreOp, mhc.MHCPreDelayedOp, mhc.MHCPostOp)
+                  if aiter_mode else (mhc.MHCPreOp, mhc.MHCFusedPostPreOp))
+        for original in owners:
             if type(original.__new__(original)) is not original:
                 raise MhcCompatibilityError('another owner already selects an mHC OOT implementation')
         if COMPILE_FACTOR in envs.environment_variables:
             raise MhcCompatibilityError('mHC compilation factor already has another owner')
-        declarations = _declare(mhc, kernels, ir)
+        if aiter_mode:
+            backend = import_module('hcu_adapter.kernels.mhc_aiter')
+            declarations = _declare_aiter(mhc, kernels, ir, backend, provider, split_k)
+            names = ('hcu_adapter_mhc_pre','hcu_adapter_mhc_fused',
+                     'hcu_adapter_mhc_delayed','hcu_adapter_mhc_post')
+        else:
+            declarations = _declare(mhc, kernels, ir)
+            names = ('hcu_adapter_mhc_pre','hcu_adapter_mhc_fused')
         files = (Path(__file__), Path(inspect.getfile(kernels)), Path(inspect.getfile(rms_ops)))
         content = dict(sources=[hashlib.sha256(p.read_bytes()).hexdigest() for p in files],
-                       torch=torch.__version__, hip=torch.version.hip)
-        factor = 'official-torch:' + hashlib.sha256(json.dumps(content,sort_keys=True).encode()).hexdigest()
+                       torch=torch.__version__, hip=torch.version.hip,
+                       mode=mode, split_k=split_k,
+                       provider=None if provider is None else provider.fingerprint())
+        prefix = 'aiter' if aiter_mode else 'official-torch'
+        factor = prefix + ':' + hashlib.sha256(json.dumps(content,sort_keys=True).encode()).hexdigest()
         def factor_getter():
             return factor
+        impl = 'aiter' if aiter_mode and provider.available else 'torch'
         # Every operation below can publish permanent process state. An error,
         # including BaseException or partial registration, latches before text.
         try:
-            for name, (function, fake, _) in zip(('hcu_adapter_mhc_pre','hcu_adapter_mhc_fused'), declarations):
-                register(name, function, mutates_args=[], fake_impl=fake)
-            mhc.MHCPreOp.register_oot(declarations[0][2])
-            mhc.MHCFusedPostPreOp.register_oot(declarations[1][2])
+            for name, (function, fake, _) in zip(names, declarations):
+                if function is not None:
+                    register(name, function, mutates_args=[], fake_impl=fake)
+            for owner, (_, _, replacement) in zip(owners, declarations):
+                owner.register_oot(replacement)
             envs.environment_variables[COMPILE_FACTOR] = factor_getter
-            _publication = _Publication(os.getpid(),(mhc.MHCPreOp,mhc.MHCFusedPostPreOp),
-                tuple(item[2] for item in declarations),envs,factor_getter,factor)
+            _publication = _Publication(os.getpid(), owners,
+                tuple(item[2] for item in declarations), envs, factor_getter, factor,
+                mode, split_k, provider)
             _check_publication(_publication)
-            registry.register(op='vllm_mhc',impl='torch',target='vllm.model_executor.layers.mhc.MHCPreOp',
-                mechanism=registry.MECH_SEAM,source=__name__,
-                detail='candidate gfx936/v0.33 official Torch pre/post and public IR RMS via public OOT; post/head unchanged')
+            detail = (f'candidate {detected.architecture}/v0.33 AITER HIP mHC '
+                      f'pre/delayed/fused/post via public OOT; split-K={split_k}; '
+                      f'TileLang-stage2={provider.tilelang_enabled}; provider={impl}; '
+                      f'gfx938 W4A8 eager validated; Graph and other models pending'
+                      if aiter_mode else
+                      f'candidate {detected.architecture}/v0.33 official Torch pre/post and '
+                      f'public IR RMS via public OOT; post/head unchanged')
+            registry.register(op='vllm_mhc', impl=impl,
+                target='vllm.model_executor.layers.mhc.MHCPreOp',
+                mechanism=registry.MECH_SEAM, source=__name__, detail=detail)
         except BaseException as error:
             _refuse('mHC publication failed; start a fresh process', error)
 

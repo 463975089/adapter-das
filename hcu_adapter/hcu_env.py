@@ -138,14 +138,61 @@ def _auto_mqa_emu():
 
 
 REGISTRY = {
+    "HCU_VLLM_FLASHMLA_DECODE": {
+        "env": "HCU_VLLM_FLASHMLA_DECODE", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 packed native decode: default native; explicit stock falls back; startup only; kill switch wins",
+    },
+    "HCU_VLLM_FLASHMLA_PREFILL": {
+        "env": "HCU_VLLM_FLASHMLA_PREFILL", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 FlashMLA prefill: default native; explicit stock falls back; startup only; kill switch wins",
+    },
+    "HCU_VLLM_FP4_INDEXER_IMPL": {
+        "env": "HCU_VLLM_FP4_INDEXER_IMPL", "default": "lightop",
+        "hosts": ("vllm",),
+        "about": "V41 zero-copy FP4 indexer: lightop(默认，需 FP4 indexer cache/indexer_kv_dtype=mxfp4 才生效)/stock(显式回退); before-allocation admission; fresh-process rollback",
+    },
+    "HCU_VLLM_FP4_PACKER_IMPL": {
+        "env": "HCU_VLLM_FP4_PACKER_IMPL", "default": "triton",
+        "hosts": ("vllm",),
+        "about": "Plugin-owned E2M1 lowering: stock or triton; startup only; kill vllm_fp4_packer wins",
+    },
+    "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL": {
+        "env": "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 channel-wise FP8 config registration: native or stock; startup only; kill vllm_dsv41_channel_fp8 wins",
+    },
+    "HCU_VLLM_CT_W4A8_IMPL": {
+        "env": "HCU_VLLM_CT_W4A8_IMPL", "default": "native",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 CT W4A8 config registration: native or stock; startup only; kill vllm_ct_w4a8 wins",
+    },
+    "HCU_VLLM_PCP_IMPL": {
+        "env": "HCU_VLLM_PCP_IMPL", "default": "stock",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 V4.1 PCP attention: stock or native; startup policy, fresh process required to change",
+    },
     "HCU_VLLM_SPARSE_INDEXER_IMPL": {
         "env": "HCU_VLLM_SPARSE_INDEXER_IMPL", "default": "stock",
         "hosts": ("vllm",),
         "about": "vLLM 0.33/gfx936 C4 indexer candidate: stock or native; startup policy, fresh process required to change",
     },
     "HCU_VLLM_MHC_IMPL": {
-        "env": "HCU_VLLM_MHC_IMPL", "default": "stock",
-        "about": "vLLM 0.33/gfx936 mHC candidate: stock or official Torch via public OOT; startup only",    },
+        "env": "HCU_VLLM_MHC_IMPL", "default": "aiter",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33/gfx936,gfx938 mHC: aiter (default), torch or stock; stock remains the opt-out; startup only",
+    },
+    "HCU_VLLM_MHC_PRE_SPLIT_K": {
+        "env": "HCU_VLLM_MHC_PRE_SPLIT_K", "default": "auto",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 aiter mHC staged delayed Pre split-K: auto or 1/2/4/8/16/32; auto=32 only for hc4/hidden5120/0<tokens<=64; startup only",
+    },
+    "VLLM_HCU_USE_AITER_TILELANG_MHC": {
+        "env": "VLLM_HCU_USE_AITER_TILELANG_MHC", "default": "1",
+        "hosts": ("vllm",),
+        "about": "vLLM 0.33 aiter mHC staged delayed-Pre stage2: use TileLang pre_big_fuse_tilelang by default; explicit 0 selects legacy AITER big_fuse; unavailable TileLang falls back to official Torch; startup only",
+    },
     "HCU_CONFIG": {"env": "HCU_CONFIG", "default": "", "about": "Deployment configuration path; shared across hosts"},
     "HCU_WORKER_CONTEXT": {"env": "HCU_WORKER_CONTEXT", "default": "", "about": "DeepInfer inherited worker context; internal", "hosts": ("deepinfer",)},
     "HCU_BF16_TFLOPS": {"env": "HCU_BF16_TFLOPS", "default": "0", "about": "DeepInfer optional MFU calibration", "hosts": ("deepinfer",)},

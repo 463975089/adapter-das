@@ -35,6 +35,18 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     from hcu_adapter.bridges import vllm_fp8
     monkeypatch.setattr(vllm_fp8, "install", lambda: False)
+    # Required-policy CPU fixtures isolate startup admission. Scaled-MM provider
+    # installation imports a device-specific LightOp module and has separate
+    # backend/runtime tests; do not initialize a GPU from this policy test.
+    from hcu_adapter.bridges import vllm_scaled_mm
+    monkeypatch.setattr(vllm_scaled_mm, "install", lambda: False)
+    # These tests exercise required-policy plumbing, not V4.1 bridge policy.
+    # FlashMLA/PCP have their own admission tests and require release/config
+    # context; keep the CPU runtime fixture independent of them.
+    from hcu_adapter.bridges import vllm_flashmla, vllm_flashmla_decode, vllm_pcp
+    for module in (vllm_flashmla, vllm_flashmla_decode, vllm_pcp):
+        monkeypatch.setattr(module, "install", lambda: False)
+        monkeypatch.setattr(module, "require_healthy", lambda: None, raising=False)
     # AllReduce preparation has dedicated runtime/ABI tests; keep these
     # required-policy fixtures independent of its configuration and providers.
     from hcu_adapter.bridges import vllm_allreduce
@@ -222,7 +234,10 @@ def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_s
     if mode.startswith("malformed"):
         assert len(order) == len(reached) and contexts == []
     else:
-        assert order[len(reached):] == [("version",), ("registration-boundary",)]
+        assert order[len(reached):] == [
+            ("version",), ("registration-boundary",),
+            ("resolve", "HCU_ADAPTER_DUMP", "", "default"),
+        ]
         assert len(contexts) == 1
         assert contexts[0].requested_extensions == (frozenset({"provider"}) if mode == "explicit" else frozenset())
         assert contexts[0].requested_capabilities == (frozenset({"attention"}) if mode == "explicit" else frozenset())

@@ -27,6 +27,11 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 
 | 名字 | 拦截物 | 拦截方式 |
 |---|---|---|
+| `vllm_flashmla_decode` | vLLM 0.33 V4.1 native packed decode | 启动期优先 stock；已绑定后策略变化拒绝，须新进程。gate：`tests/adapter/test_vllm_flashmla_decode.py`；不运行期撤销 |
+| `vllm_flashmla_prefill` | vLLM 0.33 V4.1 native FlashMLA prefill | 启动期跳过换绑、保留 stock；已绑定后策略变化拒绝，须新进程，不运行期撤销。gate：`tests/adapter/test_vllm_flashmla.py` |
+| `vllm_fp4_packer` | Plugin E2M1 lowering | 启动时保留原绑定；发布后改变须新进程，禁止热撤销已缓存JIT |
+| `vllm_fp4_indexer` | V41 FP4模型、cache、Q/K与reader | 启动时优先既有FP8；复用原OOT owner；发布后策略变化拒绝须新进程 |
+| `vllm_scaled_mm` | vLLM 普通 FP8/INT8 Linear 的 LightOp 执行后端 | 启动时保留官方 Triton；已安装后策略变化拒绝，须新进程 |
 | `vllm_sparse_indexer` | vLLM 0.33/gfx936 C4 public OOT | 启动时优先 stock；注册后改变须新进程，不能撤销 dispatcher 或清除失败 |
 | `vllm_mhc` | vLLM 0.33 mHC Torch/OOT 适配候选 | 启动时跳过注册，保留原始官方；已注册后改变策略拒绝，须新进程。原始已知 TileLang 失败仍保留，不是功能回退通过。 || `aiter_ar` | AiterCustomAllreduce dispatch | 拒绝 → sglang 回退 NCCL（优雅降级） |
 | `aiter_fa` | aiter FA 入口（真包已有属性也拦） | 调用时响亮报错（换 `--attention-backend triton`） |

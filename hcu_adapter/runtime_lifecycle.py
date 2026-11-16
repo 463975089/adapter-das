@@ -104,6 +104,18 @@ class ProcessLocalLifecycle:
             if failure is not None:
                 raise self._error_type(failure)
 
+    def runtime_action_in_progress(self) -> bool:
+        """True while the protected runtime callback has not returned yet.
+
+        Owners are installed *by* that callback, so a host-wide owner
+        aggregation performed inside it cannot yet distinguish "requested and
+        not installed" from "requested and failed". Callers defer to the
+        post-activation gate instead of narrowing that gate.
+        """
+        self._ensure_process_local()
+        with self._lock:
+            return self._runtime_action in self._running
+
     def record_extension_reports(
         self,
         reports: tuple[ExtensionReport, ...],
