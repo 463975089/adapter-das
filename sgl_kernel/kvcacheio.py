@@ -29,6 +29,7 @@ from __future__ import annotations
 import ctypes
 import glob
 import os
+from functools import lru_cache
 from typing import List, Optional
 
 import torch
@@ -341,6 +342,29 @@ def transfer_kv_per_layer_mla_pf_lf(
     transfer_kv_per_layer_mla(src, dst, src_indices, dst_indices, item_size, block_quota)
 
 
+@lru_cache(maxsize=1)
+def _get_transfer_kv_mla_ptr_table_kernel():
+    # CPU-only environments import this module without Triton installed.
+    import triton
+    import triton.language as tl
+
+    @triton.jit
+    def _transfer_kv_mla_ptr_table(
+        src_layers, dst_layers, src_indices, dst_indices,
+        ROW_BYTES: tl.constexpr, BLOCK_BYTES: tl.constexpr,
+    ):
+        row = tl.program_id(0)
+        layer = tl.program_id(1)
+        cols = tl.arange(0, BLOCK_BYTES)
+        src = tl.load(src_layers + layer).to(tl.pointer_type(tl.uint8))
+        dst = tl.load(dst_layers + layer).to(tl.pointer_type(tl.uint8))
+        src_row = tl.load(src_indices + row).to(tl.int64)
+        dst_row = tl.load(dst_indices + row).to(tl.int64)
+        data = tl.load(src + src_row * ROW_BYTES + cols, cols < ROW_BYTES, other=0)
+        tl.store(dst + dst_row * ROW_BYTES + cols, data, cols < ROW_BYTES)
+    return _transfer_kv_mla_ptr_table
+
+
 def transfer_kv_all_layer_mla(
     src_layers: torch.Tensor,
     dst_layers: torch.Tensor,
@@ -351,6 +375,24 @@ def transfer_kv_all_layer_mla(
     block_quota: int = 2,
     num_warps_per_block: int = 16,
 ):
+    if src_layers.ndim == 1 and dst_layers.ndim == 1:
+        # SGLang's layer-first pools pass tables of GPU-accessible addresses,
+        # including mapped pinned host memory, rather than stacked buffers.
+        if src_indices.numel() == 0 or num_layers == 0:
+            return
+        from triton import next_power_of_2
+
+        device = src_layers.device
+        kernel = _get_transfer_kv_mla_ptr_table_kernel()
+        kernel[(src_indices.numel(), num_layers)](
+            src_layers,
+            dst_layers,
+            src_indices.to(device=device).contiguous(),
+            dst_indices.to(device=device).contiguous(),
+            item_size,
+            next_power_of_2(item_size),
+        )
+        return
     src_i = src_indices.to(torch.long)
     dst_i = dst_indices.to(torch.long)
     for l in range(num_layers):
