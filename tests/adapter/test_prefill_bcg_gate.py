@@ -63,6 +63,11 @@ def test_breakable_driver_gate_registered_and_idempotent(host, draft, force):
     installed = cgs.capture_prefill_graph
     assert installed is mr.capture_prefill_graph
     assert installed is not original
+    owns_capture = installed._hcu_prefill_bcg_gate
+    assert owns_capture()
+    state.breakable = False
+    assert not owns_capture()
+    state.breakable = True
     record = registry.get("cuda_graph")
     assert record["implementation"] == "prefill-bcg-driver-truth"
     assert record["mechanism"] == registry.MECH_SEAM

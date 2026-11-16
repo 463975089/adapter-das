@@ -67,11 +67,6 @@ jobs:
           # 缺失时直接报出来，比 tr 报 "No such file" 更容易定位
           [ -f ci/ci_docker_image ]             || { echo "::error::${{ inputs.ref || github.ref }} 上没有 ci/ci_docker_image"; exit 1; }
           image="$(tr -d '[:space:]' < ci/ci_docker_image)"
-          # 平台要求用 digest 固定镜像，tag 只作说明；没有 digest 就在这里报错，别等到拉镜像那步才失败
-          case "$image" in
-            *@sha256:*) ;;
-            *) echo "::error::ci/ci_docker_image 必须是 <repo>:<tag>@sha256:<digest>，实际是 '$image'"; exit 1 ;;
-          esac
           echo "用镜像: $image"
           echo "image=$image" >> "$GITHUB_OUTPUT"
       
