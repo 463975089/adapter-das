@@ -29,6 +29,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  SGLANG_REPO_URL: ${{ vars.SGLANG_REPO_URL || 'https://github.com/sgl-project/sglang.git' }}
+  SGLANG_REF: v0.5.22
+  SGLANG_COMMIT: baa9befa381511cd4d56f83980951e5a45fffc6d
   PIP_TRUSTED_HOST: ${{ inputs.pip_trusted_host || vars.PIP_TRUSTED_HOST }}
   PIP_INDEX_URL: ${{ inputs.pip_index_url || vars.PIP_INDEX_URL }}
 
@@ -206,9 +209,12 @@ jobs:
     # L1 测的是 build job 产出的 whl，不是检出的源码树（见 install whl 步骤）
     needs: [image, l0, build]
     runs-on: hygon-bw1100-1card
-    # 等卡 30 分钟 + L1 step 上限 90 分钟 + 其他步骤余量
-    timeout-minutes: 130
+    # pull_request_target 触发时跳过 l1（PR 自动跑只到 L0/build，L1 手动触发再跑）
     if: github.event_name != 'pull_request_target'
+    # 等卡 30 分钟 + L1 step 上限 300 分钟 + 其他步骤余量。
+    # L1.5 段入车后脚本内各段超时之和（×2）约 3.7h；暖缓存时全车 ~20-30 分钟，
+    # 上限只裁剪冷容器最坏情形（与 nightly 的 l15 job 同级）
+    timeout-minutes: 360
     container:
       # 镜像来自 ci/ci_docker_image（与 build 用的是同一个）
       image: ${{ needs.image.outputs.image }}
@@ -325,6 +331,11 @@ jobs:
               print("entry-point owner: sgl-kernel")
           PY
 
+      - name: List pip env
+        run: |
+          HCU_ADAPTER_HOST=none pip list
+
+
       - name: Environment probe
         timeout-minutes: 5
         run: |
@@ -333,6 +344,41 @@ jobs:
           python3 --version
           python3 -c "import torch; print('torch', torch.__version__, 'devices', torch.cuda.device_count())"
           ls -d /sglang-v0522 /root/sglang-v0522-src /sglang-v0521 /root/sglang-v0521-src 2>/dev/null || true
+
+      # R-17 三绑定（docs/ci.md）：PR 的 l1 与 nightly 的 l15 用同一个上游树锚点。
+      # 镜像内有预置树就用镜像（source=image）；没有才 clone（source=clone）。
+      # SHA 不一致时 clone 来源直接失败（tag 被移动/镜像仓库不同步），
+      # 镜像来源降级为 warning（树改不了，但结果须带着质疑看）。
+      - name: Fetch upstream sglang tree
+        timeout-minutes: 10
+        run: |
+          up=""
+          for d in /sglang-v0522 /root/sglang-v0522-src; do
+            [ -d "$d/test/registered/attention/unittests" ] && { up="$d"; break; }
+          done
+          src=image
+          if [ -z "$up" ]; then
+            src=clone
+            up="$RUNNER_TEMP/sglang-$SGLANG_REF"
+            rm -rf "$up"
+            ok=0
+            for i in 1 2 3; do
+              if git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$SGLANG_REF" "$SGLANG_REPO_URL" "$up"; then ok=1; break; fi
+              echo "clone attempt $i failed"; rm -rf "$up"; sleep 30
+            done
+            [ "$ok" = 1 ] || { echo "::error::拉取上游 sglang 失败：$SGLANG_REPO_URL @ $SGLANG_REF"; exit 1; }
+          fi
+          head="$(git -C "$up" rev-parse HEAD 2>/dev/null || echo unknown)"
+          echo "upstream tree: $up (source=$src, HEAD=$head)"
+          if [ "$head" != "$SGLANG_COMMIT" ]; then
+            if [ "$src" = clone ]; then
+              echo "::error::$SGLANG_REF 解析到 $head，预期 $SGLANG_COMMIT（tag 被移动或镜像仓库不同步）"; exit 1
+            fi
+            echo "::warning::镜像内上游树 HEAD=$head，与验证基线 $SGLANG_COMMIT 不一致"
+          fi
+          [ -d "$up/test/registered/attention/unittests" ] \
+            || { echo "::error::$up 下没有 test/registered/attention/unittests"; exit 1; }
+          echo "HCU_UP_TREE=$up" >> "$GITHUB_ENV"
 
       - name: Seed JIT cache
         timeout-minutes: 5
@@ -346,10 +392,12 @@ jobs:
           fi
 
       - name: L1 GPU gate (ci/l1_gpu_gate.sh)
-        # 脚本内各段超时之和（×2）约 70 分钟，这里留余量到 90 分钟
-        timeout-minutes: 90
-        # 容器里只有分到的那张卡，编号固定为 0；直接传 0，跳过 rocm-smi 的空闲卡探测
-        run: bash ci/l1_gpu_gate.sh 0
+        # 脚本内各段超时之和（×2）约 3.7h（含 l15_upstream 60min + l15_mech 40min
+        # + manifest collect 30min）；暖缓存时全车 ~20-30 分钟，上限只裁剪冷容器
+        timeout-minutes: 300
+        # 容器里只有分到的那张卡，编号固定为 0；直接传 0，跳过 rocm-smi 的空闲卡探测。
+        # --up-tree 钉死上游树：l15_* 段从 SKIP 变为真实执行，且 SHA 已由 fetch 步骤校验
+        run: bash ci/l1_gpu_gate.sh 0 --up-tree "$HCU_UP_TREE"
 
       - name: Collect logs
         if: always()
