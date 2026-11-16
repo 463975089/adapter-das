@@ -254,6 +254,22 @@ if [ -n "$UP_TREE" ]; then
     for d in gdn hybrid_linear mamba swa lightning dsv4; do
         [ -d "$UP/$d" ] && MECH="$MECH $UP/$d"
     done
+    # v0.5.23 face drift: cutedsl_gdn_mtp_ring imports cuda.bindings at
+    # module level, so collecting gdn/test_gdn_cutedsl_ring_verify.py dies
+    # with ModuleNotFoundError on HCU containers (no cuda python pkg) and
+    # takes the whole l15_mech segment down at collection. Probe the import
+    # under the segment's own path contract; on failure ignore that one
+    # file loudly. Platform-bug ledger treatment, same spirit as
+    # `-k "not tilelang"` (docs/ci.md L1.5b).
+    MECH_IGNORE=""
+    GDN_VERIFY="$UP/gdn/test_gdn_cutedsl_ring_verify.py"
+    if [ -f "$GDN_VERIFY" ] && ! env HCU_DEEPGEMM_BRIDGE=1 \
+            PYTHONPATH="$UP_TREE/python:$ROOT" \
+            python3 -c "import sglang.kernels.ops.attention.cutedsl_gdn_mtp_ring" \
+            >/dev/null 2>&1; then
+        MECH_IGNORE="--ignore=$GDN_VERIFY"
+        echo "L1: l15_mech ignores $GDN_VERIFY (cutedsl_gdn_mtp_ring not importable on this stack; ledger docs/ci.md L1.5b)"
+    fi
     if [ -n "$MECH" ]; then
         # Batch A first-run triage (2026-10-19): baseline 38 failed / 99
         # passed -- every one ledgered in docs/ci.md L1.5b (gdn cuteDSL
@@ -270,7 +286,7 @@ if [ -n "$UP_TREE" ]; then
         rc=0
         timeout $(( 1200 * TSCALE )) env HCU_DEEPGEMM_BRIDGE=1 \
             PYTHONPATH="$UP_TREE/python:$ROOT" \
-            python3 -m pytest $MECH -q --no-header \
+            python3 -m pytest $MECH $MECH_IGNORE -q --no-header \
             -k "not tilelang" -rs -o faulthandler_timeout=580 --tb=line \
             > /tmp/l1_l15_mech.log 2>&1 || rc=$?
         kill "$hbpid" 2>/dev/null; wait "$hbpid" 2>/dev/null
