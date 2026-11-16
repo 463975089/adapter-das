@@ -173,7 +173,11 @@ run_seg() {  # name timeout_base cmd...
 
 # ---------------------------------------------------------------- segments
 run_seg l0      120  python3 ci/l0_gate.py
-run_seg cpu     300  python3 -m pytest tests/test_ops_cpu.py -q --no-header
+# CPU oracles import sgl_kernel only -- no sglang host surface, so the
+# interpreter skips the bridge install (~26 s of sglang import per cold
+# start, and with no host loaded the _cpu_process suites also skip their
+# clean-subprocess rerun: they already ARE the clean process).
+run_seg cpu     300  env HCU_ADAPTER_HOST=none python3 -m pytest tests/test_ops_cpu.py -q --no-header
 # Transfer ownership only to a blocking matrix with an available upstream tree.
 # Observe/off modes retain the broad regression's blocking coverage.
 FAMILY_DESELECT=()
@@ -417,7 +421,10 @@ done
 
 # vendor wheel sanity: WARN tier (bad wheel is an environment fact, not an
 # MR regression) -- printed, never fails the gate
-python3 -m pytest tests/vendor/test_flash_attn.py -q --no-header \
+# Vendor probe drives the vendor wheels directly against a torch fp32
+# reference; the sglang host bridge is not under test here, skip its
+# install (~26 s cold interpreter).
+env HCU_ADAPTER_HOST=none python3 -m pytest tests/vendor/test_flash_attn.py -q --no-header \
     > /tmp/l1_vendor.log 2>&1 \
     && echo "L1: vendor PASS" \
     || echo "L1: vendor WARN (wheel sanity; see /tmp/l1_vendor.log)"

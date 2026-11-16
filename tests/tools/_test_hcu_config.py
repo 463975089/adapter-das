@@ -152,7 +152,7 @@ ok("wizard-check", "OK" in r2.stdout and "HCU_SILU_MUL_IMPL = torch" in r2.stdou
 if torch.cuda.is_available():
     import torch  # refresh
 
-    def parity(cfg_ops, func, tag):
+    def parity_launch(cfg_ops, func):
         pcfg = write_cfg(f"version: 1\nops:\n{cfg_ops}")
         code = (
             "import sys, os, torch;"
@@ -180,20 +180,31 @@ if torch.cuda.is_available():
         env = dict(os.environ, HCU_CONFIG=pcfg, HCU_ADAPTER_HOST="none",
                    HIP_VISIBLE_DEVICES=os.environ.get(
                        "HIP_VISIBLE_DEVICES", "6"))
-        r = subprocess.run([sys.executable, "-c", code], capture_output=True,
-                           text=True, timeout=300, env=env)
+        return subprocess.Popen([sys.executable, "-c", code],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, env=env)
+
+    def parity_check(tag, r):
+        out, err = r.communicate(timeout=300)
         md = None
-        for line in r.stdout.splitlines():
+        for line in out.splitlines():
             if line.startswith("MAXDIFF"):
                 md = float(line.split()[1])
-        ok(tag, md is not None and md < 0.05, f"md={md} {r.stderr[-200:]}")
+        ok(tag, md is not None and md < 0.05, f"md={md} {err[-200:]}")
 
     # One fresh-process parity per op, on its production tier (aiter rms,
     # lightop silu). The torch tiers are pure-Python fallbacks already
-    # covered by the in-process sections above; each dropped spawn saves
-    # ~26s of interpreter+torch startup on the gate (2026-11-17 image).
-    parity("  rms_norm: aiter\n", "rmsnorm", "parity-rms-aiter")
-    parity("  silu_and_mul: lightop\n", "silu_and_mul", "parity-silu-lightop")
+    # covered by the in-process sections above. The two spawns are
+    # independent processes on independent config files, so they launch
+    # together and the gate pays one ~26s interpreter+torch startup
+    # instead of two (2026-11-17 image).
+    procs = [
+        ("parity-rms-aiter", parity_launch("  rms_norm: aiter\n", "rmsnorm")),
+        ("parity-silu-lightop", parity_launch("  silu_and_mul: lightop\n",
+                                              "silu_and_mul")),
+    ]
+    for tag, proc in procs:
+        parity_check(tag, proc)
 
 print("RESULT:", "PASS" if not FAILS else f"FAIL {FAILS}")
 sys.exit(0 if not FAILS else 1)
