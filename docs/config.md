@@ -69,6 +69,7 @@ vLLM 0.33/gfx936 的 C4 indexer 候选通过 `ops.vllm_sparse_indexer: native`
 | `rms_norm` | triton（默认）/ aiter / torch | 仅 plain rmsnorm；fused_add/gemma 恒 triton/torch |
 | `allreduce` | aiter（默认）/ nccl | 复合键：aiter=aiter.dist GraphSafe（新镜像压测 4/8-rank 全绿）；nccl=回退；custom 自制 AR 已于 2026-10-19 除役删除（R-01 定罪后 aiter 顶上，修复无意义） |
 | `paged_mqa_logits` | triton（默认，R-13 #4）/ emu（opt-out）/ vendor（broken） | DSA 线 |
+| `minimax_h3_rotary_embedding` | triton / torch（candidate） | H3 DiT128/96及VAE64/48，详见 [H3候选](minimax-h3.md)；BF16分量通过，模型待验证 |
 | `rotary_embedding` | triton（在用，无开关）；aiter / lightop（planned） | rope_fwd / rotary_embedding_fuse 家族待接 |
 | `moe_gate` | triton（在用，contract=torch）；aiter / lightop（planned） | topk_softmax/sigmoid/moe_fused_gate |
 | `fused_moe` | triton（默认回退）/ aiter（validated，auto 先试） | w8a8 专家层：aiter 块量化走 ASM 调优表、通道量化走 moe_c；未调优形状自动回 triton |
