@@ -38,6 +38,7 @@ SWITCHES = {
     "vllm_fp4_indexer": ("V41 FP4 model/cache/producer/reader; fresh-process FP8 rollback", "HCU_VLLM_FP4_INDEXER_IMPL"),
     "vllm_fp4_packer": ("Plugin E2M1 lowering; fresh-process original-binding rollback", "HCU_VLLM_FP4_PACKER_IMPL"),
     "vllm_scaled_mm": ("vLLM LightOp FP8/INT8 execution bridge; startup Triton fallback", None),
+    "minimax_h3_rotary_embedding": ("H3 candidate RoPE to torch reference", None),
     "w4a8_contiguous_gemm": ("Optional DTK W4A8 HIPC COV5 ABI repair (startup only)", None),
     "vllm_dsv41_channel_fp8": ("vLLM V4.1 channel-FP8 config registration; fresh-process stock fallback", "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL"),
     "vllm_ct_w4a8": ("vLLM V4.1 CT W4A8 config registration; fresh-process stock fallback", "HCU_VLLM_CT_W4A8_IMPL"),
