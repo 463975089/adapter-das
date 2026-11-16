@@ -325,12 +325,14 @@ REGISTRY = {
         "env": "HCU_QUANT_IMPL", "default": "auto",
         "auto": _auto_quant_impl,
         "about": "per-token fp8 量化族 vendor 档（R-09③，quant_aiter 桥）："
-                 "auto=hip+aiter 轮可导入则 aiter（sglang_per_token_quant_"
-                 "fp8 在 HIP 本就 NameError=行为还原；group plain 臂尺度与"
-                 "金标准逐位一致+q RTN 命中 99.8%，15.1×）；aiter=显式；"
-                 "stock=退回上游原生（triton raw group + torch scaled "
-                 "natives）。异形臂（column_major/tma/ue8m0/masked/非 "
-                 "e4m3/3D）恒走上游；aiter 失败 log-once 回退",
+                 "档位序 lightop > aiter > stock；auto=hip+aiter 轮可导入则 "
+                 "aiter（sglang_per_token_quant_fp8 在 HIP 本就 NameError="
+                 "行为还原；group plain 臂尺度与金标准逐位一致+q RTN 命中 "
+                 "99.8%，15.1×）；lightop=显式档（catalog planned，门禁未过"
+                 "不自动；装好后 rowwise/group/fused 臂先试 lightop）；"
+                 "aiter=显式；stock=退回上游原生（triton raw group + torch "
+                 "scaled natives）。异形臂（column_major/tma/ue8m0/masked/非 "
+                 "e4m3/3D）恒走上游；vendor 失败 log-once 回退",
     },
     "HCU_AR_NORM_IMPL": {
         "env": "HCU_AR_NORM_IMPL", "default": "auto",
@@ -392,8 +394,11 @@ REGISTRY = {
                  "四件套。=0 关闭（回归对照），=数字改阈值",
     },
     "HCU_MQA_LOGITS_IMPL": {
-        "env": "HCU_MQA_LOGITS_IMPL", "default": "triton",
-        "about": "DSA indexer paged-MQA 实现档：vec=全窗口单遍双 bmm"
+        "env": "HCU_MQA_LOGITS_IMPL", "default": "auto",
+        "about": "DSA indexer paged-MQA 实现档：auto=triton（lightop 门禁"
+                 "未过=catalog planned，仅显式 =lightop 可 A/B；aiter 轮无 "
+                 "paged API=planned；deepgemm=vendor 轮有符号钳零 bug=broken，"
+                 "均不进 auto）。vec=全窗口单遍双 bmm"
                  "（大操作数免转置物化）——decode 图节点 23.9k→3.7k（-84%），"
                  "hipGraphLaunch API p50 540ms→21.6ms，单流 2.3→3.50 tok/s、"
                  "bs8 14.0→18.69；注意 (N,T,D) 转置物化/整窗 fp32 物化在 DTK "
@@ -465,9 +470,11 @@ REGISTRY = {
     },
     "HCU_LINEAR_ATTN_GDN": {
         "env": "HCU_LINEAR_ATTN_GDN", "default": "auto",
-        "about": "GDN/gated-delta-rule 线性注意力档位：auto|triton=上游 triton "
-                 "fla（现状默认）；aiter=aiter CK 核路由（fwd_h 状态递推 + "
-                 "packed decode；K=V=128，state pool gather/scatter）",
+        "about": "GDN/gated-delta-rule 线性注意力档位：auto=aiter > triton"
+                 "（新优先级：aiter CK 已验证 6/6 + Qwen3.5-27B e2e；不可导入"
+                 "或安装失败时回上游 triton）；triton=强制上游 fla；"
+                 "aiter=显式 CK 路由（fwd_h 状态递推 + packed decode；"
+                 "K=V=128，state pool gather/scatter）",
     },
     "HCU_DSA_PRESHUFFLE": {
         "env": "HCU_DSA_PRESHUFFLE", "default": "1",
@@ -485,23 +492,27 @@ REGISTRY = {
     # vendor op backends (替换矩阵档位: auto|triton|lightop|torch)
     "HCU_SILU_MUL_IMPL": {
         "env": "HCU_SILU_MUL_IMPL", "default": "auto",
-        "about": "silu_and_mul 后端档位：auto=triton（lightop 过验证后转正），"
-                 "triton|lightop|torch",
+        "about": "silu_and_mul 后端档位：auto=lightop > aiter > triton"
+                 "（新优先级；JIT 不走——PR #96 的 33s 冷编译），"
+                 "lightop|aiter|triton|torch 可显式指定；aiter 仅当真轮"
+                 "导出 silu_and_mul（适配器 stub 会被探针跳过）",
     },
     "HCU_RMS_NORM_IMPL": {
-        "env": "HCU_RMS_NORM_IMPL", "default": "triton",
-        "about": "rms_norm 后端档位：triton|aiter(rmsnorm_forward 桥)|lightop|torch；"
-                 "lightop 仅覆盖 BF16 plain RMSNorm，其他 dtype 使用 triton；"
-                 "仅管 plain rmsnorm，fused_add/gemma 变体见 "
-                 "HCU_FUSED_ADD_RMS_IMPL",
+        "env": "HCU_RMS_NORM_IMPL", "default": "auto",
+        "about": "rms_norm 后端档位：auto=lightop > aiter > triton"
+                 "（新优先级）；lightop|aiter|triton|torch 可显式指定。"
+                 "lightop 仅覆盖 BF16 plain RMSNorm，其他 dtype 逐级回退 "
+                 "aiter/triton；gemma 变体恒 triton；仅管 plain rmsnorm，"
+                 "fused_add 变体见 HCU_FUSED_ADD_RMS_IMPL",
     },
     "HCU_FUSED_ADD_RMS_IMPL": {
         "env": "HCU_FUSED_ADD_RMS_IMPL", "default": "auto",
-        "about": "fused_add_rmsnorm/gemma 变体后端档位：auto=triton（lightop "
-                 "过验证后转正），triton|lightop|torch；lightop="
-                 "lightop.fused_add_rms_norm/gemma_fused_add_rmsnorm 原地核"
-                 "（fp32 累加、末端舍入，同 triton 数值契约；一次异常即降级 "
-                 "triton）",
+        "about": "fused_add_rmsnorm/gemma 变体后端档位：auto=lightop > "
+                 "triton（新优先级；aiter 轮无 fused-add 出口），"
+                 "lightop|triton|torch 可显式指定；lightop=lightop.fused_add_rms_norm/"
+                 "gemma_fused_add_rmsnorm 原地核（fp32 累加、末端舍入，同 "
+                 "triton 数值契约；一次异常即降级）。注：catalog 记录 lightop "
+                 "0.76x vs triton @4096x7168 bf16（性能取舍由本优先级覆盖）",
     },
     "HCU_FUSED_MOE_IMPL": {
         "env": "HCU_FUSED_MOE_IMPL", "default": "auto",
@@ -625,12 +636,12 @@ REGISTRY = {
                  "默认=0 直通 triton；留作内核回归 watch",
     },
     "HCU_KPOOL_READ_EMU": {
-        "env": "HCU_KPOOL_READ_EMU", "default": "1",
-        "about": "index-K 缓存 gather 读（GetKAndS.aiter → aiter "
-                 "cp_gather_indexer_k_quant_cache preshuffle 臂）走 torch emu："
-                 "该 aiter 内核在 gfx938 非法地址访问/返回零（定罪 probe GPU4）"
-                 "→ prefill topk score 全零 → 词汤。emu 用与写侧同一 16-tile "
-                 "映射解排（CPU/GPU roundtrip 全等）。=0 退回 aiter 内核",
+        "env": "HCU_KPOOL_READ_EMU", "default": "0",
+        "about": "index-K 缓存 gather 读（GetKAndS.aiter）档位：默认=0 走"
+                 "新增的 preshuffle-aware triton gather（kpool_read_triton.py；"
+                 "与写侧同一 16-tile 映射解排，替代 gfx938 上非法地址/返回零的 "
+                 "aiter cp_gather_indexer_k_quant_cache）；=1 显式退回 torch emu"
+                 "（bit 级对照/回退）。非 gfx93 平台仍可走上游 aiter 内核",
     },
     "HCU_MHC_EMU": {
         "env": "HCU_MHC_EMU", "default": "0",

@@ -66,29 +66,56 @@ def test_gated_act_gpu_3d_out_kwarg(dtype):
 def _reset_impl_cache(ew):
     ew._IMPL_CHOICE = None
     ew._LIGHTOP_IMPL = None
+    ew._AITER_IMPL = None
 
 
-def test_silu_backend_default_is_triton(monkeypatch):
-    """auto (=default) must stay on the triton path — lightop is opt-in
-    until it passes the full contract + graph-replay matrix."""
+def _lightop_installed():
+    try:
+        import lightop  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def _real_aiter_installed():
+    try:
+        import aiter
+    except Exception:
+        return False
+    fn = getattr(aiter, "silu_and_mul", None)
+    return fn is not None and not getattr(fn, "__module__", "").startswith(
+        "hcu_adapter"
+    )
+
+
+def test_silu_backend_default_ladder(monkeypatch):
+    """auto = lightop > aiter > triton. JIT is deliberately absent: the
+    sglang activation JIT body costs a 33-49 s cold ninja build (PR #96)."""
     monkeypatch.delenv("HCU_SILU_MUL_IMPL", raising=False)
     import sgl_kernel.elementwise as ew
 
     _reset_impl_cache(ew)  # re-probe with the cleaned env
     try:
-        assert ew._resolve_impl() == "triton"
-        assert ew._LIGHTOP_IMPL is None
+        choice = ew._resolve_impl()
+        if _lightop_installed():
+            assert choice == "lightop"
+            assert ew._LIGHTOP_IMPL is not None
+        elif _real_aiter_installed():
+            assert choice == "aiter"
+        else:
+            assert choice == "triton"
     finally:
         _reset_impl_cache(ew)
 
 
-def test_silu_backend_gate_unknown_value_falls_to_triton(monkeypatch):
+def test_silu_backend_gate_unknown_value_falls_through_ladder(monkeypatch):
     monkeypatch.setenv("HCU_SILU_MUL_IMPL", "wat")
     import sgl_kernel.elementwise as ew
 
     _reset_impl_cache(ew)
     try:
-        assert ew._resolve_impl() == "triton"
+        assert ew._resolve_impl() in ("lightop", "aiter", "triton")
     finally:
         _reset_impl_cache(ew)
 

@@ -22,36 +22,75 @@ import torch
 from .compat import HAS_ERF, HAS_TRITON, check_cuda_tensor, next_power_of_2
 from ._native import native_op
 
-_LIGHTOP_IMPL = None  # resolved once: None=probe-pending, (~)=unavailable
-_IMPL_CHOICE = None   # cached backend choice: "lightop" | "torch" | None
+_LIGHTOP_IMPL = None  # resolved once: None=probe-pending, (~)=callable
+_AITER_IMPL = None    # real aiter.silu_and_mul only (adapter stub skipped)
+_IMPL_CHOICE = None   # cached tier: "lightop" | "aiter" | "triton" | "torch"
+
+
+def _probe_lightop():
+    global _LIGHTOP_IMPL
+    from lightop import fuse_silu_and_mul
+
+    _LIGHTOP_IMPL = fuse_silu_and_mul
+    return _LIGHTOP_IMPL
+
+
+def _is_adapter_stub(fn) -> bool:
+    """hcu_adapter fills aiter faces with stubs (function or Missing)."""
+    return (
+        type(fn).__module__.startswith("hcu_adapter")
+        or getattr(fn, "__module__", "").startswith("hcu_adapter")
+    )
+
+
+def _probe_aiter():
+    global _AITER_IMPL
+    import aiter
+
+    fn = getattr(aiter, "silu_and_mul", None)
+    # hcu_adapter.aiter fills a stub that delegates back into this module;
+    # selecting it would recurse. Only the real wheel implementation is a tier.
+    if fn is None or _is_adapter_stub(fn):
+        return None
+    _AITER_IMPL = fn
+    return fn
 
 
 def _resolve_impl():
-    """Backend choice for gated activations (config file > env > default).
+    """Backend choice for gated activations: lightop > aiter > triton.
 
-    Cached once -- HCU_SILU_MUL_IMPL / ops.silu_and_mul in
-    hcu_adapter.yaml both land here."""
-    global _IMPL_CHOICE, _LIGHTOP_IMPL
+    Explicit HCU_SILU_MUL_IMPL still wins (lightop|aiter|triton|torch).
+    JIT is deliberately absent: the sglang activation JIT body costs a
+    33-49 s cold ninja build (PR #96)."""
+    global _IMPL_CHOICE
     if _IMPL_CHOICE is None:
+        requested, source = None, "default"
         try:
             from hcu_adapter import hcu_env
 
-            impl, _src = hcu_env.resolve("HCU_SILU_MUL_IMPL")
-            # auto = triton (default); lightop/torch only on explicit
-            # selection until lightop passes the graph-replay matrix and
-            # torch stays the reference/debug tier.
-            if impl == "lightop":
-                from lightop import fuse_silu_and_mul
-
-                _LIGHTOP_IMPL = fuse_silu_and_mul
-                _IMPL_CHOICE = "lightop"
-            elif impl == "torch":
-                _IMPL_CHOICE = "torch"
-            else:
-                _IMPL_CHOICE = "triton"
+            requested, source = hcu_env.resolve("HCU_SILU_MUL_IMPL")
         except Exception:
             # visibility beats silence: a silent vendor-probe failure reads
             # as "auto mode" and hides a real wheel/env problem.
+            import traceback
+
+            traceback.print_exc()
+        try:
+            from hcu_adapter import tier_policy
+
+            tier, _impl = tier_policy.pick(
+                "silu_and_mul",
+                {
+                    "lightop": _probe_lightop,
+                    "aiter": _probe_aiter,
+                    "triton": lambda: True,
+                    "torch": lambda: True,
+                },
+                priority=tier_policy.SILU_PRIORITY,
+                requested=requested if source == "explicit" else None,
+            )
+            _IMPL_CHOICE = tier
+        except Exception:
             import traceback
 
             traceback.print_exc()
@@ -222,6 +261,7 @@ def _gated_mul_impl(
 
 def silu_and_mul(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
     """out = silu(input[..., :d]) * input[..., d:]"""
+    global _AITER_IMPL
     if input.is_cuda:
         choice = _resolve_impl()
         if choice == "torch":
@@ -234,6 +274,22 @@ def silu_and_mul(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
                 )
             res = _LIGHTOP_IMPL(input, out)  # lightop sig: (input, output)
             return out if res is None else res
+        if choice == "aiter" and _AITER_IMPL is not None:
+            if out is None:
+                out = torch.empty(
+                    input.shape[:-1] + (input.shape[-1] // 2,),
+                    device=input.device, dtype=input.dtype,
+                )
+            try:
+                # aiter ROCm signature: (out, input, limit=0.0), in-place.
+                res = _AITER_IMPL(out, input)
+                return out if res is None else res
+            except Exception:
+                # one-strike: a broken wheel must not retry every call.
+                import traceback
+
+                traceback.print_exc()
+                _AITER_IMPL = None
     return _gated_mul_impl(input, out, "silu")
 
 
