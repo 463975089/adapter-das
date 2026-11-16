@@ -352,3 +352,5 @@ skills/hcu-adapter-dev/  本 skill
   不维护清单、不留本地任务编号）。
 
 Runner registry fork guards run before acquiring locks; rebuild child locks and reject inherited active registrations. Recheck process/ownership after predicates and factories, including false matches and successful returns. Regression tests cover a real fork with another parent thread holding the lock and forks inside callbacks.
+
+MiniMax 新能力的环境治理：新功能不再引入私有 env；适用契约内的性能路径默认启用，数值 dtype/后端及制品输入使用公开配置。调试 capture/逐批布局/路由注解应从生产调用链移除；加载凭据、ABI 与同代 IPC 校验属于正确性契约，不能一并删除。参见 `docs/env-vars.md` 的 MiniMax 部署边界及独立 Plugin 的 `docs/minimax31_configuration.md`。
