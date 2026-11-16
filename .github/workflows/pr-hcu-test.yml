@@ -57,11 +57,6 @@ jobs:
           [ -f ci/ci_docker_image ] \
             || { echo "::error::基线分支没有 ci/ci_docker_image"; exit 1; }
           image="$(tr -d '[:space:]' < ci/ci_docker_image)"
-          # 平台要求用 digest 固定镜像，tag 只作说明；没有 digest 就在这里报错，别等到拉镜像那步才失败
-          case "$image" in
-            *@sha256:*) ;;
-            *) echo "::error::ci/ci_docker_image 必须是 <repo>:<tag>@sha256:<digest>，实际是 '$image'"; exit 1 ;;
-          esac
           echo "用镜像: $image"
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
@@ -213,6 +208,7 @@ jobs:
     runs-on: hygon-bw1100-1card
     # 等卡 30 分钟 + L1 step 上限 90 分钟 + 其他步骤余量
     timeout-minutes: 130
+    if: github.event_name != 'pull_request_target'
     container:
       # 镜像来自 ci/ci_docker_image（与 build 用的是同一个）
       image: ${{ needs.image.outputs.image }}

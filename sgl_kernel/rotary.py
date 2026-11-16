@@ -75,6 +75,11 @@ def rotary_embedding(
     """Rotate query (and key) rows in place. See module docstring."""
     if positions.numel() == 0:
         return
+    if positions.dtype != torch.int64:
+        # The triton kernel indexes the cache with 64-bit math; an int32
+        # positions tensor would overflow pos * rotary_dim on long
+        # contexts (upstream pos_enc.cu loads positions as int64_t).
+        positions = positions.long()
     use_triton = HAS_TRITON and query.is_cuda and cos_sin_cache.is_cuda and is_neox
     if key is not None and use_triton:
         use_triton = key.is_cuda
@@ -185,13 +190,22 @@ def _rotary_embedding_interleaved_torch(positions, query, key, head_size, cos_si
             return None
         orig_shape = t.shape
         t = t.view(num_tokens, -1, head_size)
-        x1 = t[..., :rotary_dim, 0::2].float()  # even lanes
-        x2 = t[..., :rotary_dim, 1::2].float()  # odd lanes
+        # The rotary window is the FIRST rotary_dim lanes of each head
+        # vector (last dim); inside it, even lane 2j pairs with odd 2j+1.
+        # (The old `t[..., :rotary_dim, 0::2]` sliced the HEAD dim by
+        # rotary_dim and strided head_size — correct only by accident for
+        # single-head tensors with rotary_dim == head_size.)
+        # Index tensors must live on t's device: CUDA self + CPU indices
+        # is a hard RuntimeError in advanced indexing (review #80 P1).
+        even = torch.arange(0, rotary_dim, 2, device=t.device)
+        odd = torch.arange(1, rotary_dim, 2, device=t.device)
+        x1 = t[..., even].float()  # even lanes of the rotary window
+        x2 = t[..., odd].float()   # odd lanes
         y1 = x1 * cos_i.unsqueeze(1) - x2 * sin_i.unsqueeze(1)
         y2 = x1 * sin_i.unsqueeze(1) + x2 * cos_i.unsqueeze(1)
         out = t.clone()
-        out[..., :rotary_dim, 0::2] = y1.to(t.dtype)
-        out[..., :rotary_dim, 1::2] = y2.to(t.dtype)
+        out[..., even] = y1.to(t.dtype)
+        out[..., odd] = y2.to(t.dtype)
         return out.view(orig_shape)
 
     out_q = _rope(query)

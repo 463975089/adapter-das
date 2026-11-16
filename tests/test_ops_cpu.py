@@ -48,15 +48,18 @@ def test_gelu_tanh_and_mul_cpu():
 
 
 def test_gelu_quick_cpu():
-    x = torch.randn(5, 6, dtype=torch.float32)
+    # last dim must satisfy the AOT 16-byte alignment contract
+    # (upstream elementwise.py:258-260): 8 floats = 32 bytes.
+    x = torch.randn(5, 8, dtype=torch.float32)
     y = sgl_kernel.gelu_quick(x)
     ref = x * torch.sigmoid(1.702 * x)
     torch.testing.assert_close(y, ref, rtol=1e-5, atol=1e-5)
 
 
 def test_silu_and_mul_out_kwarg():
-    x = torch.randn(2, 6)
-    out = torch.empty(2, 3)
+    # 8 floats = 32 bytes, 16-byte aligned (AOT contract).
+    x = torch.randn(2, 8)
+    out = torch.empty(2, 4)
     y = sgl_kernel.silu_and_mul(x, out)
     assert y is out
 
