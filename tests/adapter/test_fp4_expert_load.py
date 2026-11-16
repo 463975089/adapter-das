@@ -311,7 +311,7 @@ def test_spawned_loader_retains_community_math(source):
     # later tests in this interpreter keep auto-host detection) and keep
     # a 90s budget for cold filesystems.
     from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
-        saved_host = os.environ.get(HOST_ENV)
+    saved_host = os.environ.get(HOST_ENV)
     os.environ[HOST_ENV] = "none"
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()

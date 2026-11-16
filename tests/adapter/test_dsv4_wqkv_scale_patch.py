@@ -340,7 +340,7 @@ def test_spawned_interpreter_adapts_its_own_original_loader(source):
     # later tests in this interpreter keep auto-host detection) and keep
     # a 90s budget for cold filesystems.
     from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
-        saved_host = os.environ.get(HOST_ENV)
+    saved_host = os.environ.get(HOST_ENV)
     os.environ[HOST_ENV] = "none"
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
