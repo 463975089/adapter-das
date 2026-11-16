@@ -188,9 +188,11 @@ if torch.cuda.is_available():
                 md = float(line.split()[1])
         ok(tag, md is not None and md < 0.05, f"md={md} {r.stderr[-200:]}")
 
+    # One fresh-process parity per op, on its production tier (aiter rms,
+    # lightop silu). The torch tiers are pure-Python fallbacks already
+    # covered by the in-process sections above; each dropped spawn saves
+    # ~26s of interpreter+torch startup on the gate (2026-11-17 image).
     parity("  rms_norm: aiter\n", "rmsnorm", "parity-rms-aiter")
-    parity("  rms_norm: torch\n", "rmsnorm", "parity-rms-torch")
-    parity("  silu_and_mul: torch\n", "silu_and_mul", "parity-silu-torch")
     parity("  silu_and_mul: lightop\n", "silu_and_mul", "parity-silu-lightop")
 
 print("RESULT:", "PASS" if not FAILS else f"FAIL {FAILS}")
