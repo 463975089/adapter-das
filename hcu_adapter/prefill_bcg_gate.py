@@ -48,10 +48,13 @@ def install():
     if getattr(orig, _MARK, False):
         return
 
+    def owns_capture():
+        return check_cuda_graph_backend(Phase.PREFILL, Backend.BREAKABLE)
+
     def _hcu_capture_prefill_graph(
         *, model_runner, eager_runner, force_for_draft_worker=False
     ):
-        if check_cuda_graph_backend(Phase.PREFILL, Backend.BREAKABLE):
+        if owns_capture():
             draft = model_runner.is_draft_worker
             LOG.warning(
                 "HCU adapter: breakable prefill CUDA graph -> eager prefill"
@@ -70,7 +73,7 @@ def install():
             force_for_draft_worker=force_for_draft_worker,
         )
 
-    _hcu_capture_prefill_graph.__dict__[_MARK] = True
+    _hcu_capture_prefill_graph.__dict__[_MARK] = owns_capture
     import hcu_adapter.registry as _reg
 
     # Validate registration before publishing either namespace. A rejected

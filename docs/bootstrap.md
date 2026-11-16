@@ -395,3 +395,13 @@ curl -s http://127.0.0.1:30000/v1/chat/completions \
   ROCtracer/ROCprofiler/hipprof/hipgdb 调优调试。查 HIP API 语义、profiler
   用法、RCCL env 时以此为准；平台级问题（如大图发射、hipGraphLaunch 开销）
   定量分析时先翻这里。对应本文 §5 镜像差异表中 dtk2604x 的上游文档源。
+
+### SGLang 0.5.22: composing the Breakable Prefill driver gate with plugins
+
+The adapter's installed `capture_prefill_graph` wrapper exposes a callable
+`_hcu_prefill_bcg_gate` marker. Use it on the effective original callable when
+composing an AROUND hook; it is true only when this capture resolves to
+Breakable Prefill. Invoke that original to use the existing eager target or
+no-runner draft fallback. Other Prefill backends and Decode Graph ownership are
+unchanged. A plugin that captures through a private copy of the entry point
+cannot see this guard and will enter the CUDA driver path on HCU.
