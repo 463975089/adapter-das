@@ -262,6 +262,34 @@ FP8 grouped GEMM 小形状门见 `test_gemm_fp8.py` 的
 同时更新输入/权重/尺度与 counts/expert IDs。该直接内核合同不能
 代替真实 DeepEP 分布式 dispatch/combine 或模型精度证据。
 
+GDN target-verify vendor 路由的回归在
+tests/kernels/test_gdn_verify_aiter.py，接线在 gdn_aiter.py；保持原函数对象和
+缓存别名，不能只换一个 module 属性。真实 SGLang gate 是二维 [tokens, heads]，
+dt_bias 可为 BF16，线性 MTP 的 parent map 可为 None；这些变体不能用只有
+三维 gate / FP32 bias / tree 的夹具代替。对拍独立 FP32 递推、全部快照槽位及
+初始状态不被写回；Graph 同时覆盖首次 auto 调用就在 capture 内与多轮变输入。
+auto 的架构探测须使用已分配输入 tensor 的设备，不在安装时初始化默认 GPU。
+vendor 数值夹具须在隔离的函数命名空间显式绑定 AITER，避免进程默认 auto
+把范围外的 ragged/fixed 变体回退成上游、造成误测；不能重绑全局入口影响同车测试。
+auto 正面设备测试仅在已验证构建/架构运行，其他环境明确 platform skip；
+CPU 接线仍覆盖未验证版本/架构/合同回上游和显式 triton/总闸优先级。
+vendor 已执行后的异常不能重试上游，因为快照可能已经写入。
+
+
+BoltOps HIPC 编译子进程也须隔离宿主启动环境：其缓存标识包含
+aicc --version 的完整输出；继承 SGLang PYTHONPATH 时，Python helper 会把
+带时间戳的 adapter 日志混入版本输出，导致标识不稳定并反复冷编译。
+可在测试 runner 通过 vendor 公开 BOLT_OPS_AICC 指定包装器，仅在 exec
+同一 aicc 时设置 HCU_ADAPTER_HOST=none、_HCU_ADAPTER_ACTIVE_HOST=none
+并清空 PYTHONPATH；主测试进程继续使用真实 SGLang 环境。保留编译参数、
+数值断言和原始 FAIL，此隔离不能作为放宽门禁的理由。
+
+channel-FP8 MoE 的三组 swiglu-clamp 用例位于 tests/kernels/test_aiter_moe.py。
+gfx936 当前没有可执行的 AITER channel-FP8 MoE provider，测试在执行时读取
+当前分配设备的真实 gcnArchName（去掉冒号后的 feature suffix），于分配 tensor
+前明确 skip；不在模块收集阶段初始化设备。其他架构继续要求 AITER 实际执行，
+并保留原数值阈值与变输入 Graph 检查，不能因 provider 返回 None 而通用跳过。
+
 Mamba2 graph 数值门见 `test_l15_execution_chains.py` 的
 `test_mamba2_decode_fresh_input_graph`：独立 CPU FP32 计算投影、卷积、
 SSM 与门控归一化，保留激活存储 dtype。捕获后连续三轮改变输入与
