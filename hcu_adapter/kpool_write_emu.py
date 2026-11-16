@@ -350,17 +350,18 @@ def install_read_patch(mode: str = "triton") -> None:
         from sglang.kernels.ops.attention.dsa import index_buf_accessor as iba
 
     if mode == "triton":
-        iba.GetKAndS.aiter = _aiter_triton_wrapper
+        iba.GetKAndS.aiter = classmethod(_aiter_triton_wrapper)
     elif mode == "emu":
-        iba.GetKAndS.aiter = _aiter_emu_wrapper
+        iba.GetKAndS.aiter = classmethod(_aiter_emu_wrapper)
     else:
         raise ValueError(f"unknown kpool read mode {mode!r}")
 
 
-def _aiter_triton_wrapper(cls, *args, **kwargs):
+def _aiter_triton_wrapper(
+    cls, pool, buf, page_indices, seq_len_tensor, seq_len_sum, max_seq_len
+):
     from .kpool_read_triton import cp_gather_indexer_k_quant_cache_triton
 
-    pool, buf, page_indices, seq_len_tensor, seq_len_sum, max_seq_len = args
     # installed sglang versions disagree on the attribute name (`page_size`
     # on the older index_buf_accessor, `index_page_size` after the page-64
     # refactor); both are 64 on the preshuffle path.
@@ -392,7 +393,9 @@ def _aiter_triton_wrapper(cls, *args, **kwargs):
     return dst_k.view(fp8), dst_scale
 
 
-def _aiter_emu_wrapper(cls, *args, **kwargs):
+def _aiter_emu_wrapper(
+    cls, pool, buf, page_indices, seq_len_tensor, seq_len_sum, max_seq_len
+):
     if not getattr(_aiter_emu_wrapper, "_hit", 0):
         _aiter_emu_wrapper._hit = 1
         print("[HCU kprd] aiter-arm -> torch gather emu", flush=True)
@@ -401,8 +404,7 @@ def _aiter_emu_wrapper(cls, *args, **kwargs):
         print("[HCU kprd] called", flush=True)
     else:
         _aiter_emu_wrapper._hit += 1
-    pool, buf, page_indices, seq_len_tensor, seq_len_sum, max_seq_len = args
-    page_size = pool.page_size
+    page_size = getattr(pool, "index_page_size", None) or pool.page_size
     index_head_dim = pool.index_head_dim
     quant_block_size = pool.quant_block_size
     scale_elems = index_head_dim // quant_block_size
