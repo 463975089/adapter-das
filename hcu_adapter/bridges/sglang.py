@@ -500,6 +500,15 @@ def install() -> None:
                 "HCU adapter: gdn aiter router not installed", exc_info=True
             )
         try:
+            from hcu_adapter import mamba_state_scatter
+
+            mamba_state_scatter.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: Mamba state scatter grid route not installed",
+                exc_info=True,
+            )
+        try:
             from hcu_adapter import gdn_cutedsl_fallback
 
             gdn_cutedsl_fallback.install()

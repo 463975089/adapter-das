@@ -138,6 +138,21 @@ BACKEND_CATALOG = {
         "backends": {"scoped": {"status": "candidate",
             "note": "FP8 SHUFFLE scoring, delayed mHC and empty CT linear on the owned eager model."}},
     },
+
+    "mamba_state_scatter": {
+        "var": None,
+        "summary": "SGLang Mamba verify-state copy launch geometry",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "gfx936 FP32 entries >=1024: flatten request/block grid, "
+                        "retain source-row mapping and upstream validation. "
+                        "Other contracts keep stock. Startup fallback: "
+                        "HCU_DISABLE_OPS=mamba_state_scatter.",
+            },
+        },
+    },
+
     "qsa_prefill": {
         "var": None, "summary": "QSA sparse prefill launch geometry on HCU",
         "backends": {"triton": {"status": "candidate", "note": "gfx936 uses 64/1 through 64 rows and 32/2 above to fit the 64 KiB LDS budget; conservative for all head dimensions."}},
