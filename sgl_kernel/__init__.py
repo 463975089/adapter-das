@@ -13,6 +13,9 @@ sglang runs on HCU without any source modification.
 from sgl_kernel.version import __version__
 
 from sgl_kernel.elementwise import (
+    concat_mla_absorb_q,
+    concat_mla_k,
+    copy_to_gpu_no_ce,
     gelu_and_mul,
     gelu_quick,
     gelu_tanh_and_mul,
@@ -34,7 +37,14 @@ from sgl_kernel.moe import (
     topk_sigmoid,
     topk_softmax,
 )
-from sgl_kernel.gemm_fp8 import fp8_scaled_mm
+from sgl_kernel.gemm_fp8 import (
+    fp8_scaled_mm,
+    sgl_per_token_group_quant_8bit,
+)
+from sgl_kernel.gemm_fp8 import (  # legacy aliases (upstream gemm.py:67-68)
+    sgl_per_token_group_quant_fp8,
+    sgl_per_token_group_quant_int8,
+)
 from sgl_kernel.gemm_int8 import int8_scaled_mm
 from sgl_kernel.weak_ref import weak_ref_tensor, weak_ref_tensors  # noqa: F401
 from sgl_kernel import utils as _utils_mod  # noqa: F401  # arch helper surface
@@ -124,6 +134,9 @@ __all__ = [
     "gelu_and_mul",
     "gelu_tanh_and_mul",
     "gelu_quick",
+    "concat_mla_k",
+    "concat_mla_absorb_q",
+    "copy_to_gpu_no_ce",
     # layernorm
     "rmsnorm",
     "fused_add_rmsnorm",
@@ -134,6 +147,9 @@ __all__ = [
     # gemm
     "fp8_scaled_mm",
     "int8_scaled_mm",
+    "sgl_per_token_group_quant_8bit",
+    "sgl_per_token_group_quant_fp8",
+    "sgl_per_token_group_quant_int8",
     # moe
     "topk_softmax",
     "topk_sigmoid",

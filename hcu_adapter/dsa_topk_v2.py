@@ -66,6 +66,7 @@ def _wrap_select_decode(orig, v41_enabled):
         if not v41_enabled:
             return orig(inputs, d, topk)
         try:
+            # JIT 唯一实现（dsv4 decode topk v2；上游无 AOT 档）
             from sglang.kernels.ops.attention.dsv4.topk import (
                 plan_topk_v2,
                 topk_transform_paged_v2,

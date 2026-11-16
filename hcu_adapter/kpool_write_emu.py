@@ -25,6 +25,12 @@ hadamard, absmax scale (or its ceil log2 rounding), e4m3 clamp/saturate and
 the 16-wide preshuffle of `_kpool_cache_k_offsets` are reproduced exactly;
 tests/kernels/test_kpool_write_gfx938.py pins the triton path red and the
 emu green against an independent row-stepped reference.
+
+Read side (2026-11): this module also hosts the tier switch for
+``GetKAndS.aiter``. The default on gfx93x is the preshuffle-aware triton
+gather in ``kpool_read_triton.py``; the torch gather below is the explicit
+``HCU_KPOOL_READ_EMU=1`` A/B fallback (the aiter cp_gather kernel is dead on
+this arch).
 """
 
 from __future__ import annotations
@@ -241,57 +247,74 @@ def cp_gather_indexer_k_quant_cache_emu(
     cu_seq_lens: torch.Tensor,
     preshuffle: bool = True,
 ) -> None:
-    """torch twin of aiter's cp_gather_indexer_k_quant_cache(preshuffle=True).
+    """torch twin of aiter's cp_gather_indexer_k_quant_cache.
+
+    ABI is aiter's / ``GetKAndS.aiter``'s: ``page_indices`` is the request-
+    major page table ``[n_req, pages_per_req]`` and ``cu_seq_lens`` is
+    ``[n_req + 1]`` cumulative pooled lengths. A token of request r maps to
+    ``page_indices[r, (token - cu[r]) // page_size]``, in-page slot
+    ``(token - cu[r]) % page_size`` (aiter's kernel walks the row, not one
+    page per row).
 
     The aiter GPU kernel illegal-addresses / returns zeros on gfx938 (probe
     GPU4 2026-10-15), zeroing the whole prefill topk score. Same byte
     economics as the writer: k_out rows gather D bytes through the 16-wide
-    preshuffle map, scale_out rows copy the 4 raw fp32 bytes next to the k
-    region of the page.
+    preshuffle map (row-major when ``preshuffle=False``), scale_out rows
+    copy the 4 raw fp32 bytes next to the k region of the page.
     """
-    if page_indices.numel() == 0:
+    if page_indices.numel() == 0 or k_out.numel() == 0:
         return
-    page_size = kv_cache.shape[1]
-    d = k_out.shape[1]
-    page_bytes = page_size * (d + 4)
-    flat = kv_cache.view(torch.uint8).reshape(-1)
-    tile = _TILE
-    col = torch.arange(d, device=kv_cache.device, dtype=torch.int64).unsqueeze(0)
-    t_idx = torch.arange(page_size, device=kv_cache.device, dtype=torch.int64).unsqueeze(1)
-    slot_off = (
-        torch.div(t_idx, tile, rounding_mode="floor") * (tile * d)
-        + torch.div(col, tile, rounding_mode="floor") * (tile * tile)
-        + (t_idx % tile) * tile
-        + (col % tile)
-    )
+    page_size = int(kv_cache.shape[1])
+    d = int(k_out.shape[1])
+    s_bytes = int(scale_out.shape[1])
+    if s_bytes != 4:
+        raise NotImplementedError(
+            f"kpool gather emu expects one fp32 scale per token, got {s_bytes} bytes"
+        )
+    page_bytes = page_size * (d + s_bytes)
+    flat = kv_cache.reshape(-1).view(torch.uint8)
+    dev = kv_cache.device
 
-    page_acc = []
-    row_acc = []
-    n_rows = int(page_indices.shape[0])
-    for r in range(n_rows):
-        page = int(page_indices[r])
-        lo = int(cu_seq_lens[r])
-        hi = int(cu_seq_lens[r + 1])
-        for g in range(lo, hi):
-            t = g - lo
-            page_acc.append(page)
-            row_acc.append(g)
-    pages_t = torch.tensor(page_acc, device=kv_cache.device, dtype=torch.int64)
-    rows_t = torch.tensor(row_acc, device=kv_cache.device, dtype=torch.int64)
-    slots = (rows_t - torch.repeat_interleave(
-        cu_seq_lens[:n_rows].to(torch.int64),
-        (cu_seq_lens[1:] - cu_seq_lens[:n_rows]).to(torch.int64),
-    )).to(torch.int64)
-    byte_off = (
-        (pages_t * page_bytes).unsqueeze(1) + slot_off[slots]
-    )  # [R, d]
-    flat_view = flat
-    dst_rows = flat_view[byte_off]
-    k_out.view(torch.uint8).view(-1, d).copy_(dst_rows)
-    s_off = (
-        pages_t * page_bytes + page_size * d + slots * 4
+    pages = page_indices.to(torch.int64)
+    if pages.dim() == 1:
+        pages = pages.view(1, -1)
+    cu = cu_seq_lens.to(torch.int64)
+    n_req = int(cu.numel()) - 1
+    if n_req <= 0:
+        return
+    if pages.shape[0] != n_req:
+        raise ValueError(
+            f"page_indices batch {pages.shape[0]} != cu_seq_lens requests {n_req}"
+        )
+    lens = cu[1:] - cu[:n_req]
+    total = int(cu[-1])
+    if total > int(k_out.shape[0]):
+        raise ValueError(
+            f"cu_seq_lens total {total} > k_out rows {int(k_out.shape[0])}"
+        )
+
+    tok = torch.arange(total, device=dev, dtype=torch.int64)
+    req = torch.repeat_interleave(torch.arange(n_req, device=dev), lens)
+    inreq = tok - cu[req]
+    page = pages[req, torch.div(inreq, page_size, rounding_mode="floor")]
+    slot = inreq % page_size
+    tile = _TILE
+    col = torch.arange(d, device=dev, dtype=torch.int64).unsqueeze(0)
+    if preshuffle:
+        slot_off = (
+            torch.div(slot, tile, rounding_mode="floor").unsqueeze(1) * (tile * d)
+            + torch.div(col, tile, rounding_mode="floor") * (tile * tile)
+            + (slot % tile).unsqueeze(1) * tile
+            + (col % tile)
+        )
+    else:
+        slot_off = slot.unsqueeze(1) * d + col
+    byte_off = page.unsqueeze(1) * page_bytes + slot_off
+    k_out.view(torch.uint8).view(-1, d)[:total].copy_(flat[byte_off])
+    s_off = page * page_bytes + page_size * d + slot * s_bytes
+    scale_out.view(torch.uint8).view(-1, s_bytes)[:total].copy_(
+        flat[s_off.unsqueeze(1) + torch.arange(s_bytes, device=dev).unsqueeze(0)]
     )
-    scale_out.copy_(flat_view[s_off.unsqueeze(1) + torch.arange(4, device=kv_cache.device).unsqueeze(0)])
 
 
 def install_patch() -> None:
@@ -310,14 +333,63 @@ def install_patch() -> None:
     kfi.scatter_kpool_tail_updates = scatter_kpool_tail_updates_emu
 
 
-def install_read_patch() -> None:
-    """Route GetKAndS.aiter to the torch gather (aiter kernel dead on gfx938)."""
+def install_read_patch(mode: str = "triton") -> None:
+    """Route GetKAndS.aiter to the selected read tier.
+
+    ``triton`` (default on gfx93x): preshuffle-aware triton gather
+    (kpool_read_triton.py). ``emu``: torch reference (bit-level A/B). The
+    upstream aiter kernel is left in place by the caller on non-gfx93
+    platforms.
+    """
+    # 替代档: kpool_read_triton.py（本文件 torch gather emu 为显式回退）
     try:
+        # 替代档: 新 sglang 走 kvcache 门面（dsa_index_k_cache 为其模块体——门面无非此档）
         from sglang.kernels.ops.kvcache import dsa_index_k_cache as iba
     except ImportError:
+        # 替代档: kpool_read_triton.py（旧 sglang 树走 index_buf_accessor）
         from sglang.kernels.ops.attention.dsa import index_buf_accessor as iba
 
-    iba.GetKAndS.aiter = _aiter_emu_wrapper
+    if mode == "triton":
+        iba.GetKAndS.aiter = _aiter_triton_wrapper
+    elif mode == "emu":
+        iba.GetKAndS.aiter = _aiter_emu_wrapper
+    else:
+        raise ValueError(f"unknown kpool read mode {mode!r}")
+
+
+def _aiter_triton_wrapper(cls, *args, **kwargs):
+    from .kpool_read_triton import cp_gather_indexer_k_quant_cache_triton
+
+    pool, buf, page_indices, seq_len_tensor, seq_len_sum, max_seq_len = args
+    # installed sglang versions disagree on the attribute name (`page_size`
+    # on the older index_buf_accessor, `index_page_size` after the page-64
+    # refactor); both are 64 on the preshuffle path.
+    page_size = getattr(pool, "index_page_size", None) or pool.page_size
+    index_head_dim = pool.index_head_dim
+    scale_elems = index_head_dim // pool.quant_block_size
+    s_bytes = scale_elems * 4
+    kv_cache = buf.view(-1, page_size, index_head_dim + s_bytes)
+    dst_k = torch.empty(
+        (seq_len_sum, index_head_dim), dtype=torch.uint8, device=buf.device
+    )
+    dst_scale = torch.empty(
+        (seq_len_sum, s_bytes), dtype=torch.uint8, device=buf.device
+    )
+    cu_seq_lens = torch.zeros(
+        seq_len_tensor.shape[0] + 1, dtype=torch.int32, device=buf.device
+    )
+    torch.cumsum(seq_len_tensor.to(torch.int32), dim=0, out=cu_seq_lens[1:])
+    cp_gather_indexer_k_quant_cache_triton(
+        kv_cache,
+        dst_k,
+        dst_scale,
+        page_indices,
+        cu_seq_lens,
+        preshuffle=True,
+        max_seq_len=max_seq_len,
+    )
+    fp8 = torch.float8_e4m3fn
+    return dst_k.view(fp8), dst_scale
 
 
 def _aiter_emu_wrapper(cls, *args, **kwargs):
