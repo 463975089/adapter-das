@@ -205,7 +205,7 @@ PY
     echo "L1: kernels transfers $((${#FAMILY_DESELECT[@]} / 2)) cases to blocking matrix"
 fi
 run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -vv --no-header \
-    --tb=short -o faulthandler_timeout=120 \
+    --tb=short -o faulthandler_timeout=120 --durations=60 \
     "${FAMILY_DESELECT[@]}"
 
 # L1.5: upstream attention-unittest selection (dsa + kda + dense + mla
