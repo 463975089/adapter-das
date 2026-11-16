@@ -180,6 +180,50 @@ def test_gather_read_roundtrip():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="gpu")
+@pytest.mark.parametrize("mode", ["emu", "triton"])
+@pytest.mark.parametrize("keyword_args", [False, True])
+def test_gather_read_dispatches_multipage_table(monkeypatch, keyword_args, mode):
+    from types import SimpleNamespace
+
+    from hcu_adapter import kpool_write_emu as kw
+
+    index = pytest.importorskip("sglang.kernels.ops.kvcache.dsa_index_k_cache")
+    # Restore the host's descriptor after install_read_patch replaces it.
+    monkeypatch.setattr(index.GetKAndS, "aiter", index.GetKAndS.__dict__["aiter"])
+    monkeypatch.setattr(index, "_use_aiter_preshuffle", True)
+    kw.install_read_patch(mode=mode)
+
+    dev = "cuda"
+    pool = SimpleNamespace(
+        page_size=1, index_page_size=PAGE, index_head_dim=D, quant_block_size=D
+    )
+    buf = _mkbuf(4, dev)
+    loc = torch.arange(4 * PAGE, device=dev)
+    keys = ((loc[:, None] + torch.arange(D, device=dev)) % 109).to(torch.uint8)
+    scales = loc.to(torch.float32)
+    kw._scatter_rows(buf, keys.view(torch.float8_e4m3fn), scales, loc, PAGE)
+
+    pages = torch.tensor([[2, 0], [3, -1], [-1, -1]], device=dev)
+    lengths = torch.tensor([PAGE + 6, 9, 0], device=dev)
+    if keyword_args:
+        gathered_k, gathered_s = index.GetKAndS.execute(
+            pool, buf, page_indices=pages, seq_len_tensor=lengths,
+            seq_len_sum=PAGE + 15, max_seq_len=PAGE + 6,
+        )
+    else:
+        gathered_k, gathered_s = index.GetKAndS.execute(
+            pool, buf, pages, lengths, PAGE + 15, PAGE + 6
+        )
+    expected_locs = torch.cat((loc[2 * PAGE:3 * PAGE], loc[:6], loc[3 * PAGE:3 * PAGE + 9]))
+    torch.testing.assert_close(
+        gathered_k.view(torch.uint8), keys[expected_locs], rtol=0, atol=0
+    )
+    torch.testing.assert_close(
+        gathered_s.view(torch.float32).flatten(), scales[expected_locs], rtol=0, atol=0
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="gpu")
 def test_emu_bit_equal_stock():
     """When HCU_KPOOL_WRITE_EMU=1, the emu must match the stock kernels byte
     for byte on this layout — correctness keep-out for any future enablement."""
