@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 import functools
 from importlib import import_module
 import inspect
+import logging
 import os
 
 from packaging.version import Version
@@ -29,6 +30,7 @@ PARAMETERS = ('q', 'kv_cache', 'swa_k_cache', 'swa_only', 'topk_indices',
     'inv_rope_cos_sin_cache', 'output_mxfp8')
 DEFAULTS = dict(extra_cache_nan_free=False, adaptive_splits=False,
     inv_rope_positions=None, inv_rope_cos_sin_cache=None, output_mxfp8=None)
+_LOG = logging.getLogger('hcu.adapter')
 METHOD_PARAMETERS = ('self', 'q', 'positions', 'kv_cache', 'swa_metadata',
                      'attn_metadata', 'swa_only', 'output', 'output_mxfp8')
 
@@ -70,6 +72,12 @@ def selected_mode():
         version = Version(_installed_vllm_version() or '0')
         if version.epoch or version.release[:2] != (0, 33):
             return 'stock'
+        try:
+            _native_provider()
+        except (ImportError, AttributeError, TypeError, ValueError, OSError,
+                FlashMLADecodeCompatibilityError):
+            _LOG.info('HCU FlashMLA decode: optional vendor unavailable or ABI mismatch; retain stock')
+            return 'stock'
     return mode
 
 
@@ -98,6 +106,22 @@ def _check(p):
             or p.cls._forward_decode is not p.method
             or p.module.rocm_inverse_rope_mxfp8_rows is not p.epilogue):
         _refuse('FlashMLA decode binding/method/epilogue drift; start a fresh process')
+
+
+def _native_provider():
+    native = import_module('flash_mla.flash_mla_interface')
+    provider, factory = native.flash_mla_with_kvcache, native.get_mla_metadata
+    _require_signature(provider, ('q', 'k_cache', 'block_table', 'cache_seqlens',
+        'head_dim_v', 'tile_scheduler_metadata', 'num_splits', 'softmax_scale',
+        'causal', 'is_fp8_kvcache', 'indices', 'attn_sink', 'extra_k_cache',
+        'extra_indices_in_kvcache', 'topk_length', 'extra_topk_length'),
+        dict(num_splits=None, softmax_scale=None, causal=False, is_fp8_kvcache=False,
+             indices=None, attn_sink=None, extra_k_cache=None,
+             extra_indices_in_kvcache=None, topk_length=None, extra_topk_length=None))
+    kinds = tuple(p.kind for p in inspect.signature(factory).parameters.values())
+    if kinds != (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+        raise FlashMLADecodeCompatibilityError('native get_mla_metadata ABI changed')
+    return provider, factory
 
 
 def require_healthy():
@@ -157,18 +181,7 @@ def install():
         _require_signature(epilogue, ('o', 'positions', 'cos_sin_cache', 'rope_head_dim', 'out_data', 'out_scale'))
         if module.current_platform.is_fp8_fnuz():
             raise FlashMLADecodeCompatibilityError('packed FlashMLA expects OCP FP8 cache bytes, not FNUZ')
-        native = import_module('flash_mla.flash_mla_interface')
-        provider, factory = native.flash_mla_with_kvcache, native.get_mla_metadata
-        _require_signature(provider, ('q', 'k_cache', 'block_table', 'cache_seqlens',
-            'head_dim_v', 'tile_scheduler_metadata', 'num_splits', 'softmax_scale',
-            'causal', 'is_fp8_kvcache', 'indices', 'attn_sink', 'extra_k_cache',
-            'extra_indices_in_kvcache', 'topk_length', 'extra_topk_length'),
-            dict(num_splits=None, softmax_scale=None, causal=False, is_fp8_kvcache=False,
-                 indices=None, attn_sink=None, extra_k_cache=None,
-                 extra_indices_in_kvcache=None, topk_length=None, extra_topk_length=None))
-        kinds = tuple(p.kind for p in inspect.signature(factory).parameters.values())
-        if kinds != (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-            raise FlashMLADecodeCompatibilityError('native get_mla_metadata ABI changed')
+        provider, factory = _native_provider()
         from hcu_adapter.kernels.mla_sparse_decode_dtk import try_decode
 
         @functools.wraps(original)

@@ -64,6 +64,12 @@ def selected_mode():
         version = Version(_installed_vllm_version() or '0')
         if version.epoch or version.release[:2] != (0, 33):
             return 'stock'
+        try:
+            _native_provider()
+        except (ImportError, AttributeError, TypeError, ValueError, OSError,
+                FlashMLACompatibilityError):
+            _LOG.info('HCU FlashMLA prefill: optional vendor unavailable or ABI mismatch; retain stock')
+            return 'stock'
     return mode
 
 
@@ -92,6 +98,14 @@ def _check_publication(p):
         _refuse('FlashMLA prefill policy changed; start a fresh process for stock/kill')
     if p.module.rocm_sparse_attn_prefill is not p.replacement:
         _refuse('FlashMLA prefill binding changed; start a fresh process')
+
+
+def _native_provider():
+    provider = import_module('flash_mla.flash_mla_interface').flash_mla_sparse_fwd
+    _require_signature(provider, ('q', 'kv', 'indices', 'sm_scale', 'd_v',
+                                 'attn_sink', 'topk_length'),
+                       {'d_v': 512, 'attn_sink': None, 'topk_length': None})
+    return provider
 
 
 def require_healthy():
@@ -145,14 +159,11 @@ def install():
         if hasattr(original, '__wrapped__'):
             raise FlashMLACompatibilityError('FlashMLA prefill target already wrapped')
         try:
-            provider = import_module('flash_mla.flash_mla_interface').flash_mla_sparse_fwd
+            provider = _native_provider()
         except (ImportError, AttributeError) as error:
             raise FlashMLACompatibilityError('native FlashMLA prefill explicitly requested but unavailable') from error
         # The DTK 35220f1 Python entry accepts seven positional arguments;
         # this path does not use DeepInfer's optional FP32 API or its pins.
-        _require_signature(provider, ('q', 'kv', 'indices', 'sm_scale', 'd_v',
-                                      'attn_sink', 'topk_length'),
-                           {'d_v': 512, 'attn_sink': None, 'topk_length': None})
         from hcu_adapter.kernels.mla_sparse_prefill_dtk import try_prefill
 
         @functools.wraps(original)

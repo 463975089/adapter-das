@@ -216,6 +216,11 @@ Adapter，优先 public OOT 委托官方 Torch pre/post 和公开 IR RMS；原�
 小批次通过不覆盖大 prefill 舍入差异。capture 后须先 replay 建立基线，
 空 Graph 与非空分开。候选默认 stock；注册、两层缓存、late drift、
 spawn/fork 和四质量维度须留证，CPU lifecycle 不能作为模型/设备通过。
+可选 FlashMLA 的隐式默认须先探测 vendor wheel 与实际 ABI，缺失时保持 stock；
+显式 native 与已发布后的失败锁存仍严格。跨 vLLM 版本的执行桥按真实 call site
+适配，不在仍支持的旧宿主中无条件读取新版私有符号。packed KV 设备夹具须从
+有限输入经官方 writer 生成，并以独立解码/attention 参考检查改输入 replay，
+不能用随机 uint8 的 finite 断言代替合法 KV；细节见 `docs/frameworks/vllm033.md`。
 注册后直接重试遇到非法策略也须锁存失败；恢复配置不得重新准入。
 多个内置 owner 组合时，宿主健康边界须逐个检查；同名函数导入必须独立绑定，
 避免后一次覆盖前一次。回归同时覆盖各 owner 失败和全健康路径。

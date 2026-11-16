@@ -53,10 +53,20 @@ def install() -> bool:
     if (tuple(p.name for p in parameters[:6]) != ('input','weight','scale_a','scale_b','out_dtype','bias')
             or any(p.default is inspect.Parameter.empty for p in parameters[6:])):
         raise VllmCompatibilityError('Official Triton scaled-MM ABI changed')
-    fp8 = module.TritonFP8ScaledMMLinearKernel.apply_scaled_mm
-    int8 = module._int8_scaled_mm_func
-    if any(fn.__globals__ is not vars(module) or 'triton_scaled_mm' not in fn.__code__.co_names
+    fp8 = getattr(getattr(module, 'TritonFP8ScaledMMLinearKernel', None),
+                  'apply_scaled_mm', None)
+    # v0.32 calls the shared global directly; v0.33 delegates via a custom-op
+    # implementation. Preserve each host's methods and reject unknown ownership.
+    int8 = getattr(module, '_int8_scaled_mm_func', None)
+    if int8 is None:
+        int8 = getattr(getattr(module, 'TritonInt8ScaledMMLinearKernel', None),
+                       'apply_weights', None)
+    if any(getattr(fn, '__globals__', None) is not vars(module)
+           or 'triton_scaled_mm' not in getattr(getattr(fn, '__code__', None), 'co_names', ())
            for fn in (fp8, int8)):
+        if choice == 'auto':
+            _LOG.info('HCU scaled-MM: unsupported host call site; retain official Triton')
+            return False
         raise VllmCompatibilityError('Official FP8/INT8 shared GEMM call site changed')
 
     import torch

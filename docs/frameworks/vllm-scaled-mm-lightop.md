@@ -38,6 +38,15 @@ bridge, not a model patch. The existing `vllm_fp8_linear` public registration is
 Math/scale normalization lives in `hcu_adapter/kernels/scaled_mm_lightop.py`; installation,
 ABI and call-site validation live in `hcu_adapter/bridges/vllm_scaled_mm.py`.
 
+For the supported 0.32 line, INT8 `apply_weights` reads this shared global
+directly. The 0.33 line reads it from `_int8_scaled_mm_func`. Inspect the
+actual callable and its module ownership before binding; a missing 0.33-only
+helper is not a 0.32 startup error. Unknown host call sites retain the official
+implementation in `auto`; explicit `lightop` refuses unsupported ownership.
+CPU binding regressions cover both call sites and preserve the original method
+objects. They do not transfer the historical numerical results below to a new
+host version or installation.
+
 | Node / architecture | INT8 | E4M3FN FP8 | Total contract checks |
 | --- | --- | --- | --- |
 | nmz30 / gfx938 | LightOp, 200 seeds | LightOp, 200 seeds | 410/410 |

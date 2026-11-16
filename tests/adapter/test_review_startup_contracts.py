@@ -90,6 +90,31 @@ def test_explicit_unsupported_prefill_still_refuses(monkeypatch, source):
         importlib.reload(bridge)
 
 
+@pytest.mark.parametrize('fixture_name', ['prefill_setup', 'decode_setup'])
+@pytest.mark.parametrize('failure', ['missing', 'symbol', 'abi'])
+def test_default_flashmla_unavailable_keeps_stock(request, monkeypatch, fixture_name, failure):
+    bridge, target, vendor, _ = request.getfixturevalue(fixture_name)
+    original = getattr(target, bridge.TARGET.rsplit('.', 1)[1])
+    def load(name):
+        if name != 'flash_mla.flash_mla_interface':
+            pytest.fail('An unavailable default must not import a model module')
+        if failure == 'missing':
+            raise ImportError('optional vendor is absent')
+        if failure == 'symbol':
+            return NS()
+        if fixture_name == 'prefill_setup':
+            vendor.flash_mla_sparse_fwd = lambda: None
+        else:
+            vendor.flash_mla_with_kvcache = lambda: None
+        return vendor
+    monkeypatch.setattr(bridge, 'import_module', load)
+    assert bridge.install() is False
+    bridge.require_healthy()
+    assert bridge._publication is None and bridge._failure is None
+    assert getattr(target, bridge.TARGET.rsplit('.', 1)[1]) is original
+    assert registry.get(bridge.OP) is None
+
+
 @pytest.mark.parametrize('source', ['explicit', 'config'])
 @pytest.mark.parametrize('owner', ['mhc', 'decode'])
 def test_explicit_unsupported_request_still_refuses(monkeypatch, source, owner):

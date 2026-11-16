@@ -27,6 +27,25 @@ from hcu_adapter.extensions import (
 )
 
 
+def _stub_runtime_owners(monkeypatch, calls=None):
+    """Ordering doubles must not execute real providers on a synthetic HCU."""
+    from importlib import import_module
+    for name, action, label in (
+        ('vllm_fp8', 'install', 'fp8'),
+        ('vllm_scaled_mm', 'install', 'scaled-mm'),
+        ('vllm_allreduce', 'prepare_runtime', 'allreduce'),
+        ('vllm_mhc', 'install', 'mhc'),
+        ('vllm_sparse_indexer', 'install', 'indexer'),
+        ('vllm_flashmla', 'install', 'prefill'),
+        ('vllm_flashmla_decode', 'install', 'decode'),
+        ('vllm_pcp', 'install', 'pcp'),
+    ):
+        owner = import_module('hcu_adapter.bridges.' + name)
+        monkeypatch.setattr(owner, action, lambda label=label: calls.append(label) if calls is not None else None)
+        if hasattr(owner, 'require_healthy'):
+            monkeypatch.setattr(owner, 'require_healthy', lambda: None)
+
+
 @pytest.mark.parametrize(
     "version",
     (
@@ -279,8 +298,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: calls.append("runtime-abi"))
     # Provider registration has its own contract tests; do not enter a real
     # platform import from this guard/extension ordering double on either arch.
-    from hcu_adapter.bridges import vllm_fp8
-    monkeypatch.setattr(vllm_fp8, "install", lambda: calls.append("fp8"))
+    _stub_runtime_owners(monkeypatch, calls)
     monkeypatch.setattr(
         bridge,
         "_installed_adapter_version",
@@ -305,6 +323,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "dtk",
         "runtime-abi",
         "fp8",
+        "scaled-mm", "allreduce", "mhc", "indexer", "prefill", "decode", "pcp",
         "adapter-version",
         ("extensions", "0.1.0", "0.32.0+rocm723"),
     ]
@@ -330,6 +349,7 @@ def test_runtime_plugin_records_required_reports_before_latching(monkeypatch):
     monkeypatch.setattr(bridge, "configure_vllm_hip_runtime_path", lambda: None)
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     monkeypatch.setattr(bridge, "_installed_adapter_version", lambda: "0.1.0")
+    _stub_runtime_owners(monkeypatch)
 
     def fail(_context, *, health_check_sink):
         calls.append("activate")

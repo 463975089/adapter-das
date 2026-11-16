@@ -16,11 +16,31 @@ from hcu_adapter.kernels import mla_sparse_decode_dtk as kernel
 
 def caches(pages=5, page=32, rows=4, width=128, device='cpu'):
     generator = torch.Generator().manual_seed(907)
-    swa = torch.randint(0, 256, (pages, page, 584), generator=generator,
-                        dtype=torch.uint8).to(device)
-    extra = torch.randint(0, 256, (pages, page, 584), generator=generator,
-                          dtype=torch.uint8).to(device)
-    return swa, extra
+    def pack():
+        kv = (torch.randn(pages, page, 512, generator=generator) * .2).bfloat16()
+        if torch.device(device).type == 'cuda':
+            # Use the target's real writer for native tests. Identity RoPE and
+            # no query norm keep this a finite KV packing fixture, not a model.
+            from vllm import _custom_ops  # noqa: F401; registers the native op
+            kv = kv.reshape(-1, 512).to(device)
+            cache = torch.zeros((pages, page, 584), dtype=torch.uint8, device=device)
+            positions = torch.arange(pages * page, device=device, dtype=torch.int64)
+            cos_sin = torch.zeros((pages * page, 64), device=device)
+            cos_sin[:, :32] = 1
+            torch.ops._C.fused_deepseek_v4_qnorm_rope_kv_rope_quant_insert(
+                torch.zeros((pages * page, 64, 512), dtype=torch.bfloat16, device=device),
+                kv, cache.view(pages, -1), positions, positions, cos_sin,
+                64, 1e-6, page, False, False)
+            return cache
+        # CPU recorder tests need valid storage, not a vendor quantizer. A
+        # fixed scale of 1 is legal for these small finite inputs. Core stores
+        # all page data first, followed by seven UE8M0 scales plus one pad.
+        data = torch.cat((kv[..., :448].to(torch.float8_e4m3fn).view(torch.uint8),
+                          kv[..., 448:].contiguous().view(torch.uint8)), dim=-1)
+        scales = torch.full((pages, page, 8), 127, dtype=torch.uint8)
+        return torch.cat((data.reshape(pages, -1), scales.reshape(pages, -1)),
+                         dim=-1).reshape(pages, page, 584).to(device)
+    return pack(), pack()
 
 
 def selectors(rows, width, slots, device='cpu'):
@@ -30,6 +50,63 @@ def selectors(rows, width, slots, device='cpu'):
     dense[:, 5] = slots + 7            # Out-of-range sentinels too.
     lens = ((torch.arange(rows) * 13 % (width - 1)) + 4).clamp(max=width).int().to(device)
     return dense, lens
+
+
+def unpack_cache(cache):
+    """Independent CPU reader of Core's page-flat data and UE8M0 regions."""
+    pages, page, _ = cache.shape
+    flat = cache.cpu().reshape(pages, page * 584)
+    data = flat[:, :page * 576].contiguous().reshape(pages, page, 576)
+    scales = flat[:, page * 576:].contiguous().reshape(pages, page, 8)
+    nope = data[..., :448].contiguous().view(torch.float8_e4m3fn).float()
+    scale = torch.exp2(scales[..., :7].float() - 127).repeat_interleave(64, dim=-1)
+    rope = data[..., 448:].contiguous().view(torch.bfloat16).float()
+    return torch.cat((nope * scale, rope), dim=-1).reshape(-1, 512)
+
+
+def test_selected_fixture_cache_contains_finite_kv():
+    swa, extra = caches()
+    ids, lens = selectors(4, 128, swa.shape[0] * swa.shape[1])
+    for cache in (swa, extra):
+        kv = unpack_cache(cache)
+        for row in range(4):
+            valid = ids[row, :lens[row]]
+            valid = valid[(valid >= 0) & (valid < kv.shape[0])]
+            assert torch.isfinite(kv[valid]).all()
+
+
+def decode_reference(a):
+    """FP64 dense attention over decoded KV, retaining duplicates and sink."""
+    q = a['q'].cpu().double()
+    banks = [(unpack_cache(a['swa_k_cache']).double(), a['swa_indices'], a['swa_lens'])]
+    if not a['swa_only']:
+        banks.append((unpack_cache(a['kv_cache']).double(), a['topk_indices'], a['topk_lens']))
+    result = torch.zeros_like(q)
+    for row in range(q.shape[0]):
+        selected = []
+        for kv, ids, lens in banks:
+            ids = ids[row].cpu().reshape(-1)[:int(lens[row])]
+            valid = ids[(ids >= 0) & (ids < kv.shape[0])].long()
+            selected.append(kv[valid])
+        keys = torch.cat(selected)
+        scores = q[row] @ keys.T * a['scale']
+        if a['attn_sink'] is not None:
+            scores = torch.cat((scores, a['attn_sink'][:q.shape[1]].cpu().double()[:, None]), dim=-1)
+            keys = torch.cat((keys, torch.zeros(1, 512, dtype=torch.float64)))
+        if keys.shape[0]:
+            result[row] = torch.softmax(scores, dim=-1) @ keys
+    return result
+
+
+def assert_decode_numerics(a):
+    expected = decode_reference(a)
+    actual = a['output'].cpu().double()
+    assert torch.isfinite(expected).all() and torch.isfinite(actual).all()
+    error = torch.linalg.vector_norm(actual - expected) / torch.linalg.vector_norm(expected).clamp_min(1e-12)
+    cosine = torch.nn.functional.cosine_similarity(actual.flatten(), expected.flatten(), dim=0)
+    assert error <= .02, float(error)
+    assert cosine >= .9999, float(cosine)
+    assert (actual - expected).abs().max() <= .02
 
 
 class Recorder:
@@ -249,10 +326,10 @@ def test_native_decode_graph_fresh_plans(native_provider, heads):
         assert kernel.try_decode(**a, provider=provider, metadata_factory=meta,
                                  epilogue=rocm_inverse_rope_mxfp8_rows) == 0
     graph.replay()
-    assert torch.isfinite(a['output'].float()).all()
+    assert_decode_numerics(a)
     for step in range(3):
         a['q'].add_(.03)
         a['swa_indices'].add_(step + 1).remainder_(slots)
         a['topk_lens'].add_(1)
         graph.replay()
-        assert torch.isfinite(a['output'].float()).all()
+        assert_decode_numerics(a)

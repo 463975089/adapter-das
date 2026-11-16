@@ -50,6 +50,16 @@ DSV41 整模型或性能验收完成。该后端不处理 CT W4A8 MoE 的 INT4 p
 
 ## 验证
 
+FlashMLA prefill/decode 的隐式 `native` 默认只在实际 vendor wheel 与调用 ABI
+均可用时接入；缺包、缺符号或签名漂移保留官方 stock，且不锁存启动失败，
+不应让普通 BF16 模型依赖可选 V4.1 provider。环境或配置中显式选择 `native`
+仍严格拒绝不可用的 provider；发布后健康检查与失败锁存保持不变。
+
+原生 packed decode 测试从有限 BF16 KV 经官方 cache writer 生成 page-flat
+FP8/UE8M0 数据，并在每次改输入 Graph replay 后对拍独立 CPU FP64 attention。
+CPU recorder 使用合法的固定尺度 packed 夹具，另验实际被选中的 KV 为有限值。
+这些 CPU 契约与测试代码不等于原生 decode、Graph 或 V4.1 模型验收。
+
 BF16/FP16 AITER 的可选公开平台 ABI 候选与限制见
 [unquantized AITER compatibility](vllm033-aiter-moe.md)。组件通过不代表模型验收。
 

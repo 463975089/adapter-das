@@ -13,6 +13,7 @@ import pytest
 
 from hcu_adapter import hcu_config, hcu_env, registry
 from hcu_adapter.bridges import vllm as host
+from test_vllm_flashmla_decode import setup as decode_setup
 
 
 def official(q, kv, indices, topk_length, scale, head_dim, nope_head_dim,
@@ -243,10 +244,9 @@ print('fresh-stock-ok')
     assert result.stdout.strip() == 'fresh-stock-ok'
 
 
-def test_unset_environment_defaults_the_flashmla_tiers_to_native(setup, monkeypatch):
+def test_unset_environment_defaults_the_flashmla_tiers_to_native(setup, decode_setup, monkeypatch):
     bridge, _, _, _ = setup
-    from hcu_adapter.bridges import vllm_flashmla_decode
-    decode = importlib.reload(vllm_flashmla_decode)
+    decode, _, _, _ = decode_setup
     monkeypatch.delenv('HCU_VLLM_FLASHMLA_PREFILL', raising=False)
     monkeypatch.delenv('HCU_VLLM_FLASHMLA_DECODE', raising=False)
     monkeypatch.delenv('HCU_DISABLE_OPS', raising=False)
