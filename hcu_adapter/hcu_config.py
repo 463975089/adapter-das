@@ -15,11 +15,14 @@ Schema (hcu_adapter.yaml, first hit wins in discovery order):
 
     version: 1
     ops:
-      silu_and_mul: triton      # triton | lightop | torch
-      rms_norm: aiter           # triton | aiter | lightop | torch
-      fused_add_rms_norm: triton  # triton | lightop | torch
+      # unset/auto = lightop > aiter > jit > triton (silu and the norm
+      # family run lightop > aiter > triton; the sglang activation JIT is
+      # excluded, 33-49 s cold ninja build)
+      silu_and_mul: lightop     # lightop | aiter | triton | torch
+      rms_norm: lightop         # lightop | aiter | triton | torch
+      fused_add_rms_norm: lightop  # lightop | triton | torch
       allreduce: aiter          # aiter | nccl (custom AR retired 2026-10-19)
-      paged_mqa_logits: triton   # triton (DEFAULT, R-13 #4) | emu | vendor
+      paged_mqa_logits: triton   # triton (auto landing, R-13 #4) | emu | vendor
 
 Discovery: $HCU_CONFIG > ./hcu_adapter.{yaml,yml,json} >
 <adapter root>/hcu_adapter.{yaml,yml,json}. No file -> pure legacy
@@ -124,10 +127,18 @@ BACKEND_CATALOG = {
         "summary": "gated activation out = silu(x[:,:d]) * x[:,d:]",
         "backends": {
             "triton": {"status": "production",
-                       "note": "default (auto); fp32 accumulate"},
+                       "note": "auto ladder fallback (lightop > aiter > "
+                               "triton); fp32 accumulate. JIT is excluded "
+                               "from this op's ladder: 33-49 s cold ninja "
+                               "build (PR #96)"},
             "lightop": {"status": "validated",
-                        "note": "lightop.fuse_silu_and_mul "
+                        "note": "auto first when lightop imports; "
+                                "lightop.fuse_silu_and_mul "
                                 "(input, output, mask_m, expect_m)"},
+            "aiter": {"status": "candidate",
+                      "note": "real wheel aiter.silu_and_mul(out, input, "
+                              "limit=0.0) only — the adapter's aiter stub "
+                              "delegates back here and is skipped"},
             "torch": {"status": "production",
                       "note": "reference path, eager debug"},
         },
@@ -136,12 +147,18 @@ BACKEND_CATALOG = {
         "var": "HCU_RMS_NORM_IMPL",
         "summary": "RMSNorm (plain); the fused-add family is its own op below",
         "backends": {
-            "triton": {"status": "production", "note": "default"},
+            "triton": {"status": "production",
+                       "note": "auto ladder fallback (lightop > aiter > "
+                               "triton); also the dtype fallback when "
+                               "lightop/aiter cannot serve the call"},
             "aiter": {"status": "candidate",
-                      "note": "aiter.rmsnorm_forward(x,w,eps,training) "
-                              "-> (out, ..); plain rmsnorm only"},
+                      "note": "auto second; aiter.rmsnorm_forward(x,w,eps,"
+                              "training) -> (out, ..); plain bf16/fp16 "
+                              "rmsnorm only"},
             "lightop": {"status": "candidate",
-                        "note": "Public BF16 plain RMSNorm; other dtypes/Gemma use Triton"},
+                        "note": "auto first when lightop imports; Public "
+                                "BF16 plain RMSNorm; other dtypes/Gemma use "
+                                "the lower tiers"},
             "torch": {"status": "production",
                       "note": "reference path"},
         },
@@ -150,15 +167,20 @@ BACKEND_CATALOG = {
         "var": "HCU_FUSED_ADD_RMS_IMPL",
         "summary": "residual += input; input = rmsnorm(residual)*w, in-place",
         "backends": {
-            "triton": {"status": "production", "note": "default (auto)"},
+            "triton": {"status": "production",
+                       "note": "auto ladder fallback (lightop > triton; "
+                               "aiter exports no fused-add face); also the "
+                               "dtype fallback"},
             "lightop": {"status": "validated",
-                        "note": "lightop.fused_add_rms_norm(x, residual, w, "
-                                "eps, limit=-1) in-place; gemma variant "
-                                "gemma_fused_add_rmsnorm; parity + cuda-graph "
-                                "replay passed 2026-11-03 (dtk2610/BW200, "
-                                "py3.10 wheel has both fns too); perf 0.76x "
-                                "vs triton @4096x7168 bf16 — triton stays "
-                                "default; one-strike fallback on a raise"},
+                        "note": "auto first (2026-11 tier order) for "
+                                "bf16/fp16; lightop.fused_add_rms_norm(x, "
+                                "residual, w, eps, limit=-1) in-place; gemma "
+                                "variant gemma_fused_add_rmsnorm; parity + "
+                                "cuda-graph replay passed 2026-11-03 "
+                                "(dtk2610/BW200, py3.10 wheel has both fns "
+                                "too); perf 0.76x vs triton @4096x7168 bf16 "
+                                "(standby: HCU_FUSED_ADD_RMS_IMPL=triton); "
+                                "one-strike fallback on a raise"},
             "torch": {"status": "production",
                       "note": "reference path"},
         },
@@ -257,10 +279,14 @@ BACKEND_CATALOG = {
                     "note": "torch emulation — correct opt-out "
                             "(HCU_MQA_LOGITS_IMPL=vec; pre-R-13#4 default)"},
             "triton": {"status": "production",
-                       "note": "homegrown triton kernel (mqa_logits_triton.py, "
-                               "R-02 2026-10-18) — DEFAULT since R-13 #4 "
-                               "promotion 2026-10-18 (HCU_MQA_LOGITS_IMPL, "
-                               "was emu-vec). Reads the production "
+                       "note": "auto ladder landing tier (lightop is "
+                               "explicit-only above it, aiter planned): "
+                               "homegrown triton kernel "
+                               "(mqa_logits_triton.py, R-02 2026-10-18) — "
+                               "effective default since R-13 #4 promotion "
+                               "2026-10-18 (HCU_MQA_LOGITS_IMPL=auto "
+                               "delegates here; was emu-vec). Reads the "
+                               "production "
                                "pool layout (writer census: GLM-5.3 "
                                "IndexerKPool/kpool=4 writes via the kpool "
                                "family + SetKAndS under the forced "
@@ -294,8 +320,12 @@ BACKEND_CATALOG = {
                               "wheel ships no paged_mqa_logits API -- "
                               "revisit when the wheel grows one"},
             "lightop": {"status": "planned",
-                        "note": "lightop.attention.paged_mqa_logits; "
-                                "gate pending"},
+                        "note": "lightop.gemmopt.paged_mqa_logits wired "
+                                "through HCU_MQA_LOGITS_IMPL=lightop only "
+                                "(explicit A/B); auto skips it until the "
+                                "gate lands — an unvalidated kernel that "
+                                "does not raise would silently corrupt the "
+                                "auto ladder"},
             "deepgemm": {"status": "broken",
                          "note": "deepgemm wheel direct call via "
                                  "mqa_vendor.py bridge. Layout contract "
@@ -578,15 +608,17 @@ BACKEND_CATALOG = {
         "summary": "GDN/gated-delta-rule 线性注意力（sglang fla 面）",
         "backends": {
             "triton": {"status": "production",
-                       "note": "上游 fla triton 核（auto 默认；gfx93x "
-                               "wave64 友好，BT=64）"},
+                       "note": "上游 fla triton 核（auto 末档 / aiter 失败"
+                               "回退；gfx93x wave64 友好，BT=64）"},
             "aiter": {"status": "validated",
-                      "note": "DTK aiter CK/triton 核路由（fwd_h 状态递推 "
+                      "note": "auto 首选（2026-11 档位：aiter > triton）："
+                              "DTK aiter CK/triton 核路由（fwd_h 状态递推 "
                               "blockdim64 + packed decode 同契约直换绑，"
                               "K=V=128）：门禁 6/6（h 逐位一致、状态池写回 "
                               "≤1e-4 fp32 舍入）+ Qwen3.5-27B TP4 e2e 四锚点"
                               "全对（2026-10-13 bw7）；decode graph 36 桶捕"
-                              "获 577s→20.9s；=aiter 显式启用"} ,
+                              "获 577s→20.9s；=aiter 显式启用，=triton "
+                              "强制上游核"} ,
         },
     },
     "fused_moe": {
@@ -734,7 +766,10 @@ BACKEND_CATALOG = {
                               "异形臂恒走上游、aiter 失败 log-once 回退；"
                               "production 晋级待 fp8 模型 serving A/B"},
             "lightop": {"status": "planned",
-                        "note": "per-token quant family"},
+                        "note": "per-token quant family wired through "
+                                "HCU_QUANT_IMPL=lightop (explicit A/B; "
+                                "group/rowwise/fused probe the wheel and "
+                                "fall back per arm); auto stays aiter"},
         },
     },
 }

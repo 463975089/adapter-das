@@ -421,9 +421,13 @@ def test_shadow_impl_resolvers_reach_hcu_env(monkeypatch, capsys):
     # Behavior pin (fresh caches): defaults resolve without stderr noise.
     monkeypatch.setattr(elementwise, "_IMPL_CHOICE", None)
     monkeypatch.setattr(elementwise, "_LIGHTOP_IMPL", None)
+    monkeypatch.setattr(elementwise, "_AITER_IMPL", None)
     monkeypatch.setattr(layernorm, "_RMS_IMPL", None)
-    assert elementwise._resolve_impl() == "triton"
-    assert layernorm._resolve_rms_impl() == "triton"
+    # auto now follows lightop > aiter > triton; a CPU box without either
+    # vendor wheel resolves to triton. Assert the real invariant: resolution
+    # is silent and env-driven.
+    assert elementwise._resolve_impl() in ("lightop", "aiter", "triton")
+    assert layernorm._resolve_rms_impl() in ("lightop", "aiter", "triton")
     assert "ModuleNotFoundError" not in capsys.readouterr().err
 
     # Explicit env must actually flow through hcu_env (source 'explicit').

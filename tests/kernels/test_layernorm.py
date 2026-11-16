@@ -215,27 +215,41 @@ def test_community_fused_add_storage_modes_fresh_input_graph(
             torch.testing.assert_close(weight.cpu(), w0, rtol=0, atol=0)
 
 
-def test_fused_add_backend_default_is_triton(monkeypatch):
-    """auto (=default) must stay on the triton path — the lightop vendor
-    tier is opt-in until it passes the contract + graph-replay matrix."""
+def _lightop_installed():
+    try:
+        import lightop  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def test_fused_add_backend_default_ladder(monkeypatch):
+    """auto = lightop > aiter > triton. The DTK aiter wheel exposes no
+    fused-add export, so lightop (validated) is the auto pick when the wheel
+    is present; otherwise triton."""
     monkeypatch.delenv("HCU_FUSED_ADD_RMS_IMPL", raising=False)
     import sgl_kernel.layernorm as ln
 
     _reset_fused_add_cache(ln)  # re-probe with the cleaned env
     try:
-        assert ln._resolve_fused_add_impl() == "triton"
-        assert ln._LIGHTOP_FUSED_ADD is None
+        choice = ln._resolve_fused_add_impl()
+        if _lightop_installed():
+            assert choice == "lightop"
+            assert ln._LIGHTOP_FUSED_ADD is not None
+        else:
+            assert choice == "triton"
     finally:
         _reset_fused_add_cache(ln)
 
 
-def test_fused_add_backend_unknown_value_falls_to_triton(monkeypatch):
+def test_fused_add_backend_unknown_value_falls_through_ladder(monkeypatch):
     monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", "wat")
     import sgl_kernel.layernorm as ln
 
     _reset_fused_add_cache(ln)
     try:
-        assert ln._resolve_fused_add_impl() == "triton"
+        assert ln._resolve_fused_add_impl() in ("lightop", "triton")
     finally:
         _reset_fused_add_cache(ln)
 

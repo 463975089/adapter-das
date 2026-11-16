@@ -24,61 +24,123 @@ import torch
 
 from .compat import HAS_TRITON, check_cuda_tensor, next_power_of_2
 
-_RMS_IMPL = None  # cached backend choice: "triton" | "aiter" | "lightop" | "torch"
-_FUSED_ADD_IMPL = None      # cached fused-add tier: "triton" | "lightop" | "torch"
+_RMS_IMPL = None  # cached backend choice: "lightop" | "aiter" | "triton" | "torch"
+_FUSED_ADD_IMPL = None      # cached fused-add tier: "lightop" | "triton" | "torch"
 _LIGHTOP_FUSED_ADD = None   # resolved (fused_add_rms_norm, gemma_fused_add_rmsnorm)
 
 
+def _probe_lightop_rms():
+    import lightop
+
+    return getattr(lightop, "rms_norm", None)
+
+
+def _is_adapter_stub(fn) -> bool:
+    """hcu_adapter fills aiter faces with stubs (function or Missing)."""
+    return (
+        type(fn).__module__.startswith("hcu_adapter")
+        or getattr(fn, "__module__", "").startswith("hcu_adapter")
+    )
+
+
+def _probe_aiter_rms():
+    import aiter
+
+    fn = getattr(aiter, "rmsnorm_forward", None)
+    return None if fn is None or _is_adapter_stub(fn) else fn
+
+
+def _aiter_rms_fn():
+    """Aiter rmsnorm callable for a per-call fallback (None when absent)."""
+    try:
+        return _probe_aiter_rms()
+    except Exception:
+        return None
+
+
+def _probe_lightop_fused_add():
+    global _LIGHTOP_FUSED_ADD
+    from lightop import fused_add_rms_norm, gemma_fused_add_rmsnorm
+
+    _LIGHTOP_FUSED_ADD = (fused_add_rms_norm, gemma_fused_add_rmsnorm)
+    return _LIGHTOP_FUSED_ADD
+
+
 def _resolve_rms_impl():
-    """rms_norm backend tier (config file > env > default triton).
+    """rms_norm backend ladder: lightop > aiter > triton (explicit wins).
 
     Applies to the plain rmsnorm() entry only; the fused-add family has
     its own tier (HCU_FUSED_ADD_RMS_IMPL)."""
     global _RMS_IMPL
     if _RMS_IMPL is None:
-        _RMS_IMPL = "triton"
+        requested, source = None, "default"
         try:
             from hcu_adapter import hcu_env
 
-            impl, _src = hcu_env.resolve("HCU_RMS_NORM_IMPL")
-            if impl in ("triton", "aiter", "lightop", "torch"):
-                _RMS_IMPL = impl
+            requested, source = hcu_env.resolve("HCU_RMS_NORM_IMPL")
         except Exception:
             import traceback
 
             traceback.print_exc()
+        try:
+            from hcu_adapter import tier_policy
+
+            tier, _impl = tier_policy.pick(
+                "rms_norm",
+                {
+                    "lightop": _probe_lightop_rms,
+                    "aiter": _probe_aiter_rms,
+                    "triton": lambda: True,
+                    "torch": lambda: True,
+                },
+                requested=requested if source == "explicit" else None,
+            )
+            _RMS_IMPL = tier
+        except Exception:
+            import traceback
+
+            traceback.print_exc()
+            _RMS_IMPL = "triton"
     return _RMS_IMPL
 
 
 def _resolve_fused_add_impl():
-    """fused_add_rmsnorm backend tier (config file > env > default triton).
+    """fused_add_rmsnorm backend ladder: lightop > aiter > triton.
 
     lightop 0.6.0 ships in-place fused_add_rms_norm(x, residual, weight,
-    variance_epsilon, limit=-1.0) plus the gemma_fused_add_rmsnorm variant —
-    Vendor numerics require their own parity checks: the triton path below
-    uses the unrounded fp32 sum for variance and the stored residual for the
-    numerator. auto = triton; lightop is opt-in until it passes the contract
-    + graph-replay matrix (same policy as HCU_SILU_MUL_IMPL)."""
-    global _FUSED_ADD_IMPL, _LIGHTOP_FUSED_ADD
+    variance_epsilon, limit=-1.0) plus the gemma_fused_add_rmsnorm variant.
+    The DTK aiter wheel exposes no fused-add export, so aiter is absent from
+    the candidate map (the ladder still holds: no implementation to pick).
+    Explicit HCU_FUSED_ADD_RMS_IMPL wins (lightop|triton|torch)."""
+    global _FUSED_ADD_IMPL
     if _FUSED_ADD_IMPL is None:
-        _FUSED_ADD_IMPL = "triton"
+        requested, source = None, "default"
         try:
             from hcu_adapter import hcu_env
 
-            impl, _src = hcu_env.resolve("HCU_FUSED_ADD_RMS_IMPL")
-            if impl == "lightop":
-                from lightop import fused_add_rms_norm, gemma_fused_add_rmsnorm
-
-                _LIGHTOP_FUSED_ADD = (fused_add_rms_norm, gemma_fused_add_rmsnorm)
-                _FUSED_ADD_IMPL = "lightop"
-            elif impl in ("triton", "torch"):
-                _FUSED_ADD_IMPL = impl
+            requested, source = hcu_env.resolve("HCU_FUSED_ADD_RMS_IMPL")
         except Exception:
-            # visibility beats silence: a silent vendor-probe failure reads
-            # as "auto mode" and hides a real wheel/env problem.
             import traceback
 
             traceback.print_exc()
+        try:
+            from hcu_adapter import tier_policy
+
+            tier, _impl = tier_policy.pick(
+                "fused_add_rmsnorm",
+                {
+                    "lightop": _probe_lightop_fused_add,
+                    "triton": lambda: True,
+                    "torch": lambda: True,
+                },
+                requested=requested if source == "explicit" else None,
+            )
+            _FUSED_ADD_IMPL = tier
+        except Exception:
+            import traceback
+
+            traceback.print_exc()
+            _FUSED_ADD_IMPL = "triton"
     return _FUSED_ADD_IMPL
 
 
@@ -268,16 +330,25 @@ def _do_rmsnorm(
     if impl == "torch" or not input.is_cuda:
         return _rmsnorm_native(input, weight, eps, gemma, out)
     if impl == "lightop":
-        # Only the BF16 plain-norm contract has been qualified with this provider.
-        # Other dtypes and Gemma retain the existing Triton implementation.
+        # BF16 plain norm is the qualified lightop contract; other dtypes
+        # continue down the ladder (aiter -> triton) instead of stopping here.
         if input.dtype == weight.dtype == out.dtype == torch.bfloat16:
             return _lightop_rmsnorm(input, weight, eps, out)
-        impl = "triton"
+        impl = "aiter" if _aiter_rms_fn() is not None else "triton"
     if impl == "aiter":
         if input.dtype in (torch.bfloat16, torch.float16):
-            out.copy_(_aiter_rmsnorm(input, weight, eps))
-            return out
-        impl = "triton"  # vendor bf16/fp16 only; fall through
+            try:
+                out.copy_(_aiter_rmsnorm(input, weight, eps))
+                return out
+            except Exception:
+                # One-strike: a broken vendor kernel falls to triton for
+                # this call and every later one (impl continues below).
+                import traceback
+
+                traceback.print_exc()
+                impl = "triton"
+        else:
+            impl = "triton"  # vendor bf16/fp16 only; fall through
 
     use_triton = (
         HAS_TRITON

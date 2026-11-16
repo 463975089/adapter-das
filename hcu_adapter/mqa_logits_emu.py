@@ -38,6 +38,7 @@ def _note_call(tag):
 
 
 def _fp8_view_dtype():
+    # 替代档: 无（fp8 dtype probe helper；包面未导出 is_fp8_fnuz）
     from sglang.kernels.ops.quantization.fp8_kernel import is_fp8_fnuz
 
     return torch.float8_e4m3fnuz if is_fp8_fnuz() else torch.float8_e4m3fn
@@ -186,6 +187,7 @@ def _triton_or_emu_faces():
 
 
 def install():
+    # 替代档: dsa 包挂载面（aiter_paged_mqa_logits 分档见 HCU_MQA_LOGITS_IMPL）
     import sglang.kernels.ops.attention.dsa as _dsa_pkg
 
     _paged_fn, _ragged_fn, _impl_label = _triton_or_emu_faces()

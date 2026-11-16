@@ -34,9 +34,32 @@ from .kernels.lightop_usage import _count
 
 _HEAD_PAD = 132
 
+_LIGHTOP_PAGED = []  # [fn-or-None] lightop.gemmopt.paged_mqa_logits probe
+_WARNED = set()
+
+
+def _lightop_paged_fn():
+    if not _LIGHTOP_PAGED:
+        try:
+            from lightop.gemmopt import paged_mqa_logits as fn
+        except Exception:
+            fn = None
+        _LIGHTOP_PAGED.append(fn)
+    return _LIGHTOP_PAGED[0]
+
+
+def _warn_once(key, msg):
+    if key in _WARNED:
+        return
+    _WARNED.add(key)
+    import logging
+
+    logging.getLogger("hcu.adapter").warning(msg)
+
 
 def _fp8_view_dtype():
     try:
+        # 替代档: 无（fp8 dtype probe helper；包面未导出 is_fp8_fnuz）
         from sglang.kernels.ops.quantization.fp8_kernel import is_fp8_fnuz
 
         return torch.float8_e4m3fnuz if is_fp8_fnuz() else torch.float8_e4m3fn
@@ -117,6 +140,7 @@ def fp8_paged_mqa_logits(
         preshuffle = os.environ.get("HCU_DSA_PRESHUFFLE", "1") != "0"
         tile = 16
         try:
+            # 替代档: 无（私有 PRESHUFFLE tile 常量；仅模块体可见）
             from sglang.kernels.ops.attention.dsa.kpool_fp8_index import (
                 INDEXER_K_CACHE_PRESHUFFLE_TILE as _tile,
             )
@@ -173,6 +197,42 @@ def fp8_paged_mqa_logits(
         impl, _src = resolve("HCU_MQA_LOGITS_IMPL")
     except Exception:
         pass
+    if impl == "lightop":
+        # Explicit tier only: the catalog status is planned (gate pending),
+        # and a mis-computing kernel that does not raise would silently
+        # corrupt the auto ladder, so auto never selects it. An explicit
+        # =lightop request is honoured and falls through on failure.
+        fn = _lightop_paged_fn()
+        if fn is not None:
+            try:
+                _count("mqa.paged.lightop")
+                return fn(
+                    q_fp8,
+                    kv_cache_fp8,
+                    weights,
+                    context_lens,
+                    block_table,
+                    schedule_metadata,
+                    int(max_context_len),
+                    clean_logits,
+                    False,
+                )
+            except Exception:
+                if impl == "lightop":
+                    _warn_once(
+                        "mqa-lightop",
+                        "HCU_MQA_LOGITS_IMPL=lightop failed; falling through "
+                        "the auto ladder",
+                    )
+                    import traceback
+
+                    traceback.print_exc()
+        elif impl == "lightop":
+            _warn_once(
+                "mqa-lightop-missing",
+                "HCU_MQA_LOGITS_IMPL=lightop but lightop.gemmopt is not "
+                "importable; falling through the auto ladder",
+            )
     if impl == "vendor":
         # R-02: DTK deepgemm wheel native path, A/B tier (parity gate
         # tests/kernels/test_mqa_vendor_gfx938.py; layout unvalidated).
@@ -188,23 +248,32 @@ def fp8_paged_mqa_logits(
             max_context_len=max_context_len,
             clean_logits=clean_logits,
         )
-    if impl == "triton":
+    if impl in ("auto", "triton"):
         # R-02 homegrown tier: reads the REAL SetKAndS pool layout (16-tile
         # interleave + tail scales) that this emu's flat (T,132) unpack
         # misreads — correctness fix + single-launch decode graph. Parity
         # gate tests/kernels/test_mqa_triton_gfx938.py.
         from .mqa_logits_triton import triton_paged_mqa_logits as _tri
 
-        return _tri(
-            q_fp8,
-            kv_cache_fp8,
-            weights,
-            context_lens,
-            block_table,
-            schedule_metadata=schedule_metadata,
-            max_context_len=max_context_len,
-            clean_logits=clean_logits,
-        )
+        try:
+            return _tri(
+                q_fp8,
+                kv_cache_fp8,
+                weights,
+                context_lens,
+                block_table,
+                schedule_metadata=schedule_metadata,
+                max_context_len=max_context_len,
+                clean_logits=clean_logits,
+            )
+        except Exception:
+            if impl == "triton":
+                raise
+            _warn_once(
+                "mqa-triton",
+                "MQA auto: triton arm refused this face; falling back to "
+                "the torch loop",
+            )
     vec_max = int(os.environ.get("HCU_MQA_VEC_MAXROWS", "32"))
     if impl == "vec" and N <= vec_max:
         T_all = min(int(max_context_len), bt.shape[1] * PS)
