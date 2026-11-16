@@ -208,6 +208,7 @@ jobs:
     runs-on: hygon-bw1100-1card
     # 等卡 30 分钟 + L1 step 上限 90 分钟 + 其他步骤余量
     timeout-minutes: 130
+    if: github.event_name != 'pull_request_target'
     container:
       # 镜像来自 ci/ci_docker_image（与 build 用的是同一个）
       image: ${{ needs.image.outputs.image }}
