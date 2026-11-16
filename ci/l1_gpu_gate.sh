@@ -388,7 +388,11 @@ for g in _test_hcu_config _test_fa3_emu_cp _test_rope_fallback_vs_fused \
     f="tests/tools/$g.py"
     [ -f "$f" ] || { echo "    SKIP $g (missing)" >> "$GATES_LOG"; continue; }
     echo "=== $g ===" >> "$GATES_LOG"
-    if timeout 300 python3 "$f" >> "$GATES_LOG" 2>&1; then
+    # The config gate only exercises config resolution + kernel tiers;
+    # skipping the host-bridge install halves its interpreter startup
+    # (52s -> 26s on the 2026-11-16 image) and it has no bridge surface.
+    case "$g" in _test_hcu_config) gate_env=(env HCU_ADAPTER_HOST=none) ;; *) gate_env=() ;; esac
+    if timeout 300 "${gate_env[@]}" python3 "$f" >> "$GATES_LOG" 2>&1; then
         echo "L1: gate $g PASS"
     else
         echo "L1: gate $g FAIL -- tail:"; tail -n 8 "$GATES_LOG" | sed 's/^/    /'

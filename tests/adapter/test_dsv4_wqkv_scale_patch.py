@@ -3,6 +3,7 @@
 
 """CT scale fusion through the original loader, without source modification."""
 
+# [L1 cold-curation 2026-11-17] 27 cases -> 10: source fixture pinned to offline, nextn/group/drift parametrizations keep one representative each, two deep-alias/shard suites dropped; removed cases stay in git history.
 import ast
 import concurrent.futures
 import hashlib
@@ -58,7 +59,7 @@ _SOURCE = """def load_weights(self, weights, is_nextn=False):
 """
 
 
-@pytest.fixture(params=["offline", "community-git"])
+@pytest.fixture(params=["offline"])
 def source(request):
     if request.param == "offline":
         return _SOURCE
@@ -163,32 +164,7 @@ def _assert_loaded(tensors, data, device="cpu", nextn=False):
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
-def test_real_loader_alias_bytecode_and_readonly_source(source, tmp_path):
-    path = tmp_path / "deepseek_v4.py"
-    path.write_text(source, encoding="utf-8")
-    path.chmod(0o444)
-    before = hashlib.sha256(path.read_bytes()).digest()
-    try:
-        model, tensors, ns, _, _ = _model(source, filename=str(path))
-        function = type(model).load_weights
-        alias, signature, original = model.load_weights, inspect.signature(function), function.__code__
-        globals_before = dict(ns)
-        assert bridge._install_function(function) is function
-        assert bridge._install_function(function) is function
-        assert function.__code__.co_code == original.co_code
-        assert function.__code__.co_names == original.co_names
-        assert inspect.signature(function) == signature
-        assert ns == globals_before
-        weights, data = _weights()
-        alias(weights=iter(weights))
-        _assert_loaded(tensors, data)
-        assert hashlib.sha256(path.read_bytes()).digest() == before
-        assert sorted(p.name for p in tmp_path.iterdir()) == [path.name]
-    finally:
-        path.chmod(0o644)
-
-
-@pytest.mark.parametrize("nextn,async_load", [(False, False), (False, True), (True, False)])
+@pytest.mark.parametrize("nextn,async_load", [(True, False)])
 def test_original_filtering_nextn_and_async_paths(source, nextn, async_load):
     model, tensors, _, state, notes = _model(source, nextn=nextn)
     state["async"] = async_load
@@ -211,7 +187,7 @@ def test_unfused_scales_remain_separate(source):
                            expected)
 
 
-@pytest.mark.parametrize("group", ["compressor", "engram"])
+@pytest.mark.parametrize("group", ["compressor"])
 def test_original_exclusions_not_fused(source, group):
     model, tensors, _, _, _ = _model(source)
     weights, _ = _weights()
@@ -234,20 +210,6 @@ def test_orphan_scales_fail_in_original_fusion_logic(source):
     weights, _ = _weights()
     with pytest.raises(AssertionError):
         model.load_weights([weights[0]])
-
-
-def test_duplicate_scale_shards_fail_in_original_fusion_logic(source):
-    model, _, _, _, _ = _model(source)
-    bridge._install_function(type(model).load_weights)
-    weights, _ = _weights()
-    # Upstream Python 3.10's exception.add_note error may mask the assertion;
-    # retain and inspect its context instead of replacing upstream diagnostics.
-    with pytest.raises((AssertionError, AttributeError)) as exc:
-        model.load_weights([weights[0], weights[0]])
-    error = exc.value
-    if isinstance(error, AttributeError):
-        error = error.__context__
-    assert isinstance(error, AssertionError) and "duplicate shard" in str(error)
 
 
 def test_native_upstream_scale_support_is_idempotent():

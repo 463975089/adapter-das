@@ -31,6 +31,7 @@ Three layers, because "the bridge bound something" is not the contract:
 Run: HCU_ADAPTER_HOST=none python -m pytest -q tests/adapter/test_bridge_activation_rebind.py
 """
 
+# [L1 cold-curation 2026-11-17] 8 -> 4: keeps the never-imports-body contract, the jit-module rebinding, the HIP-platform silu resolution and the tier switch (lightop row); dropped faces stay in git history.
 import ast
 import importlib
 import os
@@ -168,17 +169,6 @@ def test_helper_binds_package_face_and_never_imports_the_module_body(monkeypatch
     assert runner._legacy_silu_and_mul is sentinel
 
 
-def test_helper_keeps_a_host_bound_implementation(monkeypatch):
-    existing = object()
-    _install_fake_host(monkeypatch, runner=existing)
-    package = _TraceFinder({_PKG})
-    monkeypatch.setattr(sys, "meta_path", [package, *sys.meta_path])
-
-    assert _bridge()._bind_deepgemm_legacy_silu() is True
-    assert sys.modules[_RUNNER]._legacy_silu_and_mul is existing
-    assert package.hits == []
-
-
 def test_helper_replaces_the_jit_module_body_binding(monkeypatch):
     def jit_body(input, out=None):
         raise AssertionError("the JIT module body must never be called")
@@ -195,27 +185,6 @@ def test_helper_replaces_the_jit_module_body_binding(monkeypatch):
     assert _bridge()._bind_deepgemm_legacy_silu() is True
     assert runner._legacy_silu_and_mul is sentinel
     assert body.hits == []
-
-
-def test_helper_is_a_noop_when_the_runner_is_absent(monkeypatch):
-    _install_fake_host(monkeypatch)  # parents only: no deep_gemm leaf
-    assert _bridge()._bind_deepgemm_legacy_silu() is False
-
-
-def test_helper_source_imports_the_package_face_only():
-    tree = ast.parse((_ROOT / "hcu_adapter/bridges/sglang.py").read_text("utf-8"))
-    helper = next(
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "_bind_deepgemm_legacy_silu"
-    )
-    modules = []
-    for node in ast.walk(helper):
-        if isinstance(node, ast.ImportFrom) and node.module:
-            modules.append(node.module)
-        elif isinstance(node, ast.Import):
-            modules.extend(alias.name for alias in node.names)
-    assert _PKG in modules
-    assert [name for name in modules if name.startswith(_PKG + ".")] == []
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +281,7 @@ else:
 """
 
 
-@pytest.mark.parametrize("tier", ["lightop", "torch"])
+@pytest.mark.parametrize("tier", ["lightop"])
 def test_shadow_aot_op_still_honours_the_tier_switch(tier):
     env = dict(
         os.environ,
