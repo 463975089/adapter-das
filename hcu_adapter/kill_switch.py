@@ -33,6 +33,7 @@ LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
+    "minimax_h3_rotary_embedding": ("H3 candidate RoPE to torch reference", None),
     "w4a8_contiguous_gemm": ("Optional DTK W4A8 HIPC COV5 ABI repair (startup only)", None),
     "qsa_mqa": ("QSA MQA BoltOPs dispatch (falls back to Torch reference)", None),
     "vllm_sparse_indexer": ("vLLM C4 indexer public OOT compatibility; fresh-process stock fallback", "HCU_VLLM_SPARSE_INDEXER_IMPL"),

@@ -34,6 +34,8 @@
 | 按测试治理路线开工 / 查依赖和验收 | docs/test-route-implementation-plan.md → 对应 MR 段的依赖、DoD 与验收命令 |
 | 判断一项工作归哪仓 / 开发插件新能力 | docs/governance.md §0 判别 → 本文「姊妹仓地图」→ sglang-plugin-das docs/ |
 
+MiniMax-H3专用RoPE候选的接口、快关、CPU/离线编译证据与设备验收边界见 [MiniMax-H3](minimax-h3.md)。
+
 ## 算子目录入口
 
 当前启动就绪门禁的执行顺序与严格入口见 [l15-readiness-plan.md](l15-readiness-plan.md)。

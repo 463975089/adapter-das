@@ -208,6 +208,7 @@
 /*==PURE-BEGIN*/
 // ---- BACKEND_CATALOG snapshot (hcu_config.py, 2026-10-14). default = first prod entry.
 const CATALOG = {
+  "minimax_h3_rotary_embedding": {"var": null, "summary": "MiniMax-H3 NeoX partial RoPE: DiT128/96 and VAE64/48; native preferred by plugin", "backends": {"triton": {"s": "candidate", "n": "BF16/FP16/FP32 old-native canonical parity passed; changed-input Graph passed; serving pending"}, "torch": {"s": "candidate", "n": "CPU contract and diagnostic fallback; no serving claim"}}},
   "flashmla_kv_indices": {"var": null, "summary": "FlashMLA static-pool page-table import compatibility", "backends": {"triton": {"s": "candidate", "n": "Reuse the existing SGLang page64 kernel; optional starts and strides; no new index math"}}},
   "w4a8_contiguous_gemm": {"var": null, "summary": "DTK W4A8 HIPC code-object ABI compatibility", "backends": {"dtk": {"s": "candidate", "n": "Optional pinned gfx936 COV5 extension; native1002 and cached aliases preserved; full P/D pending"}}},
   "vllm_dsv41_pcp_compat": {"var": null, "summary": "vLLM V4.1 compatibility for the opt-in PCP extension", "backends": {"scoped": {"s": "candidate", "n": "FP8 SHUFFLE scoring, delayed mHC and empty CT linear on the owned eager model."}}},
