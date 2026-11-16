@@ -79,7 +79,6 @@ jobs:
     timeout-minutes: 360
     container:
       image: ${{ needs.image.outputs.image }}
-      imagePullPolicy: Always
     env:
       HCU_L1_TIMEOUT_SCALE: "2"
       L15_MANIFEST_MODE: observe
