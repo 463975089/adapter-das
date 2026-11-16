@@ -185,6 +185,15 @@ BACKEND_CATALOG = {
             "triton": {"status": "validated", "note": "Preserve official providers without execution rebinding; diagnostic startup rollback"},
         },
     },
+    "vllm_minimax_qknorm_abi": {
+        "var": None,
+        "summary": "vLLM MiniMax fused qknorm native ABI compatibility",
+        "backends": {
+            "native-25": {"status": "candidate",
+                "note": "Exact audited wrapper and old native schema only; write_qkv=True, "
+                        "aliases preserved. False or drift refused; GPU model/graph gates pending."},
+        },
+    },
     "vllm_fp8_linear": {
         "var": None,
         "summary": "vLLM official dense FP8 fallback via public linear registration",

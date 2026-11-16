@@ -165,6 +165,9 @@ def make_runner(monkeypatch, cfg, version, events, fail_at=None):
     runner.parallel_config = cfg.parallel_config
     runner.compilation_config = cfg.compilation_config
     runner.model_config = NS(model="CPU-provider-contract", multimodal_config=None, logits_processors=())
+    if cfg.model_config is None:
+        cfg.model_config = NS(compute_hash=lambda: "CPU-provider-contract")
+    cfg.model_config.enable_sleep_mode = False  # v0.33 runtime-pool selection.
     runner.lora_config = None
     runner.jit_warmup_registry = NS(activate=nullcontext)
     runner.device = "cpu"
@@ -194,6 +197,8 @@ def make_runner(monkeypatch, cfg, version, events, fail_at=None):
         drafter = object.__new__(Draft)
         drafter.vllm_config = cfg
         drafter.use_acceptance_estimator = False
+        drafter.use_draft_logits = False  # v0.33 real speculator load contract.
+        drafter.draft_logits = None
         drafter._validate_local_argmax_reduction = lambda: None
         monkeypatch.setattr(spec, "get_layers_from_vllm_config", lambda *args: {})
         # Real DraftModelSpeculator.load_model reads target MM capability.

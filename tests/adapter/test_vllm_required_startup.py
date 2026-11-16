@@ -33,6 +33,12 @@ def startup(monkeypatch):
     # Required-extension policy has no device/runtime prerequisites. Native ABI
     # and FP8 registration are exercised by their dedicated contract tests.
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
+    from hcu_adapter.bridges import vllm_allreduce
+    monkeypatch.setattr(vllm_allreduce, "prepare_runtime", lambda: None)
+    from hcu_adapter import kill_switch
+    monkeypatch.setattr(kill_switch, "log_state", lambda: None)
+    from hcu_adapter.bridges import vllm_minimax_abi
+    monkeypatch.setattr(vllm_minimax_abi, "install", lambda: False)
     from hcu_adapter.bridges import vllm_fp8
     monkeypatch.setattr(vllm_fp8, "install", lambda: False)
     # Required-policy CPU fixtures isolate startup admission. Scaled-MM provider

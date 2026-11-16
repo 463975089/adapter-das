@@ -10,6 +10,13 @@ from hcu_adapter.bridges.vllm_model_load import dispatch_model_mutation, dispatc
 
 
 class Worker(OfficialWorker):
+    def _make_model_runner(self):
+        from hcu_adapter.bridges.vllm_model_runner import create_model_runner
+
+        return create_model_runner(
+            self.vllm_config, self.device, default=super()._make_model_runner,
+        )
+
     def load_model(self, *, load_dummy_weights: bool = False) -> None:
         from hcu_adapter.bridges.vllm import require_runtime_healthy
 
