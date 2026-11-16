@@ -41,10 +41,8 @@ def write_cfg(text):
 
 
 def with_cfg(text, env_extra=None):
-    """Fresh-load a config file and return (state, restore fn)."""
+    """Fresh-load a config file and return its path (restore is the caller's)."""
     path = write_cfg(text)
-    old = os.environ.get("HCU_CONFIG")
-    old_impl = os.environ.get("HCU_SILU_MUL_IMPL")
     os.environ["HCU_CONFIG"] = path
     if env_extra:
         for k, v in env_extra.items():
