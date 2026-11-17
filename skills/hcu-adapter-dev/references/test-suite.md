@@ -28,6 +28,13 @@ selector、实际 fork 格式化窗口均需断言。public registry clear/forei
 经真实官方 selector 验证，不以直接 checker 测试替代。见
 `docs/vllm-flash-registry.md`；不把 CPU 协议验证当作数值验收。
 
+
+精简测试家族时同步维护独立 `__main__` 入口；依赖 fixture/skip 的入口可委托
+`pytest.main`，避免调用已删除的函数。spawn 测试的临时宿主环境须覆盖 context、
+Queue、Process 创建和 start 失败；资源清理异常也不能跳过父进程环境恢复。
+bootstrap 的 import 期环境恢复须分别验证原值未设置、显式0/1及宿主导入失败，
+不能只删除新增键而保留上游覆盖后的值。
+
 目标：**adapter API 全绿 ⇒ 官方 sglang 在 HCU 上无大问题**。为此每个出口
 API 必须覆盖四个质量维度，缺一不可（每个维度都有历史 bug 背书）：
 

@@ -18,6 +18,18 @@ def _runtime():
             name in path for name in ('/libamdhip64.so', '/libgalaxyhip.so')
         ):
             runtime = ctypes.CDLL(path)
+            if hasattr(runtime, 'hipInit'):
+                # A bare (non-torch) process can reach hipGetDevice before
+                # any hipInit; newer runtimes answer hipErrorNoDevice (100)
+                # there. hipInit(0) is idempotent and creates no device
+                # context, so priming it here keeps every entry point of
+                # this module usable in processes that never touch torch
+                # (e.g. tools/gen_tier_matrix.py under ci/l0_gate.py,
+                # 2026-11-16). Its result is ignored: an already-initialized
+                # runtime reports success anyway.
+                runtime.hipInit.argtypes = [ctypes.c_uint]
+                runtime.hipInit.restype = ctypes.c_int
+                runtime.hipInit(0)
             runtime.hipGetDevice.argtypes = [ctypes.POINTER(ctypes.c_int)]
             runtime.hipGetDevice.restype = ctypes.c_int
             runtime.hipDeviceGetAttribute.argtypes = [

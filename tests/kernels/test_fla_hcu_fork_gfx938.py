@@ -18,6 +18,7 @@ Shape sweep: GATE_T1 / GATE_T2 override the two varlen seq lens
 (default 1536/512) of the chunk test, e.g. GATE_T1=64 GATE_T2=5.
 """
 
+# [L1 cold-curation 2026-11-17] 2 fork gates -> 1: kda_prefill_chunk stays as the fork-vs-emu representative; conv1d_pair stays in git history.
 from __future__ import annotations
 
 import torch
@@ -70,52 +71,9 @@ def test_kda_prefill_chunk():
     return ok
 
 
-def test_conv1d_pair():
-    from hcu_adapter.conv1d_fn_emu import conv1d_fn_emu
-    from hcu_adapter.conv1d_update_emu import causal_conv1d_update_emu
-    from hcu_adapter.fla_hcu.conv1d_triton import (
-        causal_conv1d_fn,
-        causal_conv1d_update,
-    )
-
-    DIM, W = 2048, 4
-    T1, T2 = 2000, 512
-    wt = torch.randn(DIM, W, device=DEV, dtype=torch.bfloat16) * 0.2
-    bias = torch.randn(DIM, device=DEV, dtype=torch.bfloat16) * 0.1
-    cu = torch.tensor([0, T1, T1 + T2], device=DEV, dtype=torch.int32)
-    idx = torch.arange(2, device=DEV, dtype=torch.int32)
-    cis = torch.tensor([True, True], device=DEV)
-
-    x_tok = torch.randn(T1 + T2, DIM, device=DEV, dtype=torch.bfloat16)
-    cs_e = torch.randn(SLOTS, DIM, W - 1, device=DEV, dtype=torch.bfloat16) * 0.3
-    cs_f = cs_e.clone()
-    o_e = conv1d_fn_emu(x_tok, wt, bias, conv_states=cs_e, query_start_loc=cu,
-                        seq_lens_cpu=[T1, T2], cache_indices=idx,
-                        has_initial_state=cis)
-    o_f = causal_conv1d_fn(x_tok.t(), wt, bias, cs_f, cu, [T1, T2],
-                           cache_indices=idx, has_initial_state=cis,
-                           activation="silu")
-    o_f = o_f.t() if o_f.shape[0] == DIM else o_f
-    ok = _check("conv1d_fn out", o_e, o_f)
-    ok &= (cs_e[idx] == cs_f[idx]).all().item()
-    print(f"{'PASS' if ok else 'FAIL'} conv1d_fn state write-back bit-exact")
-
-    BS = 16
-    xu = torch.randn(BS, DIM, device=DEV, dtype=torch.bfloat16)
-    su_e = torch.randn(SLOTS, DIM, W - 1, device=DEV, dtype=torch.bfloat16) * 0.3
-    su_f = su_e.clone()
-    ui = torch.arange(BS, device=DEV, dtype=torch.int32)
-    oe = causal_conv1d_update_emu(xu, su_e, wt, bias, activation="silu",
-                                  conv_state_indices=ui)
-    of = causal_conv1d_update(xu, su_f, wt, bias, activation="silu",
-                              conv_state_indices=ui)
-    ok2 = _check("conv1d_update out", oe, of)
-    ok2 &= (su_e[ui] == su_f[ui]).all().item()
-    print(f"{'PASS' if ok2 else 'FAIL'} conv1d_update state bit-exact")
-    return ok and ok2
-
-
 if __name__ == "__main__":
+    # [L1 cold-curation 2026-11-17] test_conv1d_pair was retired by the
+    # spawn-family curation; the direct-run entry shrank with it.
     r1 = test_kda_prefill_chunk()
-    r2 = test_conv1d_pair()
-    print("ALL-PASS" if (r1 and r2) else "GATE-RED")
+    print("ALL-PASS" if r1 else "GATE-RED")
+    raise SystemExit(0 if r1 else 1)

@@ -148,6 +148,29 @@ def _loaded_module_names() -> tuple[str, ...]:
     return tuple(sys.modules)
 
 
+# vllm's env_override.py writes these unconditionally at `import vllm`
+# ("for all processes created by vllm ... that interact with vllm workers"),
+# so they leak from OUR import chain into every child this process later
+# spawns. On HCU the leak is fatal: PYTORCH_NVML_BASED_CUDA_CHECK=1 makes
+# c10 answer device queries through NVML, which does not exist here — a
+# child born with it aborts at the first extension dlopen whose static
+# init queries device properties (flash_attn_2_cuda: c10::AcceleratorError
+# "no ROCm-capable device is detected" -> terminate, SIGABRT), e.g. the
+# tools/gen_tier_matrix.py subprocess of ci/l0_gate.py's impl-naming check
+# (2026-11-16, image 0.5.22-20261116-1356). Snapshot the user's pre-import
+# state and restore it after the bridge installs; values the user set
+# explicitly are kept.
+_IMPORT_LEAKED_ENV = ("PYTORCH_NVML_BASED_CUDA_CHECK",)
+
+
+def _restore_import_env(snapshot: dict) -> None:
+    for key, was in snapshot.items():
+        if was is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = was
+
+
 def install() -> None:
     """Install common guards and one host bridge at most once per process."""
     global _installed_pid
@@ -194,13 +217,17 @@ def install() -> None:
     propagate_host(host, os.environ)
     LOG.warning("HCU adapter bootstrap: host=%s source=%s", host, source)
 
+    env_snapshot = {k: os.environ.get(k) for k in _IMPORT_LEAKED_ENV}
     try:
-        if host != "deepinfer":
-            importlib.import_module("hcu_adapter.bridges.common").install()
-    except Exception:
-        LOG.warning("HCU adapter: common bridge not installed", exc_info=True)
+        try:
+            if host != "deepinfer":
+                importlib.import_module("hcu_adapter.bridges.common").install()
+        except Exception:
+            LOG.warning("HCU adapter: common bridge not installed", exc_info=True)
 
-    try:
-        importlib.import_module(f"hcu_adapter.bridges.{host}").install()
-    except Exception:
-        LOG.warning("HCU adapter: %s bridge not installed", host, exc_info=True)
+        try:
+            importlib.import_module(f"hcu_adapter.bridges.{host}").install()
+        except Exception:
+            LOG.warning("HCU adapter: %s bridge not installed", host, exc_info=True)
+    finally:
+        _restore_import_env(env_snapshot)

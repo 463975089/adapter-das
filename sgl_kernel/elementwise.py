@@ -262,6 +262,12 @@ def _gated_mul_impl(
 def silu_and_mul(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
     """out = silu(input[..., :d]) * input[..., d:]"""
     global _AITER_IMPL
+    # The AOT tail-alignment contract is a property of the op, not of the
+    # tier: the lightop/aiter arms below bypass _gated_mul_impl, so a
+    # misaligned tail would only fail loudly on the triton/native fallback
+    # (2026-11-16: test_gated_16byte_alignment_rejected_on_gpu ran the
+    # misaligned (3,6) input straight through the lightop arm).
+    _check_aot_alignment(input)
     if input.is_cuda:
         choice = _resolve_impl()
         if choice == "torch":

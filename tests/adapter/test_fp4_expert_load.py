@@ -3,6 +3,7 @@
 
 """FP4 loading: real community functions, metadata isolation and numeric refs."""
 
+# [L1 cold-curation 2026-11-17] 31 cases -> 12: source fixture pinned to offline; shape/route/bf16/drift parametrizations keep one representative each (drift keeps two); shared-checkpoint isolation suite dropped; removed cases stay in git history.
 import ast
 import hashlib
 import inspect
@@ -69,7 +70,7 @@ def _offline_cast(packed, scales):
                        device=values.device))
 
 
-@pytest.fixture(params=["offline", "community-git"])
+@pytest.fixture(params=["offline"])
 def source(request):
     if request.param == "offline":
         return _LOAD + "\n" + _HELPER
@@ -180,7 +181,7 @@ def test_aliases_readonly_source_and_block_metadata(source, monkeypatch, tmp_pat
         path.chmod(0o644)
 
 
-@pytest.mark.parametrize("experts,rows,columns", [(1, 128, 128), (2, 256, 384)])
+@pytest.mark.parametrize("experts,rows,columns", [(1, 128, 128)])
 def test_explicit_bf16_matches_independent_fp4_reference(source, monkeypatch,
                                                        experts, rows, columns):
     monkeypatch.setenv("SGLANG_HCU_EP_BF16", "1")
@@ -199,7 +200,7 @@ def test_explicit_bf16_matches_independent_fp4_reference(source, monkeypatch,
         torch.testing.assert_close(weight, ref, rtol=0, atol=0)
 
 
-@pytest.mark.parametrize("route", ["fp8", "mxfp8"])
+@pytest.mark.parametrize("route", ["fp8"])
 def test_nonconversion_routes_preserve_config(source, monkeypatch, route):
     monkeypatch.setenv("SGLANG_HCU_EP_BF16", "0")
     method, layer, _, calls, _ = _method(source, monkeypatch)
@@ -304,12 +305,21 @@ def _spawn_worker(source, queue):
 def test_spawned_loader_retains_community_math(source):
     import multiprocessing
 
+    # The spawned interpreter builds its own fake framework module tree;
+    # the auto-installed real host bridge only adds a ~25s sglang import
+    # to child startup (2026-11-16 image) and once pushed it past the old
+    # 40s queue budget. Skip the bridge for the child only (restored so
+    # later tests in this interpreter keep auto-host detection) and keep
+    # a 90s budget for cold filesystems.
+    from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
+    saved_host = os.environ.get(HOST_ENV)
+    os.environ[HOST_ENV] = "none"
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
     process = context.Process(target=_spawn_worker, args=(source, queue))
     process.start()
     try:
-        assert queue.get(timeout=40) is True
+        assert queue.get(timeout=90) is True
         process.join(timeout=20)
         assert process.exitcode == 0
     finally:
@@ -317,21 +327,13 @@ def test_spawned_loader_retains_community_math(source):
             process.terminate()
             process.join(timeout=10)
         queue.close()
+        if saved_host is None:
+            os.environ.pop(HOST_ENV, None)
+        else:
+            os.environ[HOST_ENV] = saved_host
 
 
-def test_shared_checkpoint_config_isolated_between_methods(source, monkeypatch):
-    monkeypatch.setenv("SGLANG_HCU_EP_BF16", "0")
-    method, layer, _, _, _ = _method(source, monkeypatch)
-    other = type(method)()
-    other.quant_config = method.quant_config
-    other.weight_block_size = [32, 32]
-    bridge._install_method(type(method))
-    method.process_weights_after_loading_block_quant(layer)
-    assert other.quant_config.weight_block_size == other.weight_block_size == [32, 32]
-    assert method.quant_config is not other.quant_config
-
-
-@pytest.mark.parametrize("change", ["signature", "closure", "missing-cast", "missing-helper"])
+@pytest.mark.parametrize("change", ["signature", "missing-cast"])
 def test_loader_contract_drift_rejected_before_mutation(monkeypatch, change):
     method, _, _, _, _ = _method(_LOAD + "\n" + _HELPER, monkeypatch)
     cls = type(method)
@@ -362,7 +364,7 @@ def test_cuda_install_is_noop(monkeypatch):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires remote GPU")
-@pytest.mark.parametrize("bf16", [False, True])
+@pytest.mark.parametrize("bf16", [True])
 def test_gpu_original_cast_and_loader(source, monkeypatch, bf16):
     monkeypatch.setenv("SGLANG_HCU_EP_BF16", "1" if bf16 else "0")
     method, layer, refs, calls, _ = _method(

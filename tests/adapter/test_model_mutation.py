@@ -84,7 +84,12 @@ def test_target_mutation_method_provenance_and_signatures():
 
 
 @pytest.mark.parametrize("backend", ["ray", "external_launcher", "contract.Executor", None])
-def test_mutation_guard_query_rejects_uncovered_resolved_workers(backend):
+def test_mutation_guard_query_rejects_uncovered_resolved_workers(monkeypatch, backend):
+    # On a validated gfx93x + vllm-0.33 stack the default mHC mode is
+    # aiter, and enabling the vllm env cache runs the runtime-health gate,
+    # which then demands mHC activation (MhcCompatibilityError). That seam
+    # is not what this file gates -- pin stock to keep the noise out.
+    monkeypatch.setenv("HCU_VLLM_MHC", "stock")
     cfg = config(backend)
     assert cfg.parallel_config.worker_cls == host.OFFICIAL_MODEL_LOAD_WORKER
     envs.enable_envs_cache()
@@ -96,6 +101,9 @@ def test_mutation_guard_query_rejects_uncovered_resolved_workers(backend):
 @pytest.mark.parametrize("operation", ["reload", "target", "draft"])
 @pytest.mark.parametrize("refuse", [False, True])
 def test_real_worker_guards_before_mutation_or_delegates(monkeypatch, version, operation, refuse):
+    # Same mHC/env-cache interaction as above: stock keeps the health gate
+    # quiet so the guard-under-test is the only thing that can reject.
+    monkeypatch.setenv("HCU_VLLM_MHC", "stock")
     events = []
     value = worker(monkeypatch, version, events)
     original_model_config = value.vllm_config.model_config

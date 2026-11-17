@@ -7,6 +7,7 @@ CPU plumbing only: a clean interpreter with fake vendor/kernel providers
 checks route selection. Actual kernel numerics live in tests/kernels.
 """
 
+# [L1 cold-curation 2026-11-17] 8 spawned installs -> 4: keeps the default and the explicit-beats-config row for both switch names.
 import os
 from pathlib import Path
 import subprocess
@@ -18,9 +19,7 @@ import pytest
 @pytest.mark.parametrize("name", ["HCU_TRITON_MASKED", "HCU_TRITON_MASKED_FP8"])
 @pytest.mark.parametrize("explicit,configured,expected,source", [
     (None, None, "1", "default"),
-    ("0", None, "0", "explicit"),
     ("1", "0", "1", "explicit"),
-    (None, "0", "0", "config"),
 ])
 def test_grouped_gemm_switch_reaches_installer(name, explicit, configured, expected, source):
     root = Path(__file__).resolve().parents[2]

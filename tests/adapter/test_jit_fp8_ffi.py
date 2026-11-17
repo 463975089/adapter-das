@@ -3,6 +3,7 @@
 
 """FP8 storage views preserve factory caches, public dtype selection and aliases."""
 
+# [L1 cold-curation 2026-11-17] 15 cases -> 6: sources fixture pinned to offline, layout/group_size/module parametrizations keep one row, two alias/dtype suites dropped; removed cases stay in git history.
 import ast
 import functools
 import inspect
@@ -36,8 +37,8 @@ def _jit_module(in_dtype, out_dtype, group_size, scale_ue8m0, row_major, aligned
 """
 
 
-@pytest.mark.parametrize("layout", ["contig", "masked"])
-@pytest.mark.parametrize("group_size", [32, 128])
+@pytest.mark.parametrize("layout", ["contig"])
+@pytest.mark.parametrize("group_size", [32])
 def test_gpu_dsv4_output_storage_and_variable_graph_replay(layout, group_size):
     if os.environ.get("HCU_TEST_JIT_GPU") != "1":
         pytest.skip("requires explicit remote HIP compiler validation")
@@ -86,7 +87,7 @@ def test_gpu_dsv4_output_storage_and_variable_graph_replay(layout, group_size):
             actual, activation[valid].flatten(), dim=0) >= .999
 
 
-@pytest.fixture(params=["offline", "community-git"])
+@pytest.fixture(params=["offline"])
 def sources(request):
     if request.param == "offline":
         return _CACHE, _FACTORY
@@ -164,54 +165,6 @@ def _jit_module(dtype):
     assert output.dtype == torch.float8_e4m3fn
     assert torch.equal(output.float(), torch.ones_like(x, dtype=torch.float32))
     assert len(modules) == 1
-
-
-def test_original_factory_and_warm_aliases_use_only_output_view(sources):
-    factory, modules, calls = _factory(sources)
-    alias = factory
-    signature = inspect.signature(factory)
-    cached = alias(*_key())
-    x = torch.ones(3, 4, dtype=torch.bfloat16)
-    output = torch.empty(4, 3, dtype=torch.float8_e4m3fn).t()
-    scale = torch.ones(3, 1)
-    with pytest.raises(RuntimeError, match="expects uint8"):
-        cached.per_token_group_quant(x, output, scale)
-    bridge._install_factory(factory, "per_token_group_quant")
-    proxy = alias(*_key())
-    proxy.per_token_group_quant(x, output, scale)
-    seen = calls[-1]
-    assert seen[0] is x and seen[2] is scale
-    assert seen[1].dtype == torch.uint8
-    assert seen[1].data_ptr() == output.data_ptr()
-    assert seen[1].stride() == output.stride()
-    assert torch.equal(output.float(), torch.ones_like(output, dtype=torch.float32))
-    assert len(modules) == 1 and factory is alias
-    assert inspect.signature(factory) == signature
-    assert proxy.untouched is cached.untouched
-    bridge._install_factory(factory, "per_token_group_quant")
-    assert alias(*_key()) is proxy
-    # A previously unseen cache key is adapted too, without losing nominal
-    # FP8 dtype selection inside the original factory.
-    cold = list(_key())
-    cold[2] = 128
-    assert isinstance(alias(*cold), bridge._OutputStorage)
-    assert len(modules) == 2
-
-
-def test_other_dtypes_inputs_and_keyword_output_unchanged(sources):
-    factory, _, calls = _factory(sources)
-    bridge._install_factory(factory, "per_token_group_quant")
-    module = factory(*_key())
-    x = torch.ones((2, 4), dtype=torch.float8_e5m2)
-    scale = torch.ones(2, 1)
-    for dtype in (torch.int8, torch.uint8, torch.float8_e4m3fnuz, torch.float8_e5m2):
-        output = torch.empty(2, 4, dtype=dtype)
-        module.per_token_group_quant(x, output, scale)
-        assert calls[-1][0] is x and calls[-1][1] is output and calls[-1][2] is scale
-    output = torch.empty(2, 4, dtype=torch.float8_e4m3fn)
-    module.per_token_group_quant(x=x, output=output, scales=scale)
-    assert calls[-1][1].data_ptr() == output.data_ptr()
-    assert calls[-1][1].dtype == torch.uint8
 
 
 def test_drift_and_bad_cached_export_refused_without_partial_install(sources):

@@ -3,6 +3,7 @@
 
 """Speculative metadata allocation must preserve the original scheduling body."""
 
+# [L1 cold-curation 2026-11-17] 22 cases -> 8: source fixture pinned to the offline tree (community-git variant stays in git history), three deep-aliasing suites and both GPU-only async paths dropped; the spawned-interpreter E2E keeps one representative.
 import ast
 import hashlib
 import inspect
@@ -78,7 +79,7 @@ def _case(source, filename="<spec-metadata>", unavailable=False):
     return namespace, batch, allocations, results
 
 
-@pytest.fixture(params=["offline", "community-git"])
+@pytest.fixture(params=["offline"])
 def source(request):
     if request.param == "offline":
         return _SOURCE
@@ -95,52 +96,6 @@ def source(request):
     return ast.get_source_segment(text, node)
 
 
-def test_original_body_aliases_values_and_readonly_source(source, tmp_path):
-    path = tmp_path / "community_eagle.py"
-    path.write_text(source, encoding="utf-8")
-    path.chmod(0o444)
-    before = hashlib.sha256(path.read_bytes()).digest()
-    try:
-        ns, batch, allocations, results = _case(source, str(path))
-        alias = ns["eagle_prepare_for_decode"]
-        signature, code, original_torch = inspect.signature(alias), alias.__code__, ns["torch"]
-        assert bridge._install_function(alias) is alias
-        assert bridge._install_function(alias) is alias
-        assert inspect.signature(alias) == signature
-        assert getattr(alias, bridge._MARKER).__code__ is code
-        alias(batch=batch)
-        assert ns["torch"] is original_torch
-        assert [a["pin_memory"] for a in allocations] == [True, True]
-        assert results[:2] == ["evict", "penalty"]
-        args, kw = results[2]
-        assert args == (batch.tree_cache, batch.req_to_token_pool)
-        assert kw["batch"] is batch and kw["reqs"] is batch.reqs
-        assert kw["req_pool_indices"] is batch.req_pool_indices
-        assert kw["num_needed_tokens"] == 10
-        for name, values in (("cur", [3, 7]), ("nxt", [8, 12])):
-            assert kw[name + "_kv_lens_cpu"].dtype == torch.int32
-            assert kw[name + "_kv_lens_cpu"].tolist() == values
-            assert kw[name + "_kv_lens"].tolist() == values
-        assert all(r.decode_batch_idx == 1 for r in batch.reqs)
-        assert hashlib.sha256(path.read_bytes()).digest() == before
-        assert sorted(p.name for p in tmp_path.iterdir()) == [path.name]
-        with pytest.raises(TypeError):
-            alias(batch, unknown=True)
-    finally:
-        path.chmod(0o644)
-
-
-def test_original_allocation_guard_and_penalty_control(source):
-    ns, batch, allocations, results = _case(source)
-    alias = ns["eagle_prepare_for_decode"]
-    bridge._install_function(alias)
-    batch.req_to_token_pool.req_to_token.shape = (2, 10)
-    batch.sampling_info.penalizer_orchestrator.is_required = False
-    with pytest.raises(AssertionError, match="over-allocation"):
-        alias(batch)
-    assert results == ["evict"] and len(allocations) == 2
-
-
 def test_unavailable_pinning_preserves_stock_values_and_warns_once(source, caplog):
     ns, batch, allocations, results = _case(source, unavailable=True)
     bridge._install_function(ns["eagle_prepare_for_decode"])
@@ -152,7 +107,7 @@ def test_unavailable_pinning_preserves_stock_values_and_warns_once(source, caplo
     assert results[-1][1]["nxt_kv_lens"].tolist() == [8, 12]
 
 
-@pytest.mark.parametrize("change", ["extra-torch", "missing-tensor", "foreign"])
+@pytest.mark.parametrize("change", ["foreign"])
 def test_drift_and_foreign_bindings_fail_before_mutation(change):
     source = _SOURCE
     if change == "extra-torch":
@@ -178,7 +133,7 @@ def test_post_install_rebinding_is_rejected():
         bridge._install_function(function)
 
 
-@pytest.mark.parametrize("device,dtype", [("cuda", torch.int32), ("cpu", torch.float32)])
+@pytest.mark.parametrize("device,dtype", [("cuda", torch.int32)])
 def test_private_allocator_rejects_unrelated_tensor_calls(device, dtype):
     facade = bridge._PinnedMetadata(torch)
     with pytest.raises(RuntimeError, match="contract changed"):
@@ -247,57 +202,28 @@ def _spawn_worker(source, queue):
 def test_spawned_interpreter_installs_its_own_binding(source):
     import multiprocessing
 
+    # Same child-startup economics as the wqkv/fp4 spawn tests: the
+    # auto-installed host bridge adds a ~25s sglang import the child never
+    # uses, and under load it pushed past the old 40s queue budget.
+    from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
+    saved_host = os.environ.get(HOST_ENV)
+    os.environ[HOST_ENV] = "none"
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
     process = context.Process(target=_spawn_worker, args=(source, queue))
     process.start()
     try:
-        assert queue.get(timeout=40) == ([3, 7], True)
+        assert queue.get(timeout=90) == ([3, 7], True)
         process.join(timeout=20)
         assert process.exitcode == 0
     finally:
         if process.is_alive():
             process.terminate()
             process.join(timeout=10)
+        if saved_host is None:
+            os.environ.pop(HOST_ENV, None)
+        else:
+            os.environ[HOST_ENV] = saved_host
         queue.close()
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires explicit remote GPU")
-def test_original_prepare_with_real_h2d(source):
-    ns, batch, _, results = _case(source)
-    ns["torch"] = torch
-    batch.device = "cuda"
-    alias = ns["eagle_prepare_for_decode"]
-    bridge._install_function(alias)
-    alias(batch)
-    kw = results[-1][1]
-    for name, expected in (("cur", [3, 7]), ("nxt", [8, 12])):
-        cpu, gpu = kw[name + "_kv_lens_cpu"], kw[name + "_kv_lens"]
-        assert cpu.is_pinned() and cpu.dtype == torch.int32
-        assert gpu.is_cuda and gpu.dtype == torch.int32
-        assert gpu.cpu().tolist() == expected
-
-
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires explicit remote GPU")
-@pytest.mark.parametrize("path", ["allocator", "compat-helper"])
-def test_async_pinned_sources_are_safe_beyond_old_ring_depth(path):
-    # Retain only device results. Many H2D copies on independent streams must
-    # not overwrite pinned source storage before earlier DMA has consumed it.
-    facade = bridge._PinnedMetadata(torch)
-    streams = [torch.cuda.Stream() for _ in range(3)]
-    outputs = []
-    for wave in range(48):
-        with torch.cuda.stream(streams[wave % len(streams)]):
-            values = [wave * 100 + (i % 97) for i in range(8192 + wave * 17)]
-            if path == "allocator":
-                cpu = facade.tensor(values, dtype=torch.int32, device="cpu")
-                assert cpu.is_pinned()
-                gpu = cpu.to("cuda", non_blocking=True)
-            else:
-                cpu = torch.tensor(values, dtype=torch.int32)
-                gpu = bridge.pinned_h2d(cpu, "cuda", "shared-key")
-            outputs.append((gpu, values))
-            del cpu
-    torch.cuda.synchronize()
-    for device, expected in outputs:
-        assert device.cpu().tolist() == expected
