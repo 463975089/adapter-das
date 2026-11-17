@@ -165,8 +165,10 @@ _IMPORT_LEAKED_ENV = ("PYTORCH_NVML_BASED_CUDA_CHECK",)
 
 def _restore_import_env(snapshot: dict) -> None:
     for key, was in snapshot.items():
-        if was is None and key in os.environ:
-            del os.environ[key]
+        if was is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = was
 
 
 def install() -> None:

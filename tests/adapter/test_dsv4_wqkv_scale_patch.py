@@ -292,7 +292,7 @@ def _spawn_worker(source, queue):
     queue.put(True)
 
 
-def test_spawned_interpreter_adapts_its_own_original_loader(source):
+def test_spawned_interpreter_adapts_its_own_original_loader(source, monkeypatch):
     import multiprocessing
 
     # The spawned interpreter builds its own fake framework module tree;
@@ -302,28 +302,72 @@ def test_spawned_interpreter_adapts_its_own_original_loader(source):
     # later tests in this interpreter keep auto-host detection) and keep
     # a 90s budget for cold filesystems.
     from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
-    saved_host = os.environ.get(HOST_ENV)
-    os.environ[HOST_ENV] = "none"
-    try:
+    with monkeypatch.context() as child_env:
+        child_env.setenv(HOST_ENV, "none")
         context = multiprocessing.get_context("spawn")
         queue = context.Queue()
-        process = context.Process(target=_spawn_worker, args=(source, queue))
-        process.start()
-        assert queue.get(timeout=90) is True
-        process.join(timeout=20)
-        assert process.exitcode == 0
-    finally:
-        # locals() guards: the try now spans Queue()/Process() creation, so
-        # an early failure leaves those names unbound (AI review 2026-11-17).
-        if "process" in locals() and process.is_alive():
-            process.terminate()
-            process.join(timeout=10)
-        if "queue" in locals():
+        try:
+            process = context.Process(target=_spawn_worker, args=(source, queue))
+            try:
+                process.start()
+                assert queue.get(timeout=90) is True
+                process.join(timeout=20)
+                assert process.exitcode == 0
+            finally:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=10)
+        finally:
             queue.close()
-        if saved_host is None:
-            os.environ.pop(HOST_ENV, None)
-        else:
-            os.environ[HOST_ENV] = saved_host
+
+
+@pytest.mark.parametrize("stage", ["context", "queue", "process", "start", "close", "terminate"])
+@pytest.mark.parametrize("host", [None, "sglang"])
+def test_spawn_failure_restores_parent_host(monkeypatch, stage, host):
+    import multiprocessing
+    from hcu_adapter.bootstrap import HOST_ENV
+
+    if host is None:
+        monkeypatch.delenv(HOST_ENV, raising=False)
+    else:
+        monkeypatch.setenv(HOST_ENV, host)
+    closed = []
+
+    def fail():
+        assert os.environ[HOST_ENV] == "none"
+        raise RuntimeError("spawn setup failed")
+
+    def get_context(method):
+        assert method == "spawn"
+        if stage == "context":
+            fail()
+        return types.SimpleNamespace(Queue=queue_factory, Process=process_factory)
+
+    def fail_cleanup():
+        raise RuntimeError("spawn cleanup failed")
+
+    def close_queue():
+        closed.append(True)
+        if stage == "close":
+            fail_cleanup()
+
+    def queue_factory():
+        if stage == "queue":
+            fail()
+        return types.SimpleNamespace(close=close_queue)
+
+    def process_factory(**kwargs):
+        if stage == "process":
+            fail()
+        return types.SimpleNamespace(
+            start=fail, is_alive=lambda: stage == "terminate", terminate=fail_cleanup,
+        )
+
+    monkeypatch.setattr(multiprocessing, "get_context", get_context)
+    with pytest.raises(RuntimeError, match="spawn (setup|cleanup) failed"):
+        test_spawned_interpreter_adapts_its_own_original_loader(_SOURCE, monkeypatch)
+    assert os.environ.get(HOST_ENV) == host
+    assert closed == ([True] if stage in {"process", "start", "close", "terminate"} else [])
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires remote GPU")

@@ -76,3 +76,4 @@ if __name__ == "__main__":
     # spawn-family curation; the direct-run entry shrank with it.
     r1 = test_kda_prefill_chunk()
     print("ALL-PASS" if r1 else "GATE-RED")
+    raise SystemExit(0 if r1 else 1)

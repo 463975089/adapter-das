@@ -284,21 +284,5 @@ def test_install_smoke_and_dump_wiring():
 
 
 if __name__ == "__main__":
-    # [L1 cold-curation 2026-11-17] test_vllm_plugins_explicit_wins was
-    # retired by the spawn-family curation; the entry shrank with it.
-    hip_only = (test_install_smoke_and_dump_wiring,)
-    fails = 0
-    for fn in (test_structure_gate_order_and_isolation,
-               test_gate_envs_documented, test_noop_on_non_hip,
-               test_install_smoke_and_dump_wiring):
-        if fn in hip_only and not IS_HIP:
-            print(f"SKIP {fn.__name__} (non-HIP interpreter)")
-            continue
-        try:
-            fn()
-            print(f"PASS {fn.__name__}")
-        except Exception as e:  # noqa: BLE001
-            fails += 1
-            print(f"FAIL {fn.__name__}: {e}")
-    print("RESULT:", "PASS" if not fails else f"FAIL ({fails})")
-    sys.exit(1 if fails else 0)
+    # Retired cases and fixture/skip handling must match pytest collection.
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))
