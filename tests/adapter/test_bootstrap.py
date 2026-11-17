@@ -239,3 +239,31 @@ def test_device_selection_failure_does_not_enter_gpu_initializing_bridges(monkey
     with pytest.raises(RuntimeError, match="assigned device unavailable"):
         bootstrap.install()
     assert events == []
+
+
+@pytest.mark.parametrize("original", [None, "0", "1"])
+@pytest.mark.parametrize("fails", [False, True])
+def test_bootstrap_restores_import_env_even_after_host_failure(monkeypatch, original, fails):
+    events = _arm_install(monkeypatch, available=("vllm",))
+    key = "PYTORCH_NVML_BASED_CUDA_CHECK"
+    if original is None:
+        monkeypatch.delenv(key, raising=False)
+    else:
+        monkeypatch.setenv(key, original)
+    import_module = bootstrap.importlib.import_module
+
+    def install_host():
+        # vLLM env_override unconditionally writes 1, including over explicit 0.
+        bootstrap.os.environ[key] = "1"
+        if fails:
+            raise RuntimeError("host import failed after env_override")
+
+    host_bridge = type("HostBridge", (), {"install": staticmethod(install_host)})
+    monkeypatch.setattr(
+        bootstrap.importlib, "import_module",
+        lambda name: host_bridge if name == "hcu_adapter.bridges.vllm"
+        else import_module(name),
+    )
+    bootstrap.install()
+    assert bootstrap.os.environ.get(key) == original
+    assert events == ["common"]

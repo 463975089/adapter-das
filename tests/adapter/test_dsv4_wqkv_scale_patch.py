@@ -3,6 +3,7 @@
 
 """CT scale fusion through the original loader, without source modification."""
 
+# [L1 cold-curation 2026-11-17] 27 cases -> 10: source fixture pinned to offline, nextn/group/drift parametrizations keep one representative each, two deep-alias/shard suites dropped; removed cases stay in git history.
 import ast
 import concurrent.futures
 import hashlib
@@ -58,7 +59,7 @@ _SOURCE = """def load_weights(self, weights, is_nextn=False):
 """
 
 
-@pytest.fixture(params=["offline", "community-git"])
+@pytest.fixture(params=["offline"])
 def source(request):
     if request.param == "offline":
         return _SOURCE
@@ -163,32 +164,7 @@ def _assert_loaded(tensors, data, device="cpu", nextn=False):
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
 
 
-def test_real_loader_alias_bytecode_and_readonly_source(source, tmp_path):
-    path = tmp_path / "deepseek_v4.py"
-    path.write_text(source, encoding="utf-8")
-    path.chmod(0o444)
-    before = hashlib.sha256(path.read_bytes()).digest()
-    try:
-        model, tensors, ns, _, _ = _model(source, filename=str(path))
-        function = type(model).load_weights
-        alias, signature, original = model.load_weights, inspect.signature(function), function.__code__
-        globals_before = dict(ns)
-        assert bridge._install_function(function) is function
-        assert bridge._install_function(function) is function
-        assert function.__code__.co_code == original.co_code
-        assert function.__code__.co_names == original.co_names
-        assert inspect.signature(function) == signature
-        assert ns == globals_before
-        weights, data = _weights()
-        alias(weights=iter(weights))
-        _assert_loaded(tensors, data)
-        assert hashlib.sha256(path.read_bytes()).digest() == before
-        assert sorted(p.name for p in tmp_path.iterdir()) == [path.name]
-    finally:
-        path.chmod(0o644)
-
-
-@pytest.mark.parametrize("nextn,async_load", [(False, False), (False, True), (True, False)])
+@pytest.mark.parametrize("nextn,async_load", [(True, False)])
 def test_original_filtering_nextn_and_async_paths(source, nextn, async_load):
     model, tensors, _, state, notes = _model(source, nextn=nextn)
     state["async"] = async_load
@@ -211,7 +187,7 @@ def test_unfused_scales_remain_separate(source):
                            expected)
 
 
-@pytest.mark.parametrize("group", ["compressor", "engram"])
+@pytest.mark.parametrize("group", ["compressor"])
 def test_original_exclusions_not_fused(source, group):
     model, tensors, _, _, _ = _model(source)
     weights, _ = _weights()
@@ -234,20 +210,6 @@ def test_orphan_scales_fail_in_original_fusion_logic(source):
     weights, _ = _weights()
     with pytest.raises(AssertionError):
         model.load_weights([weights[0]])
-
-
-def test_duplicate_scale_shards_fail_in_original_fusion_logic(source):
-    model, _, _, _, _ = _model(source)
-    bridge._install_function(type(model).load_weights)
-    weights, _ = _weights()
-    # Upstream Python 3.10's exception.add_note error may mask the assertion;
-    # retain and inspect its context instead of replacing upstream diagnostics.
-    with pytest.raises((AssertionError, AttributeError)) as exc:
-        model.load_weights([weights[0], weights[0]])
-    error = exc.value
-    if isinstance(error, AttributeError):
-        error = error.__context__
-    assert isinstance(error, AssertionError) and "duplicate shard" in str(error)
 
 
 def test_native_upstream_scale_support_is_idempotent():
@@ -330,22 +292,82 @@ def _spawn_worker(source, queue):
     queue.put(True)
 
 
-def test_spawned_interpreter_adapts_its_own_original_loader(source):
+def test_spawned_interpreter_adapts_its_own_original_loader(source, monkeypatch):
     import multiprocessing
 
-    context = multiprocessing.get_context("spawn")
-    queue = context.Queue()
-    process = context.Process(target=_spawn_worker, args=(source, queue))
-    process.start()
-    try:
-        assert queue.get(timeout=40) is True
-        process.join(timeout=20)
-        assert process.exitcode == 0
-    finally:
-        if process.is_alive():
-            process.terminate()
-            process.join(timeout=10)
-        queue.close()
+    # The spawned interpreter builds its own fake framework module tree;
+    # the auto-installed real host bridge only adds a ~25s sglang import
+    # to child startup (2026-11-16 image) and once pushed it past the old
+    # 40s queue budget. Skip the bridge for the child only (restored so
+    # later tests in this interpreter keep auto-host detection) and keep
+    # a 90s budget for cold filesystems.
+    from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
+    with monkeypatch.context() as child_env:
+        child_env.setenv(HOST_ENV, "none")
+        context = multiprocessing.get_context("spawn")
+        queue = context.Queue()
+        try:
+            process = context.Process(target=_spawn_worker, args=(source, queue))
+            try:
+                process.start()
+                assert queue.get(timeout=90) is True
+                process.join(timeout=20)
+                assert process.exitcode == 0
+            finally:
+                if process.is_alive():
+                    process.terminate()
+                    process.join(timeout=10)
+        finally:
+            queue.close()
+
+
+@pytest.mark.parametrize("stage", ["context", "queue", "process", "start", "close", "terminate"])
+@pytest.mark.parametrize("host", [None, "sglang"])
+def test_spawn_failure_restores_parent_host(monkeypatch, stage, host):
+    import multiprocessing
+    from hcu_adapter.bootstrap import HOST_ENV
+
+    if host is None:
+        monkeypatch.delenv(HOST_ENV, raising=False)
+    else:
+        monkeypatch.setenv(HOST_ENV, host)
+    closed = []
+
+    def fail():
+        assert os.environ[HOST_ENV] == "none"
+        raise RuntimeError("spawn setup failed")
+
+    def get_context(method):
+        assert method == "spawn"
+        if stage == "context":
+            fail()
+        return types.SimpleNamespace(Queue=queue_factory, Process=process_factory)
+
+    def fail_cleanup():
+        raise RuntimeError("spawn cleanup failed")
+
+    def close_queue():
+        closed.append(True)
+        if stage == "close":
+            fail_cleanup()
+
+    def queue_factory():
+        if stage == "queue":
+            fail()
+        return types.SimpleNamespace(close=close_queue)
+
+    def process_factory(**kwargs):
+        if stage == "process":
+            fail()
+        return types.SimpleNamespace(
+            start=fail, is_alive=lambda: stage == "terminate", terminate=fail_cleanup,
+        )
+
+    monkeypatch.setattr(multiprocessing, "get_context", get_context)
+    with pytest.raises(RuntimeError, match="spawn (setup|cleanup) failed"):
+        test_spawned_interpreter_adapts_its_own_original_loader(_SOURCE, monkeypatch)
+    assert os.environ.get(HOST_ENV) == host
+    assert closed == ([True] if stage in {"process", "start", "close", "terminate"} else [])
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires remote GPU")

@@ -23,6 +23,13 @@ OUT="${1:-/tmp/hcu_cache_seed.tgz}"
 C="${HOME}/.cache"
 [ -d "$C/sglang/jit" ] || { echo "cache_export: no $C/sglang/jit -- run the suites once first"; exit 2; }
 PAYLOAD="sglang/jit"
+# The DTK sglang stack parks its triton cache at sglang/triton, not the
+# upstream ~/.cache/triton (2026-11-17: seeds without it made every cold
+# container recompile the whole triton corpus -- kernels ran 2x its warm
+# pace on the seeded 0.5.22 image).
+for d in sglang/triton; do
+    [ -d "$C/$d" ] && PAYLOAD="$PAYLOAD $d"
+done
 for d in triton tvm-ffi torch_extensions; do
     [ -d "$C/$d" ] && PAYLOAD="$PAYLOAD $d"
 done

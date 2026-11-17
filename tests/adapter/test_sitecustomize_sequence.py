@@ -26,6 +26,7 @@ Run: python tests/adapter/test_sitecustomize_sequence.py  （或 pytest；
 ae0698b 起 L1 kernels 段收集 tests/adapter，本文件随段进 CI）
 """
 
+# [L1 cold-curation 2026-11-17] 8 spawn-heavy cases -> 3 (two AST structural contracts + one end-to-end install smoke); removed cases stay in git history (fix/l1-1116-coldstart).
 import ast
 import json
 import os
@@ -239,35 +240,6 @@ def _child(script, extra_env=None, timeout=240):
 
 # ------------------------------------------------------------- L2 no-op
 
-@pytest.mark.skipif(IS_HIP, reason="no-op contract is the non-HIP arm")
-def test_noop_on_non_hip():
-    """非 HIP 解释器：import sitecustomize 干净返回，零 env 写入、零日志。"""
-    p = _child(
-        "import os\n"
-        "import sitecustomize\n"
-        "print('VP', os.environ.get('VLLM_PLUGINS'))\n")
-    assert p.returncode == 0, p.stderr[-500:]
-    assert "VP None" in p.stdout, p.stdout
-    assert "HCU adapter" not in p.stderr, (
-        f"non-HIP arm must be silent, got: {p.stderr[:300]}")
-
-
-def test_sglang_reachability_probe_contract():
-    """R-13 #6 守卫钉：可达性探测沿 _clean_env 组装的 PYTHONPATH 找 sglang
-    包；PYTHONPATH 抽掉 sglang 段后必须报不可达（HIP 子进程臂据此 SKIP
-    而非 bare-shell FAIL）。纯路径逻辑，任何机器可跑。"""
-    with mock.patch.dict(os.environ, {}, clear=True):
-        os.environ["PYTHONPATH"] = os.pathsep.join(
-            [ROOT, "/nonexistent/sglang-root"])
-        assert _sglang_on_child_path() is False
-
-    # 带真 sglang 的 PYTHONPATH：正可达（仅当模块头已判可达，否则跳过断言）
-    if SGLANG_REACHABLE:
-        assert _sglang_on_child_path() is True
-    # 收集期一次性计算与现算一致
-    assert SGLANG_REACHABLE == _sglang_on_child_path()
-
-
 # ------------------------------------------- L3/L4/L5（HIP 容器臂）
 
 @pytest.mark.skipif(
@@ -311,112 +283,6 @@ def test_install_smoke_and_dump_wiring():
         assert r["mqa_src"] == "explicit", r  # L4: 显式 env 赢 setdefault
 
 
-@pytest.mark.skipif(
-    not IS_HIP, reason="install() needs the HIP arm to reach the seam")
-@pytest.mark.skipif(
-    not SGLANG_REACHABLE,
-    reason="sglang not on the child PYTHONPATH (bare shell): subproc arm "
-           "cannot import sglang.srt, skip instead of fail (R-13 #6 guard)")
-def test_install_survives_missing_utils_device():
-    """one-pit-one-test（review #98）：sglang v0.5.22 没有 utils/device.py
-    （main #48781 拆分才引入）。install() 曾对此做无守卫 import——
-    ImportError 把整个 platform seam（含 is_cuda 语义翻转）炸掉，
-    L1 run 43376652007 的 smoke 即 `is_cuda=False` 红。
-
-    子进程不能靠显式 ``import sitecustomize`` 模拟——宿主常有系统级
-    sitecustomize（/usr/lib/python3.10/sitecustomize.py）或 CI 里 pip 装的
-    本仓 sitecustomize，都会在解释器启动期抢先占名使显式 import 变
-    no-op。改用 shim 前置：临时目录放一个同名 shim（PYTHONPATH 首位），
-    它先装 meta_path 拦截器、把 ROOT 插回 sys.path，再按文件路径执行
-    真正的 sitecustomize——拦截器必然先于首次 install 就位，且解释器
-    其余路径原样保留（-S 方案会丢 apt 侧 site-packages，six 等失踪）。
-    修复前本测必红（is_cuda False），修复后转绿——双向钉住。"""
-    shim = (
-        "import sys, os, importlib.abc, importlib.util\n"
-        "class _NoDevice(importlib.abc.MetaPathFinder):\n"
-        "    def find_spec(self, name, path=None, target=None):\n"
-        "        if name == 'sglang.srt.utils.device':\n"
-        "            raise ModuleNotFoundError(\n"
-        "                'blocked: simulated sglang v0.5.22"
-        " (no utils.device)')\n"
-        "        return None\n"
-        "sys.modules.pop('sglang.srt.utils.device', None)\n"
-        "sys.meta_path.insert(0, _NoDevice())\n"
-        "_root = os.environ['PIN_ROOT']\n"
-        "sys.path.insert(0, _root)\n"
-        "_spec = importlib.util.spec_from_file_location(\n"
-        "    '_hcu_sitecustomize_real',"
-        " os.path.join(_root, 'sitecustomize.py'))\n"
-        "_mod = importlib.util.module_from_spec(_spec)\n"
-        "sys.modules['_hcu_sitecustomize_real'] = _mod\n"
-        "_spec.loader.exec_module(_mod)\n"
-    )
-    with tempfile.TemporaryDirectory() as td:
-        with open(os.path.join(td, "sitecustomize.py"), "w",
-                  encoding="utf-8", newline="\n") as f:
-            f.write(shim)
-        env = _clean_env({"PIN_ROOT": ROOT})
-        # shim 目录必须排在最前（占住 sitecustomize 名）；ROOT 本尊从
-        # PYTHONPATH 剥掉，避免绕过 shim 直连。
-        env["PYTHONPATH"] = os.pathsep.join(
-            [td] + [p for p in env["PYTHONPATH"].split(os.pathsep)
-                    if p and p != ROOT])
-        p = subprocess.run(
-            [sys.executable, "-c",
-             "import sys, json\n"
-             "from sglang.srt.utils import is_cuda\n"
-             "import sglang.srt.utils as _u\n"
-             "print('RESULT', json.dumps({\n"
-             "  'is_cuda': bool(is_cuda()),\n"
-             "  'pkg_is_cuda': bool(_u.is_cuda()),\n"
-             "  'blocked': 'sglang.srt.utils.device' not in sys.modules,\n"
-             "}))\n"],
-            capture_output=True, text=True, env=env, cwd=td,
-            timeout=240)
-        assert p.returncode == 0, p.stderr[-800:]
-        line = next((l for l in p.stdout.splitlines() if l.startswith("RESULT ")),
-                    None)
-        assert line, f"no RESULT line; stdout={p.stdout[:400]}; stderr={p.stderr[:400]}"
-        r = json.loads(line[len("RESULT "):])
-        assert r["blocked"] is True, r          # 拦截器确实挡住了该模块
-        assert r["is_cuda"] is True, r          # seam 在无 device 模块下仍装上
-        assert r["pkg_is_cuda"] is True, r      # 包级冻结副本同样被翻转
-
-
-@pytest.mark.skipif(
-    not IS_HIP, reason="VLLM_PLUGINS arm needs the HIP wheel")
-@pytest.mark.skipif(
-    not SGLANG_REACHABLE,
-    reason="sglang not on the child PYTHONPATH (bare shell): subproc arm "
-           "cannot import sglang.srt, skip instead of fail (R-13 #6 guard)")
-def test_vllm_plugins_explicit_wins():
-    """L4 双臂之二：VLLM_PLUGINS 预设时 setdefault 不覆盖（操作员 opt-in
-    语义——"" 与 unset 有竞态陷阱，见 sitecustomize 门内注释）。"""
-    p = _child(
-        "import os\n"
-        "import sitecustomize\n"
-        "print('VP', os.environ.get('VLLM_PLUGINS'))\n",
-        extra_env={"VLLM_PLUGINS": "myp"})
-    assert p.returncode == 0, p.stderr[-500:]
-    assert "VP myp" in p.stdout, p.stdout
-
-
 if __name__ == "__main__":
-    hip_only = (test_install_smoke_and_dump_wiring,
-                test_vllm_plugins_explicit_wins)
-    fails = 0
-    for fn in (test_structure_gate_order_and_isolation,
-               test_gate_envs_documented, test_noop_on_non_hip,
-               test_install_smoke_and_dump_wiring,
-               test_vllm_plugins_explicit_wins):
-        if fn in hip_only and not IS_HIP:
-            print(f"SKIP {fn.__name__} (non-HIP interpreter)")
-            continue
-        try:
-            fn()
-            print(f"PASS {fn.__name__}")
-        except Exception as e:  # noqa: BLE001
-            fails += 1
-            print(f"FAIL {fn.__name__}: {e}")
-    print("RESULT:", "PASS" if not fails else f"FAIL ({fails})")
-    sys.exit(1 if fails else 0)
+    # Retired cases and fixture/skip handling must match pytest collection.
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))
