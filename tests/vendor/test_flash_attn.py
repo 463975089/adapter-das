@@ -47,8 +47,10 @@ class _VarlenFA:
     def __call__(self, q, k, v, causal, scale):
         tq, h, d = q.shape
         tk = k.shape[0]
-        cq = torch.tensor([0, tq], dtype=torch.int32, device=q.device)
-        ck = torch.tensor([0, tk], dtype=torch.int32, device=q.device)
+        # Shape-only metadata must not enqueue pageable CPU copies during
+        # capture. Build the same CU values on device, as the dense bridge does.
+        cq = torch.arange(2, dtype=torch.int32, device=q.device) * tq
+        ck = torch.arange(2, dtype=torch.int32, device=q.device) * tk
         # ABI drift across wheel versions: 2.6.x returns (out, lse), 2.8.x
         # (out, lse, rng_state?) — inspectable shapes first, tensor wins.
         res = self.fn(
@@ -109,7 +111,8 @@ def _backend_sanity(b):
     r = sdpa_ref(q.float(), k.float(), v.float(), True, scale)
     q0, k0, v0 = q.clone(), k.clone(), v.clone()
     # backends take the 3D [t, h, d] varlen form (same as the matrix calls)
-    o = b(q.squeeze(0), k.squeeze(0), v.squeeze(0), True, scale).float()
+    o = b(*(t[0].transpose(0, 1).contiguous() for t in (q, k, v)),
+          True, scale).transpose(0, 1)[None].float()
     for nm, t0, t1 in (("q", q0, q), ("k", k0, k), ("v", v0, v)):
         if not torch.equal(t0, t1):
             print(f"[fa-stress] WARNING: {b.name} modified its input "
@@ -141,7 +144,11 @@ def sdpa_ref(q, k, v, causal, scale):
             tq, tk, dtype=torch.bool, device=q.device
         ).tril(diagonal=tk - tq)
         att = att.masked_fill(~mask, float("-inf"))
-    return F.softmax(att, dim=-1) @ v
+    # Bottom-right causal attention permits fully masked rows when Tq>Tk.
+    # FA defines their output as zero. Avoid NaN in the independent oracle.
+    valid = torch.isfinite(att).any(dim=-1, keepdim=True)
+    probabilities = F.softmax(torch.where(valid, att, torch.zeros_like(att)), dim=-1)
+    return (probabilities * valid) @ v
 
 
 def check(name, out, ref):
@@ -198,9 +205,9 @@ def test_fa_scenario_matrix(dtype, hd, qo, kv, causal):
     for b in backs:
         try:
             out = b(
-                q.squeeze(0).contiguous(),
-                k.squeeze(0).contiguous(),
-                v.squeeze(0).contiguous(),
+                q[0].transpose(0, 1).contiguous(),
+                k[0].transpose(0, 1).contiguous(),
+                v[0].transpose(0, 1).contiguous(),
                 causal, scale,
             )
         except NotImplementedError as e:
@@ -208,7 +215,7 @@ def test_fa_scenario_matrix(dtype, hd, qo, kv, causal):
         check(
             f"{b.name} qo={qo} kv={kv} hd={hd} "
             f"{str(dtype).split('.')[-1]} causal={causal}",
-            out, ref,
+            out.transpose(0, 1)[None], ref,
         )
 
 
@@ -248,8 +255,8 @@ def test_fa_graph_replay_tracks_fresh_inputs():
                 g.replay()
                 torch.cuda.synchronize()
                 ref = sdpa_ref(
-                    nq.view(1, h, qo, d).float(),
-                    nk.view(1, h, kv, d).float(),
-                    nv.view(1, h, kv, d).float(), True, scale,
+                    nq.transpose(0, 1)[None].float(),
+                    nk.transpose(0, 1)[None].float(),
+                    nv.transpose(0, 1)[None].float(), True, scale,
                 )
-            check(f"{b.name} graph-replay[{trial}]", out, ref)
+            check(f"{b.name} graph-replay[{trial}]", out.transpose(0, 1)[None], ref)

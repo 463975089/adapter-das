@@ -67,6 +67,20 @@ def _bind_deepgemm_legacy_silu() -> bool:
     return True
 
 
+def hcu_diffusion_platform_plugin():
+    from hcu_adapter.sglang_diffusion import platform_plugin
+
+    return platform_plugin()
+
+
+def __getattr__(name):
+    if name == 'HcuDiffusionPlatform':
+        from hcu_adapter.sglang_diffusion import get_platform_class
+
+        return get_platform_class()
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+
+
 def install() -> None:
     """Install the existing sglang bridge sequence without changing its order."""
     """HCU compatibility bridges for the upstream sglang stack.

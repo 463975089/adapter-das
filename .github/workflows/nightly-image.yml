@@ -4,18 +4,33 @@
 name: Nightly Image
 
 # 每天北京时间 00:00（UTC 16:00）构建 sglang / vLLM 两张运行镜像并推送到内网
-# 仓库。镜像里的 adapter 取 nightly 归档最新版；需要复现时用 workflow_dispatch
+# 仓库。两张镜像互不依赖、并发构建；手动触发时可用 image 输入只构建其中一张。
+# 镜像里的 adapter 取 nightly 归档最新版；需要复现时用 workflow_dispatch
 # 手动触发并指定 ref。
+#
+# 本仓库不配置 schedule：GitHub 对 schedule 事件是 best-effort（实测会被推迟
+# 4.5–6.5 小时），准点触发由外部定时仓库（内网 GitLab scheduled pipeline）在
+# 16:00 UTC 调 workflow_dispatch（gh workflow run nightly-image.yml --ref main）。
 #
 # 依赖自托管 runner 的 docker 与内网可达性（内网 registry / pip 归档 /
 # 资源服务器），因此固定跑在 hygon-image-build 上。
+#
+# 产物完整 tag 另以 artifact（image-tag-<image>，内容为 tag 的 tag.txt）形式留出，
+# 供下游仓库轮询本 workflow 的 build job 成功后下载（如 ciimage 的 sf_b075 转换链）。
 
 on:
-  schedule:
-    # GitHub Actions cron 用 UTC：16:00 UTC = 次日 00:00 北京时间
-    - cron: '0 16 * * *'
+  # 定时由外部仓库到点调 workflow_dispatch，本仓库不配置 schedule
   workflow_dispatch:
     inputs:
+      image:
+        description: '要构建的镜像'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - sglang
+          - vllm
       ref:
         description: '要构建的 Git ref/branch/tag/SHA，默认当前分支 HEAD'
         required: false
@@ -31,7 +46,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 按 image 输入生成构建矩阵：all 为全部，也可只选一张
+  plan:
+    name: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          IMAGE: ${{ inputs.image }}
+        run: |
+          images='[
+            {"image": "sglang", "version": "0.5.22", "dockerfile": "docker/Dockerfile.sglang"},
+            {"image": "vllm", "version": "0.33.0", "dockerfile": "docker/Dockerfile.vllm"}
+          ]'
+          selected="$(jq -c --arg image "${IMAGE:-all}" \
+            'if $image == "all" then . else map(select(.image == $image)) end' <<< "${images}")"
+          echo "matrix=${selected}" >> "$GITHUB_OUTPUT"
+
   build-image:
+    needs: plan
     name: build-${{ matrix.image }}
     runs-on: hygon-image-build
     timeout-minutes: 360
@@ -39,17 +75,10 @@ jobs:
       run:
         shell: bash
     strategy:
-      # 单 runner 顺序构建，避免两张镜像同时抢占磁盘/网络
+      # 两张镜像互不依赖，并发构建；runner 只有一台时由 runner 侧排队
       fail-fast: false
-      max-parallel: 1
       matrix:
-        include:
-          - image: sglang
-            version: '0.5.22'
-            dockerfile: docker/Dockerfile.sglang
-          - image: vllm
-            version: '0.33.0'
-            dockerfile: docker/Dockerfile.vllm
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
 
     env:
       REGISTRY: ${{ vars.HARBOR_SITE }}
@@ -93,6 +122,17 @@ jobs:
           docker push "${TAG}"
           docker push "${LATEST_TAG}"
           echo "pushed \`${TAG}\` and \`${LATEST_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # 完整 tag 以 artifact 留出（tag 在 workflow 内生成，外部无法从 API 精确获取）
+      - name: Save image tag
+        if: success()
+        run: echo "${TAG}" > tag.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: image-tag-${{ matrix.image }}
+          path: tag.txt
+          retention-days: 3
 
       # 登记镜像记录（DashHub，口径同 vllm-plugin-das 的 release-docker-image）：
       # 用产物镜像本身起临时容器（与构建同 runner，主机亲和），补装 cinotificate

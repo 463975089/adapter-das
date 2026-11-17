@@ -639,7 +639,10 @@ BACKEND_CATALOG = {
                        "note": "DTK flash_attn 2.8.4 wheel（gfx93x kernel）；"
                                "uniform-window 离线对拍逐位等，但真实 decode "
                                "词汤（2026-10-12 bw7，gfx936 wheel paged 内核"
-                               "问题）；=vendor 显式 opt-in 做 A-B"},
+                               "问题）；=vendor 显式 opt-in 做 A-B。"
+                               "非分页 BF16/FP16 dense/packed FA2 桥保留 batch、"
+                               "out、LSE 与已缓存 dispatcher 入口；"
+                               "vendor_fa 快关回 triton，见 docs/dense-flashattention.md"},
             "emu": {"status": "production",
                     "note": "chunked online-softmax torch 模拟（默认；全契约 "
                             "graph-safe）"},
