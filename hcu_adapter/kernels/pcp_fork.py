@@ -166,7 +166,7 @@ def validate_config(cfg) -> bool:
     """Validate the native PCP structure before allocating model parameters.
 
     Width is unconstrained. PP/DP/DCP=1 follows the native V41 PCP contract;
-    speculative decoding needs a larger CR2 ring contract than Core provides.
+    DSpark uses the owned CR2 history metadata for verification rollback.
     Engram uses the plugin-owned private registered-host TPxPCP table adapter,
     so its validator is injected rather than imported.
     """
@@ -186,7 +186,8 @@ def validate_config(cfg) -> bool:
         if getattr(p, name) != 1:
             errors.append(f"{name}=1 required by native V41 PCP metadata")
     if cfg.speculative_config is not None:
-        errors.append("native PCP CR2 ring does not support speculative decoding")
+        from .pcp_dspark import validate_dspark_config
+        validate_dspark_config(cfg)
     if cfg.lora_config is not None or p.enable_eplb:
         errors.append("LoRA/EPLB are not supported by this PCP model adapter")
     if p.enable_dbo:
@@ -367,4 +368,7 @@ def select_attention(cfg):
 
     if selected_mode() == 'stock' or not validate_config(cfg):
         return native._select_dsv4_attn_cls(cfg)
+    if cfg.speculative_config is not None:
+        from .pcp_dspark import HcuV41PcpDSparkAttention
+        return HcuV41PcpDSparkAttention
     return build_classes()["attention"]
