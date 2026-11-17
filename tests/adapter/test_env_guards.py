@@ -259,3 +259,16 @@ if __name__ == "__main__":
                 fails += 1
                 print(f"FAIL {name}: {e!r}")
     sys.exit(1 if fails else 0)
+
+
+# Explicit vendor opt-in must never override the high-risk fast-off.
+def test_vendor_disable_overrides_explicit_opt_in(monkeypatch):
+    import types
+    from hcu_adapter import fa_vendor
+    monkeypatch.setitem(sys.modules, 'flash_attn', types.ModuleType('flash_attn'))
+    monkeypatch.setenv('HCU_FA_IMPL', 'vendor')
+    monkeypatch.setenv('HCU_DISABLE_OPS', 'vendor_fa')
+    calls = []
+    monkeypatch.setattr(fa_vendor, '_install_triton_decode', lambda *args: calls.append(args))
+    fa_vendor.install()
+    assert len(calls) == 1

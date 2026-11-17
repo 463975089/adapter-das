@@ -222,7 +222,7 @@ REGISTRY = {
     # kill switches (triage; see kill_switch.py) — explicit-only by nature
     "HCU_DISABLE_OPS": {
         "env": "HCU_DISABLE_OPS", "default": "",
-        "about": "快关总闸：逗号分隔禁用高危算子（aiter_ar,aiter_fa）",
+        "about": "快关总闸：逗号分隔禁用高危算子（aiter_ar,aiter_fa,vendor_fa；后者在新进程回 triton）",
     },
     # runtime dump — path for JSON (<summary>/1 = log a dict, debug tier)
     "HCU_ADAPTER_DUMP": {
@@ -503,7 +503,9 @@ REGISTRY = {
                  "triton 核（paged_attn_triton.py / fa_varlen_triton.py，"
                  "契约超界面回 emu）|vendor=decode/verify 短窗走 DTK "
                  "flash_attn wheel（gfx936 wheel paged 短窗存在词汤级数值"
-                 "问题，2026-10-12 bw7 实测，待 DTK 修）|emu=恒 torch 模拟。"
+                 "问题，2026-10-12 bw7 实测，待 DTK 修；非分页 BF16/FP16 "
+                 "dense/packed 桥保持 FA3 输出契约，HCU_DISABLE_OPS=vendor_fa "
+                 "在新进程回 triton，见 docs/dense-flashattention.md）|emu=恒 torch 模拟。"
                  "**2026-10-19 serving A/B（glm53f tp4）**：≤8k ctx 质量+"
                  "性能平价（锚点/解码 8.27 tok/s 完全一致/prefill ±10%）；"
                  "首 boot 揪出 ops 重绑丢 q_v 面包参（only_qv+qv→emu 断言"

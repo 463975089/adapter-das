@@ -21,59 +21,41 @@ Run (container, PYTHONPATH=/root/hcu_t2:/sglang-v0521/python):
 HIP_VISIBLE_DEVICES=4 python tests/kernels/test_mqa_triton_gfx938.py
 """
 
+import importlib
 import os
 import sys
 
+import pytest
 import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-try:
-    try:
-        # Upstream v0.5.23 relocated the NSA index-buf writer face into the
-        # new kernels/ops/kvcache namespace (dsa/index_buf_accessor.py
-        # became dsa_index_k_cache.py; attention/fused_store_index_cache.py
-        # became kvcache/dsa_fused_store_index_cache.py). Verified pure
-        # relocation: the fused-store file is byte-identical and the
-        # _set_k_and_s_triton_kernel body this gate launches is
-        # line-identical between the two trees -- only neighbouring GetK
-        # machinery was dropped upstream.
-        from sglang.kernels.ops.kvcache import dsa_index_k_cache as iba  # noqa: E402
-        from sglang.kernels.ops.kvcache.dsa_fused_store_index_cache import (  # noqa: E402
-            fused_store_index_k_cache,
-        )
-    except ImportError:
-        # v0.5.22 line: the pre-reorg locations.
-        from sglang.kernels.ops.attention.dsa import index_buf_accessor as iba  # noqa: E402
-        from sglang.kernels.ops.attention.fused_store_index_cache import (  # noqa: E402
-            fused_store_index_k_cache,
-        )
-except ImportError as _upstream_face:
-    # Neither known face exists: the upstream reorg moved again. Keep the
-    # rest of the kernels segment runnable and make the drift loud.
-    import pytest
-
-    pytest.skip(
-        f"upstream tree lacks every known DSA index-buf writer face: {_upstream_face}",
-        allow_module_level=True,
-    )
-
 from hcu_adapter.dsa_mqa_logits_emu import fp8_paged_mqa_logits as emu  # noqa: E402
 from hcu_adapter.mqa_logits_triton import triton_paged_mqa_logits as tri  # noqa: E402
 
-FAILS = []
 
-
-def ok(tag, cond, detail=""):
-    print(f"{tag}: {'OK' if cond else 'FAIL ' + detail}", flush=True)
-    if not cond:
-        FAILS.append(tag)
+def _upstream_writer(current, legacy):
+    try:
+        return importlib.import_module(current)
+    except ModuleNotFoundError as error:
+        if error.name != current:
+            raise
+        return importlib.import_module(legacy)
 
 
 def _write_setk(dev, k_fp8, k_scale, pages, PS, tile):
+    iba = _upstream_writer(
+        "sglang.kernels.ops.kvcache.dsa_index_k_cache",
+        "sglang.kernels.ops.attention.dsa.index_buf_accessor",
+    )
     T = pages * PS
     buf = torch.zeros(pages, PS * 132, dtype=torch.uint8, device=dev)
-    iba._set_k_and_s_triton_kernel[(T,)](
+    kernel = iba._set_k_and_s_triton_kernel
+    stride_arg = (
+        "BUF_PAGE_STRIDE" if "BUF_PAGE_STRIDE" in kernel.arg_names
+        else "BUF_NUMEL_PER_PAGE"
+    )
+    kernel[(T,)](
         buf.view(torch.float8_e4m3fn),
         buf.view(torch.float32),
         torch.arange(T, device=dev, dtype=torch.int32),
@@ -81,7 +63,7 @@ def _write_setk(dev, k_fp8, k_scale, pages, PS, tile):
         k_scale,
         k_fp8.stride(0),
         PAGE_SIZE=PS,
-        BUF_NUMEL_PER_PAGE=PS * 132,
+        **{stride_arg: buf.stride(0)},
         NUM_K_ELEMS_PER_TOKEN=128,
         S_OFFSET_NBYTES_IN_PAGE=PS * 128,
         PRESHUFFLE_TILE=tile,
@@ -113,7 +95,9 @@ def _make_case(dev, n_rows=4, pages=8, PS=64, seed=7):
 
 def _golden(q_fp8, k_dec, s_dec, w, lens, bt, pages, PS, width, dev):
     n = q_fp8.shape[0]
-    qdec = q_fp8.float()
+    qdec = q_fp8.float().cpu()
+    k_dec, s_dec, w = (value.float().cpu() for value in (k_dec, s_dec, w))
+    lens, bt = lens.cpu(), bt.cpu()
     out = torch.zeros(n, width)
     for i in range(n):
         L = int(lens[i, 0])
@@ -143,14 +127,26 @@ def _rel_topk(ref, got, lens):
     return sum(meds) / len(meds), match, r.shape[0]
 
 
-def main():
+def _run_gate(monkeypatch, timing):
     import hcu_adapter.dsa_mqa_logits_emu as _dp
 
-    _dp._fp8_view_dtype = lambda: torch.float8_e4m3fn  # emu reads fn bytes
+    failures = []
+
+    def ok(tag, cond, detail=""):
+        print(f"{tag}: {'OK' if cond else 'FAIL ' + detail}", flush=True)
+        if not cond:
+            failures.append(tag)
+
+    monkeypatch.setattr(_dp, "_fp8_view_dtype", lambda: torch.float8_e4m3fn)
+    monkeypatch.setenv("HCU_MQA_LOGITS_IMPL", "vec")
+    fused_store_index_k_cache = _upstream_writer(
+        "sglang.kernels.ops.kvcache.dsa_fused_store_index_cache",
+        "sglang.kernels.ops.attention.fused_store_index_cache",
+    ).fused_store_index_k_cache
 
     dev = "cuda"
     torch.cuda.init()
-    os.environ.pop("HCU_DSA_PRESHUFFLE", None)  # default arm: gate ON
+    monkeypatch.delenv("HCU_DSA_PRESHUFFLE", raising=False)
     common = dict(max_context_len=512, clean_logits=True)
     g = torch.Generator(device="cpu").manual_seed(11)
     pages, PS = 8, 64
@@ -175,7 +171,7 @@ def main():
     ok("emu-interleave-topk(full)", match_e == n, f"{match_e}/{n}")
 
     # arm 2: legacy row-major world — gate off, SetKAndS tile=0 + emu
-    os.environ["HCU_DSA_PRESHUFFLE"] = "0"
+    monkeypatch.setenv("HCU_DSA_PRESHUFFLE", "0")
     try:
         buf_rm = _write_setk(dev, k_fp8, k_scale, pages, PS, tile=0)
         kv_rm = buf_rm.view(pages, PS, 1, 132)
@@ -206,16 +202,19 @@ def main():
            f"median rel={rel_f:.5f}")
         ok("triton-fusedstore-topk(full)", match_f == n, f"{match_f}/{n}")
     finally:
-        os.environ.pop("HCU_DSA_PRESHUFFLE", None)
+        monkeypatch.delenv("HCU_DSA_PRESHUFFLE", raising=False)
 
     # arm 3: dispatch smoke — HCU_MQA_LOGITS_IMPL=triton routes here
-    os.environ["HCU_MQA_LOGITS_IMPL"] = "triton"
+    monkeypatch.setenv("HCU_MQA_LOGITS_IMPL", "triton")
     try:
         got_d = emu(q_fp8.view(torch.uint8), kv_il, w, lens, bt, None, **common)
     finally:
-        os.environ.pop("HCU_MQA_LOGITS_IMPL", None)
+        monkeypatch.setenv("HCU_MQA_LOGITS_IMPL", "vec")
     ok("dispatch-triton(routes)", torch.allclose(got, got_d),
        "entry did not route to triton tier")
+
+    if not timing:
+        return 1 if failures else 0
 
     # arm 4: timing evidence (production layout, full 64K window, ctx ~2K)
     pagesB, N = 1024, 8
@@ -247,9 +246,42 @@ def main():
           f"triton={t_tri:.2f}ms emu(vec)={t_emu:.2f}ms "
           f"({t_emu / t_tri:.1f}x)", flush=True)
 
-    print(f"RESULT: {'PASS' if not FAILS else 'FAIL ' + str(FAILS)} "
+    print(f"RESULT: {'PASS' if not failures else 'FAIL ' + str(failures)} "
           f"(triton rel={rel:.5f}, fixed-emu rel={rel_e:.5f})")
-    return 1 if FAILS else 0
+    return 1 if failures else 0
+
+
+@pytest.mark.parametrize("missing", ["sglang.writer", "writer_dependency"])
+def test_writer_import_preserves_dependency_errors(monkeypatch, missing):
+    calls = []
+    legacy = object()
+
+    def load(name):
+        calls.append(name)
+        if name == "sglang.writer":
+            raise ModuleNotFoundError(name=missing)
+        return legacy
+
+    monkeypatch.setattr(importlib, "import_module", load)
+    if missing == "sglang.writer":
+        assert _upstream_writer("sglang.writer", "sglang.legacy") is legacy
+        assert calls == ["sglang.writer", "sglang.legacy"]
+    else:
+        with pytest.raises(ModuleNotFoundError) as error:
+            _upstream_writer("sglang.writer", "sglang.legacy")
+        assert error.value.name == missing
+        assert calls == ["sglang.writer"]
+
+
+def test_paged_mqa_pool_layouts(monkeypatch):
+    if not torch.cuda.is_available():
+        pytest.skip("requires HCU GPU")
+    assert _run_gate(monkeypatch, timing=False) == 0
+
+
+def main():
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        return _run_gate(monkeypatch, timing=True)
 
 
 if __name__ == "__main__":

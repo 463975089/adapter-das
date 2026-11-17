@@ -34,6 +34,7 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 | `vllm_scaled_mm` | vLLM 普通 FP8/INT8 Linear 的 LightOp 执行后端 | 启动时保留官方 Triton；已安装后策略变化拒绝，须新进程 |
 | `vllm_sparse_indexer` | vLLM 0.33/gfx936 C4 public OOT | 启动时优先 stock；注册后改变须新进程，不能撤销 dispatcher 或清除失败 |
 | `vllm_mhc` | vLLM 0.33 mHC Torch/OOT 适配候选 | 启动时跳过注册，保留原始官方；已注册后改变策略拒绝，须新进程。原始已知 TileLang 失败仍保留，不是功能回退通过。 || `aiter_ar` | AiterCustomAllreduce dispatch | 拒绝 → sglang 回退 NCCL（优雅降级） |
+| `vendor_fa` | `HCU_FA_IMPL=vendor` 的 DTK FA 桥 | 新进程优先回到 Triton，不改变 auto；覆盖非分页 dense/packed。快关不表示支持额外 FA2 参数，输入拒绝合同见 [FA 桥](../../../docs/dense-flashattention.md)。 |
 | `aiter_fa` | aiter FA 入口（真包已有属性也拦） | 调用时响亮报错（换 `--attention-backend triton`） |
 | `qsa_mqa` | QSA MQA BoltOPs prefill/decode | 回退当前官方 Torch reference，保留原输入/输出与 decode keyword 参数 |
 
@@ -74,3 +75,8 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 | `HCU_DUMP_MQA=1` | MQA emu 调用与范数日志 |
 
 注意：graph 模式下 python hook 不触发，dump 只在 eager/截层验证时用。
+
+SGLang diffusion 与 SRT 的 AR 配置消费边界独立：OOT 初始化需把已有
+off/refused/kill 策略传给 TP group 的 `use_srt_custom_allreduce`，回退原生
+Torch/RCCL。核实真实 worker 未初始化 custom AR，并分别验证 native factory
+与实际多 rank 数值；仅设置 `HCU_AITER_AR=0` 不能证明已关闭。

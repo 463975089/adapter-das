@@ -22,8 +22,8 @@ for the paths the wheel does not cover:
    * - ``flash_attn_with_kvcache`` decode/uniform-window paged GQA
      - ``flash_attn.flash_attn_with_kvcache`` (4D q (B,L,H,D) +
        ``block_table``); bottom-right causal comes free from cache_seqlens
-   * - ``flash_attn_varlen_func`` prefill (incl. fp8-KV descale, ``q_v``)
-     - ``flash_attn.flash_attn_varlen_func`` (same ragged contract)
+   * - ``flash_attn_varlen_func`` nonpaged BF16/FP16 dense/packed
+     - ``flash_attn.flash_attn_varlen_func`` (FA2 output/LSE ABI normalized)
    * - anything else (ragged q windows on kvcache, k/v write-through,
      sinks, only_qv, q_descale, external rotary)
      - in-tree emulation, unchanged
@@ -121,6 +121,7 @@ class _VendorFA:
         k_descale=None,
         v_descale=None,
         return_softmax_lse=False,
+        out=None,
         **_kw,
     ):
         kw = dict(
@@ -131,9 +132,20 @@ class _VendorFA:
         )
         if return_softmax_lse:
             kw["return_attn_probs"] = True
-        return self._v.flash_attn_varlen_func(
+        result = self._v.flash_attn_varlen_func(
             q, k, v, cu_q, cu_k, max_q, max_k, **kw
         )
+        # FA2 returns (output, head-first LSE, auxiliary probabilities).
+        # The sgl_kernel packed ABI returns (output, token-first LSE).
+        output = result[0] if return_softmax_lse else result
+        if out is not None:
+            if out.shape != output.shape or out.dtype != output.dtype:
+                raise ValueError('Packed attention output shape/dtype does not match Q/V')
+            out.copy_(output)
+            output = out
+        if return_softmax_lse:
+            return output, result[1].transpose(0, 1)
+        return output
 
 
 # kwargs the emulation accepts on kvcache but the wheel path must refuse
@@ -220,6 +232,47 @@ def _varlen_triton_ok(p):
         return False
     Hk = k.shape[-2]
     return q.shape[-2] % Hk == 0
+
+
+def _dense_batch_varlen(callback, parameters):
+    q, k, v = (parameters[name] for name in ('q', 'k', 'v'))
+    if not (q.ndim == k.ndim == v.ndim == 4
+            and q.shape[0] == k.shape[0] == v.shape[0]
+            and k.shape[1:3] == v.shape[1:3]):
+        raise ValueError('Dense attention requires batch-aligned 4D Q/K/V')
+    if any(parameters.get(name) is not None for name in
+           ('page_table', 'seqused_q', 'seqused_k')):
+        raise NotImplementedError('Dense attention with per-sequence used lengths or pages')
+    for name in ('k_descale', 'v_descale'):
+        scale = parameters.get(name)
+        if scale is not None and scale.numel() != k.shape[2]:
+            raise NotImplementedError('Dense attention requires shared per-head KV scales')
+    batch, length, heads = q.shape[:3]
+    normalized = dict(parameters)
+    for name in ('q', 'k', 'v'):
+        normalized[name] = parameters[name].flatten(0, 1)
+    for name, tensor in (('q', q), ('k', k)):
+        normalized['cu_seqlens_' + name] = (
+            torch.arange(batch + 1, dtype=torch.int32, device=tensor.device)
+            * tensor.shape[1]
+        )
+        normalized['max_seqlen_' + name] = tensor.shape[1]
+    out = parameters.get('out')
+    if out is not None:
+        if out.shape != (batch, length, heads, v.shape[-1]):
+            raise ValueError('Dense attention output shape does not match Q/V')
+        normalized['out'] = out.flatten(0, 1)
+    result = callback(**normalized)
+    want_lse = bool(parameters.get('return_softmax_lse'))
+    output, lse = result if want_lse else (result, None)
+    output = output.reshape(batch, length, heads, v.shape[-1])
+    if out is not None:
+        if output.data_ptr() != out.data_ptr():
+            out.copy_(output)
+        output = out
+    if want_lse:
+        return output, lse.reshape(batch, length, heads).transpose(1, 2)
+    return output
 
 
 def _install_triton_decode(_sk_fa, registry):
@@ -485,6 +538,8 @@ def _install_triton_decode(_sk_fa, registry):
         # MLA D_v!=D, fp8-q)
         p = dict(zip(_VARLEN_NAMES, args))
         p.update(kw)
+        if p['q'].dim() == 4 and p.get('cu_seqlens_q') is None and p.get('cu_seqlens_k') is None:
+            return _dense_batch_varlen(flash_attn_varlen, p)
         global _VARLEN_HITS
         if _varlen_triton_ok(p):
             _VARLEN_HITS += 1
@@ -555,10 +610,12 @@ def _install_triton_decode(_sk_fa, registry):
                         only_qv=False, sm_margin=0,
                         return_softmax_lse=False, sinks=None, out=None,
                         **_kw):
+            if cu_seqlens_q is not None or cu_seqlens_k is not None:
+                q = q.view(-1, q.shape[-2], q.shape[-1]) if q.dim() == 4 else q
+                k = k.view(-1, k.shape[-2], k.shape[-1]) if k.dim() == 4 else k
+                v = v.view(-1, v.shape[-2], v.shape[-1]) if v.dim() == 4 else v
             return flash_attn_varlen(
-                q.view(-1, q.shape[-2], q.shape[-1]) if q.dim() == 4 else q,
-                k.view(-1, k.shape[-2], k.shape[-1]) if k.dim() == 4 else k,
-                v.view(-1, v.shape[-2], v.shape[-1]) if v.dim() == 4 else v,
+                q, k, v,
                 cu_seqlens_q, cu_seqlens_k,
                 max_seqlen_q=max_seqlen_q, max_seqlen_k=max_seqlen_k,
                 seqused_q=seqused_q, seqused_k=seqused_k,
@@ -621,10 +678,13 @@ def install():
             "the torch emulation"
         )
         return
-    from hcu_adapter import hcu_env, registry
+    from hcu_adapter import hcu_env, registry, kill_switch
     from sgl_kernel import flash_attn as _sk_fa
 
     mode, _src = hcu_env.resolve("HCU_FA_IMPL")
+    if mode == "vendor" and kill_switch.op_disabled("vendor_fa"):
+        LOG.warning("HCU adapter: vendor_fa disabled; using validated triton faces")
+        mode = "triton"
     triton_mode = mode == "triton"
     if mode == "auto":
         # auto answers the best validated face: the in-tree triton route
@@ -753,12 +813,45 @@ def install():
         return ret
 
     def flash_attn_varlen_func(*args, **kw):
-        # wheel varlen carries the full FA3-facing contract sglang uses
-        # (fp8-KV descale via (1,Hk) scales, q_v absorbed-latent path)
-        try:
-            return vendor.varlen(*args, **kw)
-        except (RuntimeError, IndexError, ValueError, NotImplementedError):
-            return _emu_varlen(*args, **kw)
+        unexpected = kw.keys() - _VARLEN_NAMES - {'alibi_slopes', 'dropout_p'}
+        if unexpected:
+            raise TypeError('flash_attn (HCU vendor): unexpected keyword(s): '
+                            + ', '.join(sorted(unexpected)))
+        if kw.get('alibi_slopes') is not None or kw.get('dropout_p', 0.0) != 0.0:
+            raise NotImplementedError('flash_attn (HCU vendor): ALiBi and nonzero dropout are unsupported')
+        p = dict(zip(_VARLEN_NAMES, args))
+        p.update(kw)
+        q, k, v = (p.get(name) for name in ('q', 'k', 'v'))
+        if q is not None and q.ndim == 4 and all(
+            p.get(name) is None for name in ('cu_seqlens_q', 'cu_seqlens_k')
+        ):
+            return _dense_batch_varlen(flash_attn_varlen_func, p)
+        # Explicitly scoped nonpaged BF16/FP16 FA2 contract. Do not drop
+        # FA3-only operands (qv/scales/sinks/pages/used lengths) silently.
+        supported = (
+            all(t is not None and t.ndim == 3 for t in (q, k, v))
+            and q.dtype in (torch.float16, torch.bfloat16)
+            and q.dtype == k.dtype == v.dtype
+            and q.shape[-1] in (64, 128, 256)
+            and q.shape[-1] == k.shape[-1] == v.shape[-1]
+            and all(t.stride(-1) == 1 for t in (q, k, v))
+            and all(p.get(name) is None for name in (
+                'seqused_q', 'seqused_k', 'page_table', 'qv', 'q_descale',
+                'k_descale', 'v_descale', 'sinks', 'pack_gqa'))
+            and not p.get('only_qv') and not p.get('attention_chunk')
+            and not p.get('sm_margin') and not p.get('softcap')
+            and tuple(p.get('window_size') or (-1, -1)) == (-1, -1)
+            and all(p.get(name) is not None for name in (
+                'cu_seqlens_q', 'cu_seqlens_k', 'max_seqlen_q', 'max_seqlen_k'))
+        )
+        if not supported:
+            return _emu_varlen(**p)
+        return vendor.varlen(
+            q, k, v, p['cu_seqlens_q'], p['cu_seqlens_k'],
+            max_q=p['max_seqlen_q'], max_k=p['max_seqlen_k'],
+            causal=p.get('causal', False), softmax_scale=p.get('softmax_scale'),
+            return_softmax_lse=p.get('return_softmax_lse', False), out=p.get('out'),
+        )
 
     _sk_fa.flash_attn_with_kvcache = flash_attn_with_kvcache
     _sk_fa.flash_attn_varlen_func = flash_attn_varlen_func
@@ -871,26 +964,22 @@ def install():
             sinks=None,
             out=None,
         ):
-            return vendor.varlen(
-                q.view(-1, q.shape[-2], q.shape[-1]) if q.dim() == 4 else q,
-                k.view(-1, k.shape[-2], k.shape[-1]) if k.dim() == 4 else k,
-                v.view(-1, v.shape[-2], v.shape[-1]) if v.dim() == 4 else v,
-                cu_seqlens_q,
-                cu_seqlens_k,
-                max_q=max_seqlen_q,
-                max_k=max_seqlen_k,
-                softmax_scale=softmax_scale,
-                causal=causal,
-                window_size=window_size,
-                softcap=softcap,
-                qv=qv,
-                k_descale=k_descale,
-                v_descale=v_descale,
-                return_softmax_lse=return_softmax_lse,
-            )
+            parameters = locals()
+            return flash_attn_varlen_func(**{name: parameters[name] for name in _VARLEN_NAMES})
 
         _fa3v.flash_attn_with_kvcache = _ops_kvcache
         _fa3v.flash_attn_varlen_func = _ops_varlen
+
+        # The public dispatcher keeps a from-import copy. Native diffusion
+        # may import it before bootstrap installs the selected provider.
+        import sglang.kernels.ops.attention.flash_attention as _fapub  # 替代档: hcu_adapter/fa_vendor.py；包面不暴露 dispatcher 的缓存全局，需原位重绑。
+        _fapub.fa3_flash_attn_varlen_func = _ops_varlen
+        registry.register(
+            'flash_attention', _ops_varlen,
+            target='sglang...ops.attention.flash_attention:fa3_flash_attn_varlen_func global',
+            mechanism=registry.MECH_REBIND,
+            detail='cached dispatcher alias -> vendor nonpaged FA2 contract',
+        )
 
         for target, fn in (
             ("sglang...flash_attention_v3:flash_attn_with_kvcache", _ops_kvcache),

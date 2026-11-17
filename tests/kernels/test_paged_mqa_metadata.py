@@ -79,15 +79,16 @@ def test_lightop_plan_shape():
 @requires_lightop_gpu
 def test_lightop_plan_graph_replay():
     M._LIGHTOP_META.clear()
+    num_sms = M.get_num_sms()
     lens = torch.full((8, 1), 300, dtype=torch.int32, device="cuda")
     s = torch.cuda.Stream()
     with torch.cuda.stream(s):
-        M.get_paged_mqa_logits_metadata(lens, 64, 64)
+        M.get_paged_mqa_logits_metadata(lens, 64, num_sms)
     torch.cuda.synchronize()
     g = torch.cuda.CUDAGraph()
     with torch.cuda.graph(g):
-        out = M.get_paged_mqa_logits_metadata(lens, 64, 64)
+        out = M.get_paged_mqa_logits_metadata(lens, 64, num_sms)
     lens.fill_(4000)
     g.replay()
     torch.cuda.synchronize()
-    assert torch.equal(out, M.get_paged_mqa_logits_metadata(lens, 64, 64))
+    assert torch.equal(out, M.get_paged_mqa_logits_metadata(lens, 64, num_sms))
