@@ -92,14 +92,30 @@ def validate_config(cfg):
                       for ratio in active):
         errors.append('allocator pages must contain 32/64/128 FP4 records')
     for name in ('tensor_parallel_size', 'pipeline_parallel_size',
-                 'prefill_context_parallel_size', 'decode_context_parallel_size'):
+                 'decode_context_parallel_size'):
         if getattr(p, name) != 1:
             errors.append(name + '=1 required')
+    pcp = p.prefill_context_parallel_size
+    if pcp not in (1, 8):
+        errors.append('PCP1 or constrained PCP8 required')
+    if pcp == 8:
+        from hcu_adapter.kernels.pcp_fork import selected_mode
+        if selected_mode() != 'native':
+            errors.append('FP4 PCP8 requires HCU_VLLM_PCP_IMPL=native')
+        if cfg.kv_transfer_config is not None:
+            errors.append('FP4 PCP8 KV transfer is not admitted')
+        if p.data_parallel_size != 1 or not cfg.model_config.enforce_eager:
+            errors.append('FP4 PCP8 requires eager DP1')
+        if (not getattr(p, 'enable_expert_parallel', False)
+                or getattr(p, 'all2all_backend', None) != 'deepep_high_throughput'):
+            errors.append('FP4 PCP8 requires EP with DeepEP high throughput')
+        if cfg.speculative_config is not None:
+            errors.append('FP4 PCP8 speculative decoding is not admitted')
     if p.data_parallel_size not in (1, 8):
         errors.append('DP1 or DP8 required')
     if p.enable_dbo or p.enable_eplb:
         errors.append('DBO/EPLB unsupported')
-    # LoRA stays rejected. PD/KV-transfer is NOT gated here any more: the FP4
+    # LoRA stays rejected. PCP1 PD/KV-transfer is admitted here: the FP4
     # page format is carried by the connector as opaque block bytes, so a
     # prefill/decode pair configured identically (both mxfp4) is expected to
     # transfer unchanged. That combination is still unmeasured; it is admitted
