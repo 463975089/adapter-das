@@ -299,3 +299,10 @@ on the validated gfx936 path materializes `0` before workers spawn; an already
 cached conflicting value is refused. This keeps valid expert IDs for padded
 Graph rows without changing the selected graph mode. See
 [vLLM AITER candidate](frameworks/vllm033-aiter-moe.md) for admission limits.
+
+### Explicit vLLM/plugin paged MQA candidate
+
+`HCU_DISABLE_OPS=vllm_paged_mqa_logits` refuses the non-MX FP8 page64
+provider at model construction in a fresh process. No CUDA/native fallback
+is implied. Existing aliases and captured graphs are not hot-reconfigured.
+See `docs/frameworks/vllm033-paged-mqa.md`; no new environment variable is added.

@@ -368,3 +368,9 @@ MiniMax 新能力的环境治理：新功能不再引入私有 env；适用契�
 `docs/dense-flashattention.md`；partial RoPE、输出布局、预导入消费者和
 变输入 Graph 的回归要求见 `references/test-suite.md`。原生崩溃先定位栈，
 部署规避须回到原模型验证，一次性调试过程留任务证据。
+
+Non-MX vLLM/plugin paged MQA uses the explicit provider seam in
+`docs/frameworks/vllm033-paged-mqa.md`. Do not reuse a same-named MX-only
+DeepInfer provider or SGLang preshuffled reader: page64 FP8 payload plus
+page-tail FP32 scales is a distinct layout. CPU contract success is not
+HCU Graph/model qualification; keep the catalog candidate until those gates pass.

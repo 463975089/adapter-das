@@ -33,6 +33,7 @@ LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
+    "vllm_paged_mqa_logits": ("Explicit non-MX vLLM/plugin paged MQA provider; startup refusal", None),
     "vendor_fa": ("DTK FlashAttention routes; fresh-process triton fallback", "HCU_FA_IMPL"),
     "vllm_flashmla_decode": ("vLLM V4.1 native packed sparse decode; fresh-process stock fallback", None),
     "vllm_flashmla_prefill": ("vLLM V4.1 native sparse prefill; fresh-process stock fallback", None),
