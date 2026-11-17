@@ -1,0 +1,12 @@
+# actionlint 配置：声明本仓库自托管 runner 的标签（actionlint 默认只认
+# GitHub 托管标签，见 actionlint -h / config 文档）。新增 job 使用这些
+# runs-on 标签时不再报 "label is unknown"。
+# 质量 gate（Code quality）按改动行检查，存量行有基线豁免；本文件让
+# 新旧行的标签语义一致，也给后来者一份 runner 舰队清单。
+self-hosted-runner:
+  labels:
+    - hygon-build
+    - hygon-bw1100-1card
+    - hygon-bw1100-4card
+    - hygon-image-build
+    - hcu-adapter
