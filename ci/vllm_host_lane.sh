@@ -27,7 +27,7 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$HERE")"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 
 GPU="${1:-0}"
 TSCALE="${HCU_L1_TIMEOUT_SCALE:-1}"
