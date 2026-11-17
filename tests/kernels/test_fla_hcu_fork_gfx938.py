@@ -72,6 +72,7 @@ def test_kda_prefill_chunk():
 
 
 if __name__ == "__main__":
+    # [L1 cold-curation 2026-11-17] test_conv1d_pair was retired by the
+    # spawn-family curation; the direct-run entry shrank with it.
     r1 = test_kda_prefill_chunk()
-    r2 = test_conv1d_pair()
-    print("ALL-PASS" if (r1 and r2) else "GATE-RED")
+    print("ALL-PASS" if r1 else "GATE-RED")

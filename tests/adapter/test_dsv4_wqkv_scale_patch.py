@@ -304,19 +304,22 @@ def test_spawned_interpreter_adapts_its_own_original_loader(source):
     from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
     saved_host = os.environ.get(HOST_ENV)
     os.environ[HOST_ENV] = "none"
-    context = multiprocessing.get_context("spawn")
-    queue = context.Queue()
-    process = context.Process(target=_spawn_worker, args=(source, queue))
-    process.start()
     try:
+        context = multiprocessing.get_context("spawn")
+        queue = context.Queue()
+        process = context.Process(target=_spawn_worker, args=(source, queue))
+        process.start()
         assert queue.get(timeout=90) is True
         process.join(timeout=20)
         assert process.exitcode == 0
     finally:
-        if process.is_alive():
+        # locals() guards: the try now spans Queue()/Process() creation, so
+        # an early failure leaves those names unbound (AI review 2026-11-17).
+        if "process" in locals() and process.is_alive():
             process.terminate()
             process.join(timeout=10)
-        queue.close()
+        if "queue" in locals():
+            queue.close()
         if saved_host is None:
             os.environ.pop(HOST_ENV, None)
         else:

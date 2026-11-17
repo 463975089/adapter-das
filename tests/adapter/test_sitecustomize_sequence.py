@@ -284,13 +284,13 @@ def test_install_smoke_and_dump_wiring():
 
 
 if __name__ == "__main__":
-    hip_only = (test_install_smoke_and_dump_wiring,
-                test_vllm_plugins_explicit_wins)
+    # [L1 cold-curation 2026-11-17] test_vllm_plugins_explicit_wins was
+    # retired by the spawn-family curation; the entry shrank with it.
+    hip_only = (test_install_smoke_and_dump_wiring,)
     fails = 0
     for fn in (test_structure_gate_order_and_isolation,
                test_gate_envs_documented, test_noop_on_non_hip,
-               test_install_smoke_and_dump_wiring,
-               test_vllm_plugins_explicit_wins):
+               test_install_smoke_and_dump_wiring):
         if fn in hip_only and not IS_HIP:
             print(f"SKIP {fn.__name__} (non-HIP interpreter)")
             continue
