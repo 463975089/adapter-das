@@ -248,6 +248,150 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  vllm-lane:
+    name: L1 vLLM host lane (bw1100-1card)
+    # vLLM 宿主族车道（ci/vllm_host_lane.sh：每文件新解释器 HCU_ADAPTER_HOST=vllm
+    # + VLLM_PLUGINS=none）。存量红清零前 observe（同 L15_MANIFEST_MODE 先例）：
+    # 每晚产出完整红绿清单但不挡合并；修复完成后翻 blocking 并同步 pr 车道语义
+    needs: [image]
+    runs-on: hygon-bw1100-1card
+    timeout-minutes: 150
+    container:
+      image: ${{ needs.image.outputs.image }}
+    env:
+      HCU_L1_TIMEOUT_SCALE: "2"
+      VLLM_LANE_MODE: observe
+      HCU_CACHE_SEED: /ci_public/adapter-das/cache/hcu_cache_seed.tgz
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 与 image job 同一个表达式：镜像和被测代码必须来自同一个 ref
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: reinstall adapter from source tree
+        run: |
+          set -euo pipefail
+          # 容器里 workspace 常以别的 uid 挂进来，git 操作会以 dubious ownership 失败
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          # 不再编 whl：按 README 的源码态做法直接从工作树安装（pip install .）。
+          # 必须先卸后装——镜像里预装的 dist 认领的是同一批文件，不卸掉会留下一个
+          # RECORD 已失效的 dist：它仍然注册 vllm entry-points，之后 pip 卸载它
+          # 还会连带删掉本次安装的文件。两条线的包布局不同：
+          #   main    : 根 pyproject 只含 sgl_kernel*，适配层在 packaging/hcu-adapter
+          #   release : 根 pyproject 一个 sgl-kernel 同时含 sgl_kernel* + hcu_adapter*
+          if [ -f packaging/hcu-adapter/pyproject.toml ]; then MODEL=dual; else MODEL=single; fi
+          echo "安装模型: $MODEL"
+
+          # 上一次运行残留的构建/元数据目录会让 pip 读到过期的 egg-info
+          rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+
+          # 装包期统一 HCU_ADAPTER_HOST=none：sitecustomize 的宿主探测会给每个 python
+          # 进程加约 30 秒；未安装时 pip 只打 warning 并以 0 退出
+          HCU_ADAPTER_HOST=none python3 -m pip uninstall -y sgl-kernel hcu-adapter
+
+          # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
+          # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
+          HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
+            || python3 -m pip install 'setuptools>=64' wheel
+          HCU_ADAPTER_HOST=none python3 -m pip install \
+            --no-deps --no-build-isolation .
+          if [ "$MODEL" = dual ]; then
+            HCU_ADAPTER_HOST=none python3 -m pip install \
+              --no-deps --no-build-isolation ./packaging/hcu-adapter
+          fi
+          # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
+          # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
+          # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
+          rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+
+          # 以 pip 实际安装位置为准。在 / 下执行、去掉 PYTHONPATH，免得认到源码树里的
+          # *.egg-info；sitecustomize 此时已装好，再加 HCU_ADAPTER_HOST=none 压掉它的
+          # 启动日志（会打在 stdout 上），用 sed 只取 Location 行
+          loc() { (cd / && env -u PYTHONPATH HCU_ADAPTER_HOST=none python3 -m pip show "$1" 2>/dev/null \
+            | sed -n 's/^Location: //p'); }
+          purelib="$(loc sgl-kernel)"
+          [ -n "$purelib" ] || { echo "::error::装完找不到 sgl-kernel 的安装位置"; exit 1; }
+          if [ "$MODEL" = dual ]; then
+            [ "$purelib" = "$(loc hcu-adapter)" ] \
+              || { echo "::error::安装位置异常：'$purelib' vs '$(loc hcu-adapter)'"; exit 1; }
+          fi
+          # 两条线都要求这三个模块由本次安装提供（release 线的单 dist 全带）
+          for p in hcu_adapter/__init__.py sgl_kernel/__init__.py sitecustomize.py; do
+            [ -f "$purelib/$p" ] || { echo "::error::安装后 $purelib/$p 不存在"; exit 1; }
+          done
+
+          # 两个 job 都会把仓库根放到 PYTHONPATH 最前面（l1_gpu_gate.sh 的 $ROOT、
+          # run_model_suite.sh 的 $ADAPTER），而 hcu_adapter/、sgl_kernel/、
+          # sitecustomize.py 就躺在仓库根，源码树会盖住刚装的包。不换掉的话这一步
+          # 装了什么都被源码顶替，包里少模块也照样绿。tools/ 必须从仓库根导入，
+          # 根不能移出路径，所以只把这三个换成指向安装位置的符号链接。
+          for p in hcu_adapter sgl_kernel sitecustomize.py; do
+            rm -rf "$GITHUB_WORKSPACE/$p"
+            ln -s "$purelib/$p" "$GITHUB_WORKSPACE/$p"
+          done
+
+          HCU_ADAPTER_HOST=none python3 - "$purelib" "$MODEL" <<'PY'
+          import os, sys, importlib.metadata as im
+          purelib = os.path.realpath(sys.argv[1])
+          model = sys.argv[2]
+          import hcu_adapter, sgl_kernel, sitecustomize
+          for m in (hcu_adapter, sgl_kernel, sitecustomize):
+              real = os.path.realpath(m.__file__)
+              assert real.startswith(purelib + os.sep), f"{m.__name__} -> {real}, not under {purelib}"
+              print(f"{m.__name__}: {m.__file__} -> {real}")
+          print("sgl-kernel", im.version("sgl-kernel"))
+          if model == "dual":
+              print("hcu-adapter", im.version("hcu-adapter"))
+          else:
+              # 单 dist 模型下不能再有 hcu-adapter：它和本次的 sgl-kernel 抢同一批文件
+              try:
+                  stale = im.version("hcu-adapter")
+              except im.PackageNotFoundError:
+                  print("hcu-adapter: absent (correct for release line)")
+              else:
+                  raise SystemExit(f"hcu-adapter {stale} still installed; it shadows the install")
+              # entry-points 必须由 sgl-kernel 这个 dist 提供
+              eps = [e for e in im.entry_points(group="vllm.platform_plugins")
+                     if e.name == "hcu_adapter"]
+              assert eps, "vllm platform plugin entry-point missing after install"
+              owners = {e.dist.name for e in eps if e.dist}
+              assert owners == {"sgl-kernel"}, f"entry-point owners: {owners}"
+              print("entry-point owner: sgl-kernel")
+          PY
+
+      - name: Seed cache
+        run: |
+          if [ -f "$HCU_CACHE_SEED" ]; then
+            bash ci/cache_import.sh "$HCU_CACHE_SEED"
+          else
+            echo "no cache seed at $HCU_CACHE_SEED -- cold JIT"
+            echo "TVM_FFI_DISABLE_TORCH_C_DLPACK=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: vLLM host lane (ci/vllm_host_lane.sh)
+        # 容器里只有分到的那张卡，编号固定为 0
+        run: bash ci/vllm_host_lane.sh 0
+
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p vllm-lane-logs
+          cp /tmp/l1_vllm_*.log vllm-lane-logs/ 2>/dev/null || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hcu-nightly-vllm-lane-${{ github.run_id }}-${{ github.run_attempt }}
+          path: vllm-lane-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
   l2:
     name: L2 e2e model suite (bw1100-4card)
     needs: [image]
