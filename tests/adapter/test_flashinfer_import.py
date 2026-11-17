@@ -11,10 +11,11 @@ from pathlib import Path
 import subprocess
 import sys
 
+# [L1 cold-curation 2026-11-17] 3 -> 2: the public-first order variant stays in git history.
 import pytest
 
 
-@pytest.mark.parametrize('order', ['adapter-first', 'kernel-first', 'public-first'])
+@pytest.mark.parametrize('order', ['adapter-first', 'kernel-first'])
 def test_flashinfer_import_order_and_existing_contract(order):
     root = Path(__file__).resolve().parents[2]
     code = '''

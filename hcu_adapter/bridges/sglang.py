@@ -2876,10 +2876,14 @@ def install() -> None:
         #      tilelang is hip-gated off).
         if os.environ.get("HCU_MHC_UNFUSE", "1") == "1" and torch.version.hip:
             os.environ["SGLANG_OPT_FUSE_MHC_POST_PRE"] = "false"
+            # stdout stays protocol-clean for pytest-xdist/execnet
+            # workers; loud notices belong on stderr.
+            import sys as _sys
+
             print(
                 "[HCU mhcunfuse] SGLANG_OPT_FUSE_MHC_POST_PRE forced false"
                 " (aiter triton mhc_post_pre wrong on gfx938)",
-                flush=True,
+                file=_sys.stderr, flush=True,
             )
 
         # 11b. GLM-5.3-Flash mHC boundary dump (2026-10-16): HCU_DUMP_MHC=1 wraps
@@ -3221,13 +3225,14 @@ def install() -> None:
         #     HCU_SPEC_LOC_SAFE=0 restores stock dispatch.
         if os.environ.get("HCU_SPEC_LOC_SAFE", "1") == "1" and torch.version.hip:
             try:
+                import sys as _sys2
                 from sglang.srt.mem_cache import allocation as _alloc
 
                 _alloc.get_last_loc = _alloc.get_last_loc_torch
                 print(
                     "[HCU specloc] get_last_loc -> torch (EAGLE+page>1"
                     " out-of-range last_loc guard)",
-                    flush=True,
+                    file=_sys2.stderr, flush=True,
                 )
             except Exception:
                 logging.getLogger("hcu.adapter").warning(
