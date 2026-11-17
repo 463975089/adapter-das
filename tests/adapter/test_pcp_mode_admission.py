@@ -115,10 +115,13 @@ def test_kill_switch_never_builds_the_owned_classes(clean_env, native, monkeypat
 
 
 def test_native_mode_builds_the_owned_classes(clean_env, native, monkeypatch):
+    from types import SimpleNamespace
+
     clean_env.setenv("HCU_VLLM_PCP_IMPL", "native")
     monkeypatch.setattr(pcp_fork, "validate_config", lambda cfg: True)
     monkeypatch.setattr(pcp_fork, "build_classes", lambda: {"attention": "owned-attention"})
-    assert pcp_fork.select_attention(object()) == "owned-attention"
+    cfg = SimpleNamespace(speculative_config=None)
+    assert pcp_fork.select_attention(cfg) == "owned-attention"
     assert native.calls == []
 
 
