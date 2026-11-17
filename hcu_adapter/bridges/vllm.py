@@ -501,6 +501,9 @@ def hcu_runtime_plugin() -> None:
         from hcu_adapter.bridges.vllm_pcp import install as install_pcp
 
         install_pcp()
+        from hcu_adapter.bridges.vllm_minimax_abi import install as install_minimax_abi
+
+        install_minimax_abi()
         context = ExtensionContext(
             adapter_version=_installed_adapter_version(),
             vllm_version=vllm_version,

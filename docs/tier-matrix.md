@@ -177,6 +177,16 @@ vLLM native FP8/INT8 Linear execution through LightOp with official Triton fallb
 
 路由变量：（auto）
 
+## vllm_minimax_qknorm_abi
+
+vLLM MiniMax fused qknorm native ABI compatibility
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native-25 | candidate Exact audited wrapper and old native |
+
+路由变量：（auto）
+
 ## vllm_fp8_linear
 
 vLLM official dense FP8 fallback via public linear registration

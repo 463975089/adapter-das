@@ -28,6 +28,15 @@ vLLM候选 API、availability/selection、required+kill 与 registration/pass �
 [vLLM AR兼容](frameworks/vllm032-allreduce.md)。所有新列出的外部输入均在 hcu_env 注册；
 同名 provider 环境输入不增设等价开关。
 
+## MiniMax Plugin 部署边界
+
+MiniMax PCP8/EP8 新能力不增加私有环境开关。固定计数路由、guarded shared
+重叠和 HIPC aligned MoE 在已准入模型范围内默认启用；KV/index dtype 使用
+vLLM 公开参数，静态布局来自不可变模型契约。额外制品路径使用 vLLM
+`--additional-config` 的 `minimax31` 对象，详见独立 `vllm-plugin-das` 仓
+`docs/minimax31_configuration.md`。调试 capture、逐批日志和路由注解不进入
+生产调用链；加载凭据、同代 IPC 和 ABI 校验不得作为调试代码删除。
+
 ## 全量变量表
 
 社区变量 `SGLANG_WARMUP_TIMEOUT` 由 SGLang 自己读取，不通过 adapter
