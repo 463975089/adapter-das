@@ -37,6 +37,11 @@ vLLM 公开参数，静态布局来自不可变模型契约。额外制品路径
 `docs/minimax31_configuration.md`。调试 capture、逐批日志和路由注解不进入
 生产调用链；加载凭据、同代 IPC 和 ABI 校验不得作为调试代码删除。
 
+MiniMax prefill 优化使用正式配置 `ops.vllm_minimax_prefill`：准入模型内默认
+`triton`，显式 `stock` 保留对照路径；现有总闸 `HCU_DISABLE_OPS` 可启动时
+关闭 `vllm_minimax_prefill`，策略变化须重启。不新增私有环境变量。
+计算与验证范围见独立 Plugin 的 `docs/minimax31_prefill.md`。
+
 ## 全量变量表
 
 社区变量 `SGLANG_WARMUP_TIMEOUT` 由 SGLang 自己读取，不通过 adapter
