@@ -58,16 +58,20 @@ NVIDIA CUDA）上有的行为，HCU 上补齐到一致（影子库/
 
 ## 安装
 
-双 dist（governance §7.4）：`sgl-kernel` 纯影子内核 + `hcu-adapter` 适配层
-（sitecustomize + 桥 + vllm entry-points），版本线各自独立、`==` 互锁
-（构建期由 `DAS_BUILD_STAMP=<时间>.g<commit>` 渲染出 `+hcu.<时间>.g<commit>`
-同时写入两包版本，adapter 精确依赖同戳内核，无需上传后处理），
-`sgl_kernel/__init__` 哨兵防半装（只装内核不装适配层 → import 期响亮报错）。
-构建戳、互锁、`--no-stamp`、安装组合与排障见 [docs/build.md](docs/build.md)。
+双 dist（governance §7.4）：`sgl-kernel` native 影子内核（setup_hip.py 编译，
+缺 native 时回退 triton/torch 档）+ `hcu-adapter` 适配层（sitecustomize + 桥 +
+vllm entry-points），版本线各自独立、`==` 互锁（构建期把同一个
+`DAS_PLATFORM_TAG=dtk<DTK>.torch<TORCH>` 与 `DAS_BUILD_STAMP=<时间>.g<commit>`
+渲染成 `+dtk<DTK>.torch<TORCH>.<时间>.g<commit>` 写入两包版本，adapter 精确依赖
+同标签内核，无需上传后处理），`sgl_kernel/__init__` 哨兵防半装（只装内核不装
+适配层 → import 期响亮报错）。构建标签、互锁、`--no-stamp`、安装组合与排障见
+[docs/build.md](docs/build.md)。
 
 ```bash
-# wheel 态（部署）：packaging/build.sh 一次出两张 wheel 到 dist/
-# 不带时间/commit 戳构建：packaging/build.sh --no-stamp
+# wheel 态（部署，需 DTK 容器 + HIP torch）：一次出两张 wheel 到 dist/
+# 编译架构沿用镜像自带的 AMDGPU_TARGETS 全部目标（要收窄再覆盖）；
+# 不带时间/commit 戳加 --no-stamp
+bash packaging/build.sh
 pip install --no-deps dist/sgl_kernel-*.whl dist/hcu_adapter-*.whl   # 两张都装，顺序无关
 
 # 源码态（开发）

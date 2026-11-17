@@ -5,30 +5,40 @@
 
 ## 1. 前置条件
 
-- python >= 3.9（验证栈为 py3.12）、pip、git。
-- 纯 python 打包，不需要 DTK/GPU。
-- 首次构建若当前环境缺 `setuptools.build_meta`，`build.sh` 会自动
-  `pip install "setuptools>=64" wheel`；也可手动安装。
+- DTK 容器：`hipcc` 在 PATH（`source /opt/dtk/env.sh`），且装有 HIP 版
+  `torch==2.13.0`（必须来自 DTK nightly 归档；裸 PyPI 的同名 CUDA 构建会被
+  `torch.version.hip` 检查拒绝）。
+- 编译目标架构取 `AMDGPU_TARGETS` 里的**全部**值，`setup_hip.py` 为每个目标
+  生成 `--offload-arch`。DTK 基础镜像/runner 环境通常已导出完整列表
+  （实测 `gfx906;gfx926;gfx928;gfx936;gfx938;gfx92a`），直接沿用即可；只有
+  想收窄架构、或环境确实没有该变量且无 GPU 可探测时才显式覆盖。
+- 首次构建若当前环境缺 `setuptools.build_meta` / `wheel` / `ninja`，
+  `build.sh` 会自动补装。
 - 装 `hcu-runtime` extra 的机器需要配好 DTK nightly 归档的 pip 源
   （torch/triton/vendor 包从该归档解析）。
 
 ## 2. 一条命令构建
 
 ```bash
-bash packaging/build.sh
+source /opt/dtk/env.sh
+bash packaging/build.sh        # 架构沿用镜像自带的 AMDGPU_TARGETS 完整列表
+# 需要收窄时才覆盖：AMDGPU_TARGETS="gfx936;gfx938" bash packaging/build.sh
 ```
 
-产物（同一个戳）：
+内核 wheel 由根目录 `setup_hip.py` 编译（载荷含
+`sgl_kernel/native_ops*.so`；`sgl_kernel/_native.py` 运行时探测，缺失时回退
+triton/torch 档）。产物（同一个 build 标签）：
 
 ```text
-dist/sgl_kernel-0.0.0+hcu.<YYMMDDHHMM>.g<commit6>-py3-none-any.whl
-dist/hcu_adapter-0.5.22+hcu.<YYMMDDHHMM>.g<commit6>-py3-none-any.whl
+dist/sgl_kernel-0.0.0+dtk2610.torch2130.<YYMMDDHHMM>.g<commit6>-cp312-cp312-linux_x86_64.whl
+dist/hcu_adapter-0.5.22+dtk2610.torch2130.<YYMMDDHHMM>.g<commit6>-py3-none-any.whl
 ```
 
-adapter 的元数据精确依赖同戳内核，两张必须成对安装：
+内核 wheel 的平台 tag 随构建 python 版本变化（上例 py3.12）。adapter 的元数据
+精确依赖同标签内核，两张必须成对安装：
 
 ```text
-Requires-Dist: sgl-kernel ==0.0.0+hcu.<同戳>
+Requires-Dist: sgl-kernel ==0.0.0+dtk2610.torch2130.<同戳>
 ```
 
 ## 3. 版本与戳规则
@@ -37,10 +47,19 @@ Requires-Dist: sgl-kernel ==0.0.0+hcu.<同戳>
 |---|---|---|
 | 内核基线 | `sgl_kernel/version.py` 的 `__version__` | `0.0.0+hcu.dev0` |
 | adapter 基线 | `packaging/hcu-adapter/VERSION` | `0.5.22+hcu.1` |
+| 平台标签 | `dtk<DTK_VER>.torch<torch 主三段数字>` | `dtk2610.torch2130` |
 | 构建戳 | `git rev-parse --short=6 HEAD` + 当前时间 | `<YYMMDDHHMM>.g<commit6>` |
 
-渲染规则：去掉基线里的 local 段，再拼 `+hcu.<戳>`。基线在 main 上不固定
-（内核 `0.0.0+hcu.dev0`），拉 release 分支时定死；重配对上游时改对应文件即可。
+渲染规则：去掉基线里的 local 段，再拼 `+<平台标签>.<戳>`（**不带 `hcu` 段**，
+对齐 DTK nightly 里 vendor 包的版本惯例）。DTK 段来源优先级
+`DAS_DTK_TAG` > 镜像 ENV `DTK_VERSION` > `DTK_VER`；torch 段来自当前环境的
+`torch.__version__`。构建出的扩展与这两者 ABI 绑定，所以**无戳时平台标签仍保留**。
+
+直接 `pip wheel`（测试/开发用的纯 python 变体，不走 `setup.py` 的 native 路径）
+没有平台标签，仍渲染 `+hcu.<戳>`。
+
+基线在 main 上不固定（内核 `0.0.0+hcu.dev0`），拉 release 分支时定死；
+重配对上游时改对应文件即可。
 
 固定戳（复现某次构建）：
 
@@ -54,20 +73,20 @@ DAS_BUILD_STAMP="2611111025.ga64ad6" bash packaging/build.sh
 bash packaging/build.sh --no-stamp
 ```
 
-产物退回基线原值，适合本地开发/可编辑安装：
+去掉时间/commit 后缀，保留 ABI 平台标签：
 
 ```text
-dist/sgl_kernel-0.0.0+hcu.dev0-py3-none-any.whl
-dist/hcu_adapter-0.5.22+hcu.1-py3-none-any.whl
+dist/sgl_kernel-0.0.0+dtk2610.torch2130-cp312-cp312-linux_x86_64.whl
+dist/hcu_adapter-0.5.22+dtk2610.torch2130-py3-none-any.whl
 ```
 
-此时 adapter 只钉内核公共版本 `sgl-kernel==0.0.0`（PEP 440 下可匹配任何
-`0.0.0+local` 内核）。
+此时 adapter 仍钉精确版本 `sgl-kernel==0.0.0+dtk2610.torch2130`（不是公共版本
+等号，避免装到不同平台或不同 build 的内核）。
 
 ## 5. 安装
 
-先装内核（`--no-deps` 防止它自身的 `torch>=2.0` / `triton>=2.1` 把最新
-nightly 栈拉进来），再装有运行时依赖的 adapter：
+先装内核（`--no-deps` 防止它自身的 `torch==2.13.0` / `triton==3.7.0` 与
+镜像里已装的 DTK 栈重新解析），再装有运行时依赖的 adapter：
 
 ```bash
 pip install --no-deps "$(ls -t dist/sgl_kernel-*.whl | head -1)"
@@ -110,16 +129,22 @@ python3 -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); print(z.read([n 
 | 现象 | 原因 / 处理 |
 |---|---|
 | `BackendUnavailable: Cannot import 'setuptools.build_meta'` | 环境缺 setuptools；重跑 `build.sh` 会自动安装，或手动 `pip install "setuptools>=64" wheel` |
+| `build.sh: torch is not importable` / `not a HIP/DTK build` | 先装 DTK nightly 归档的 `torch==2.13.0`；裸 PyPI 的 CUDA 构建不可用 |
+| `build.sh: hipcc not on PATH` | 在 DTK 容器内 `source /opt/dtk/env.sh` |
+| `build.sh: AMDGPU_TARGETS is empty and no HCU device is visible` | 镜像/环境未导出时显式设置，如 `AMDGPU_TARGETS="gfx936;gfx938"` |
+| 内核 wheel 里没有 `sgl_kernel/native_ops*.so` | native 编译未生效（回落纯 python）；检查 hipcc/torch 与编译日志 |
 | 解析到 `torch 2.15.0` / `triton 3.9.0` | 只装了 kernel 或旧 adapter。装带新基础依赖的 adapter（钉 2.13.0/3.7.0） |
-| `No matching distribution found for sgl-kernel==...+hcu....` | 先本地装同戳 kernel wheel；本地文件安装时 pip 不会去 index 找已满足的依赖 |
-| `dist/` 多版本混装 | 构建前 `rm -rf dist build`，或按戳显式指定 wheel 文件名 |
-| 构建日志的版本与 dist 文件不符 | 检查是否残留旧的 `DAS_BUILD_STAMP`；`--no-stamp` 会忽略它 |
+| `No matching distribution found for sgl-kernel==...+dtk....` | 先本地装同标签 kernel wheel；本地文件安装时 pip 不会去 index 找已满足的依赖 |
+| `dist/` 多版本混装 | 构建前 `rm -rf dist build`，或按标签显式指定 wheel 文件名 |
+| 构建日志的版本与 dist 文件不符 | 检查是否残留旧的 `DAS_BUILD_STAMP` / `DAS_PLATFORM_TAG`；`--no-stamp` 只忽略前者 |
 
 ## 8. CI
 
 main 线的 nightly 由
 [.github/workflows/nightly-wheel.yml](../.github/workflows/nightly-wheel.yml)
-在 push 时构建两张同戳 wheel 并一次性上传 nightly 归档（L0 结构门禁已在 MR
+在 push 时构建两张同标签 wheel 并一次性上传 nightly 归档（L0 结构门禁已在 MR
 阶段执行，发布流程不重复）；`workflow_dispatch` 只构建并保留 artifact，
-不推 nightly。release 线同理：
+不推 nightly。workflow 在 DTK 容器里先从 nightly 归档补装 python 侧唯一缺件
+`torch==2.13.0`（其余编译依赖由 build.sh 兜底补装），再跑
+`packaging/build.sh`（native 编译，架构取 `AMDGPU_TARGETS`）；release 线同理：
 workflow 在构建期写入同一个 `DAS_BUILD_STAMP` 后直接上传，不做上传后版本改写。

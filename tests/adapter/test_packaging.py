@@ -49,14 +49,17 @@ def _adapter_version():
         encoding="utf-8").strip()
 
 
-def _build_wheel(source_dir, tmp_path, tag, *, stamp=None):
+def _build_wheel(source_dir, tmp_path, tag, *, stamp=None, platform=None):
     wheel_dir = tmp_path / ("wheel-" + tag)
     wheel_dir.mkdir()
     env = os.environ.copy()
     env["HCU_ADAPTER_HOST"] = "none"
     env.pop("DAS_BUILD_STAMP", None)
+    env.pop("DAS_PLATFORM_TAG", None)
     if stamp is not None:
         env["DAS_BUILD_STAMP"] = stamp
+    if platform is not None:
+        env["DAS_PLATFORM_TAG"] = platform
     subprocess.run(
         [
             sys.executable,
@@ -111,6 +114,28 @@ def _members(wheel):
     return set(archive.namelist()), archive
 
 
+def _metadata(wheel):
+    with zipfile.ZipFile(wheel) as archive:
+        name = next(n for n in archive.namelist()
+                    if n.endswith(".dist-info/METADATA"))
+        return Parser().parsestr(archive.read(name).decode())
+
+
+def _interlock_pin(metadata):
+    return next(Requirement(r) for r in metadata.get_all("Requires-Dist", [])
+                if Requirement(r).name == "sgl-kernel")
+
+
+def _pin_lib():
+    # setup_hip.py and ci/l0_gate.py load this same renderer by path
+    import importlib.util
+    path = ADAPTER_PYPROJECT.parent / "_pin.py"
+    spec = importlib.util.spec_from_file_location("hcu_adapter_pin_under_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_kernel_wheel_is_pure_shadow_kernel(kernel_wheel):
     members, archive = _members(kernel_wheel)
     version = _kernel_version()
@@ -152,6 +177,44 @@ def test_stamped_wheel_pair_pins_exact_matching_build(tmp_path):
     assert str(pin.specifier) == f"=={expected_kernel}"
     assert pin.specifier.contains(expected_kernel)
     assert not pin.specifier.contains(f"{Version(_kernel_version()).public}+hcu.other")
+
+
+def test_platform_tagged_pair_pins_exact_matching_build(tmp_path):
+    # native kernel build: both wheels carry the dtk/torch ABI label
+    # (no hcu segment) and the adapter pins that exact build.  The kernel
+    # wheel itself comes from setup_hip.py (hipcc required); its version is
+    # rendered by the same _pin.py the native setup loads, so exercising
+    # that renderer here keeps this a hermetically checkable contract.
+    source = _copy_repo(tmp_path)
+    stamp = "20261111.g123abc"
+    platform = "dtk2610.torch2130"
+    adapter = _build_wheel(source / "packaging/hcu-adapter", tmp_path,
+                           "platform-adapter", stamp=stamp, platform=platform)
+    expected_kernel = f"{Version(_kernel_version()).public}+{platform}.{stamp}"
+    expected_adapter = f"{Version(_adapter_version()).public}+{platform}.{stamp}"
+    assert _pin_lib().kernel_version(stamp=stamp, platform=platform) == expected_kernel
+    adapter_meta = _metadata(adapter)
+    assert adapter_meta["Version"] == expected_adapter
+    assert "hcu" not in expected_kernel
+    pin = _interlock_pin(adapter_meta)
+    assert str(pin.specifier) == f"=={expected_kernel}"
+    assert pin.specifier.contains(expected_kernel)
+    assert not pin.specifier.contains(f"{Version(_kernel_version()).public}+{platform}.other")
+
+
+def test_platform_tag_without_stamp_is_still_an_exact_pin(tmp_path):
+    source = _copy_repo(tmp_path)
+    platform = "dtk2610.torch2130"
+    adapter = _build_wheel(source / "packaging/hcu-adapter", tmp_path,
+                           "platform-nostamp-adapter", platform=platform)
+    expected_kernel = f"{Version(_kernel_version()).public}+{platform}"
+    expected_adapter = f"{Version(_adapter_version()).public}+{platform}"
+    assert _pin_lib().kernel_version(stamp="", platform=platform) == expected_kernel
+    adapter_meta = _metadata(adapter)
+    assert adapter_meta["Version"] == expected_adapter
+    pin = _interlock_pin(adapter_meta)
+    assert str(pin.specifier) == f"=={expected_kernel}"
+    assert not pin.specifier.contains(f"{Version(_kernel_version()).public}+{platform}.other")
 
 
 _SENTINEL_BLOCK = """\

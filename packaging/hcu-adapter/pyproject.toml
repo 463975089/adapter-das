@@ -7,11 +7,14 @@ name = "hcu-adapter"
 # hcu-adapter carries its OWN version line (independent of sgl-kernel;
 # this dist's single source is the VERSION file next to this pyproject,
 # encoding the paired upstream *sglang* release). version and dependencies
-# are built by setup.py via _pin.py: a build with DAS_BUILD_STAMP yields
-# <version>+hcu.<stamp> and an exact sgl-kernel==<kernel-public>+hcu.<stamp>
-# interlock, so the two wheels of one build always pair. Without the stamp,
-# VERSION is used as-is and the kernel is pinned by its public version
-# (a release branch rewrites the baseline parts together).
+# are built by setup.py via _pin.py: a native build exports
+# DAS_PLATFORM_TAG=dtk<DTK>.torch<TORCH> and DAS_BUILD_STAMP, yielding
+# <version>+dtk<DTK>.torch<TORCH>.<stamp> and an exact
+# sgl-kernel==<kernel-public>+dtk<DTK>.torch<TORCH>.<stamp> interlock, so the
+# two wheels of one build always pair. Direct pip-wheel builds (tests/dev)
+# have no platform tag and keep +hcu.<stamp>; without a stamp VERSION is used
+# as-is and the kernel is pinned by its public version (a release branch
+# rewrites the baseline parts together).
 dynamic = ["version", "dependencies"]
 description = "HCU adapter: framework-level adaptation layer for SGLang & vLLM on Hygon HCU (runtime bootstrap, host bridges, hooks)"
 requires-python = ">=3.9"

@@ -29,9 +29,11 @@
   → 主 wheel **必须 `--no-deps` 装**；代码运行时只认 `import sgl_kernel`
   （实测 v0.5.22 全树 import 面）→ 我们的影子包按模块名截击，dist 名无关紧要但见 §4 接线点。
 - **发版物五件（双 dist 解耦，governance §7.4）**：影子内核 wheel（dist `sgl-kernel`，版本
-  `0.4.9+hcu.1`=配对上游内核线，只装 `sgl_kernel/`）+ 适配层 wheel（dist `hcu-adapter`，版本
+  基线 `0.4.9+hcu.1`=配对上游内核线，native 构建打成 `0.4.9+dtk<DTK>.torch<TORCH>.<时间>.g<commit>`，
+  只装 `sgl_kernel/` + `native_ops*.so`）+ 适配层 wheel（dist `hcu-adapter`，版本基线
   `0.5.22+hcu.1` 自有独立线，装 `hcu_adapter/`+`sitecustomize`+vllm entry-points，依赖
-  `sgl-kernel==0.4.9+hcu.<时间>.g<commit>` 构建期同戳互锁；`packaging/build.sh` 一次出两张）→ 官方 sglang wheel
+  `sgl-kernel==0.4.9+dtk<DTK>.torch<TORCH>.<时间>.g<commit>` 构建期互锁；`packaging/build.sh`
+  一次出两张）→ 官方 sglang wheel
   （`--no-deps`）→ 插件 wheel（`--no-deps`）→ 环境级钉版。升级先卸旧单 wheel 版 sgl-kernel
   （entry-points 已迁 hcu-adapter，残留会双注册/消失）。
 

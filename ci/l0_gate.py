@@ -558,9 +558,10 @@ def check_dual_dist_packaging(r):
     py-module, no entry-points, packages limited to sgl_kernel*. hcu-adapter
     (packaging/hcu-adapter) owns sitecustomize + the vllm entry-points and
     interlocks the kernel dist at build time: its setup.py/_pin.py renders
-    sgl-kernel==<public>[+hcu.<stamp>] from the single kernel version source
-    (sgl_kernel/version.py), and build.sh passes one DAS_BUILD_STAMP to both
-    wheels. Without a stamp the pin names the public kernel version only.
+    sgl-kernel==<public>[+<dtk.torch platform>[.<stamp>]] from the single
+    kernel version source (sgl_kernel/version.py), and build.sh passes one
+    platform label + DAS_BUILD_STAMP to both wheels. Without either the pin
+    names the public kernel version only.
     The adapter base dependencies also carry the validated torch/triton pins
     so a plain adapter install cannot drift to the newest nightly stack.
     Versions are independent lines; only the pin is machine-checked.
@@ -607,7 +608,7 @@ def check_dual_dist_packaging(r):
         spec = importlib.util.spec_from_file_location("hcu_adapter_build_pin", pin_file)
         pin_mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(pin_mod)
-        pin = pin_mod.kernel_pin(stamp="")
+        pin = pin_mod.kernel_pin(stamp="", platform="")
     except Exception as exc:
         r.fail("dual-dist", f"cannot evaluate hcu-adapter interlock pin: {exc}")
     else:

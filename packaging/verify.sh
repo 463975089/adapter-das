@@ -10,7 +10,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$ROOT/dist"
-# build.sh stamps each pair with hcu.<time>.g<commit>; pick the newest pair
+# build.sh tags each pair with dtk<ver>.torch<ver>[.<time>.g<commit>]; pick
+# the newest pair
 KERNEL_WHL="$(ls -t "$DIST"/sgl_kernel-*.whl | head -1)"
 ADAPTER_WHL="$(ls -t "$DIST"/hcu_adapter-*.whl | head -1)"
 PY="${PYTHON:-}"
