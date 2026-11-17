@@ -1,5 +1,11 @@
 # 自动化测试套件要求
 
+DSA writer 回归见 `tests/kernels/test_mqa_triton_gfx938.py`：在调用时解析
+新 kvcache/旧 attention 路径，区分页跨度 ABI；依赖导入错误不能当作接口迁移
+而隐藏。pytest 必须实际执行两种池布局、融合写入和派发的数值/top-k 断言，
+并恢复临时环境和 dtype 绑定，不能仅消除收集错误。
+LightOp metadata 的 Graph 对拍须传真实设备的计算单元数，不能硬编码为64。
+
 共享机制的 framework-free 契约覆盖 import 和调用两个阶段。模型 lifecycle
 测试须在新解释器阻断 vLLM、SGLang、Torch 导入后，执行真实注册、原子预检、
 post-load/guard dispatch；另以真实 vLLM Worker/config 验证桥上的原覆盖查询、
@@ -1026,3 +1032,14 @@ SHA256 `0c02ce30d66b4cc28c257b7ae31f3d906fa65f96a7ab70009127b4730a1ca3b3`。
 SHA256 `71cbc0c5e9e521a595988a3c4bd8463e29fd4574dd7362cd0a871bb52a8d9d8c`。
 全量 adapter 回归另行执行；旧完整 51 项与本次 Dense 10 项不拼为
 新完整 54 项通过。
+
+## 非分页 diffusion 接口回归
+
+- `test_rotary_partial_width.py`：真实公共 API、partial width 的补齐 lane
+  掩码、head 尾块、未旋转尾维、packed guard；独立 FP64 与变输入 Graph。
+- `test_fa_dense_batch.py`：真实 dispatcher 与预导入消费者，覆盖 batch/GQA/
+  causal、strided QKV/out、guard、LSE、packed 控制及变输入 Graph；
+  4121/9253×56×128 的长序列独立 FP64 抽行不能称为全输出验证。
+- vendor 压测 BHTD→THD 使用 transpose；Tq>Tk 的 causal 全遮蔽行参考输出零。
+  Graph CU 在设备上按 shape 构造，避免 pageable CPU 长度复制，保留原数值阈值。
+  快关优先级由 `test_env_guards.py` 验证；算子通过不替代实际六步生成。

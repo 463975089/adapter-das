@@ -62,6 +62,9 @@ class _FlashInferFinder(LibStubFinder):
                     "rmsnorm": rmsnorm,
                     "fused_add_rmsnorm": fused_add_rmsnorm,
                 },
+                "flashinfer.rope": {
+                    "apply_rope_with_cos_sin_cache_inplace": ABSENT,
+                },
                 "flashinfer.comm": {
                     "allreduce_fusion": ABSENT,
                     "create_allreduce_fusion_workspace": ABSENT,
@@ -84,6 +87,7 @@ class _FlashInferFinder(LibStubFinder):
                 "flashinfer.gdn_decode",
                 "flashinfer.gdn_kernels",
                 "flashinfer.decode._grouped_size_compiled_for_decode_kernels",
+                "flashinfer.rope.apply_rope_with_cos_sin_cache_inplace",
             ),
         )
 

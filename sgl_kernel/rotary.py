@@ -36,32 +36,35 @@ if HAS_TRITON:
         num_heads,
         HEAD_SIZE: tl.constexpr,
         ROTARY_DIM: tl.constexpr,
+        BLOCK_DIM: tl.constexpr,
         BLOCK_HEADS: tl.constexpr,
     ):
         token = tl.program_id(0).to(tl.int64)
         head_blk = tl.program_id(1)
         half: tl.constexpr = ROTARY_DIM // 2
-        half_idx = tl.arange(0, half)
+        half_idx = tl.arange(0, BLOCK_DIM)
+        dmask = half_idx < half
 
         pos = tl.load(POS + token)
-        c = tl.load(COS_SIN + pos * ROTARY_DIM + half_idx)
-        s = tl.load(COS_SIN + pos * ROTARY_DIM + half + half_idx)
+        c = tl.load(COS_SIN + pos * ROTARY_DIM + half_idx, mask=dmask, other=0.0)
+        s = tl.load(COS_SIN + pos * ROTARY_DIM + half + half_idx, mask=dmask, other=0.0)
 
         heads = head_blk * BLOCK_HEADS + tl.arange(0, BLOCK_HEADS)
         hmask = heads < num_heads
+        mask = hmask[:, None] & dmask[None, :]
         off = tl.where(hmask, heads, 0) * HEAD_SIZE
 
         base = T + token * t_stride
         x1 = tl.load(base + off[:, None] + half_idx[None, :],
-                     mask=hmask[:, None], other=0.0).to(tl.float32)
+                     mask=mask, other=0.0).to(tl.float32)
         x2 = tl.load(base + off[:, None] + (half + half_idx)[None, :],
-                     mask=hmask[:, None], other=0.0).to(tl.float32)
+                     mask=mask, other=0.0).to(tl.float32)
         y1 = x1 * c[None, :] - x2 * s[None, :]
         y2 = x1 * s[None, :] + x2 * c[None, :]
         tl.store(base + off[:, None] + half_idx[None, :],
-                 y1.to(base.dtype.element_ty), mask=hmask[:, None])
+                 y1.to(base.dtype.element_ty), mask=mask)
         tl.store(base + off[:, None] + (half + half_idx)[None, :],
-                 y2.to(base.dtype.element_ty), mask=hmask[:, None])
+                 y2.to(base.dtype.element_ty), mask=mask)
 
 
 def rotary_embedding(
@@ -115,6 +118,7 @@ def rotary_embedding(
         q_heads,
         HEAD_SIZE=head_size,
         ROTARY_DIM=rotary_dim,
+        BLOCK_DIM=triton.next_power_of_2(rotary_dim // 2),
         BLOCK_HEADS=BLOCK_HEADS,
         num_warps=4,
     )
@@ -129,6 +133,7 @@ def rotary_embedding(
             k_heads,
             HEAD_SIZE=head_size,
             ROTARY_DIM=rotary_dim,
+            BLOCK_DIM=triton.next_power_of_2(rotary_dim // 2),
             BLOCK_HEADS=BLOCK_HEADS,
             num_warps=4,
         )

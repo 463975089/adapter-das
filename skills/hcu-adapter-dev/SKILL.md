@@ -350,3 +350,11 @@ skills/hcu-adapter-dev/  本 skill
   skill/对应参考文档，不等最终总结；一次性环境日志只留验证证据。README
   是指针型入口，静态资产表只活在 catalog/models.md（已立规约：README
   不维护清单、不留本地任务编号）。
+
+原生 SGLang diffusion 优先公开 OOT，保留真实 HIP 能力；不得补造 vendor
+属性。独立 worker registry 与 local-rank 设备合同须实际验证；可选 provider
+按既有 ABSENT/deny 表达缺失，不能让通配 stub 造成能力探测假阳性。
+平台与部署见 `docs/image-dtk2610.md` §8，非分页 attention 见
+`docs/dense-flashattention.md`；partial RoPE、输出布局、预导入消费者和
+变输入 Graph 的回归要求见 `references/test-suite.md`。原生崩溃先定位栈，
+部署规避须回到原模型验证，一次性调试过程留任务证据。

@@ -35,6 +35,12 @@ assert sum(isinstance(f, adapter._FlashInferFinder) for f in sys.meta_path) == 1
 from flashinfer.norm import rmsnorm, fused_add_rmsnorm
 assert rmsnorm is adapter.rmsnorm
 assert fused_add_rmsnorm is adapter.fused_add_rmsnorm
+try:
+    from flashinfer.rope import apply_rope_with_cos_sin_cache_inplace
+except ImportError:
+    pass
+else:
+    raise AssertionError('optional CUDA-only RoPE incorrectly advertised')
 
 from flashinfer import BatchDecodeWithPagedKVCacheWrapper
 try:

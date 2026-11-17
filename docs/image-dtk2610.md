@@ -290,3 +290,79 @@ given`。L1.5 叠加格（Engine worker 路径）三轮全绿未触发该调用�
   `--cuda-graph-max-bs-decode` 全名**，两态混跑不踩坑。
 - bootstrap.md 在 26.10 全量转正前继续作为源码态手册并存，转正时标注"旧基底
   （26041 止）"。
+
+## 8. MiniMax-H3-Image 的原生 diffusion 平台候选
+
+本节给出 gfx936/DTK26.10 的最终部署配方、支持范围与性能摘要。
+验收基线：社区 `5792cf6e5e11`、plugin `fa36983`；adapter 卸载对照为
+`e63727e`，attention 对照为 `553b28f`。环境为 Python3.12、Torch2.11、
+Triton3.6 DTK、DTK flash_attn2.8.4；两仓按各自安装说明接入同一解释器。
+
+### 平台与支持范围
+
+- adapter 使用公开 OOT 平台 `hcu`，保留真实 HIP 架构、设备和内存信息，
+  复用原生非 NVML/CUDA 语义；plugin 通过独立 diffusion registry 加载。
+- 当前 AITER wheel 缺少 `ENABLE_CK`，不得补造能力；HCU OOT 不安装
+  CUDA-only VAE 优化。`HCU_PLATFORM_SEMANTICS=hip` 会停用该 OOT 准入，
+  回到官方探测，但不代表上述依赖缺口已修复。
+- 单张 64 GiB、2048×2048、6 步、quality=exact 的文生图及参考图编辑通过。
+  TE/DiT 保持 BF16，VAE 保留原生 FP32 编码/BF16 解码与有限值检查。
+- 该环境初始化曾触发 MKL 原生异常，已验证配方固定三个 CPU 线程池为 1。
+  单 worker RSS 采样峰值约150 GiB，不是最低主机内存需求。
+
+### 2026-11-15 单卡 attention 显式优化
+
+先将 HIP/CUDA 可见设备设为同一张物理卡；`MODEL_PATH` 指向模型根目录，
+`GPU_DEVICE_SYSFS` 指向该卡的实际 sysfs device 目录。NUMA 编号按 PCI
+连接读取，不照搬验证机的节点号。沿用本文前述依赖与安装环境：
+
+```bash
+export HCU_ADAPTER_HOST=sglang SGLANG_PLUGINS=hcu_diffusion
+export SGLANG_DIFFUSION_PLATFORM_OVERRIDE=hcu HCU_AITER_AR=0
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+NUMA_NODE=$(cat "$GPU_DEVICE_SYSFS/numa_node")
+HCU_FA_IMPL=vendor python3 -m sglang.cli.main serve \
+  --model-path "$MODEL_PATH" --backend sglang \
+  --num-gpus 1 --tp-size 1 --ulysses-degree 1 --ring-degree 1 \
+  --encoder-parallel auto --numa-node "$NUMA_NODE" \
+  --component-paths.text_encoder "$MODEL_PATH/text_encoder" \
+  --component-attention-backends.text_encoder torch_sdpa \
+  --component-attention-backends.transformer fa \
+  --component-residency transformer=snapshot-offload,text_encoder=snapshot-offload,video_vae=component-offload \
+  --minimax-h3-adaln-online true --warmup-mode off
+```
+
+TE/DiT 保留 CPU 权重快照以减少回写，VAE 按组件卸载。服务就绪前通过公开
+接口各预热一次完整六步文生图与编辑；health=200 只表示初始化完成。
+常规服务保留默认 conditioning cache，公平性能对照另加
+`--disable-conditioning-cache`；性能日志用 `SGLANG_PERF_LOG_DIR` 写入任务目录。
+
+vendor 仅在该配方显式选择；`auto` 仍为 Triton。新进程改为
+`HCU_FA_IMPL=triton` 或设置 `HCU_DISABLE_OPS=vendor_fa` 可回退，后者优先。
+算子支持范围与接口约定见 [非分页 FA 桥](dense-flashattention.md)。
+
+### 性能与验收摘要
+
+以下是两轮独立对照：同卡、同模型、固定种子和编辑原图，各完整预热后各测
+三次，统一关闭跨请求编码缓存。冷准备与 profiler 请求排除，仅比较同轮结果。
+
+| 对照轮次 | 配置 | 文生图中位数 | 编辑中位数 |
+|---|---|---:|---:|
+| 卸载 | 三组件 component-offload | 20.451秒 | 60.140秒 |
+| 卸载 | TE/DiT snapshot-offload | 19.290秒 | 58.826秒 |
+| 卸载 | 快照卸载加实际 GPU NUMA 绑定 | 18.808秒 | 58.500秒 |
+| attention | 上述配置，Triton | 18.849秒 | 58.507秒 |
+| attention | 上述配置，DTK FA2 非分页 | 12.307秒 | 25.735秒 |
+
+卸载加 NUMA 的延迟降幅为8.0%/2.7%；attention 换路为34.7%/56.0%。
+实际 trace 确认命中 DTK BF16 FA2；CPU 同步含 GPU 等待，不能重复计为搬运收益。
+各 provider 内三次 seed42 文生图分别一致；跨 provider 不逐像素一致，seed52
+壶形/壶盖有可见变化，不能保证同 seed 复现旧图。固定原图编辑差异与原路径
+自身重复波动接近；红改蓝的语义核验通过，不据此宣称完整画质基准通过。
+
+CPU 接口、原生设备数值、变输入 Graph 与实际六步 t2i/edit 分别验收；
+两卡原生 TP/RCCL 另有通过记录。社区源码指纹保持不变。未覆盖其他架构、
+多参考图、并发或整模型 Graph；非分页验证不解除 vendor 分页缺口。
+详细命令、原始请求/图片、哈希与逐轮结果保留在部署目录的
+`artifacts/minimax-h3-image-20261114`、`artifacts/minimax-h3-image-single64-20261114`、
+`artifacts/minimax-h3-image-perf-20261114`、`artifacts/minimax-h3-image-attention-20261115`。
