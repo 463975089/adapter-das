@@ -11,3 +11,5 @@ This adds a startup selection mechanism, not a default model runner or a capabil
 Fork detection runs before acquiring the registry lock. A child rebuilds its lock but refuses inherited active registrations, including forks inside predicates or factories. Each callback is followed by an ownership/process check, including false predicates and successful factory returns.
 
 Idempotent registration with the same owner/callbacks returns the original canonical registration object, both before and after freeze. The returned handle must pass `require_model_runner_factory`; value equality is not a substitute for ownership identity.
+
+The framework-free registry contracts run in `tests/adapter/test_model_runner_factory_cpu.py` under HOSTnone; their filename keeps them outside the vLLM-host-only lane. This verifies registry behavior without pretending to exercise an installed host or GPU.
