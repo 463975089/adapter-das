@@ -42,7 +42,7 @@ def register_model_runner_factory(owner, *, matches, create):
         _check_process()
         current = _factories.get(owner)
         if current == candidate:
-            return candidate
+            return current
         if _frozen or current is not None:
             raise RuntimeError("runner factory registration is frozen or owner conflicts")
         _factories[owner] = candidate

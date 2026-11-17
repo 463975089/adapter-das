@@ -9,3 +9,5 @@ The extension retains the returned registration and calls `require_model_runner_
 This adds a startup selection mechanism, not a default model runner or a capability claim for upstream backends. Existing configurations without a matching explicit extension continue through the official runner.
 
 Fork detection runs before acquiring the registry lock. A child rebuilds its lock but refuses inherited active registrations, including forks inside predicates or factories. Each callback is followed by an ownership/process check, including false predicates and successful factory returns.
+
+Idempotent registration with the same owner/callbacks returns the original canonical registration object, both before and after freeze. The returned handle must pass `require_model_runner_factory`; value equality is not a substitute for ownership identity.

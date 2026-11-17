@@ -140,3 +140,16 @@ def test_real_fork_inside_callback_cannot_return_runner(api, stage):
             os.close(read)
             if state["pid"]:
                 os.waitpid(state["pid"], 0)
+
+
+@pytest.mark.parametrize("frozen", [False, True])
+def test_duplicate_registration_returns_the_healthy_canonical_handle(api, frozen):
+    matches = lambda config: False
+    create = lambda config, device: object()
+    first = api.register_model_runner_factory("retry", matches=matches, create=create)
+    if frozen:
+        assert api.create_model_runner(None, None, default=lambda: "stock") == "stock"
+    second = api.register_model_runner_factory("retry", matches=matches, create=create)
+    assert second is first
+    api.require_model_runner_factory(first)
+    api.require_model_runner_factory(second)
