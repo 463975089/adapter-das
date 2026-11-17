@@ -1096,3 +1096,20 @@ arguments, plus rejection of other architectures and dtype/device/size contracts
 The real wrapper/Graph and spawn probes accept either supported HCU architecture;
 a CPU skip does not validate gfx938 device execution or serving.
 
+
+GDN verify auto qualification admits gfx936/gfx938 on the matched DTK stack,
+without a fixed batch ceiling. Positive batch size, packed TP2/draft4 shapes,
+dtype/layout/index and state/snapshot contracts remain mandatory. CPU routing
+covers both exact architecture names and feature suffixes beyond the former
+18/64 limits, including empty-batch rejection.
+
+Device regressions compare AITER and upstream Triton at N=65/128/256/512 with
+BF16/FP32 bias and linear/tree parents. The entire written snapshot pool is
+checked in bounded blocks against a CPU copy of the Triton result; untouched
+slots and source state must remain exact. Independent FP32 recurrence additionally
+checks first/middle/last active sequences. N=128/512 Graph tests replay the
+original data and three changed-input/source-index/destination-index/parent maps,
+including a zero-length padded row. N=128 also covers first-call auto capture.
+An explicit low-free-memory skip is a resource condition, not device qualification;
+only executed cases count as numerical evidence.
+

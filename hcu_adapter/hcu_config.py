@@ -757,8 +757,8 @@ BACKEND_CATALOG = {
         "summary": "SGLang GDN MTP target verification",
         "backends": {
             "auto": {"status": "production",
-                     "note": "default policy: qualified gfx936/DTK2610 stack, BF16 packed "
-                             "H8/HV24, FP32 state/snapshots, N1..18, draft4 -> AITER; "
+                     "note": "default policy: qualified DTK2610 stack, BF16 packed "
+                             "H8/HV24, FP32 state/snapshots, gfx936/gfx938, no fixed batch ceiling, draft4 -> AITER; "
                              "other environments/contracts retain upstream"},
             "triton": {"status": "production",
                        "note": "explicit upstream rollback; also auto fallback"},

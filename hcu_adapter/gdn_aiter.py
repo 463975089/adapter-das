@@ -38,7 +38,8 @@ TP4 e2e, so it is tried first; import/install failure keeps upstream triton.
 
 Target verify preserves the upstream function object and cached imports.
 HCU_LINEAR_ATTN_GDN_VERIFY=auto chooses AITER only for the qualified stack,
-gfx936, BF16 packed TP2 H8/HV24, FP32 state/snapshots, N<=18 and draft4.
+gfx936/gfx938, BF16 packed TP2 H8/HV24, FP32 state/snapshots and draft4.
+There is no fixed batch ceiling; the runtime retains its resource/shape limits.
 Other contracts stay upstream; =triton and HCU_DISABLE_OPS=gdn_verify disable it.
 
 Prefill/packed decode gate: HCU_LINEAR_ATTN_GDN = auto|aiter|triton (auto = triton until the
@@ -205,6 +206,8 @@ _VERIFY_VALIDATED_STACK = {
     "aiter": "0.1.8+dtk2610.torch2110.2611031115.ga1a2bc",
 }
 
+_VERIFY_AUTO_ARCHES = frozenset(("gfx936", "gfx938"))
+
 _VERIFY_REQUIRED = frozenset((
     "A_log", "a", "dt_bias", "softplus_beta", "softplus_threshold",
     "q", "k", "v", "b", "initial_state_source", "initial_state_indices",
@@ -232,7 +235,7 @@ def _verify_auto_contract_supported(p, torch):
     if cu is None:
         return False
     n = cu.numel() - 1
-    if (not 1 <= n <= 18 or tuple(p["q"].shape[:3]) != (1, n * 4, 8)
+    if (n < 1 or tuple(p["q"].shape[:3]) != (1, n * 4, 8)
             or p["v"].shape[-2] != 24 or p["cache_steps"] != 4
             or p.get("use_qk_l2norm_in_kernel") is not True
             or p.get("lower_bound") is not None):
@@ -381,7 +384,7 @@ def _bind_target_verify_aiter(function, vendor, torch, *, policy="aiter"):
                     except (AttributeError, RuntimeError, ValueError) as exc:
                         device_arches[device.index] = ""
                         device_probe_errors[device.index] = type(exc).__name__
-                supported = device_arches[device.index] == "gfx936"
+                supported = device_arches[device.index] in _VERIFY_AUTO_ARCHES
         if not supported:
             if (not declined and p.get("disable_state_update") is True
                     and p.get("is_kda", False) is False):
@@ -477,7 +480,7 @@ def _install_target_verify_aiter():
                 "fused_sigmoid_gating_delta_rule_update"),
         mechanism=registry.MECH_REBIND,
         detail="policy=" + mode + "; BF16 target_verify; FP32 state/snapshots; "
-               "auto admits qualified gfx936 TP2 H8/HV24 N1..18/draft4; "
+               "auto admits qualified gfx936/gfx938, TP2 H8/HV24 draft4; no fixed batch ceiling; "
                "cached aliases retained; other contracts keep upstream",
     )
     LOG.warning("HCU adapter: GDN verify AITER route installed "

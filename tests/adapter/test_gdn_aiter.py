@@ -256,7 +256,7 @@ def test_auto_unvalidated_metadata_keeps_upstream_without_gpu_probe(change):
     assert [x[0] for x in ns["calls"]] == ["upstream"]
 
 
-@pytest.mark.parametrize("arch", ["gfx938", "gfx942", "unknown"])
+@pytest.mark.parametrize("arch", ["gfx9380", "gfx9360", "gfx942", "unknown"])
 def test_auto_unvalidated_arch_keeps_upstream(arch):
     ns, vendor = faces()
     torch, probes = auto_torch(arch)
@@ -410,3 +410,34 @@ def test_auto_malformed_parent_map_keeps_upstream():
     p=auto_inputs(); p["retrieve_parent_token"]=TensorMetadata((16,4), "fp32")
     assert fn(**p) == "upstream"
     assert not probes
+
+
+@pytest.mark.parametrize("arch", [
+    "gfx936", "gfx936:sramecc+:xnack-", "gfx938", "gfx938:sramecc+:xnack-",
+])
+@pytest.mark.parametrize("n", [0,1,18,19,64,65,128,257,512,1024])
+def test_auto_batch_size_does_not_limit_valid_contract(arch, n):
+    ns, vendor = faces()
+    torch, probes = auto_torch(arch)
+    fn = bridge._bind_target_verify_aiter(ns["face"], vendor["vendor"], torch, policy="auto")
+    alias = fn
+    p = auto_inputs()
+    shapes = {
+        "q": (1,n*4,8,128), "k": (1,n*4,8,128), "v": (1,n*4,24,128),
+        "a": (n*4,24), "b": (n*4,24), "cu_seqlens": (n+1,),
+        "initial_state_source": (n+3,24,128,128),
+        "intermediate_states_buffer": (n+3,4,24,128,128),
+        "initial_state_indices": (n,), "intermediate_state_indices": (n,),
+        "retrieve_parent_token": (n,4),
+    }
+    for name, shape in shapes.items():
+        p[name] = TensorMetadata(shape, p[name].dtype)
+    expected = "aiter" if n else "upstream"
+    assert alias(**p) == expected
+    assert alias is fn
+    call, forwarded = ns["calls"][-1]
+    assert call == expected
+    for name in ("initial_state_source", "intermediate_states_buffer",
+                 "retrieve_parent_token"):
+        assert forwarded[name] is p[name]
+    assert probes == ([0] if n else [])

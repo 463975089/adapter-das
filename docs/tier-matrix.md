@@ -521,7 +521,7 @@ SGLang GDN MTP target verification
 |---|---|
 | triton | production explicit upstream rollback; also aut |
 | aiter | validated vendor verify bridge in gdn_aiter.py |
-| auto | production default policy: qualified gfx936/DTK |
+| auto | production default policy: qualified DTK2610 st |
 
 路由变量：`HCU_LINEAR_ATTN_GDN_VERIFY`
 
