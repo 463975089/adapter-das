@@ -38,11 +38,11 @@ vLLM 0.33 V4.1 gathered-BF16 sparse prefill via native FlashMLA
 
 ## vllm_fp4_indexer
 
-V41 LightOp FP4 indexer with zero-copy 64-record cache pages
+V41 LightOp FP4 indexer with variable allocator pages
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| lightop | candidate Default: applies only when the model |
+| lightop | candidate Default for FP4 cache only; PCP1 eag |
 | stock | candidate Explicit stock fallback: existing FP |
 
 路由变量：`HCU_VLLM_FP4_INDEXER_IMPL`

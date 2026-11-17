@@ -94,10 +94,10 @@ BACKEND_CATALOG = {
     },
     "vllm_fp4_indexer": {
         "var": "HCU_VLLM_FP4_INDEXER_IMPL",
-        "summary": "V41 LightOp FP4 indexer with zero-copy 64-record cache pages",
+        "summary": "V41 LightOp FP4 indexer with variable allocator pages",
         "backends": {
             "stock": {"status": "candidate", "note": "Explicit stock fallback: existing FP8 behavior"},
-            "lightop": {"status": "candidate", "note": "Default: applies only when the model has an FP4 indexer cache (indexer_kv_dtype=mxfp4); eager or PIECEWISE breakable Graph; logical 64-record pages, ratio2 physical 32 records staged for decode; mixed ratios and model acceptance pending"},
+            "lightop": {"status": "candidate", "note": "Default for FP4 cache only; PCP1 eager/PIECEWISE and constrained eager PCP8 TP1/DP1/EP/HT without speculation; bounded query scores and transient profile budget with ratio-specific decode staging; rebased model validation pending"},
         },
     },
     "vllm_fp4_packer": {
@@ -648,7 +648,10 @@ BACKEND_CATALOG = {
                        "note": "DTK flash_attn 2.8.4 wheel（gfx93x kernel）；"
                                "uniform-window 离线对拍逐位等，但真实 decode "
                                "词汤（2026-10-12 bw7，gfx936 wheel paged 内核"
-                               "问题）；=vendor 显式 opt-in 做 A-B"},
+                               "问题）；=vendor 显式 opt-in 做 A-B。"
+                               "非分页 BF16/FP16 dense/packed FA2 桥保留 batch、"
+                               "out、LSE 与已缓存 dispatcher 入口；"
+                               "vendor_fa 快关回 triton，见 docs/dense-flashattention.md"},
             "emu": {"status": "production",
                     "note": "chunked online-softmax torch 模拟（默认；全契约 "
                             "graph-safe）"},

@@ -160,6 +160,9 @@ hcu_adapter = "hcu_adapter.bridges.vllm:hcu_platform_plugin"
 [project.entry-points."vllm.general_plugins"]
 hcu_adapter = "hcu_adapter.bridges.vllm:hcu_runtime_plugin"
 
+[project.entry-points."sglang.multimodal_gen.platforms"]
+hcu = "hcu_adapter.bridges.sglang:hcu_diffusion_platform_plugin"
+
 # sources stay at the repo root (src-layout mapping from this build root);
 # nothing is copied into packaging/ -- build via packaging/build.sh or
 # `python -m build` from this directory.

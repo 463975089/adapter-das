@@ -172,8 +172,12 @@ run_seg() {  # name timeout_base cmd...
 }
 
 # ---------------------------------------------------------------- segments
-run_seg l0      60   python3 ci/l0_gate.py
-run_seg cpu     300  python3 -m pytest tests/test_ops_cpu.py -q --no-header
+run_seg l0      120  python3 ci/l0_gate.py
+# CPU oracles import sgl_kernel only -- no sglang host surface, so the
+# interpreter skips the bridge install (~26 s of sglang import per cold
+# start, and with no host loaded the _cpu_process suites also skip their
+# clean-subprocess rerun: they already ARE the clean process).
+run_seg cpu     300  env HCU_ADAPTER_HOST=none python3 -m pytest tests/test_ops_cpu.py -q --no-header
 # Transfer ownership only to a blocking matrix with an available upstream tree.
 # Observe/off modes retain the broad regression's blocking coverage.
 FAMILY_DESELECT=()
@@ -205,7 +209,7 @@ PY
     echo "L1: kernels transfers $((${#FAMILY_DESELECT[@]} / 2)) cases to blocking matrix"
 fi
 run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -vv --no-header \
-    --tb=short -o faulthandler_timeout=120 \
+    --tb=short -o faulthandler_timeout=120 --durations=60 \
     "${FAMILY_DESELECT[@]}"
 
 # L1.5: upstream attention-unittest selection (dsa + kda + dense + mla
@@ -383,23 +387,44 @@ fi
 
 GATES_LOG=/tmp/l1_gates.log; : > "$GATES_LOG"
 gates_fail=0
-for g in _test_hcu_config _test_fa3_emu_cp _test_rope_fallback_vs_fused \
-         _test_aiter_moe_gate _test_contig_triton; do
+# The five gates are independent processes with independent env contracts;
+# each pays ~26-30 s of interpreter+torch import and a few GB of VRAM on a
+# 96 GB card, so they run concurrently and the phase costs the slowest gate
+# (~100 s) instead of the sum (~330 s; 2026-11-17 nmz16 cold-start timing).
+# Per-gate log files are merged into GATES_LOG in fixed name order afterwards.
+gate_names=(_test_hcu_config _test_fa3_emu_cp _test_rope_fallback_vs_fused \
+           _test_aiter_moe_gate _test_contig_triton)
+declare -A gate_pid gate_out
+echo "L1: gates start (5 concurrent)"
+for g in "${gate_names[@]}"; do
     f="tests/tools/$g.py"
     [ -f "$f" ] || { echo "    SKIP $g (missing)" >> "$GATES_LOG"; continue; }
-    echo "=== $g ===" >> "$GATES_LOG"
-    if timeout 300 python3 "$f" >> "$GATES_LOG" 2>&1; then
+    # The config gate only exercises config resolution + kernel tiers;
+    # skipping the host-bridge install halves its interpreter startup
+    # (52s -> 26s on the 2026-11-16 image) and it has no bridge surface.
+    case "$g" in _test_hcu_config) gate_env=(env HCU_ADAPTER_HOST=none) ;; *) gate_env=() ;; esac
+    gate_out[$g]="/tmp/l1_gate_$g.log"
+    timeout 300 "${gate_env[@]}" python3 "$f" > "${gate_out[$g]}" 2>&1 &
+    gate_pid[$g]=$!
+done
+for g in "${gate_names[@]}"; do
+    [ -n "${gate_pid[$g]:-}" ] || continue
+    if wait "${gate_pid[$g]}"; then
         echo "L1: gate $g PASS"
     else
-        echo "L1: gate $g FAIL -- tail:"; tail -n 8 "$GATES_LOG" | sed 's/^/    /'
+        echo "L1: gate $g FAIL -- tail:"; tail -n 8 "${gate_out[$g]}" | sed 's/^/    /'
         gates_fail=1; FAILS+=("gate:$g")
     fi
+    { echo "=== $g ==="; cat "${gate_out[$g]}"; } >> "$GATES_LOG"
 done
 [ "$gates_fail" = 0 ] && echo "L1: gates PASS"
 
 # vendor wheel sanity: WARN tier (bad wheel is an environment fact, not an
 # MR regression) -- printed, never fails the gate
-python3 -m pytest tests/vendor/test_flash_attn.py -q --no-header \
+# Vendor probe drives the vendor wheels directly against a torch fp32
+# reference; the sglang host bridge is not under test here, skip its
+# install (~26 s cold interpreter).
+env HCU_ADAPTER_HOST=none python3 -m pytest tests/vendor/test_flash_attn.py -q --no-header \
     > /tmp/l1_vendor.log 2>&1 \
     && echo "L1: vendor PASS" \
     || echo "L1: vendor WARN (wheel sanity; see /tmp/l1_vendor.log)"
