@@ -18,6 +18,28 @@
 > 单测与 e2e 当前挂在 sglang 宿主树（`--up-tree` 指 sglang 源码树）。vLLM
 > 宿主的版本门与验证路径见 [frameworks/vllm032.md](frameworks/vllm032.md) §6。
 
+### 公共检查与宿主标签
+
+公共检查不由宿主标签二选一：`Adapter CPU` 对普通 PR 和已识别的车道标签
+运行结构、CPU/编排契约，包含 `test_common_bridge.py`、`test_bootstrap.py`、
+`test_runtime_lifecycle.py` 和原有 CPU 选择。该进程使用 `HCU_ADAPTER_HOST=none`
+并隐藏设备。HCU workflow 的 build/L0 也随任一车道执行。
+
+| 操作 | 公共检查 | SGLang HCU 车道 | vLLM HCU 车道 |
+| --- | --- | --- | --- |
+| 普通 PR opened/synchronize/reopened/ready_for_review | 运行 | 不自动运行 | 不自动运行 |
+| 添加 `sglang` 或 `ci-sglang`（旧名 `ci-hcu`） | 运行 | 运行 | 不运行 |
+| 添加 `vllm` 或 `ci-vllm` | 运行 | 不运行 | 运行 |
+| 添加 `ci-all` 或 dispatch `lane=all` | 运行 | 运行 | 运行 |
+| 添加其他标签 | 不因该标签重跑 | 不运行 | 不运行 |
+
+标签是一次触发：分别添加两个宿主标签会启动各自车道；按标签分开的 concurrency
+组避免互相取消。后续 push 仍走普通 PR 路径，需要新 HCU 结果时重加对应标签
+或手动 dispatch。HCU dispatch 的默认 `lane=sglang` 保持兼容；独立的
+`Adapter CPU` 可手动运行，HCU dispatch 自身仍运行公共 build/L0。
+vLLM 车道保留每文件新解释器及 `VLLM_PLUGINS=none` 的桥契约测试形态，
+不能据此宣称真实 Plugin/模型已验收；nightly 的 observe 结果仍只用于分诊。
+
 L1.5 v2/代表矩阵的下列 HCU 计数是**拆分前兼容快照的历史证据**，
 该快照包含生产兼容修复（现由 [PR #27](https://github.com/HYGON-AI/adapter-das/pull/27)
 单独承载）。工具链 PR 只新增采集、验证和 CI 接线，不修改生产算子或桥；

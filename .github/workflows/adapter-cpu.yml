@@ -2,6 +2,7 @@ name: Adapter CPU
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
   push:
     branches: [main]
   workflow_dispatch:
@@ -10,12 +11,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: adapter-cpu-${{ github.event.pull_request.number || github.ref }}
+  group: adapter-cpu-${{ github.event.pull_request.number || github.ref }}-${{ github.event.label.name || 'auto' }}
   cancel-in-progress: true
 
 jobs:
   cpu:
     name: Structure and CPU contracts
+    # Common contracts accompany either host label; unrelated labels do not
+    # restart this job or cancel its automatic run.
+    if: >-
+      github.event.action != 'labeled' ||
+      contains(fromJSON('["sglang", "vllm", "ci-sglang", "ci-vllm", "ci-hcu", "ci-all"]'), github.event.label.name)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -48,6 +54,9 @@ jobs:
         run: |
           python -m pytest -q --junitxml=cpu-results.xml \
             tests/test_ops_cpu.py \
+            tests/adapter/test_common_bridge.py \
+            tests/adapter/test_bootstrap.py \
+            tests/adapter/test_runtime_lifecycle.py \
             tests/adapter/test_fa_vendor_kwargs.py \
             tests/adapter/test_l1_gate_ownership.py \
             tests/adapter/test_hcu_ci_preflight.py \

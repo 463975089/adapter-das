@@ -258,6 +258,12 @@ optional 误判为 fatal。保留 callback 原有捕获边界，不新增恢复�
 
 > 全仓文档地图与失效信号清单见 `docs/reading-guide.md`（新会话先读它）。
 
+CI 宿主标签只选择额外 HCU 车道，不排除公共检查：`sglang`/`ci-sglang`
+（兼容 `ci-hcu`）与 `vllm`/`ci-vllm` 各自触发宿主车道，`ci-all` 同跑。
+公共 CPU workflow 同时保留 common/bootstrap/lifecycle 契约，HOSTnone 并隐藏设备。
+标签事件核对 `github.event.action`，不能把 `labeled` 当作 event_name；不同标签
+的 concurrency 组隔离。完整触发矩阵与一次触发语义见 `docs/ci.md`。
+
 | 你要做的事 | 先读 |
 |---|---|
 | 新增/修改一个算子垫片或影子库 | `references/shadow-matrix.md` |
