@@ -452,6 +452,7 @@ jobs:
       (github.event_name == 'pull_request_target' &&
        github.event.action == 'labeled' &&
        contains(fromJSON('["ci-vllm", "ci-all"]'), github.event.label.name))
+    runs-on: hygon-bw1100-1card
     # 27 个文件 x 每文件一次 vllm import(冷 ~60s)+用例时间，冷容器 x2 余量
     timeout-minutes: 150
     container:
