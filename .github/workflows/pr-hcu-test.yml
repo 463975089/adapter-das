@@ -32,7 +32,7 @@ permissions:
 concurrency:
   # 标签名入组：加未知标签（如 wip）不再取消在跑的自动/车道 run；同一车道
   # 标签重复添加仍然取消并重启该标签自己的 run
-  group: hcu-mr-k8s-${{ github.event.pull_request.number }}-${{ github.event.label.name || 'auto' }}
+  group: hcu-mr-k8s-${{ github.event.pull_request.number || inputs.pr-number || github.ref }}-${{ github.event.label.name || inputs.lane || 'auto' }}
   cancel-in-progress: true
 
 env:
@@ -45,11 +45,11 @@ env:
 jobs:
   image:
     name: resolve CI image
-    # 车道标签门：labeled 事件只认 ci-hcu / ci-vllm / ci-all（此前任意标签都会
-    # 重跑 build+L0）；opened/synchronize 等非 labeled 事件不受影响
+    # 公共 build/L0 随任一宿主车道执行；只认明确的宿主/兼容标签，避免任意标签
+    # 重跑 build+L0；opened/synchronize 等非 labeled 事件不受影响
     if: >-
-      github.event_name != 'labeled' ||
-      contains(fromJSON('["ci-hcu", "ci-vllm", "ci-all"]'), github.event.label.name)
+      github.event.action != 'labeled' ||
+      contains(fromJSON('["sglang", "vllm", "ci-sglang", "ci-vllm", "ci-hcu", "ci-all"]'), github.event.label.name)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -77,8 +77,8 @@ jobs:
   build:
     name: build whl
     if: >-
-      github.event_name != 'labeled' ||
-      contains(fromJSON('["ci-hcu", "ci-vllm", "ci-all"]'), github.event.label.name)
+      github.event.action != 'labeled' ||
+      contains(fromJSON('["sglang", "vllm", "ci-sglang", "ci-vllm", "ci-hcu", "ci-all"]'), github.event.label.name)
     needs: [image]
     runs-on: hygon-build
     timeout-minutes: 20
@@ -187,8 +187,8 @@ jobs:
   l0:
     name: L0 structural gate
     if: >-
-      github.event_name != 'labeled' ||
-      contains(fromJSON('["ci-hcu", "ci-vllm", "ci-all"]'), github.event.label.name)
+      github.event.action != 'labeled' ||
+      contains(fromJSON('["sglang", "vllm", "ci-sglang", "ci-vllm", "ci-hcu", "ci-all"]'), github.event.label.name)
     # L0 刻意零依赖（docs/ci.md 设计取舍），用不到卡和镜像，放云端 runner
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -228,13 +228,13 @@ jobs:
     runs-on: hygon-bw1100-1card
     # 非 labeled 的 pull_request_target 事件跳过 l1（PR 自动跑只到 L0/build）。
     # L1 GPU 手动通道两条：workflow_dispatch（lane 输入 sglang/all），
-    # 或给 PR 加 ci-hcu / ci-all 标签（车道标签语义见本文件顶部 concurrency 注释）
+    # 或给 PR 加 sglang / ci-sglang / ci-hcu / ci-all 标签
     if: >-
       (github.event_name == 'workflow_dispatch' &&
        (inputs.lane == 'sglang' || inputs.lane == 'all' || inputs.lane == '')) ||
       (github.event_name == 'pull_request_target' &&
        github.event.action == 'labeled' &&
-       contains(fromJSON('["ci-hcu", "ci-all"]'), github.event.label.name))
+       contains(fromJSON('["sglang", "ci-sglang", "ci-hcu", "ci-all"]'), github.event.label.name))
     # 等卡 30 分钟 + L1 step 上限 300 分钟 + 其他步骤余量。
     # L1.5 段入车后脚本内各段超时之和（×2）约 3.7h；暖缓存时全车 ~20-30 分钟，
     # 上限只裁剪冷容器最坏情形（与 nightly 的 l15 job 同级）
@@ -444,14 +444,14 @@ jobs:
     name: L1 vLLM host lane (bw1100-1card)
     # vLLM 宿主族（tests/adapter/conftest.py 按宿主域隔离出去的那批文件）的车道：
     # 每文件一个新解释器，HCU_ADAPTER_HOST=vllm + VLLM_PLUGINS=none（形态依据见
-    # ci/vllm_host_lane.sh 头注）。触发：ci-vllm / ci-all 标签，或 dispatch lane=vllm/all
-    needs: [image, build]
+    # ci/vllm_host_lane.sh 头注）。触发：vllm / ci-vllm / ci-all，或 dispatch lane=vllm/all
+    needs: [image, l0, build]
     if: >-
       (github.event_name == 'workflow_dispatch' &&
        (inputs.lane == 'vllm' || inputs.lane == 'all')) ||
       (github.event_name == 'pull_request_target' &&
        github.event.action == 'labeled' &&
-       contains(fromJSON('["ci-vllm", "ci-all"]'), github.event.label.name))
+       contains(fromJSON('["vllm", "ci-vllm", "ci-all"]'), github.event.label.name))
     runs-on: hygon-bw1100-1card
     # 27 个文件 x 每文件一次 vllm import(冷 ~60s)+用例时间，冷容器 x2 余量
     timeout-minutes: 150
