@@ -2092,7 +2092,7 @@ def install() -> None:
                         x_scales=None,
                         round_scale=False,
                         use_ue8m0=False,
-                        quant_group_size=None,
+                        quant_group_size=128,
                         async_finish=False,
                         return_recv_hook=False,
                         **unmapped,
@@ -2126,9 +2126,7 @@ def install() -> None:
                                 num_max_dispatch_tokens_per_rank,
                                 num_experts,
                                 quant_type=3 if use_ue8m0 else 2,
-                                quant_group_size=(
-                                    128 if use_ue8m0 else 0
-                                ) if quant_group_size is None else quant_group_size,
+                                quant_group_size=quant_group_size,
                                 fp8_round_scale=bool(round_scale),
                                 async_finish=async_finish,
                                 return_recv_hook=return_recv_hook,
