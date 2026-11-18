@@ -61,10 +61,10 @@ def q_rope_selected() -> bool:
 
 
 def set_q_rope_provider(provider) -> None:
-    """Bind an optional factory for an in-place Q rotation callable.
+    """Bind a worker-startup initializer for optional in-place Q RoPE.
 
-    The factory receives (q, positions, cos_sin_cache) and returns None for
-    unsupported inputs. The returned callable runs after native KV insert.
+    It receives the Core cos/sin table during dummy profiling and returns an
+    input-specific preparation callable, or None for an unsupported table.
     """
     global _q_rope_provider
     if not callable(provider):
@@ -335,11 +335,12 @@ def build_classes():
                 # Common preparation serializes PCP gathers. AMD's fast compressor
                 # chain publishes local latent against global slots and cannot run here.
                 self.aux_stream_list = None
+                self._initialize_q_rope = None
                 self._prepare_q_rope = None
                 if q_rope_selected() and cfg.model_config.enforce_eager:
                     if _q_rope_provider is None:
                         raise PcpAttentionError("PCP Q RoPE provider is not bound")
-                    self._prepare_q_rope = _q_rope_provider
+                    self._initialize_q_rope = _q_rope_provider
 
             def _indexer_cls(self, k_cache):
                 if k_cache is not None and k_cache.rocm_mxfp4:
@@ -351,19 +352,29 @@ def build_classes():
 
             def _fused_qnorm_rope_kv_insert(self, q, kv, positions, attn_metadata):
                 native = super()._fused_qnorm_rope_kv_insert
-                if (self._prepare_q_rope is None or not self.use_pcp
-                        or not isinstance(attn_metadata, dict)
+                if ((self._initialize_q_rope is None and self._prepare_q_rope is None)
+                        or not self.use_pcp or self.kv_mxfp8
+                        or self.kv_cache_torch_dtype != torch.uint8
                         or self.accepts_unnormed_unroped_query
                         or self.n_local_heads != self.padded_heads
                         or self.rope_head_dim != 64 or self.rotary_emb.is_neox_style):
+                    return native(q, kv, positions, attn_metadata)
+
+                if attn_metadata is None and self._initialize_q_rope is not None:
+                    # Core sizes the automatic KV cache after this dummy pass.
+                    self._prepare_q_rope = self._initialize_q_rope(
+                        self.rotary_emb.cos_sin_cache
+                    )
+                    self._initialize_q_rope = None
+                if self._prepare_q_rope is None or not isinstance(attn_metadata, dict):
                     return native(q, kv, positions, attn_metadata)
 
                 swa = attn_metadata.get(self.swa_cache_layer.prefix)
                 cache = self.swa_cache_layer.kv_cache
                 if (swa is None or swa.num_prefill_tokens <= 0 or swa.num_decode_tokens
                         or swa.cache_slot_mapping is None or swa.cache_positions is None
-                        or self.kv_mxfp8 or cache.dtype != torch.uint8
-                        or cache.ndim != 3 or cache.shape[-1] != 584):
+                        or cache.dtype != torch.uint8 or cache.ndim != 3
+                        or cache.shape[-1] != 584):
                     return native(q, kv, positions, attn_metadata)
 
                 cos_sin = self.rotary_emb.cos_sin_cache
