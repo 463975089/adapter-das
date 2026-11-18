@@ -132,6 +132,14 @@ BACKEND_CATALOG = {
             "native": {"status": "candidate", "note": "Adapter-owned V41 PCP backends/indexer/attention; plugin injects the FP8 reference scorer and publishes the model; eager PCP2+ only, real-device gates pending"},
         },
     },
+    "vllm_pcp_q_rope": {
+        "var": None,
+        "summary": "vLLM V4.1 PCP prefill Q-only RoPE",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Default: upstream fused query preparation"},
+            "hcu": {"status": "candidate", "note": "Opt-in eager gfx938 PCP prefill, in-place GPT-J RoPE; GPU validation pending"},
+        },
+    },
     "vllm_dsv41_pcp_compat": {
         "var": None,
         "summary": "vLLM V4.1 compatibility for the opt-in PCP extension",

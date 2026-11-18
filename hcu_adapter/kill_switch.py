@@ -43,6 +43,7 @@ SWITCHES = {
     "w4a8_contiguous_gemm": ("Optional DTK W4A8 HIPC COV5 ABI repair (startup only)", None),
     "vllm_dsv41_channel_fp8": ("vLLM V4.1 channel-FP8 config registration; fresh-process stock fallback", "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL"),
     "vllm_ct_w4a8": ("vLLM V4.1 CT W4A8 config registration; fresh-process stock fallback", "HCU_VLLM_CT_W4A8_IMPL"),
+    "vllm_pcp_q_rope": ("V4.1 PCP prefill Q-only RoPE; fresh-process stock fallback", None),
     "vllm_pcp": ("vLLM V4.1 PCP attention ownership; fresh-process stock fallback", "HCU_VLLM_PCP_IMPL"),
     "qsa_mqa": ("QSA MQA BoltOPs dispatch (falls back to Torch reference)", None),
     "vllm_minimax_prefill": ("MiniMax Plugin prefill fusion; startup veto retains the stock composition", None),

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import threading
 
-from hcu_adapter import hcu_env
+from hcu_adapter import hcu_config, hcu_env
 from hcu_adapter.kill_switch import op_disabled
 
 # Same operator-facing knob the bridge records and health-checks. `select_attention`
@@ -24,12 +24,14 @@ from hcu_adapter.kill_switch import op_disabled
 # rollback path inert while the owned PCP classes were still built and executed.
 MODE_VARIABLE = 'HCU_VLLM_PCP_IMPL'
 OP_NAME = 'vllm_pcp'
+Q_ROPE_OP = 'vllm_pcp_q_rope'
 
 _lock = threading.RLock()
 _reference = None
 _engram_validator = None
 _classes = None
 _forward_context_resolver = None
+_q_rope_provider = None
 
 
 class PcpAttentionError(RuntimeError):
@@ -48,6 +50,29 @@ def selected_mode() -> str:
     if value not in ('stock', 'native'):
         raise PcpAttentionError(f'{MODE_VARIABLE} must be stock or native')
     return value
+
+
+def q_rope_selected() -> bool:
+    return (
+        not op_disabled(Q_ROPE_OP)
+        and not op_disabled(OP_NAME)
+        and hcu_config.load()["ops"].get(Q_ROPE_OP, "stock") == "hcu"
+    )
+
+
+def set_q_rope_provider(provider) -> None:
+    """Bind an optional factory for an in-place Q rotation callable.
+
+    The factory receives (q, positions, cos_sin_cache) and returns None for
+    unsupported inputs. The returned callable runs after native KV insert.
+    """
+    global _q_rope_provider
+    if not callable(provider):
+        raise PcpAttentionError("PCP Q RoPE provider must be callable")
+    with _lock:
+        if _q_rope_provider is not None and _q_rope_provider is not provider:
+            raise PcpAttentionError("PCP Q RoPE provider already bound; restart process")
+        _q_rope_provider = provider
 
 
 def set_indexer_reference(function) -> None:
@@ -310,6 +335,11 @@ def build_classes():
                 # Common preparation serializes PCP gathers. AMD's fast compressor
                 # chain publishes local latent against global slots and cannot run here.
                 self.aux_stream_list = None
+                self._prepare_q_rope = None
+                if q_rope_selected() and cfg.model_config.enforce_eager:
+                    if _q_rope_provider is None:
+                        raise PcpAttentionError("PCP Q RoPE provider is not bound")
+                    self._prepare_q_rope = _q_rope_provider
 
             def _indexer_cls(self, k_cache):
                 if k_cache is not None and k_cache.rocm_mxfp4:
@@ -318,6 +348,39 @@ def build_classes():
 
             forward = DeepseekV4Attention.forward
             _alloc_attn_out = DeepseekV4Attention._alloc_attn_out
+
+            def _fused_qnorm_rope_kv_insert(self, q, kv, positions, attn_metadata):
+                native = super()._fused_qnorm_rope_kv_insert
+                if (self._prepare_q_rope is None or not self.use_pcp
+                        or not isinstance(attn_metadata, dict)
+                        or self.accepts_unnormed_unroped_query
+                        or self.n_local_heads != self.padded_heads
+                        or self.rope_head_dim != 64 or self.rotary_emb.is_neox_style):
+                    return native(q, kv, positions, attn_metadata)
+
+                swa = attn_metadata.get(self.swa_cache_layer.prefix)
+                cache = self.swa_cache_layer.kv_cache
+                if (swa is None or swa.num_prefill_tokens <= 0 or swa.num_decode_tokens
+                        or swa.cache_slot_mapping is None or swa.cache_positions is None
+                        or self.kv_mxfp8 or cache.dtype != torch.uint8
+                        or cache.ndim != 3 or cache.shape[-1] != 584):
+                    return native(q, kv, positions, attn_metadata)
+
+                cos_sin = self.rotary_emb.cos_sin_cache
+                rotate = self._prepare_q_rope(q, positions, cos_sin)
+                if rotate is None:
+                    return native(q, kv, positions, attn_metadata)
+
+                from vllm.distributed import get_pcp_group
+
+                # Preserve the Core PCP KV-collective order and original RoPE table.
+                gathered_kv = get_pcp_group().all_gather(kv.contiguous(), dim=0)
+                torch.ops._C.fused_deepseek_v4_kv_rope_insert(
+                    gathered_kv, cache, swa.cache_slot_mapping, swa.cache_positions,
+                    cos_sin, swa.block_size, None, self.kv_mxfp8,
+                )
+                rotate()
+                return q
 
             def forward_mqa(self, q, kv, positions, output):
                 if not isinstance(output, torch.Tensor):
