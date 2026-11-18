@@ -10,6 +10,10 @@ OP = 'vllm_fp4_indexer'
 VARIABLE = 'HCU_VLLM_FP4_INDEXER_IMPL'
 
 
+class Fp4AdmissionError(ValueError):
+    """A deployment configuration does not satisfy the FP4 cache contract."""
+
+
 @dataclass(frozen=True)
 class Fp4Plan:
     ratios: tuple[int, ...]
@@ -163,5 +167,7 @@ def validate_config(cfg):
             or hcu_env.resolve('HCU_VLLM_FP4_PACKER_IMPL', host='vllm')[0] != 'triton'):
         errors.append('explicit triton FP4 lowering required')
     if errors:
-        raise ValueError('HCU FP4 admission before allocation: ' + '; '.join(errors))
+        raise Fp4AdmissionError(
+            'HCU FP4 admission before allocation: ' + '; '.join(errors)
+        )
     return Fp4Plan(tuple(sorted(active)), block)

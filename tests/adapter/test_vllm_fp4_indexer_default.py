@@ -17,9 +17,21 @@ from hcu_adapter.extensions import ExtensionReport, ExtensionStatus
 
 
 def config(dtype="auto", model_type="deepseek_v41"):
+    hf = NS(model_type=model_type, compress_ratios=[0, 1, 2], index_head_dim=128,
+            index_n_heads=32, qk_rope_head_dim=64, kv_source_layer_ids=[1],
+            index_source_layer_ids=[1])
     return NS(
-        attention_config=NS(indexer_kv_dtype=dtype),
-        model_config=NS(hf_text_config=NS(model_type=model_type)),
+        attention_config=NS(indexer_kv_dtype=dtype, indexer_sparse_logits=False),
+        model_config=NS(hf_text_config=hf, enforce_eager=True),
+        parallel_config=NS(tensor_parallel_size=1, pipeline_parallel_size=1,
+                           prefill_context_parallel_size=1, decode_context_parallel_size=1,
+                           data_parallel_size=1, enable_dbo=False, enable_eplb=False),
+        cache_config=NS(block_size=64),
+        kernel_config=NS(monokernel=False, moe_backend="deep_gemm"),
+        speculative_config=None,
+        lora_config=None,
+        kv_transfer_config=None,
+        use_v2_model_runner=True,
     )
 
 
@@ -45,7 +57,7 @@ def isolated(monkeypatch):
         "loaded": True, "path": None, "ops": {}, "overrides": {}, "hosts": {},
     })
     for name in ("HCU_VLLM_FP4_INDEXER_IMPL", "HCU_VLLM_FP4_PACKER_IMPL",
-                 "HCU_DISABLE_OPS"):
+                 "HCU_VLLM_SPARSE_INDEXER_IMPL", "HCU_VLLM_PCP_IMPL", "HCU_DISABLE_OPS"):
         monkeypatch.delenv(name, raising=False)
     publish(reports())
 
@@ -59,6 +71,38 @@ def test_auto_resolves_once_after_provider_health(model_type, caplog):
         bridge._configure_indexer_kv_dtype(cfg)
     assert cfg.attention_config.indexer_kv_dtype == "mxfp4"
     assert sum("auto -> mxfp4" in record.message for record in caplog.records) == 1
+
+
+@pytest.mark.parametrize("field,error", [
+    ("tensor_parallel_size", "tensor_parallel_size=1 required"),
+    ("data_parallel_size", "DP1 or DP8 required"),
+])
+def test_unsupported_parallelism_keeps_auto_and_rejects_explicit_mxfp4(field, error):
+    cfg = config()
+    setattr(cfg.parallel_config, field, 2)
+    bridge._configure_indexer_kv_dtype(cfg)
+    assert cfg.attention_config.indexer_kv_dtype == "auto"
+
+    cfg.attention_config.indexer_kv_dtype = "mxfp4"
+    bridge._configure_indexer_kv_dtype(cfg)
+    assert cfg.attention_config.indexer_kv_dtype == "mxfp4"
+    with pytest.raises(ValueError, match=error):
+        fp4_indexer.validate_config(cfg)
+
+
+@pytest.mark.parametrize("kv_transfer", [False, True])
+def test_pcp8_default_obeys_kv_transfer_admission(monkeypatch, kv_transfer):
+    monkeypatch.setenv("HCU_VLLM_PCP_IMPL", "native")
+    cfg = config()
+    cfg.parallel_config.prefill_context_parallel_size = 8
+    cfg.parallel_config.enable_expert_parallel = True
+    cfg.parallel_config.all2all_backend = "deepep_high_throughput"
+    if kv_transfer:
+        cfg.kv_transfer_config = NS()
+
+    bridge._configure_indexer_kv_dtype(cfg)
+
+    assert cfg.attention_config.indexer_kv_dtype == ("auto" if kv_transfer else "mxfp4")
 
 
 @pytest.mark.parametrize("dtype", ["fp8", "mxfp4", "bf16", "invalid"])
@@ -169,8 +213,8 @@ def test_real_platform_passes_effective_dtype_to_core(monkeypatch):
     from hcu_adapter.bridges import vllm_moe_aiter
 
     cfg = config()
-    cfg.kernel_config = NS(moe_backend="deep_gemm")
-    cfg.parallel_config = NS(worker_cls="custom.Worker", distributed_executor_backend="mp")
+    cfg.parallel_config.worker_cls = "custom.Worker"
+    cfg.parallel_config.distributed_executor_backend = "mp"
     seen = []
     monkeypatch.setattr(bridge, "require_runtime_healthy", lambda: None)
     monkeypatch.setattr(vllm_moe_aiter, "configure_padding_policy", lambda _: None)

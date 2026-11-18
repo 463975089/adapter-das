@@ -151,7 +151,7 @@ REGISTRY = {
     "HCU_VLLM_FP4_INDEXER_IMPL": {
         "env": "HCU_VLLM_FP4_INDEXER_IMPL", "default": "lightop",
         "hosts": ("vllm",),
-        "about": "V41 FP4 indexer. Paired healthy Plugin owners default V4.1 auto cache to mxfp4 before allocation. Explicit fp8 and stock retain FP8 selection",
+        "about": "V41 FP4 indexer. Eligible V4.1 auto caches default to mxfp4 with paired healthy Plugin owners. Explicit fp8 and stock retain FP8 selection",
     },
     "HCU_VLLM_FP4_PACKER_IMPL": {
         "env": "HCU_VLLM_FP4_PACKER_IMPL", "default": "triton",

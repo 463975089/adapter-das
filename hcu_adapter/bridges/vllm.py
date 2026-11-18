@@ -287,7 +287,11 @@ def require_extension_healthy(capability: str) -> None:
 
 def _configure_indexer_kv_dtype(vllm_config) -> None:
     """Resolve the paired V4.1 FP4 default before Core builds model/cache state."""
-    from hcu_adapter.fp4_indexer import default_requested
+    from hcu_adapter.fp4_indexer import (
+        Fp4AdmissionError,
+        default_requested,
+        validate_config,
+    )
 
     if not default_requested(vllm_config):
         return
@@ -301,6 +305,13 @@ def _configure_indexer_kv_dtype(vllm_config) -> None:
         return
     for capability in sorted(_FP4_INDEXER_CAPABILITIES):
         require_extension_healthy(capability)
+    try:
+        plan = validate_config(vllm_config)
+    except Fp4AdmissionError as exc:
+        LOG.debug("Keeping DeepSeek V4.1 indexer_kv_dtype=auto: %s", exc)
+        return
+    if plan is None:
+        return
     vllm_config.attention_config.indexer_kv_dtype = "mxfp4"
     LOG.info(
         "HCU DeepSeek V4.1 indexer_kv_dtype auto -> mxfp4 "
