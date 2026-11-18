@@ -62,6 +62,14 @@ class HcuConfigError(RuntimeError):
 # backends   selectable backend -> {status, note}
 
 BACKEND_CATALOG = {
+    "vllm_inverse_rope": {
+        "var": None,
+        "summary": "Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output",
+        "backends": {
+            "stock": {"status": "candidate", "note": "Default: original Core inverse RoPE"},
+            "hcu": {"status": "candidate", "note": "Packaged native kernel compiled before model construction; 64-dimension tail; device/Graph/model gates pending"},
+        },
+    },
     "cuda_graph": {
         "var": None,
         "summary": "HIP driver guard for breakable prefill graph capture",
