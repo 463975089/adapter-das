@@ -29,15 +29,32 @@ def selected():
     return mode == 'lightop'
 
 
+def default_requested(cfg):
+    """Whether a V4.1 auto cache requests the paired FP4 provider default.
+
+    The HCU platform resolves this before model construction, after the Plugin
+    owners have activated. Keep this predicate framework-free so an earlier
+    Plugin activation can defer deployment admission until that resolution.
+    """
+    attention = getattr(cfg, 'attention_config', None)
+    model = getattr(cfg, 'model_config', None)
+    hf = getattr(model, 'hf_text_config', None)
+    return (
+        getattr(attention, 'indexer_kv_dtype', None) == 'auto'
+        and getattr(hf, 'model_type', None) in ('deepseek_v41', 'deepseek_v41_text')
+        and selected()
+        and not op_disabled('vllm_fp4_packer')
+        and hcu_env.resolve('HCU_VLLM_FP4_PACKER_IMPL', host='vllm')[0] == 'triton'
+    )
+
+
 def applicable(cfg):
     """Whether this deployment actually uses the FP4 indexer cache.
 
-    ``selected()`` only reads the implementation knob, which is on by default
-    for every process. Core enables the MXFP4 indexer cache purely from
-    ``indexer_kv_dtype`` (``dsa_indexer_uses_fp4`` resolves ``auto`` to ``fp8``),
-    so an FP8 deployment must never enter the FP4 branch: it would be rejected
-    by the admission below for unrelated properties such as a PD connector, and
-    would fail before any model weight is allocated.
+    The HCU platform resolves eligible V4.1 ``auto`` configurations to explicit
+    ``mxfp4`` before allocation, once both Plugin owners are healthy. Remaining
+    ``auto`` configurations retain Core's FP8 default. The implementation knob
+    alone must never send an explicit FP8 deployment into the FP4 branch.
     """
     if not selected():
         return False
