@@ -69,7 +69,7 @@ def _install_kda_prefill(impl: str) -> None:
             kwargs.setdefault("beta", beta)
         beta = kwargs["beta"]
         if kwargs.get("beta_is_raw", False):
-            beta = beta.float().sigmoid().to(beta.dtype)
+            beta = beta.float().sigmoid()
         return chunk_kda(
             q=kwargs["q"],
             k=kwargs["k"],
@@ -84,6 +84,8 @@ def _install_kda_prefill(impl: str) -> None:
             dt_bias=kwargs.get("dt_bias"),
             lower_bound=kwargs.get("lower_bound"),
             return_intermediate_state=bool(kwargs.get("return_intermediate_states")),
+            track_state=kwargs.get("track_state"),
+            track_chunk_idx=kwargs.get("track_chunk_idx"),
         )
 
     TritonKDAKernel.extend = extend

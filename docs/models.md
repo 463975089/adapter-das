@@ -9,6 +9,26 @@ gfx936 64 GiB 单卡、BF16 TE/DiT、原生 VAE 精度、2048×2048、6 步的
 文生图与参考图编辑已通过。最终配方、性能对照及画质限制统一见
 [DTK26.10 部署第8节](image-dtk2610.md#8-minimax-h3-image-的原生-diffusion-平台候选)。
 
+## 2026-10-30 SGLang 原生 sparse MLA 候选
+
+`kernels/sglang_flashmla_dtk.py` 对接同名 BF16 sparse attention 接口，通过 `ops.sglang_mla_sparse: dtk` 选择；默认仍为兼容实现。对索引尾部和全空行先保留有效掩码，再给原生内核提供安全占位，返回时恢复空行零输出；只修改索引副本，避免原生排序影响调用方。H64/D512/top-k 2048 的 1/6/12 行（真实 query heads 4/32 补齐）变输入探针 Graph 与 eager 一致，输出相对 RMSE 约 0.2%；正式 adapter 导出入口复验通过；整模型验证待完成。额外的 packed E4M3 LightOp gather 融合留在 plugin；没有复用其他框架的 attention 实现。
+
+## 2026-10-30 SGLang DeepEP 原生 ABI 共存（PD 验证中）
+
+MTP Graph 输出出现杂词和复读，不能作为精度通过。关闭 Decode Graph 的对照在空 attention-DP rank 的 DSA 元数据初始化中触发空序列 max()。该缺口并非 HCU 内核的同接口数值实现问题，空 DP 验证路径的扩展归 plugin；不能由该修正推断 Graph 输出异常已经解决。
+
+MTP draft Graph 发现官方 fused_eh_norm 的 4096 宽度启动 512 线程，而 DTK 无 launch_bounds 的产物默认仅支持 256。SGLang 独立桥 `_sglang/jit_eh_norm.py` 在该模块的 load_jit 调用中补 `--gpu-max-threads-per-block=1024`，覆盖上游最大 8192 宽度的 CTA；不修改官方计算源码，也不改变其他 JIT 模块。数值、Graph 与完整 MTP 结果分别验证。另将 store-index-cache 的已应用补丁改成零编辑不写文件，消除已观察到的共享 NFS 无操作重写冲突。
+
+长输入检查发现既有 MQA 的 torch/Triton 两档都缺少上游 `relu(q·k)`：之前两档相互对照不能证明语义正确。按官方 `sglang/srt/layers/attention/dsa/utils.py::_fp8_mqa_logits_torch`，在各 head 的点积之后、权重求和之前补 ReLU；paged 与 ragged 同步修正，框架边界仍为 SGLang。Triton head 循环改为有界循环，避免 32 heads 静态展开导致分钟级编译。gfx936 的负点积反例、随机 ragged、64/256 page 的真实 preshuffle 布局和两轮变输入 Graph 重放均通过；负点积旧公式最大偏差 4500.31，修复后正确归零。ragged torch 路径另与官方函数有效位置直接对照通过。两档 catalog 暂降为 candidate，原有 production 证据不用于此次修正的验收；完整修正后长输入/MTP 仍在复验，旧长输入运行已停止且不计通过。
+
+每进程单卡配置的实际启动发现：上游缩窄 CUDA_VISIBLE_DEVICES 后，子进程仍继承全卡 HIP_VISIBLE_DEVICES，逻辑 device 0 因而落到同一张卡，PyNcclCommunicator 初始化失败。新增 SGLang 专属 `_sglang/device_visibility.py`，包裹其 CudaDeviceMixin.reindex_device_id，在 spawn 上下文内同步 HIP 掩码并在退出时恢复父进程环境；不调用 DeepInfer/vLLM 的实现，不扩展已有 HIP 分配，ROCR 二次映射暂拒绝。物理卡 3,1 反序分配的双子进程诊断通过：两 rank 各只见一张指定卡，真实 PyNcclCommunicator AllReduce 均返回 3，父环境正确恢复；完整三节点启动继续验证。
+
+Decode Graph 排查新增证据：原 SGLang 专属 mHC prenorm emu 按 64 个 split 逐个提交 matmul/square/reduce，两步解码 trace 含 11,520 次平方与大量小 GEMM。保持 split-K 分块、FP32 计算和输出布局，将等长 split 分为至多两组 batched GEMM；不复用或修改 DeepInfer 实现。gfx936 上六种形状（含不整除 split、空 split、零 token、无 split）各三轮变输入 Graph 重放对照通过，最大绝对差 3.25e-5。实际 decode 形状 M=1/2,K=16384,N=24,split=64 的预热 Graph 单次约 25–26µs，原逐 split 参考约 773–822µs；这是算子结果，完整 PD Graph 性能仍在复验。另将 concat_mla 的已应用补丁路径改为零编辑时不写文件，避免 spawn 子进程重复更新共享头文件；首轮日志曾在此无操作写入处出现 NFS FileExistsError。
+
+同轮修正 SGLang DSA utils 的平台函数早期绑定：CP8 查询已经分片，但旧 is_hip 返回 True 令 DSA 元数据保持全局形状，双请求产生 top-k 25 行超过本地 query 8 行的断言。在 SGLang bridge 的既有 DSA 初始化处将 is_hip/is_cuda 同步到当前平台 seam；进程内 RuntimeContext 复验确认 CP/interleave 开关从 False 恢复为 True。此项不修改 Torch/Triton 的硬件判断，不扩展到 vLLM/DeepInfer。组合 plugin 后，P INT8 CP8/EP8、D INT4 DP16/EP16、E4M3 KV 的 eager PD 已通过三串行（4、Berlin、7319）和两并发（5、Paris），均正常 stop；1,237-token 输入按 512+512+213 分块并定向第二台 Decode 节点 DP8，完整返回 7319。Graph、MTP、更长上下文与性能未验收。
+
+SGLang 专属 DeepEP 包装继续翻译官方 BF16/FP8 参数；显式 quant_type 或携带原生第三位置 top-k 权重的调用透传当前 DTK Buffer，避免 plugin 的 INT8 分发被改写为 BF16。INT4/INT8 权重重排、grouped GEMM、INT8 分发策略归 plugin；vLLM/DeepInfer 不引用这一包装。该 ABI 调整随上述 GLM P INT8 / D INT4 eager 服务验证；其他执行模式不据此宣称通过。
+
 ## 硬件矩阵（2026-10-12 实测盘点，选卡对照）
 
 | 卡型 | 架号 | fp8 计算 | int8 计算 | 所在节点 | 说明 |

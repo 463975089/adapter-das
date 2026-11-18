@@ -49,6 +49,42 @@ _TARGETS = (
 )
 
 
+def _install_moe_hardware_guard(module):
+    import sys
+    from functools import wraps
+    from types import FunctionType
+
+    import torch
+
+    from hcu_adapter import registry
+
+    original = getattr(module, "initialize_moe_config", None)
+    if not isinstance(original, FunctionType) or getattr(original, "_hcu_moe_hardware", False):
+        return
+
+    @wraps(original)
+    def initialize(*args, **kwargs):
+        if torch.version.hip is None:
+            return original(*args, **kwargs)
+        adapted = FunctionType(
+            original.__code__, dict(original.__globals__, is_cuda=lambda: False),
+            original.__name__, original.__defaults__, original.__closure__,
+        )
+        adapted.__kwdefaults__ = original.__kwdefaults__
+        return adapted(*args, **kwargs)
+
+    initialize._hcu_moe_hardware = True
+    for name, namespace in tuple(sys.modules.items()):
+        if name.startswith("sglang.") and getattr(namespace, "__dict__", {}).get("initialize_moe_config") is original:
+            namespace.initialize_moe_config = initialize
+            registry.register(
+                "platform_detect", initialize,
+                target=f"{name}:initialize_moe_config",
+                mechanism=registry.MECH_REBIND,
+                detail="NVIDIA SM90 SBO guard uses physical HIP identity",
+            )
+
+
 def _install_gfx_probe_guard(_common):
     """Neutralize is_gfx*_supported arch probes.
 
@@ -327,6 +363,58 @@ def install():
             if not hasattr(_common, name):
                 setattr(_common, name, getattr(_device, name))
 
+    from hcu_adapter import hip_metadata
+
+    original_current_device = torch.cuda.current_device
+    if not getattr(original_current_device, "_hcu_current_device", False):
+        def _hcu_current_device():
+            if torch.version.hip is not None and not torch.cuda.is_initialized():
+                try:
+                    device = hip_metadata.current_device()
+                except (RuntimeError, OSError, AttributeError):
+                    device = None
+                if device is not None:
+                    return device
+            return original_current_device()
+
+        _hcu_current_device._hcu_current_device = True
+        torch.cuda.current_device = _hcu_current_device
+        registry.register(
+            "platform_detect", _hcu_current_device,
+            target="torch.cuda:current_device",
+            mechanism=registry.MECH_REBIND,
+            detail="HIP current-device metadata before Torch CUDA initialization",
+        )
+
+    original_capability_query = torch.cuda.get_device_capability
+    if not getattr(
+        original_capability_query, "_hcu_device_capability", False
+    ):
+        def _hcu_device_capability(device=None):
+            if torch.version.hip is not None and not torch.cuda.is_initialized():
+                device_id = device
+                if device is not None and not isinstance(device, int):
+                    parsed = torch.device(device)
+                    if parsed.type != "cuda":
+                        return original_capability_query(device)
+                    device_id = parsed.index
+                try:
+                    capability = hip_metadata.compute_capability(device_id)
+                except (RuntimeError, OSError, AttributeError):
+                    capability = None
+                if capability is not None:
+                    return capability
+            return original_capability_query(device)
+
+        _hcu_device_capability._hcu_device_capability = True
+        torch.cuda.get_device_capability = _hcu_device_capability
+        registry.register(
+            "platform_detect", _hcu_device_capability,
+            target="torch.cuda:get_device_capability",
+            mechanism=registry.MECH_REBIND,
+            detail="HIP capability metadata before Torch CUDA initialization",
+        )
+
     #这两个 import 本身会执行 common.py 顶层 `if is_hip():` ——彼时判定
     # 还是原函数，fnuz 常量已被冻结并写进 builtins；patch 后必须重算
     # （CUDA 语义 = e4m3fn，max 448）。
@@ -468,13 +556,6 @@ def install():
             ", ".join(sorted(_gates)[:3]),
         )
 
-    # gcn 架构探针（is_gfx950_supported / is_gfx1250_supported，@lru_cache 无
-    # __wrapped__）：原实现走 torch.version.hip 真值分支后裸调
-    # get_device_properties(0) ——卡分区可见性（HIP_VISIBLE_DEVICES=8..15）
-    # 且 CUDA 尚未 init 的 sitecustomize 早期 import 顺序下直接
-    # "No CUDA GPUs are available"。HCU 是 gfx93x，这些门恒 False。
-    _install_gfx_probe_guard(_common)
-
     impls = {
         "sglang.srt.utils.common:get_device_capability": _hcu_get_device_capability,
         "sglang.srt.utils.common:get_device_core_count": _hcu_get_device_core_count,
@@ -519,6 +600,11 @@ def install():
             setattr(_device, _n, _fn)
         if getattr(_pkg_utils, _n, None) is not _fn:
             setattr(_pkg_utils, _n, _fn)
+
+    _install_gfx_probe_guard(_common)
+    from sglang.srt.layers.moe import utils as _moe_utils
+
+    _install_moe_hardware_guard(_moe_utils)
 
     # runner_utils imports DeepEP and quantization before shared_read_event.
     # Install both predicate namespaces and hardware guards before that import.

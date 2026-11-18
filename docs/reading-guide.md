@@ -142,3 +142,6 @@ moe_align capture 崩（527ad97）。金索引法：docs/models.md 备注列 + c
 
 
 vLLM 0.33 mHC 行为适配候选：`docs/frameworks/vllm033-mhc.md`；数学委托官方 Torch，公开 OOT 注册归宿主桥，post/head 保留，完整四维及模型门禁未闭合。
+## GLM-5.3 Flash 交接
+
+模型候选源码与未完成验证见 [GLM-5.3 Flash 交接](glm5.3-flash-handoff.md)。

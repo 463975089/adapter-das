@@ -254,3 +254,29 @@ DSPARK + decode Graph 配置的完整 HumanEval 为 158/164（96.3%）。同一
 精确 token 序列在异常位置的 `成品` logprob 从 -6.1613 降至 -25.1250，
 正确缩进的 logprob 从 -0.2863 恢复到约 -1.07e-6。参数遗漏的反例、
 真实 HCU 数值/变输入 Graph 和原配置模型回归共同验证修复；本轮未重跑 GSM8K。
+
+
+## W8A8 scaled GEMM 的 LightOp 回退舍入
+
+GLM-5.3 Prefill 的同一后缀在冷缓存和命中时可能跨过 LightOp 的 32 行门槛。
+当量化值和两个 scale 逐值一致时，比较 INT32 累加之后的 FP32 乘法顺序。
+LightOp 兼容布局回退到 Triton 时先乘两个 scale，再乘累加值，以保持 BF16
+舍入一致。独立 Triton 后端继续使用原有顺序。回归覆盖精确位值和变 scale
+的 Graph replay。
+
+## KDA raw beta 的激活 dtype（2026-11-03）
+
+`beta_is_raw=True` 的调用方可能传入 BF16 beta，但 fork `chunk_kda` 的
+激活后 beta 应保留 FP32：使用 `beta.float().sigmoid()`，不要再回转输入
+的 dtype。`beta_is_raw=False` 时继续原样传递已经激活的 beta。
+
+GLM 固定前缀真实服务对照中，layer 0 首个有效 token 的原始投影、归一化
+Q/K、V、累计 gate 一致，首次可比数值分歧出现在激活后的 beta。3 组前缀
+× 8 个 head 分片中，迁移版 BF16 beta 均逐位等于原生 FP32 beta 的 BF16
+舍入结果，最大绝对差约 0.001885；这些前缀共享首 token，不能视作独立
+题目统计。它证明了 dtype 契约损失，不代表已解释整套评测的分数差。
+修复后仍需同前缀逐层/状态对照及原参数评测，不用短样本或 lint 代替精度验收。
+
+定位钩子必须跟随实际 dispatch：vendor GLM/HCU 使用 `HcuKDAKernel` 和
+`fla.hcu.kda`，不能只检查通用 `TritonKDAKernel`。CP 下还要排除 padding、
+部分和/归约后张量的布局差异。

@@ -93,3 +93,5 @@ MiniMax prefill fusion: `HCU_DISABLE_OPS=vllm_minimax_prefill` is a startup veto
 for the Plugin provider and retains the stock composition. It takes precedence
 over `ops.vllm_minimax_prefill: triton`. Changing a selected policy after use is
 refused; restart instead of mixing compiled/cache paths in one engine.
+
+`HCU_DISABLE_OPS=sglang_tree_sampling` 拒绝 target-only 随机树采样调用；该路径没有可用的 FlashInfer 回退，不静默改为贪心。

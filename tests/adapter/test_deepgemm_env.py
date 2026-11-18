@@ -49,7 +49,9 @@ def adapter(*args, **kwargs):
 raw = types.ModuleType("deepgemm")
 for key in ("m_grouped_bf16_gemm_nt_masked", "fp8_m_grouped_gemm_nt_masked",
             "m_grouped_fp8_gemm_nt_contiguous", "fp8_paged_mqa_logits",
-            "get_paged_mqa_logits_metadata", "get_num_sms", "fp8_mqa_logits"):
+            "get_paged_mqa_logits_metadata", "get_num_sms", "fp8_mqa_logits",
+            "m_grouped_i8_gemm_nt_masked", "m_grouped_i8_gemm_nt_contiguous",
+            "marlin_i8_masked_weight", "marlin_i8_contiguous_weight"):
     setattr(raw, key, vendor)
 sys.modules["deepgemm"] = raw
 # Only external providers are faked. The registry and installer are real.
@@ -75,6 +77,10 @@ importlib.util.find_spec = lambda key, *a, **kw: (
 )
 shim = deep_gemm_dtk.install()
 assert shim is sys.modules["deep_gemm"]
+for key in ("m_grouped_i8_gemm_nt_masked", "m_grouped_i8_gemm_nt_contiguous",
+            "marlin_i8_masked_weight", "marlin_i8_contiguous_weight"):
+    assert getattr(shim, key) is getattr(raw, key)
+    assert getattr(shim.dtk_deepgemm, key) is getattr(raw, key)
 enabled = expected == "1"
 if name == "HCU_TRITON_MASKED":
     fn = shim.m_grouped_bf16_gemm_nt_masked

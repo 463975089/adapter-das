@@ -73,3 +73,16 @@ MoE 另附 batch/topk/expert 数/EP 配置、grouped GEMM size、dispatch/combin
 
 - 飞书原文（活文档，冲突以原文为准）：`kb:408d32`（含 PD 分离测试表格入口）
 - 本地快照：`E:\GITS\KnowledgeSet\.ingest\_feishu_performance_guide.txt`（2026-08-08 版）
+
+
+## 共享源码启动 I/O 的诊断边界
+
+GLM5.3 多节点探针在共享 NFS 源码树上观察到 worker 阻塞于 JIT 头文件的 `nfs_file_read`，以及并发原子替换的 `FileExistsError`。这些发生在正式 GPU 计时前，不能记作 DeepEP 延迟。`jit_dpskmeta.install()` 对内容未变的头文件跳过原子替换，仍逐项执行 needle 校验与 registry 登记；内容改变时保留原子写入。临时目录诊断证明首次转换生效、第二次 inode/mtime 不变、两次均登记；未宣称该检查证明所有 NFS 并发故障已解决。实际多进程启动需独立复验，不通过丢弃超时样本或放宽性能标准规避。
+
+后续 16-rank 探针也在 `jit_dot_product.install()` 观察到相同头文件的重复原子写入与 `FileExistsError`/`FileNotFoundError`。该入口同样仅在内容改变时写入；原 needle 校验和原登记语义保持。临时诊断对比旧实现两次写、新实现一次写，重复安装 inode/mtime 不变，缺 needle 仍报错。此项只处理已观察到的无变化重复写入，不宣称解决首次转换的所有 NFS 并发问题。
+
+## 冷启动上下文与通信等待
+
+若 trace 表现为某卡反复出现百毫秒空档、其他 rank 长时间停在 dispatch/combine，先从宿主 KFD 进程与各 GPU VRAM、Docker PID 映射和驱动 runlist 日志核实上下文归属。CPU worker 的架构探测、导入期 dummy tensor 或可选 vendor 模块导入均可能提前初始化 GPU 0；不能只凭通信 kernel 时间就认定网络或 DeepEP 实现慢。冷启动阻断探针应复制实际角色环境，覆盖完整 bootstrap 及 plugin 检测；修复后再核实真实服务的上下文分布和持续负载 profile。
+
+本次 GLM 候选使用 KFD 同构架构元数据、HIP 元数据查询、无导入副作用的能力探测及按输入设备延迟 weak-ref ABI 探测；原 collective 与 native weak-ref 选择保留。平台安装顺序调整须同时核对公共重导出别名和硬件专用检查，避免用 CUDA 语义把 HCU 的 9.x 误判成 NVIDIA SM90。具体证据与未完成验收见 `docs/glm5.3-flash-handoff.md`，不将 cold probe 或单轮 profile 当作数据集精度结论。
