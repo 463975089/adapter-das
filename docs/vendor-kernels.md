@@ -212,3 +212,50 @@ find /usr/local/lib/python3.10/dist-packages/aiter -name '*.so' | wc -l  # 51
 ```
 
 原始 JSON 与脚本随仓 `tmp_fetch/`（scratch，不入库；本文档为沉淀面）。
+
+
+### KDA FP32 prefix checkpoints (2026-11-01)
+
+The official KDA prefill interface supplies `track_state` and `track_chunk_idx`
+when the prefix cache needs an interior chunk boundary. The fork router must
+forward both arguments: retaining the upstream `supports_track_state_snapshot`
+capability while dropping them leaves the allocated FP32 snapshot unwritten.
+The recurrence now stores its FP32 accumulator at the start of the requested
+64-token chunk, before the next update. The BF16 intermediate `h` tensor is not
+an equivalent checkpoint. Negative chunk indices leave their rows untouched.
+Snapshot calls use the Triton recurrence because the current AITER entry points
+do not expose this output; calls without snapshots retain their existing route.
+This is an existing API compatibility fix in the adapter. Full-model cache-hit
+and host-reload validation remains separate from kernel numerical validation.
+
+GPU validation through the public extend interface passed for single and variable-length batches, including a strided initial-state pool. Tracked FP32 states matched independently computed prefixes exactly; continuation outputs and final states matched the full sequence exactly. Untracked rows were untouched. The old-code sentinel run left all 32,768 snapshot elements as NaN while output/final state were finite. These are kernel results; full-model cache-hit acceptance is tracked in the plugin development log.
+
+
+### INT8 dense prefill provider (2026-11-01, candidate)
+
+`ops.int8_scaled_mm=lightop` selects the native `gemm_w8a8_smooth` provider
+through the existing SGLang API. The supported fast path uses BF16 output,
+M >= 32, K divisible by 128, N divisible by 64, contiguous activations and a
+column-major weight view, with no bias. Unsupported shapes/layouts and missing
+vendor support retain the existing Triton implementation. The default remains
+Triton until whole-model validation; the selection is recorded in the runtime
+registry. No new environment variable is introduced. Targeted numerical and
+Graph validation plus serving results are required before promotion.
+
+### Single-group MoE router (2026-11-01, candidate)
+
+`ops.sglang_grouped_topk=triton` reuses the upstream fused router for contiguous
+FP32 prefill logits with 288 experts, top-8, one group and no fused shared expert.
+The current upstream dispatch remains the default and handles all unsupported
+calls. The bridge preserves the upstream renormalization epsilon, applies route
+scaling only when renormalization is enabled, and synchronizes existing aliases.
+No platform flags or official sources change. Four row counts and four flag
+combinations passed numerical and changing-input Graph checks; the 4096-row
+microbenchmark measured 1.32 ms for current dispatch and 0.052 ms for fused routing.
+Whole-model cache, accuracy and performance validation remain pending.
+
+Paged MQA dispatch now selects the Triton/vendor provider before emulation-only
+cache unpacking. The former order copied and converted the full index cache
+inside every decode graph even though the selected provider read the original
+packed cache. Input normalization and provider arguments remain unchanged;
+bitwise eager/Graph and serving validation are tracked separately.

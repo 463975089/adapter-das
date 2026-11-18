@@ -166,3 +166,38 @@ def test_official_w8a8_linear_chain(tokens, with_bias):
                 result.float().flatten(), expected.float().flatten(), dim=0)
             assert cosine.item() >= .9999
             previous = expected
+
+
+@requires_gpu
+@pytest.mark.skipif(torch.version.hip is None, reason="requires the LightOp layout")
+def test_lightop_int8_fallback_preserves_scale_rounding(monkeypatch):
+    from sgl_kernel import gemm_int8
+
+    # Reconstruct the INT32 dot product from a divergent GLM-5.3 gate-up value.
+    a = torch.zeros((24, 128), device="cuda", dtype=torch.int8)
+    w = torch.zeros((64, 128), device="cuda", dtype=torch.int8)
+    a[:, :2] = torch.tensor([127, 17], device="cuda", dtype=torch.int8)
+    w[:, :2] = torch.tensor([116, 1], device="cuda", dtype=torch.int8)
+    sa = torch.full((24,), 0.010519192554056644, device="cuda")
+    sb = torch.full((64,), 0.0005712177371606231, device="cuda")
+    acc = 14749
+    expected = (acc * (sa[:, None] * sb[None, :])).bfloat16()
+    legacy = ((acc * sa[:, None]) * sb[None, :]).bfloat16()
+    assert not torch.equal(expected, legacy)
+
+    monkeypatch.setattr(gemm_int8, "_backend", lambda: "lightop")
+    got = sgl_kernel.int8_scaled_mm(a, w.t(), sa, sb, torch.bfloat16)
+    torch.testing.assert_close(got, expected, rtol=0, atol=0)
+
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+        captured = sgl_kernel.int8_scaled_mm(a, w.t(), sa, sb, torch.bfloat16)
+    sa[1::2].mul_(2)
+    graph.replay()
+    updated = (acc * (sa[:, None] * sb[None, :])).bfloat16()
+    torch.testing.assert_close(captured, updated, rtol=0, atol=0)
+
+    monkeypatch.setattr(gemm_int8, "_backend", lambda: "triton")
+    sa[1::2].mul_(0.5)
+    got = sgl_kernel.int8_scaled_mm(a, w.t(), sa, sb, torch.bfloat16)
+    torch.testing.assert_close(got, legacy, rtol=0, atol=0)

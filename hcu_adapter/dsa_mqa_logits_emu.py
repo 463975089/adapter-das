@@ -94,17 +94,6 @@ def fp8_paged_mqa_logits(
     naive vec form 3.5x slower than loop in serving. Parity vs loop: rel
     ~2e-3 (w rounded to bf16), top-k stable.
     """
-    if os.environ.get("HCU_DUMP_TOPK") == "1" and not getattr(fp8_paged_mqa_logits, "_hcu_p", False):
-        fp8_paged_mqa_logits._hcu_probe_done = True
-    if os.environ.get("HCU_DUMP_TOPK") == "1":
-        try:
-            qs = float(q_fp8.float().abs().sum()) if hasattr(q_fp8, "float") else -1
-            ks = float(kv_cache_fp8.float().abs().sum()) if hasattr(kv_cache_fp8, "float") else -1
-            print(f"[HCU mqain] q_abs={qs:.4f} kv_abs={ks:.4f} qshape={tuple(q_fp8.shape)} kvshape={tuple(kv_cache_fp8.shape)}", flush=True)
-        except Exception as e:
-            print("[HCU mqain] err", e, flush=True)
-    if max_context_len is None:
-        max_context_len = int(block_table.shape[1]) * 64
     N = q_fp8.shape[0] if q_fp8.dim() == 3 else q_fp8.shape[0] * q_fp8.shape[1]
     if q_fp8.dim() == 4:
         q_flat = q_fp8.reshape(-1, q_fp8.shape[-2], q_fp8.shape[-1])
@@ -118,8 +107,6 @@ def fp8_paged_mqa_logits(
         q_b = _as_view(q_fp8, _fp8_view_dtype()).to(torch.bfloat16).contiguous()
         N, H, D = q_b.shape
 
-    if kv_cache_fp8.dim() == 2:
-        kv_cache_fp8 = kv_cache_fp8.reshape(-1, 64, 1, kv_cache_fp8.shape[-1])
     PS = kv_cache_fp8.shape[1] if kv_cache_fp8.dim() == 4 else 1
     # Pool layout (2026-10-18 R-02 audit, final): every page is k in the
     # 16-tile INTERLEAVE order + PS fp32 scales at the tail — written by
@@ -175,8 +162,6 @@ def fp8_paged_mqa_logits(
         k_b = kb16.to(torch.bfloat16).reshape(-1, kb16.shape[-1])
         k_sf = torch.ones(k_b.shape[0], device=kb16.device)
 
-    if weights.dim() == 3:
-        weights = weights.reshape(weights.shape[0], -1)
     w = weights.reshape(q_b.shape[0], H).to(torch.float32)
     ctx = context_lens.to(torch.int64).reshape(-1)
     bt = block_table.to(torch.int64).contiguous()
@@ -290,7 +275,7 @@ def fp8_paged_mqa_logits(
         # product hits the DTK elementwise cliff (~0.8 GB/s) and made the
         # naive vec form 3.5x slower than loop in serving.
         sT = torch.matmul(kg, q_b.transpose(1, 2))  # (N, T, H) bf16
-        row = torch.matmul(sT, w.unsqueeze(2).to(torch.bfloat16)).squeeze(2)  # (N, T)
+        row = torch.matmul(sT.relu(), w.unsqueeze(2).to(torch.bfloat16)).squeeze(2)  # (N, T)
         row = row.float() * sc
         valid = torch.arange(T_all, device=device).unsqueeze(0) < ctx.unsqueeze(1)
         if T_all >= int(max_context_len):
@@ -318,7 +303,7 @@ def fp8_paged_mqa_logits(
             kg = k_b[toks]  # (Q, T, D)
             sc = k_sf[toks]  # (Q, T)
             s = torch.matmul(qb, kg.transpose(1, 2)).float()  # (Q, H, T)
-            row = (s * w[i0:i1].unsqueeze(-1)).sum(dim=1) * sc  # (Q, T)
+            row = (s.relu() * w[i0:i1].unsqueeze(-1)).sum(dim=1) * sc  # (Q, T)
             valid = ar[: t1 - t0].unsqueeze(0) + t0 < seq_rows.unsqueeze(1)
             logits[i0:i1, t0:t1] = torch.where(valid, row, 0.0)
     return logits

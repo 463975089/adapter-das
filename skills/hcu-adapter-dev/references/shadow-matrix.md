@@ -44,7 +44,28 @@ vendor 出新轮。轮子就位后 `tests/vendor/test_flash_attn.py` 的探针�
 切到真包跑全场景矩阵（sglang-das 侵入仓同款回退链
 `kernels → sgl_kernel.flash_attn → flash_attn 包`）。
 
+SGLang 的随机 EAGLE 验收在 CUDA 语义分支导入
+`flashinfer.sampling.top_k_renorm_probs/top_p_renorm_probs`。宿主桥将这两个
+名字绑定到固定官方版本已有的 HIP Triton renorm，保留阈值处全部同值概率；
+不复用旧 torch 采样面“恰好 k 个”的不同 tie 语义。导入延迟到调用时，
+不把 SGLang 依赖加到其他宿主。此绑定不表示 FlashInfer 全采样 API 已覆盖。
+
 ## 三档实现策略
+
+SGLang 的 `deep_gemm.tf32_hc_prenorm_gemm` 缺失出口由独立的
+`hcu_adapter/kernels/sglang_mhc_prenorm_emu.py` 承接，保持上游 split-K
+部分和及平方和布局。等长 split 批量计算，不在 Graph 内展开逐 split
+的小算子链；不整除时分为两组，空 split 写零。数值与变输入重放证据见
+[模型记录](../../../docs/models.md)。此实现不转接 DeepInfer 的 mHC 内核。
+
+SGLang DSA MQA 的 paged/ragged 两种布局均须先对每个 head 的点积做
+ReLU，再乘 head 权重并求和，最后应用 K scale。不能只拿两个省略
+ReLU 的实现互相对拍；应包含负点积反例和官方 torch 有效位置对照。
+
+SGLang 的单卡子进程分配通过其 `CudaDeviceMixin.reindex_device_id`
+同步 CUDA/HIP 可见掩码；父进程上下文退出必须恢复原环境。仅缩窄
+CUDA_VISIBLE_DEVICES 而保留更宽的 HIP_VISIBLE_DEVICES，会令多个
+rank 在同一张物理卡上初始化；应验证非连续顺序和真实通信。
 
 每个算子出口按优先级路由，出口签名逐字对齐社区版（含 `out=`、
 destination-passing、占位参数）：
@@ -92,6 +113,8 @@ marlin repack 只在 lightop 有（aiter 无交）。
 
 ## 新增一个算子垫片的流程
 
+SGLang NextN 的 fused_eh_norm 保留上游 JIT 计算：`bridges/_sglang/jit_eh_norm.py` 只为该模块补 HIP 最大线程数编译参数，避免 4096 宽度的 512-thread launch 超过 DTK 默认 256-thread 编译界限。归 rms_norm 的运行时绑定记录；不与 DeepInfer/vLLM 复用。验收需独立 FP32 RMSNorm+cat 对照、变输入 Graph 重放及实际 MTP，单纯编译通过不能算数值通过。
+
 1. **定契约**：找到社区调用点，抄下完整签名/布局/返回语义（读上游源码，
    不要猜；rope 教训：同一个函数名在 cache 布局上还有隐含约定）。
 2. **写参考**：`torch` 档参考实现（fp32），这就是测试金标。
@@ -100,3 +123,17 @@ marlin repack 只在 lightop 有（aiter 无交）。
 4. **写契约测试**：按 `test-suite.md` 四维度；vendor 高危面同时写场景
    压测 + 注册快关（`kill-switches.md`）。
 5. **更新矩阵**：本文件表格 + README 覆盖范围表。
+
+SGLang sparse FlashMLA 的 DTK 候选支持 2048–2112 列；用 -1 补齐到 64 的倍数，并将少于 64 的 query heads 补零后裁回。输入索引不原地排序。KPool 历史索引后的尾部 token 由 plugin 保留，不用历史有效长度裁掉尾列；整模型验收独立记录。
+
+MLA HiCache 的 `transfer_kv_all_layer_mla` 接收 GPU int64/uint64 原始地址表，per-layer 接收连续 device 或 pinned host 张量。`*_lf_pf`/`*_pf_lf` 的 layout_dim 和 item_size 单位都是字节；禁止按普通张量逐层索引地址表。candidate Triton 实现覆盖这些四个 MLA API，其他 direct/非 MLA 接口不在本轮验证结论中。定向字节/Graph 诊断通过不代表整模型 HiCache 已验收。
+
+Ragged MQA 长 prefill 采用 BF16 矩阵分块：E4M3 的有限值可被 BF16 精确表示，逐 head 点积后仍先 ReLU、乘权重再求和；不能把 ReLU 移到 head 归约之后。每行窗口外保持负无穷，完全无效的 tile 只写 mask。N<32 继续既有向量路径；数值、变输入 Graph、热态算子计时与完整模型 profile 分开记录。
+
+`sgl_kernel.int8_scaled_mm` 可用 `ops.int8_scaled_mm=lightop` 选择候选原生 prefill 路径（BF16 输出、M≥32、K 为128倍数、N为64倍数、列主序权重且无 bias）；其他布局、短 batch、bias 和 vendor 不支持的形状继续 Triton。默认保持 Triton，显式选择和实际 provider 记入 runtime registry；`HCU_DISABLE_OPS=int8_scaled_mm` 可拒绝该接口，改回配置 `triton` 可恢复旧路由。数值、变输入 Graph 与整模型结果各自验收。
+
+`ops.sglang_grouped_topk=triton` 显式复用官方融合路由，仅接管 FP32、288 experts、top8、单组、无融合共享专家、M≥32 的连续输入。保留官方 renormalize epsilon、仅归一化后施加 scaling 的语义及原后处理；短 batch、动态 bias 和其他形状仍调用已有 provider。旧模块别名同步绑定，不修改平台判定或官方源码。当前 GPU 数值与变输入 Graph 对拍通过，整模型验证待完成。
+
+paged MQA 的 Triton/vendor 分发必须先于 emu 缓存展开；选中原生 provider 后不能先创建整池 BF16/interleave 副本。保留原来的输入规范化和参数传递，优化只消除未使用的准备结果，数值/Graph 逐位对照及模型性能分别验证。
+
+SGLang target-only 随机树采样的 JIT 路径要求未安装的 FlashInfer C++ 头文件。adapter 候选以 Triton 保留树遍历、拒绝草稿概率写回、有效接受索引及最终残差分布采样；不修改随机硬币、接受阈值或转为贪心。阈值同原生 AOT 入口将累计阈值下限设为1e-9；输入和树验收概率为FP32，最终残差CDF采用FP64累加，避免大词表FP32分块求和在硬币边界选中相邻token；不承诺与原生FP32累加逐位一致。完整随机模型评测仍待验证。

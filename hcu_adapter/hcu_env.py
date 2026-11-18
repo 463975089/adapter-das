@@ -17,8 +17,18 @@ default. Never hard-fail on an unknown value: log and fall back.
 
 import logging
 import os
+import importlib.util
+from pathlib import Path
 
 LOG = logging.getLogger("hcu.adapter")
+def _package_source(package, relative):
+    try:
+        spec = importlib.util.find_spec(package)
+        if spec is None or spec.origin is None:
+            return ""
+        return (Path(spec.origin).parent / relative).read_text(encoding="utf-8")
+    except (ImportError, OSError, ValueError):
+        return ""
 
 
 def arch_name():
@@ -56,14 +66,10 @@ def has_fp8(arch=None):
 def _sglang_uses_new_aiter_ca():
     """True when this sglang build's AR dispatch goes through the NEW
     aiter.dist GraphSafe path (source marker check; no aiter import)."""
-    try:
-        import sglang.srt.distributed.device_communicators.\
-            custom_all_reduce as car
-
-        with open(car.__file__, encoding="utf-8", errors="ignore") as f:
-            return "aiter.dist.device_communicators" in f.read()
-    except Exception:
-        return False
+    source = _package_source(
+        "sglang", "srt/distributed/device_communicators/custom_all_reduce.py"
+    )
+    return "aiter.dist.device_communicators" in source
 
 
 def _auto_aiter_ar():
@@ -86,9 +92,8 @@ def _auto_quant_impl():
         import torch
 
         if getattr(torch.version, "hip", None) is not None:
-            import aiter  # noqa: F401
-
-            return "aiter"
+            if importlib.util.find_spec("aiter") is not None:
+                return "aiter"
     except Exception:
         pass
     return "stock"

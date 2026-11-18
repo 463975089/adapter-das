@@ -75,6 +75,7 @@ def _apply(root, register):
 
     p = root / "csrc" / _RELPATH
     text = p.read_text(encoding="utf-8")
+    original_text = text
     applied = 0
     registered = []
     for needle, repl in _PATCHES:
@@ -91,7 +92,8 @@ def _apply(root, register):
         registered.append(needle)
     from hcu_adapter.atomic_io import atomic_write
 
-    atomic_write(p, text)
+    if text != original_text:
+        atomic_write(p, text)
 
     import hcu_adapter.registry as _reg
 

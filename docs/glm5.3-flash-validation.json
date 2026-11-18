@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-04",
+  "python": "3.12.14",
+  "l0": "passed",
+  "l0_warnings": 32,
+  "remote_runtime_hash_mismatches": 0,
+  "gpu_model_validation": "not_run",
+  "new_tests_added": false,
+  "github_ci": "not_run",
+  "handoff_refresh": {
+    "remote_prefill_repeatability_pairs": "24/24",
+    "remote_selected_badcases": "6/9",
+    "wrong": [
+      7,
+      90,
+      127
+    ],
+    "case127_repetition": "50-word windows up to 3 occurrences",
+    "unified_commit_pair_model_validation": "not_run",
+    "adapter_web_integration": "deferred_by_user"
+  }
+}
