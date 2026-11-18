@@ -367,8 +367,13 @@ def test_auto_vendor_error_never_retries_after_snapshot_write():
 
 def test_gdn_entry_installs_verify_without_enabling_prefill_or_packed_decode():
     from hcu_adapter import hcu_env
+    # Env-independence: close the aiter import gate so the auto route stays
+    # on the upstream fla faces on hosts where the vendor wheel is actually
+    # importable (the upstream #104 suite ran on an aiter-less host, so the
+    # raw `import aiter` inside install() decided the branch by accident).
     with mock.patch.object(bridge, "_install_target_verify_aiter") as verify, \
          mock.patch.object(hcu_env, "resolve", return_value=("auto", "default")), \
+         mock.patch.dict(sys.modules, {"aiter": None, "aiter.ops.fla": None}), \
          mock.patch.object(bridge, "_install_fwd_h_aiter") as prefill, \
          mock.patch.object(bridge, "_install_packed_decode_aiter") as decode:
         bridge.install()
