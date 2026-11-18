@@ -69,3 +69,11 @@
   HYGON Copyright + `Modified by`（H2 样式，如 `engram_gate_triton.py`）。
 - 纯原创：文件头两行（Copyright + SPDX-Apache-2.0），脚本
   `tools/compliance/add_hygon_headers.py` 可批量补齐并幂等跳过已有头。
+
+### SGLang Mamba state scatter（Apache-2.0）
+
+- 来源：sgl-project/sglang，commit `baa9befa381511cd4d56f83980951e5a45fffc6d`。
+- 原路径：`python/sglang/kernels/ops/mamba/mamba_state_scatter_triton.py`。
+- 本地路径：`hcu_adapter/kernels/mamba_state_scatter_triton.py`。
+- 修改：仅将 request / element-block 的 CTA 映射展平到 grid x；保留 source-row、
+  step/destination/source bounds、64-bit offsets、masked read/write 与原函数参数 ABI。

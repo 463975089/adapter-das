@@ -28,7 +28,7 @@ CUDA graph ON + 零旗标 e2e 连贯（短/长 prompt 双变体）。
 
 - CUDA graph 本身是**独立质量属性**：不是"开了就能用"，需过 graph-safety
   套件（AR 教训）。当前默认开且已验证。
-- NCCL "multimem all-gather disabled" 类探测日志 = 降级提示，非错误。
+- 所有 rank 一致回退时，"multimem all-gather disabled" 是降级提示。真实 HIP 默认通过 `multimem_gate` 关闭不支持的 symmetric-memory 探测、保留社区 tensor all-gather；多实例曾在一个 rank socket bind 失败回退、另一个 rank 卡 rendezvous，不能只看 warning 就判定健康。桥保留构造函数对象及已有别名，未知构造合同拒绝。回归为 `tests/adapter/test_multimem_gate.py`，模型结果与边界见本轮独立验证记录。
 - aiter AR 在 gfx93* 默认拒绝（快关自动规则），cookbook 不需要用户改任何
   参数。
 
