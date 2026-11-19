@@ -317,6 +317,11 @@ def _quant_v2(input, output_q, output_s, group_size, scale_ue8m0,
     y_scale = dst_max / amax (ue8m0: 2^-exp). Multiplying by scale_inv
     collapses every group toward zero (ones -> int8 0 instead of 127);
     review #80 P1."""
+    if scale_ue8m0 and output_s.stride(-2) >= output_s.stride(-1):
+        # upstream v2 static_asserts the row-major+ue8m0 dispatch away
+        # (v2.cu:490-508) — reject the impossible combo up front like the
+        # v1 face does instead of relying on the native TORCH_CHECK
+        raise RuntimeError("scale_ue8m0 requires column-major output_s")
     # cpp tier (setup_hip.py wheel): same contract, plain 16-lane kernels
     # (no flashinfer vec_t / PDL). masked_m is read ON DEVICE (per-expert
     # row-guard in the kernel), so the masked path stays CUDA-graph

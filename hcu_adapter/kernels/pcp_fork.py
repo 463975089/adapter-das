@@ -34,6 +34,7 @@ _forward_context_resolver = None
 _q_rope_provider = None
 _q_rope_binding = None
 _q_rope_failure = None
+_forward_mqa_provider = None
 
 
 class PcpAttentionError(RuntimeError):
@@ -176,6 +177,24 @@ def bound_engram_validator():
     return _engram_validator
 
 
+def set_forward_mqa_provider(provider):
+    """Bind an optional forward_mqa provider before the owned classes are built."""
+    global _forward_mqa_provider
+    if not callable(provider):
+        raise PcpAttentionError("PCP forward_mqa provider must be callable")
+    with _lock:
+        if _forward_mqa_provider is provider:
+            return
+        if _classes is not None or _forward_mqa_provider is not None:
+            raise PcpAttentionError("PCP forward_mqa provider already bound; restart process")
+        _forward_mqa_provider = provider
+
+
+def bound_forward_mqa_provider():
+    """Return the optional forward_mqa provider without constructing or changing classes."""
+    return _forward_mqa_provider
+
+
 def _require_reference():
     reference = _reference
     if reference is None:
@@ -222,7 +241,7 @@ def validate_config(cfg) -> bool:
     """Validate the native PCP structure before allocating model parameters.
 
     Width is unconstrained. PP/DP/DCP=1 follows the native V41 PCP contract;
-    speculative decoding needs a larger CR2 ring contract than Core provides.
+    DSpark uses the owned CR2 history metadata for verification rollback.
     Engram uses the plugin-owned private registered-host TPxPCP table adapter,
     so its validator is injected rather than imported.
     """
@@ -242,7 +261,8 @@ def validate_config(cfg) -> bool:
         if getattr(p, name) != 1:
             errors.append(f"{name}=1 required by native V41 PCP metadata")
     if cfg.speculative_config is not None:
-        errors.append("native PCP CR2 ring does not support speculative decoding")
+        from .pcp_dspark import validate_dspark_config
+        validate_dspark_config(cfg)
     if cfg.lora_config is not None or p.enable_eplb:
         errors.append("LoRA/EPLB are not supported by this PCP model adapter")
     if p.enable_dbo:
@@ -307,6 +327,15 @@ def build_classes():
             DeepseekV41ROCMAiterSparseSWABackend,
         )
         from vllm.models.deepseek_v41.attention import DeepseekV4Attention, DeepseekV4Indexer
+
+        def forward_mqa_impl(self, q, kv, positions, output):
+            return DeepseekV41ROCMAiterMLAAttention.forward_mqa(
+                self, q, kv, positions, output)
+
+        if _forward_mqa_provider is not None:
+            forward_mqa_impl = _forward_mqa_provider(DeepseekV41ROCMAiterMLAAttention)
+            if not callable(forward_mqa_impl):
+                raise PcpAttentionError("PCP provider must supply a callable forward_mqa")
 
         class HcuV41PcpBackend(DeepseekV41ROCMAiterMLASparseBackend):
             @classmethod
@@ -432,7 +461,7 @@ def build_classes():
                     raise TypeError("HCU PCP attention requires its BF16 output allocation")
                 metadata = _forward_context().attn_metadata
                 if metadata is None:
-                    return super().forward_mqa(q, kv, positions, output)
+                    return forward_mqa_impl(self, q, kv, positions, output)
                 if not isinstance(metadata, dict) or self.swa_cache_layer.prefix not in metadata:
                     raise RuntimeError("HCU PCP attention requires native local SWA metadata")
                 swa = metadata[self.swa_cache_layer.prefix]
@@ -443,8 +472,8 @@ def build_classes():
                 # AMD inverse RoPE sees only initialized, actual local query rows.
                 output[count:].zero_()
                 if count:
-                    return super().forward_mqa(
-                        q[:count], kv[:count], positions[:count], output[:count]
+                    return forward_mqa_impl(
+                        self, q[:count], kv[:count], positions[:count], output[:count]
                     )
 
             def _forward_decode(self, q, *args, **kwargs):
@@ -475,4 +504,7 @@ def select_attention(cfg):
 
     if selected_mode() == 'stock' or not validate_config(cfg):
         return native._select_dsv4_attn_cls(cfg)
+    if cfg.speculative_config is not None:
+        from .pcp_dspark import HcuV41PcpDSparkAttention
+        return HcuV41PcpDSparkAttention
     return build_classes()["attention"]
