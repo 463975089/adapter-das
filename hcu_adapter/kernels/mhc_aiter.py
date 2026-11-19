@@ -21,6 +21,7 @@ from pathlib import Path
 import torch
 
 LOG = logging.getLogger("hcu.adapter")
+_TORCH_POST_TOKEN_CHUNK = 1024
 _PRE = ('residual', 'fn', 'hc_scale', 'hc_base', 'rms_eps', 'hc_pre_eps',
         'hc_sinkhorn_eps', 'hc_post_mult_value', 'sinkhorn_repeat')
 _SPECS = {
@@ -366,6 +367,14 @@ class MhcAiterRuntime:
         if self.provider.post is not None and supported:
             out = torch.empty_like(residual)
             self.provider.post(out, x, residual, post_layer_mix, comb_res_mix)
+        elif len(outer) == 1 and outer[0] > _TORCH_POST_TOKEN_CHUNK:
+            # The reference post operation mixes streams independently per token.
+            # Bound its FP32 temporaries while keeping the full BF16 output.
+            out = torch.empty_like(residual)
+            for start in range(0, outer[0], _TORCH_POST_TOKEN_CHUNK):
+                rows = slice(start, start + _TORCH_POST_TOKEN_CHUNK)
+                out[rows].copy_(self.kernels.mhc_post_torch(
+                    x[rows], residual[rows], post_layer_mix[rows], comb_res_mix[rows]))
         else:
             out = self.kernels.mhc_post_torch(x, residual, post_layer_mix, comb_res_mix)
         return out

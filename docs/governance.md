@@ -192,12 +192,14 @@ sglang 符号面，shim 妥协不进契约。
    （elementwise / moe / gemm_fp8 …）；包内自研 helper 同样适用本规范
    （`paged_attn_triton` / `paged_attn_cpp` / `fa_varlen_triton`）。
 
-6. **DeepInfer 内核门面与机制豁免清单**（与 L0 同步）：
+6. **内核门面与机制豁免清单**（与 L0 同步）：
    - `gemm.py`、`gather.py`、`norm.py`、`index_ops.py`：校验或选择后端的门面。
    - `fused_transform.py`：按原有顺序组织 norm/RoPE/量化、输出写回和缓存写入的复合执行门面；
      单档位 RoPE 与 KV 计算分别位于 `rope_{emu,lightop}`、`kv_cache_emu`。
    - `runtime_config.py`：宿主侧配置、对齐规则及运行参数状态，无张量数值实现。
    - `lightop_usage.py`：共享调用计数机制，无张量数值实现。
+   - `pcp_dspark.py`：组织 vLLM V4.1 PCP 推测解码的压缩历史、环形槽位元数据与回滚；
+     复用 Core 的压缩和注意力实现。
    L0 对 `hcu_adapter/kernels/` 按此清单或档位后缀检查；新增豁免需同步说明职责。
 7. **实现文件档位与配置值分开管理**：`_emu` 是 Torch/仿真实现的文件后缀；
    已发布的后端选择值 `torch` 仍是合法配置值，不是文件命名档位。
