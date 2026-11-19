@@ -326,3 +326,32 @@ adapter环境重跑通过；不把前次collection error记为skip或通过。L0
 完整评测输出：`/home/scripts/acc_test/nmz_DeepSeek-V4.1-Flash-Channel-FP8/20261112_125007/humaneval`。
 容器运行证据：`/tmp/hcu-humaneval-clamp-fixed.kojfa_ba`；诊断对照：
 `/tmp/hcu-humaneval-nmz18-resume.vwcy4A`。
+
+## HY3 INT8：原生分发入口
+
+SGLang 兼容包装保留原生量化分发入口，配套 Plugin 可显式传递 INT8 类型，既有 BF16/FP8 参数语义不变。运行修改位于 `hcu_adapter/bridges/sglang.py`，回归复用 `tests/adapter/test_deepep_dispatch_scale.py`。这只处理分发接线，不修改通信或矩阵乘法内核；同步主仓后的组合验证另记。
+
+## HY3：保留 prefill Graph
+
+只将 breakable Graph 的驱动查询绑定到 HIP，替代整体关闭 prefill Graph 的旧方案。修改位于 `prefill_bcg_gate.py`，沿主仓先注册后发布原则；`HCU_DISABLE_OPS=prefill_graph_driver` 在新进程中跳过安装。复用现有测试覆盖 HIP、非 HIP、重复安装、注册失败及停用。其他模型/架构的 Graph 支持不据此宣称通过。
+
+## HY3 NEXTN：空闲对象缺字段
+
+缺少 `kv_indptr` 的空闲验证对象在读取时抛出 AttributeError；现于已有 SGLang 桥中仅补缺失类字段 None，不覆盖现有字段或实例值。先注册成功再发布字段；停用项为 `HCU_DISABLE_OPS=nextn_idle_metadata`。回归合入已有 `test_spec_h2d_pin.py`，保留主仓精简后的既有用例，不重新引入已删除的历史测试。
+
+## HY3：保留显式 FA3 + E5M2
+
+在 `HCU_FA_IMPL=vendor`、真实 HIP 和支持的 HCU 架构下，保留用户指定的 FA3 + E5M2，避免官方检查切到 Triton。其他配置继续原检查，已有消费者全部登记成功后再替换。运行修改为 `fa_vendor.py`，回归复用 `tests/vendor/test_flash_attn.py`。配套 Plugin 运行环境显式选 `SGLANG_KV_LAYOUT_HCU_FA=1`，布局默认仍关闭。完整新 DeepGEMM wheel 为外部依赖，本仓不携带补充扩展或构建工具。同步后的验证另记，不继承旧成绩。
+
+
+### 2026-11-17：同步主仓后的组合复测
+
+固定公司 main：Adapter `253989dd224eec574c449b3516b2ace0d45ffe0d`，Plugin `3fab2fd6c723c0c8b17b44a565fc33d259464916`；官方 SGLang 0.5.22。仅保留两仓额外适配，不重复计入主仓已有 FP8/NEXTN 修复；没有新增仓库文件，纯重复布局整理提交排除。
+
+本轮 Adapter 针对性回归 54 项、Plugin 23 项通过；两仓 L0、档位清单与导览快照检查通过。Adapter L0 有 32 项警告。Plugin 一项已有 CPU 用例会调用 GPU 专用量化接口，本轮排除，不宣称全量测试通过；UI/导览浏览器视觉验收未执行。
+
+原用户启动脚本 SHA256 `9b39038c102e5d1df9e3ad98b29d5ac35cbbdefdda8a149c4654a7abe7bab7cc` 前后不变。HY3 INT8 W8A8、TP8/attention DP8、DeepEP auto、ASM=0、NEXTN 2/1/3、FA3、E5M2、page64、显存比例0.85、decode Graph BS16。外层显式选择 vendor FA、HCU KV 布局、本次源码与完整 DeepGEMM wheel；这不等于没有额外部署配置。官方会把 NEXTN 名称规范化为 EAGLE，并保留同一条 NEXTN/MTP 路径。
+
+完整服务启动，8 个并发基础问答均为完整正确答案且正常停止；实际后端仍为 FA3，decode Graph=full、prefill Graph=breakable，日志有 Graph 执行。完成后仅停止本任务进程，端口关闭且显存释放。本轮未重跑 GSM8K、稳态性能、其他模型或其他架构，基础问答不替代精度/性能验收。
+
+使用完整 DeepGEMM `2.1.0.post1+das.dtk2610.unknown` wheel，SHA256 `8b622a05075a705bf28d0d7bfe08a0d3402503bea0706d2bb72a84a8d461e59f`。没有新增内核实现、构建工具或补充扩展。原始日志、启动与清理记录、测试时 SHA 和最终 SHA 保存于仓库外 `hy3/pr_sync_20261117/`；提交内仅更新此说明。

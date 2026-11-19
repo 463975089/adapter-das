@@ -669,6 +669,57 @@ def _install_triton_decode(_sk_fa, registry):
     )
 
 
+
+def _install_e5m2_backend_guard():
+    from functools import wraps
+    import sys
+    from hcu_adapter import hcu_env, registry
+
+    if not torch.version.hip or hcu_env.resolve("HCU_FA_IMPL")[0] != "vendor":
+        return
+    arch = hcu_env.arch_name()
+    if arch not in ("gfx928", "gfx936", "gfx938"):
+        return
+    from sglang.srt.arg_groups import overrides
+
+    name = "_attention_backend_fa3_fp8_fallback"
+    original = getattr(overrides, name, None)
+    if original is None:
+        raise RuntimeError("HCU FA E5M2 guard requires the SGLang 0.5.22 fallback anchor")
+    if getattr(original, "_hcu_e5m2_guard", False):
+        return
+
+    @wraps(original)
+    def hcu_fa3_fp8_fallback(view):
+        if view.attention_backend == "fa3" and view.kv_cache_dtype == "fp8_e5m2":
+            return {}
+        return original(view)
+
+    hcu_fa3_fp8_fallback._hcu_e5m2_guard = True
+    passes = overrides.POST_PROCESS_PASSES
+    indices = [index for index, fn in enumerate(passes) if fn is original]
+    consumer = sys.modules.get("sglang.srt.arg_groups.attention_hook")
+    update_consumer = consumer is not None and getattr(consumer, name, None) is original
+    targets = ["sglang.srt.arg_groups.overrides:" + name]
+    targets.extend(
+        f"sglang.srt.arg_groups.overrides:POST_PROCESS_PASSES[{index}]"
+        for index in indices
+    )
+    if update_consumer:
+        targets.append("sglang.srt.arg_groups.attention_hook:" + name)
+    with registry.registration_transaction():
+        for target in targets:
+            registry.register(
+                "flash_attention", hcu_fa3_fp8_fallback,
+                target=target, mechanism=registry.MECH_REBIND,
+                detail="explicit vendor FA retains E5M2 on supported HCU architectures",
+            )
+    setattr(overrides, name, hcu_fa3_fp8_fallback)
+    for index in indices:
+        passes[index] = hcu_fa3_fp8_fallback
+    if update_consumer:
+        setattr(consumer, name, hcu_fa3_fp8_fallback)
+
 def install():
     try:
         import flash_attn as _probe  # noqa: F401
@@ -703,6 +754,8 @@ def install():
         _install_triton_decode(_sk_fa, registry)
         return
     vendor_enabled = mode == "vendor"
+    if vendor_enabled:
+        _install_e5m2_backend_guard()
     if mode == "emu":
         LOG.warning(
             "HCU adapter: HCU_FA_IMPL=%s -- fa3 attention stays on the "

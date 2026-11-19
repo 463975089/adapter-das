@@ -227,3 +227,52 @@ def test_spawned_interpreter_installs_its_own_binding(source):
         queue.close()
 
 
+
+
+def test_idle_verify_optional_decode_layout_preserves_objects():
+    from dataclasses import dataclass, fields
+    from hcu_adapter.bridges.sglang import _install_idle_verify_metadata
+
+    @dataclass
+    class Verify:
+        custom_mask: object
+        positions: object
+
+    verify = Verify(object(), object())
+    original_fields = fields(Verify)
+    with pytest.raises(AttributeError, match="kv_indptr"):
+        _ = verify.kv_indptr
+    assert _install_idle_verify_metadata(Verify)
+    assert verify.kv_indptr is None
+    assert fields(Verify) == original_fields
+    assert not _install_idle_verify_metadata(Verify)
+    marker = object()
+    verify.kv_indptr = marker
+    assert verify.kv_indptr is marker
+    assert Verify(object(), object()).kv_indptr is None
+
+    class NewVerify:
+        kv_indptr = marker
+
+    assert not _install_idle_verify_metadata(NewVerify)
+    assert NewVerify.kv_indptr is marker
+
+
+def test_idle_metadata_registration_failure_and_disable(monkeypatch):
+    from hcu_adapter import registry
+    from hcu_adapter.bridges.sglang import _install_idle_verify_metadata
+
+    class Verify:
+        pass
+
+    def reject(*args, **kwargs):
+        raise ValueError("registration refused")
+
+    monkeypatch.delenv("HCU_DISABLE_OPS", raising=False)
+    monkeypatch.setattr(registry, "register", reject)
+    with pytest.raises(ValueError, match="registration refused"):
+        _install_idle_verify_metadata(Verify)
+    assert not hasattr(Verify, "kv_indptr")
+    monkeypatch.setenv("HCU_DISABLE_OPS", "nextn_idle_metadata")
+    assert not _install_idle_verify_metadata(Verify)
+    assert not hasattr(Verify, "kv_indptr")

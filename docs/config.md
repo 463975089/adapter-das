@@ -109,3 +109,15 @@ Adapter 只提供配置/catalog/快关，数学实现位于独立 `vllm-plugin-d
 ### MLA HiCache 地址表传输
 
 `hicache_mla_transfer` 当前使用 candidate Triton 实现：按字节处理 device pointer table、pinned host buffer、layer-first/page-first 布局，不将地址值当作缓存数据索引。GPU 路径不读取地址表到 CPU。2026-11-01 定向诊断覆盖 528/8448/33792/65537 字节行、1/7/65 行、三层、双向拷贝与三次变输入 Graph 回放，逐字节一致；完整模型的驱逐回载与性能仍待验收。
+
+### HY3 prefill Graph 兼容开关
+
+`HCU_DISABLE_OPS=prefill_graph_driver` 在新进程中跳过流状态查询适配，保留安装前的绑定。默认启用适配；只改变驱动查询，保留 prefill Graph，不改变硬件身份。
+
+### NEXTN 空闲批次字段开关
+
+`HCU_DISABLE_OPS=nextn_idle_metadata` 在新进程中跳过缺失字段补齐。默认只为没有 `kv_indptr` 的类型提供 `None`，不改已有字段、实例值或实际 attention 后端。注册失败时不发布字段。两个停用项可用逗号合并。
+
+### FA E5M2 显式选择
+
+`HCU_FA_IMPL=vendor` 才安装 HCU E5M2 启动检查适配；auto/triton/emu、非 HIP 和未支持架构保留当前检查。支持范围为 gfx928/gfx936/gfx938，真机证据目前仅 gfx936。每个实际消费者先登记再替换，重复安装不叠加。与 Plugin 的分页布局配套运行时，在外层部署环境显式设置 `SGLANG_KV_LAYOUT_HCU_FA=1`，不改用户原启动脚本，也不扩大布局默认值。

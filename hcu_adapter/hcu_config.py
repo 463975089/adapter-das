@@ -76,9 +76,8 @@ BACKEND_CATALOG = {
         "backends": {
             "prefill-bcg-driver-truth": {
                 "status": "candidate",
-                "note": "Breakable prefill uses the upstream eager runner on HIP; "
-                        "draft prefill returns no runner, other backends delegate "
-                        "unchanged. Decode FULL graphs are outside this gate. "
+                "note": "Preserves prefill graphs and queries stream state through HIP; "
+                        "HCU_DISABLE_OPS=prefill_graph_driver leaves the current binding unchanged. "
                         "Registration/dispatch contracts covered; model qualification "
                         "and hardware-specific graph support remain separate.",
             },
