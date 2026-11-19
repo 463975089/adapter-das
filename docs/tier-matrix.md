@@ -42,7 +42,7 @@ V41 LightOp FP4 indexer with variable allocator pages
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| lightop | candidate Default for FP4 cache only; PCP1 eag |
+| lightop | candidate Eligible V4.1 auto defaults to MXFP4 |
 | stock | candidate Explicit stock fallback: existing FP |
 
 路由变量：`HCU_VLLM_FP4_INDEXER_IMPL`

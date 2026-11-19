@@ -97,7 +97,7 @@ BACKEND_CATALOG = {
         "summary": "V41 LightOp FP4 indexer with variable allocator pages",
         "backends": {
             "stock": {"status": "candidate", "note": "Explicit stock fallback: existing FP8 behavior"},
-            "lightop": {"status": "candidate", "note": "Default for FP4 cache only; PCP1 eager/PIECEWISE and constrained eager PCP8 TP1/DP1/EP/HT without speculation; bounded query scores and transient profile budget with ratio-specific decode staging; rebased model validation pending"},
+            "lightop": {"status": "candidate", "note": "Eligible V4.1 auto defaults to MXFP4 when the indexer and packer Plugin owners are healthy. Explicit FP8 and stock remain selectable. PCP1 eager/PIECEWISE and constrained eager PCP8 TP1/DP1/EP/HT without speculation; bounded query scores and transient profile budget with ratio-specific decode staging; rebased model validation pending"},
         },
     },
     "vllm_fp4_packer": {
