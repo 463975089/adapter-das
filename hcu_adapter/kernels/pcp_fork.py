@@ -32,6 +32,8 @@ _engram_validator = None
 _classes = None
 _forward_context_resolver = None
 _q_rope_provider = None
+_q_rope_binding = None
+_q_rope_failure = None
 
 
 class PcpAttentionError(RuntimeError):
@@ -54,25 +56,54 @@ def selected_mode() -> str:
 
 def q_rope_selected() -> bool:
     return (
-        not op_disabled(Q_ROPE_OP)
-        and not op_disabled(OP_NAME)
+        selected_mode() == 'native'
+        and not op_disabled(Q_ROPE_OP)
         and hcu_config.load()["ops"].get(Q_ROPE_OP, "stock") == "hcu"
     )
 
 
-def set_q_rope_provider(provider) -> None:
-    """Bind a worker-startup initializer for optional in-place Q RoPE.
+def _refuse_q_rope_change():
+    global _q_rope_failure
+    _q_rope_failure = "PCP Q RoPE policy/provider changed after binding; restart process"
+    raise PcpAttentionError(_q_rope_failure)
 
-    It receives the Core cos/sin table during dummy profiling and returns an
-    input-specific preparation callable, or None for an unsupported table.
+
+def require_q_rope_healthy() -> None:
+    """Validate the published child policy without rebinding it."""
+    with _lock:
+        if _q_rope_failure is not None:
+            raise PcpAttentionError(_q_rope_failure)
+        if _q_rope_binding is None:
+            return
+        selected, provider = _q_rope_binding
+        try:
+            current = q_rope_selected()
+        except BaseException:
+            _refuse_q_rope_change()
+        if current != selected or _q_rope_provider is not provider:
+            _refuse_q_rope_change()
+
+
+def set_q_rope_provider(provider) -> None:
+    """Seal the effective policy and bind its worker startup initializer.
+
+    Stock uses no provider. The HCU initializer receives the Core cos/sin
+    table during dummy profiling and returns an input preparation callable.
     """
-    global _q_rope_provider
-    if not callable(provider):
+    global _q_rope_provider, _q_rope_binding
+    if provider is not None and not callable(provider):
         raise PcpAttentionError("PCP Q RoPE provider must be callable")
     with _lock:
-        if _q_rope_provider is not None and _q_rope_provider is not provider:
-            raise PcpAttentionError("PCP Q RoPE provider already bound; restart process")
+        require_q_rope_healthy()
+        if _q_rope_binding is not None:
+            if _q_rope_provider is not provider:
+                _refuse_q_rope_change()
+            return
+        selected = q_rope_selected()
+        if selected != (provider is not None):
+            raise PcpAttentionError("PCP Q RoPE provider does not match the selected policy")
         _q_rope_provider = provider
+        _q_rope_binding = (selected, provider)
 
 
 def set_indexer_reference(function) -> None:
@@ -337,6 +368,7 @@ def build_classes():
                 self.aux_stream_list = None
                 self._initialize_q_rope = None
                 self._prepare_q_rope = None
+                require_q_rope_healthy()
                 if q_rope_selected() and cfg.model_config.enforce_eager:
                     if _q_rope_provider is None:
                         raise PcpAttentionError("PCP Q RoPE provider is not bound")
@@ -351,6 +383,8 @@ def build_classes():
             _alloc_attn_out = DeepseekV4Attention._alloc_attn_out
 
             def _fused_qnorm_rope_kv_insert(self, q, kv, positions, attn_metadata):
+                if _q_rope_failure is not None:
+                    raise PcpAttentionError(_q_rope_failure)
                 native = super()._fused_qnorm_rope_kv_insert
                 if ((self._initialize_q_rope is None and self._prepare_q_rope is None)
                         or not self.use_pcp or self.kv_mxfp8

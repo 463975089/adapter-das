@@ -92,6 +92,12 @@ def require_healthy() -> None:
         _refuse("PCP policy invalid after registration; start a fresh process", error)
     if mode != p.mode:
         _refuse("PCP policy changed after registration; start a fresh process")
+    from hcu_adapter.kernels import pcp_fork
+
+    try:
+        pcp_fork.require_q_rope_healthy()
+    except pcp_fork.PcpAttentionError as error:
+        _refuse("PCP Q RoPE binding is unhealthy; start a fresh process", error)
 
 
 def install() -> bool:
@@ -130,4 +136,5 @@ def install() -> bool:
         _LOG.info("HCU PCP attention: adapter-owned classes active (mode=native)")
 
     _lifecycle.run_once("vllm-pcp", initialize)
+    require_healthy()
     return True
