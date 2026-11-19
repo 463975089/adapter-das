@@ -500,6 +500,46 @@ def test_quant_native_rejects_unaddressable_output_s():
 
 
 @requires_gpu
+def test_quant_native_accepts_packed_ue8m0_scales():
+    # review #81: with scale_ue8m0 the LEGAL output_s is upstream's packed
+    # container (v2.cu:315-337 scale_packed_t path) — int32 slots holding
+    # four biased-exponent bytes, logical width ceil(groups/4), column
+    # major. The native validator must accept that face (it used to demand
+    # the fp32 (rows, groups) one and reject every DeepEP-style caller).
+    from sgl_kernel._native import native_op
+
+    v1 = native_op("sgl_per_token_group_quant_8bit")
+    v2 = native_op("sgl_per_token_group_quant_8bit_v2")
+    if v2 is None:
+        pytest.skip("native cpp tier not built in this environment")
+
+    # reviewer's repro shape: bf16 input / int8 q (4, 256), group_size 32
+    # -> 8 groups per row -> 2 packed slots per row
+    x = torch.full((4, 256), 100.0, device="cuda", dtype=torch.bfloat16)
+    q = torch.zeros(4, 256, device="cuda", dtype=torch.int8)
+    s = torch.zeros(2, 4, device="cuda", dtype=torch.int32).t()  # (4,2) stride (1,4)
+
+    v2(x, q, s, 32, 1e-10, -128.0, 127.0, True, False, None)
+    if v1 is not None:
+        v1(x, q, s, 32, 1e-10, -128.0, 127.0, True)
+
+    # amax 100 / 127 -> ceil-log2 -> 2^0: byte 127 in every slot, and the
+    # reciprocal quant scale 2^0 keeps amax at int8 100
+    expect = 127 * 0x01010101
+    assert (s.cpu() == expect).all().item(), s.cpu()
+    assert q[0, 0].item() == 100
+
+    bad = [
+        ("fp32 container for ue8m0", torch.zeros(4, 8, device="cuda").t()),
+        ("unpacked width", torch.zeros(4, 8, device="cuda", dtype=torch.int32).t()),
+        ("row-major packed", torch.zeros(4, 2, device="cuda", dtype=torch.int32)),
+    ]
+    for tag, bad_s in bad:
+        with pytest.raises(RuntimeError):
+            v2(x, q, bad_s, 32, 1e-10, -128.0, 127.0, True, False, None)
+
+
+@requires_gpu
 def test_quant_native_rejects_cross_row_and_overlapping_scales():
     # R8 follow-ups to the output_s validator: a last dim that cannot form
     # whole groups must fail cleanly (the size check divides by

@@ -156,7 +156,7 @@ REGISTRY = {
     "HCU_VLLM_FP4_INDEXER_IMPL": {
         "env": "HCU_VLLM_FP4_INDEXER_IMPL", "default": "lightop",
         "hosts": ("vllm",),
-        "about": "V41 zero-copy FP4 indexer: lightop(默认，需 FP4 indexer cache/indexer_kv_dtype=mxfp4 才生效)/stock(显式回退); before-allocation admission; fresh-process rollback",
+        "about": "V41 FP4 indexer. Eligible V4.1 auto caches default to mxfp4 with paired healthy Plugin owners. Explicit fp8 and stock retain FP8 selection",
     },
     "HCU_VLLM_FP4_PACKER_IMPL": {
         "env": "HCU_VLLM_FP4_PACKER_IMPL", "default": "triton",
@@ -529,6 +529,13 @@ REGISTRY = {
                  "或安装失败时回上游 triton）；triton=强制上游 fla；"
                  "aiter=显式 CK 路由（fwd_h 状态递推 + packed decode；"
                  "K=V=128，state pool gather/scatter）",
+    },
+    "HCU_LINEAR_ATTN_GDN_VERIFY": {
+        "env": "HCU_LINEAR_ATTN_GDN_VERIFY", "default": "auto",
+        "about": "GDN target_verify: auto=qualified gfx936/DTK2610 build and packed "
+                 "BF16 H8/HV24 N<=18/draft4 with FP32 state/snapshots -> AITER; "
+                 "others upstream. triton=upstream rollback, aiter=manual provider. "
+                 "Independent of prefill/packed decode; startup/capture policy",
     },
     "HCU_DSA_PRESHUFFLE": {
         "env": "HCU_DSA_PRESHUFFLE", "default": "1",
