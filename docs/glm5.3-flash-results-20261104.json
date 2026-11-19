@@ -1,0 +1,472 @@
+{
+  "alignment": {
+    "status": "passed",
+    "paired_comparisons": 24,
+    "requests": 6,
+    "captures": 48,
+    "checks": "45-layer sampled six boundaries; full boundaries0,1,2,3,44; all layer3 MLA tensors; final next-token logits; native DTK invocation; no short torch.topk",
+    "scope": "Controlled prefill repeatability, not full GPQA correctness or D verify-state equivalence",
+    "rows": [
+      {
+        "case": 2,
+        "rank": 0,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 2,
+        "rank": 1,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 2,
+        "rank": 2,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 2,
+        "rank": 3,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 2,
+        "rank": 4,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 2,
+        "rank": 5,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 2,
+        "rank": 6,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 2,
+        "rank": 7,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 0,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 1,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 2,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 3,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 4,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 5,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 6,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 85,
+        "rank": 7,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 0,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 1,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 2,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 3,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 4,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 5,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 6,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      },
+      {
+        "case": 131,
+        "rank": 7,
+        "critical_tensors": 361,
+        "changed": [],
+        "torch_topk_calls": 0,
+        "native_dtk_calls": 2,
+        "short_indices_logical_order_verified": true,
+        "passed": true
+      }
+    ]
+  },
+  "badcases": [
+    {
+      "index": 102,
+      "answer": "B",
+      "reference": "B",
+      "finish_reason": "stop",
+      "response_sha256": "53e174f5e6df2b6997ff949fa1219182cbf111a775b2724896919c1b891f2007",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    },
+    {
+      "index": 12,
+      "answer": "C",
+      "reference": "C",
+      "finish_reason": "stop",
+      "response_sha256": "b5ac8c57ea5ddf4b7d0ec3df30b4ab5d1de5f3f17cbe136105c8cfd2408d8bd2",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    },
+    {
+      "index": 127,
+      "answer": "D",
+      "reference": "A",
+      "finish_reason": "stop",
+      "response_sha256": "0aa87144971bc64025c5115c89992fa98c4c5bd44ddc1d4d2154b1e08fcde781",
+      "repeated_50word_windows": 325,
+      "maximum_window_occurrences": 3
+    },
+    {
+      "index": 131,
+      "answer": "C",
+      "reference": "C",
+      "finish_reason": "stop",
+      "response_sha256": "d116acc3e55dd7621f7bc834ba3fad53006fb7cf88f2b30a1808608dd059f058",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    },
+    {
+      "index": 142,
+      "answer": "B",
+      "reference": "B",
+      "finish_reason": "stop",
+      "response_sha256": "1abbb5cff764a2524c10f77551878f13521ac61c742333a4a3e65b2e25479a92",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    },
+    {
+      "index": 7,
+      "answer": "D",
+      "reference": "C",
+      "finish_reason": "stop",
+      "response_sha256": "84f30d73c247d635e4ef54c5639a1d675f804fda72d71303f5841c2884b6c283",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    },
+    {
+      "index": 71,
+      "answer": "B",
+      "reference": "B",
+      "finish_reason": "stop",
+      "response_sha256": "a38c13ea3b07e4432eed03c27b3cb9e287456b7a36db24c3b75f5b30e2085846",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    },
+    {
+      "index": 85,
+      "answer": "D",
+      "reference": "D",
+      "finish_reason": "stop",
+      "response_sha256": "bff0e9dde7f513dc23296f6d28c1746b349ca2518a46fc7f04312a3f4d7ee571",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    },
+    {
+      "index": 90,
+      "answer": "B",
+      "reference": "C",
+      "finish_reason": "stop",
+      "response_sha256": "c70086eb9f567051b30ff0cb5aa515750ac0b05da49c06b85e6c4c60be1992c7",
+      "repeated_50word_windows": 0,
+      "maximum_window_occurrences": 1
+    }
+  ],
+  "status": {
+    "phase": "badcases_complete_pending_review",
+    "pid": 463970,
+    "indices": [
+      7,
+      12,
+      71,
+      85,
+      90,
+      102,
+      127,
+      131,
+      142
+    ],
+    "requests_sent": 9,
+    "completed": {
+      "131": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 332,
+          "total_tokens": 5684,
+          "completion_tokens": 5352,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 5178
+        },
+        "elapsed_seconds": 536.2698088450124,
+        "request_sha256": "2c0d03209be4a1f9c543f022aa6501b6d704b6a9e71f1b8c32d9ac3caec1c852"
+      },
+      "142": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 418,
+          "total_tokens": 9288,
+          "completion_tokens": 8870,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 8737
+        },
+        "elapsed_seconds": 840.0137617319997,
+        "request_sha256": "674b9e395ca9c99d966d23d870e26297db72b5095211e93291d3d671bd17db86"
+      },
+      "85": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 350,
+          "total_tokens": 10961,
+          "completion_tokens": 10611,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 10393
+        },
+        "elapsed_seconds": 1080.208241076005,
+        "request_sha256": "913f3a2b9a294fcc6751ac35472ea5821e79002691a621f4da53ea5696add2df"
+      },
+      "102": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 360,
+          "total_tokens": 21199,
+          "completion_tokens": 20839,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 20624
+        },
+        "elapsed_seconds": 2137.425395670027,
+        "request_sha256": "0d3c22be76fbb7300652e139d5d835c7d38e4f48dd4b918a62be3aa66421f230"
+      },
+      "7": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 479,
+          "total_tokens": 22855,
+          "completion_tokens": 22376,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 22264
+        },
+        "elapsed_seconds": 2342.6754816620087,
+        "request_sha256": "a7a3e9937a248ea92647b63a10c7652cbf9c0be4e9eb730c08dcf8c25a07fe37"
+      },
+      "127": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 2827,
+          "total_tokens": 28809,
+          "completion_tokens": 25982,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 25846
+        },
+        "elapsed_seconds": 2404.776940259995,
+        "request_sha256": "a0c2d3529a53dd1d1005a6c23dd2ba9e9cb8fd45a624787fd0eaff92431a4be6"
+      },
+      "12": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 355,
+          "total_tokens": 29430,
+          "completion_tokens": 29075,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 28945
+        },
+        "elapsed_seconds": 2825.886658333009,
+        "request_sha256": "2925d6b03796e282af3f046f6d71cdd847d22acfa8df37398ece1d9340feb056"
+      },
+      "71": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 210,
+          "total_tokens": 58741,
+          "completion_tokens": 58531,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 58433
+        },
+        "elapsed_seconds": 5321.357494834985,
+        "request_sha256": "e5a6911953136ca3378ed6ddc0b488ea8b26e6628f7c128aeaf0296dd80811ce"
+      },
+      "90": {
+        "finish_reason": "stop",
+        "usage": {
+          "prompt_tokens": 249,
+          "total_tokens": 59632,
+          "completion_tokens": 59383,
+          "prompt_tokens_details": null,
+          "reasoning_tokens": 59276
+        },
+        "elapsed_seconds": 5718.398950203991,
+        "request_sha256": "d4aabc05d2eee55e9e058f7ac0b9dfde479ff7d99c5386cfd7b6861f538e07a4"
+      }
+    },
+    "errors": {},
+    "retries": 0,
+    "max_tokens": 65536,
+    "updated_at_utc": "2026-11-04T05:01:40.455275+00:00"
+  },
+  "scope": "Remote mixed P/D snapshots; not acceptance of unified committed pair or Python 3.12 image",
+  "correct": 6,
+  "wrong": [
+    7,
+    90,
+    127
+  ]
+}

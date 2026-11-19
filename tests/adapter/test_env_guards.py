@@ -29,7 +29,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hcu_adapter import hcu_env, jit_compat, nccl_topo_guard, watchdog_cold  # noqa: E402
+from hcu_adapter import hcu_env, hip_metadata, jit_compat, nccl_topo_guard, watchdog_cold  # noqa: E402
 
 # Real topology-XML shape (validation-host-26 /usr/local/built-in-508-topo-input-tj-default.xml).
 _TOPO_2GPU = """<system version="2">
@@ -246,6 +246,52 @@ def test_bootstrap_bridges_wire_both_guards():
     assert "nccl_topo_guard.install()" in common
     # watchdog wraps the factory before scheduler.py imports it
     assert "watchdog_cold.install()" in sglang
+
+
+def test_aiter_layout_probe_reads_source_without_importing_sglang():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = pathlib.Path(directory)
+        source = root / "srt/distributed/device_communicators/custom_all_reduce.py"
+        source.parent.mkdir(parents=True)
+        source.write_text("from aiter.dist.device_communicators import CustomAllreduce\n")
+        spec = SimpleNamespace(origin=str(root / "__init__.py"))
+        with patch("importlib.util.find_spec", return_value=spec), patch.dict(
+            sys.modules, {"sglang": None}
+        ):
+            assert hcu_env._sglang_uses_new_aiter_ca()
+            source.write_text("from aiter import CustomAllreduce\n")
+            assert not hcu_env._sglang_uses_new_aiter_ca()
+
+
+def test_quant_availability_does_not_import_vendor_package():
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    with patch.dict(sys.modules, {
+        "torch": SimpleNamespace(version=SimpleNamespace(hip="6.4")),
+        "aiter": None,
+    }), patch("importlib.util.find_spec", return_value=SimpleNamespace()):
+        assert hcu_env._auto_quant_impl() == "aiter"
+
+
+def test_initialized_arch_probe_preserves_actual_device_properties():
+    from types import SimpleNamespace
+    from unittest.mock import Mock, patch
+
+    properties = Mock(return_value=SimpleNamespace(gcnArchName="gfx90a:sramecc+"))
+    fake_torch = SimpleNamespace(version=SimpleNamespace(hip="6.4"), cuda=SimpleNamespace(
+        is_available=lambda: True, is_initialized=lambda: True,
+        get_device_properties=properties,
+    ))
+    with patch.dict(sys.modules, {"torch": fake_torch}), patch.object(
+        hip_metadata,
+        "architecture", side_effect=AssertionError("unexpected metadata probe")
+    ):
+        assert hcu_env.arch_name() == "gfx90a"
+    properties.assert_called_once_with(0)
 
 
 if __name__ == "__main__":

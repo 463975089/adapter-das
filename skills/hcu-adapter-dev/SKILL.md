@@ -24,6 +24,9 @@ private one-use device hint; preserve its yielded logical device, visibility,
 existing callable aliases and parent environment on exceptions. Auxiliary
 non-spawn helpers must not consume the hint as a GPU assignment. See
 `docs/sglang-spawn-device.md` and `tests/adapter/test_sglang_spawn_device.py`.
+The exact CPython resource-tracker helper must return before hardware detection;
+it inherits the host environment but only serves a standard-library pipe. Match
+the original interpreter command, without skipping normal spawn/model commands.
 
 `dist_bc` 已以保留函数对象和私有 numpy
 facade 的运行时桥替代磁盘补丁；不可重新引入 common.py 写回。

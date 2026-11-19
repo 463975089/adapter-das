@@ -138,6 +138,22 @@ BACKEND_CATALOG = {
         "backends": {"scoped": {"status": "candidate",
             "note": "FP8 SHUFFLE scoring, delayed mHC and empty CT linear on the owned eager model."}},
     },
+
+    "mamba_state_scatter": {
+        "var": None,
+        "summary": "SGLang Mamba verify-state copy launch geometry",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "gfx936/gfx938 FP32 entries >=1024: flatten request/block grid, "
+                        "retain source-row mapping and upstream validation. "
+                        "gfx938 bitwise/Graph/spawn and TP2 MTP checked; see docs for scope. "
+                        "Other contracts keep stock. Startup fallback: "
+                        "HCU_DISABLE_OPS=mamba_state_scatter.",
+            },
+        },
+    },
+
     "qsa_prefill": {
         "var": None, "summary": "QSA sparse prefill launch geometry on HCU",
         "backends": {"triton": {"status": "candidate", "note": "gfx936 uses 64/1 through 64 rows and 32/2 above to fit the 64 KiB LDS budget; conservative for all head dimensions."}},
@@ -225,6 +241,54 @@ BACKEND_CATALOG = {
     "vllm_allreduce_admission": {
         "var": None, "summary": "vLLM AR-only gate compatibility; global AITER and real architecture unchanged",
         "backends": {"official-aiter-gate": {"status": "candidate", "note": "Existing HCU kill/resolver policy; available != selected; official fusion pass remains globally gated"}},
+    },
+    "sglang_grouped_topk": {
+        "var": None,
+        "summary": "SGLang biased single-group MoE routing",
+        "backends": {
+            "torch": {"status": "validated", "note": "Default current upstream dispatch"},
+            "triton": {
+                "status": "candidate",
+                "note": "Opt-in upstream fused router for FP32 288-expert top8 "
+                        "single-group prefill M>=32; preserves renormalize epsilon and "
+                        "fallback. Full-model validation pending.",
+            },
+        },
+    },
+    "int8_scaled_mm": {
+        "var": None,
+        "summary": "SGLang symmetric per-token/per-channel INT8 dense GEMM",
+        "backends": {
+            "triton": {"status": "validated", "note": "Default stride-aware INT32 accumulation with FP32 scales and optional bias"},
+            "lightop": {"status": "candidate", "note": "Opt-in BF16 prefill M>=32, K multiple128, N multiple64, column-major weight, no bias; other cases retain Triton. Full-model validation pending."},
+            "hipblaslt": {
+                "status": "candidate",
+                "note": "Opt-in LightOp hipBLASLt for bias-free GEMM; biased calls retain Triton.",
+            },
+        },
+    },
+    "hicache_mla_transfer": {
+        "var": None,
+        "summary": "MLA HiCache byte transfers through device pointer tables and pinned host memory",
+        "backends": {
+            "triton": {"status": "candidate", "note": "Layer-first and page-first MLA transfers; model validation pending"},
+        },
+    },
+    "sglang_mla_sparse": {
+        "var": None,
+        "summary": "SGLang BF16 NoPE sparse MLA interface",
+        "backends": {
+            "emu": {"status": "candidate", "note": "Default Torch compatibility implementation"},
+            "dtk": {"status": "candidate", "note": "Opt-in H1-64 D512 topk2048-2112 native FlashMLA; unsupported shapes retain emulation; full model validation pending"},
+        },
+    },
+    "sglang_mla_fp8": {
+        "var": None,
+        "summary": "SGLang V32_NO_ROPE packed E4M3 sparse MLA decode",
+        "backends": {
+            "emu": {"status": "candidate",
+                    "note": "SGLang-only 528-byte rows; FP32 attention; model validation pending"},
+        },
     },
     "silu_and_mul": {
         "var": "HCU_SILU_MUL_IMPL",
@@ -379,8 +443,11 @@ BACKEND_CATALOG = {
                  "deepgemm": {"HCU_MQA_LOGITS_IMPL": "vendor"}},
         "summary": "DSA paged MQA logits",
         "backends": {
-            "emu": {"status": "production",
-                    "note": "torch emulation — correct opt-out "
+            "emu": {"status": "candidate",
+                    "note": "2026-10-30: restored upstream per-head ReLU before "
+                            "weighted reduction; earlier parity shared the same "
+                            "missing-ReLU bug. Corrected long-context serving pending. "
+                            "torch emulation — opt-out "
                             "(HCU_MQA_LOGITS_IMPL=vec; pre-R-13#4 default)"},
             "triton": {"status": "production",
                        "note": "auto ladder landing tier (lightop is "
@@ -707,6 +774,14 @@ BACKEND_CATALOG = {
                                "triton core passes serving A/B."},
         },
     },
+    "sglang_tree_sampling": {
+        "var": None,
+        "summary": "SGLang target-only speculative tree sampling",
+        "backends": {
+            "triton": {"status": "candidate",
+                       "note": "Tree traversal, residual mass and CDF sampling; FP32 contiguous upstream ABI; full stochastic serving pending"},
+        },
+    },
     "sampling": {
         "var": None,
         "summary": "top-k/top-p/min-p renorm+sample（§0.5 is_cuda sampler 面）",
@@ -734,6 +809,22 @@ BACKEND_CATALOG = {
                               "全对（2026-10-13 bw7）；decode graph 36 桶捕"
                               "获 577s→20.9s；=aiter 显式启用，=triton "
                               "强制上游核"} ,
+        },
+    },
+    "linear_attn_gdn_verify": {
+        "var": "HCU_LINEAR_ATTN_GDN_VERIFY",
+        "summary": "SGLang GDN MTP target verification",
+        "backends": {
+            "auto": {"status": "production",
+                     "note": "default policy: qualified DTK2610 stack, BF16 packed "
+                             "H8/HV24, FP32 state/snapshots, gfx936/gfx938, no fixed batch ceiling, draft4 -> AITER; "
+                             "other environments/contracts retain upstream"},
+            "triton": {"status": "production",
+                       "note": "explicit upstream rollback; also auto fallback"},
+            "aiter": {"status": "validated",
+                      "note": "vendor verify bridge in gdn_aiter.py; BF16 K=V=128, FP32 "
+                              "contiguous state/snapshots; gfx936 eager/Graph reference "
+                              "and Qwen3.6 TP2 MATH500/serving passed 2026-11-14"},
         },
     },
     "fused_moe": {

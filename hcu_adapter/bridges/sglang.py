@@ -166,6 +166,9 @@ def install() -> None:
             from hcu_adapter import platform_seam
 
             platform_seam.install()
+            from hcu_adapter.bridges._sglang import device_visibility
+
+            device_visibility.install()
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: platform semantics seam not installed", exc_info=True
@@ -222,6 +225,14 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: immutable JIT compiler inputs not installed", exc_info=True
+            )
+        try:
+            from hcu_adapter.bridges._sglang import jit_eh_norm
+
+            jit_eh_norm.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: JIT EH norm launch bounds not installed", exc_info=True
             )
         # DSA top-k v2 fusion (dsv41f decode): stride seam on the upstream JIT
         # topk_v2 kernel + the v41 full-topk fused decode arm. Replaces the
@@ -498,6 +509,15 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: gdn aiter router not installed", exc_info=True
+            )
+        try:
+            from hcu_adapter import mamba_state_scatter
+
+            mamba_state_scatter.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: Mamba state scatter grid route not installed",
+                exc_info=True,
             )
         try:
             from hcu_adapter import gdn_cutedsl_fallback
@@ -821,6 +841,15 @@ def install() -> None:
         except Exception:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: int8_scaled_mm bridge not installed", exc_info=True
+            )
+
+        try:
+            from hcu_adapter.bridges._sglang import mla_kv
+
+            mla_kv.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: packed MLA KV writer bridge not installed", exc_info=True
             )
 
         # FlashMLA decode backend: FlashMLABackend subclasses
@@ -1325,6 +1354,10 @@ def install() -> None:
         # preshuffle path (page_size=64*index_kpool, 16-aligned cache tiles).
         try:
             import sglang.srt.layers.attention.dsa.utils as _dsa_utils
+            from sglang.srt.utils import common as _dsa_common
+
+            _dsa_utils.is_hip = _dsa_common.is_hip
+            _dsa_utils.is_cuda = _dsa_common.is_cuda
 
             _hcu_orig_gate = _dsa_utils.aiter_can_use_preshuffle_paged_mqa
             if os.environ.get("HCU_DSA_PRESHUFFLE") == "0":
@@ -2067,7 +2100,7 @@ def install() -> None:
                 if "use_fp8" not in _ll_params and "quant_type" in _ll_params:
                     import sys as _sys
 
-                    def _ll_dispatch_v0521(
+                    def _ll_dispatch_upstream(
                         self,
                         x,
                         topk_idx,
@@ -2144,6 +2177,18 @@ def install() -> None:
                             **({"x_scales": x_scales} if x_scales is not None else {}),
                         )
 
+                    def _ll_dispatch_v0521(self, x, topk_idx, *args, **kwargs):
+                        if "quant_type" in kwargs or "topk_weight" in kwargs or (
+                            args and isinstance(args[0], torch.Tensor)
+                        ):
+                            return _ll_orig(self, x, topk_idx, *args, **kwargs)
+                        if kwargs.get("topk_weights") is None:
+                            kwargs["topk_weights"] = _sys._getframe(1).f_locals.get(
+                                "topk_weights"
+                            )
+                        return _ll_dispatch_upstream(self, x, topk_idx, *args, **kwargs)
+
+                    _ll_dispatch_v0521._hcu_accepts_quant_type = True
                     _dep.Buffer.low_latency_dispatch = _ll_dispatch_v0521
                     logging.getLogger("hcu.adapter").info(
                         "HCU deep_ep bridge: v0.5.21 low_latency_dispatch call "
@@ -3330,6 +3375,15 @@ def install() -> None:
             )
 
         try:
+            from hcu_adapter import multimem_gate
+
+            multimem_gate.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: multimem probe gate not installed", exc_info=True,
+            )
+
+        try:
             from hcu_adapter import qsa_pool
 
             qsa_pool.install()
@@ -3337,3 +3391,8 @@ def install() -> None:
             logging.getLogger("hcu.adapter").warning(
                 "HCU adapter: QSA pool not installed", exc_info=True
             )
+
+        from hcu_adapter.bridges._sglang import grouped_topk, sampling
+
+        grouped_topk.install()
+        sampling.install()

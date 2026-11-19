@@ -20,6 +20,8 @@ becomes the AOT backend on HCU.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import torch
 
 from .compat import HAS_TRITON, check_cuda_tensor
@@ -36,6 +38,7 @@ if HAS_TRITON:
         strides_bk, strides_bn,
         strides_cm, strides_cn,
         HAS_BIAS: tl.constexpr,
+        GROUP_SCALES: tl.constexpr,
         BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
     ):
         pid_m = tl.program_id(0)
@@ -61,13 +64,30 @@ if HAS_TRITON:
         acc = acc.to(tl.float32)
         sa = tl.load(SA + offs_m, mask=m_mask, other=0.0)
         sb = tl.load(SB + offs_n, mask=n_mask, other=0.0)
-        acc = acc * sa[:, None] * sb[None, :]
+        if GROUP_SCALES:
+            # Match LightOp rounding when the same layout falls back to Triton.
+            acc = acc * (sa[:, None] * sb[None, :])
+        else:
+            acc = acc * sa[:, None] * sb[None, :]
         if HAS_BIAS:
             acc += tl.load(Bias + offs_n, mask=n_mask,
                            other=0.0).to(tl.float32)[None, :]
         c_ptrs = C + offs_m[:, None] * strides_cm + offs_n[None, :] * strides_cn
         tl.store(c_ptrs, acc.to(C.dtype.element_ty),
                  mask=m_mask[:, None] & n_mask[None, :])
+
+
+@lru_cache(maxsize=1)
+def _backend():
+    from hcu_adapter import registry
+    from hcu_adapter.ops.selector import select
+
+    backend = select("int8_scaled_mm", "triton")
+    registry.register(
+        "int8_scaled_mm", backend, "sgl_kernel.gemm_int8.int8_scaled_mm",
+        registry.MECH_SEAM,
+    )
+    return backend
 
 
 def int8_scaled_mm(mat_a, mat_b, scales_a, scales_b, out_dtype, bias=None):
@@ -82,13 +102,37 @@ def int8_scaled_mm(mat_a, mat_b, scales_a, scales_b, out_dtype, bias=None):
 
     M, K = mat_a.shape
     N = mat_b.shape[1]
-    out = torch.empty((M, N), device=mat_a.device, dtype=out_dtype)
     if M == 0 or N == 0:
-        return out
+        return torch.empty((M, N), device=mat_a.device, dtype=out_dtype)
 
     sa = scales_a.reshape(M) if scales_a.numel() == M else scales_a.reshape(1, -1).reshape(-1)[:1].expand(M)
     sa = sa.contiguous().float()
     sb = scales_b.reshape(N).contiguous().float()
+
+    backend = _backend()
+    if backend == "hipblaslt" and bias is None:
+        from lightop import gemm_ops
+
+        supported, output = gemm_ops.hipblaslt_w8a8_gemm(
+            mat_a.contiguous(), mat_b.T.contiguous(),
+            sa.view(-1, 1), sb.view(-1, 1), M, N, K, "NT", out_dtype,
+        )
+        if not supported:
+            raise RuntimeError(f"hipBLASLt W8A8 failed for M={M}, N={N}, K={K}")
+        return output
+
+    group_scales = False
+    if backend == "lightop":
+        from hcu_adapter.kernels.sglang_int8_mm_lightop import (
+            supports_scaled_mm_layout,
+            try_scaled_mm,
+        )
+
+        native = try_scaled_mm(mat_a, mat_b, sa, sb, out_dtype, bias)
+        if native is not None:
+            return native
+        group_scales = supports_scaled_mm_layout(mat_a, mat_b, out_dtype, bias)
+    out = torch.empty((M, N), device=mat_a.device, dtype=out_dtype)
 
     def _grid(meta):
         return (triton.cdiv(M, meta["BLOCK_M"]),
@@ -101,6 +145,7 @@ def int8_scaled_mm(mat_a, mat_b, scales_a, scales_b, out_dtype, bias=None):
         mat_b.stride(0), mat_b.stride(1),
         out.stride(0), out.stride(1),
         HAS_BIAS=bias is not None,
+        GROUP_SCALES=group_scales,
         BLOCK_M=64, BLOCK_N=64, BLOCK_K=64,
         num_warps=4, num_stages=3,
     )

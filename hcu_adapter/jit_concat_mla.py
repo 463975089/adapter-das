@@ -216,8 +216,9 @@ def _apply(root, register):
         registered.extend((_Q_KERNEL_NEEDLE, _Q_LAUNCH_NEEDLE))
     from hcu_adapter.atomic_io import atomic_write
 
-    atomic_write(p, text)
     applied = len(registered)
+    if applied:
+        atomic_write(p, text)
 
     import hcu_adapter.registry as _reg
 

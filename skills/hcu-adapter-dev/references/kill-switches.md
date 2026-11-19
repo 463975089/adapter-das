@@ -32,12 +32,14 @@ export HCU_DISABLE_OPS=aiter_ar,aiter_fa # 多个（逗号/空格/分号分隔�
 | `vllm_fp4_packer` | Plugin E2M1 lowering | 启动时保留原绑定；发布后改变须新进程，禁止热撤销已缓存JIT |
 | `vllm_fp4_indexer` | V41 FP4模型、cache、Q/K与reader | 启动时优先既有FP8；复用原OOT owner；发布后策略变化拒绝须新进程 |
 | `vllm_scaled_mm` | vLLM 普通 FP8/INT8 Linear 的 LightOp 执行后端 | 启动时保留官方 Triton；已安装后策略变化拒绝，须新进程 |
+| `mamba_state_scatter` | SGLang Mamba verify-state flattened grid | 启动时跳过安装并保留上游；不热撤销已捕获 Graph。 |
 | `vllm_sparse_indexer` | vLLM 0.33/gfx936 C4 public OOT | 启动时优先 stock；注册后改变须新进程，不能撤销 dispatcher 或清除失败 |
-| `vllm_mhc` | vLLM 0.33 mHC Torch/OOT 适配候选 | 启动时跳过注册，保留原始官方；已注册后改变策略拒绝，须新进程。原始已知 TileLang 失败仍保留，不是功能回退通过。 || `aiter_ar` | AiterCustomAllreduce dispatch | 拒绝 → sglang 回退 NCCL（优雅降级） |
+| `vllm_mhc` | vLLM 0.33 mHC Torch/OOT 适配候选 | 启动时跳过注册，保留原始官方；已注册后改变策略拒绝，须新进程。原始已知 TileLang 失败仍保留，不是功能回退通过。 |
+| `aiter_ar` | AiterCustomAllreduce dispatch | 拒绝 → sglang 回退 NCCL（优雅降级） |
 | `vendor_fa` | `HCU_FA_IMPL=vendor` 的 DTK FA 桥 | 新进程优先回到 Triton，不改变 auto；覆盖非分页 dense/packed。快关不表示支持额外 FA2 参数，输入拒绝合同见 [FA 桥](../../../docs/dense-flashattention.md)。 |
+| `gdn_verify` | SGLang GDN AITER target_verify | 启动时优先保留上游；修改后须新进程。独立于 prefill/packed decode。 |
 | `aiter_fa` | aiter FA 入口（真包已有属性也拦） | 调用时响亮报错（换 `--attention-backend triton`） |
 | `qsa_mqa` | QSA MQA BoltOPs prefill/decode | 回退当前官方 Torch reference，保留原输入/输出与 decode keyword 参数 |
-
 优先级：`HCU_DISABLE_OPS` > arch 自动规则 > 单算子 opt-in env。
 `aiter_ar` 的自动规则（hcu_env.py）区分新旧 aiter 布局：gfx93\* +
 **旧版** `aiter.ops.triton.custom_all_reduce` → 自动拒绝（图重放损坏，
@@ -85,3 +87,5 @@ MiniMax prefill fusion: `HCU_DISABLE_OPS=vllm_minimax_prefill` is a startup veto
 for the Plugin provider and retains the stock composition. It takes precedence
 over `ops.vllm_minimax_prefill: triton`. Changing a selected policy after use is
 refused; restart instead of mixing compiled/cache paths in one engine.
+
+`HCU_DISABLE_OPS=sglang_tree_sampling` 拒绝 target-only 随机树采样调用；该路径没有可用的 FlashInfer 回退，不静默改为贪心。

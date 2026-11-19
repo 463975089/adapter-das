@@ -44,12 +44,23 @@ SWITCHES = {
     "vllm_dsv41_channel_fp8": ("vLLM V4.1 channel-FP8 config registration; fresh-process stock fallback", "HCU_VLLM_DSV41_CHANNEL_FP8_IMPL"),
     "vllm_ct_w4a8": ("vLLM V4.1 CT W4A8 config registration; fresh-process stock fallback", "HCU_VLLM_CT_W4A8_IMPL"),
     "vllm_pcp": ("vLLM V4.1 PCP attention ownership; fresh-process stock fallback", "HCU_VLLM_PCP_IMPL"),
+
+    "gdn_verify": ("SGLang GDN AITER verify route (startup-only upstream fallback)",
+                   "HCU_LINEAR_ATTN_GDN_VERIFY"),
+    "mamba_state_scatter": (
+        "SGLang flattened Mamba state scatter (startup-only upstream fallback)",
+        None,
+    ),
+
     "qsa_mqa": ("QSA MQA BoltOPs dispatch (falls back to Torch reference)", None),
     "vllm_minimax_prefill": ("MiniMax Plugin prefill fusion; startup veto retains the stock composition", None),
     "vllm_minimax_qknorm_abi": ("vLLM MiniMax fused native ABI bridge; disabling rejects old ABI", None),
     "vllm_sparse_indexer": ("vLLM C4 indexer public OOT compatibility; fresh-process stock fallback", "HCU_VLLM_SPARSE_INDEXER_IMPL"),
     "vllm_mhc": ("vLLM official Torch/AITER mHC compatibility registration (startup only)", "HCU_VLLM_MHC_IMPL"),
     "deep_ep": ("DeepInfer DeepEP compatibility surface", None),
+    "sglang_tree_sampling": ("SGLang target-only stochastic tree sampling; disabled calls fail explicitly", None),
+    "sglang_grouped_topk": ("SGLang grouped router; ops.sglang_grouped_topk=torch restores current dispatch", None),
+    "int8_scaled_mm": ("SGLang INT8 dense GEMM provider; ops.int8_scaled_mm=triton restores reference route", None),
     "worker.runtime": ("DeepInfer worker lifecycle adaptation", None),
     "deep_gemm": ("DeepInfer GEMM/MQA/mHC compatibility surface", None),
     "flash_attn.cute.interface._flash_attn_fwd": ("DeepInfer ViT attention", None),

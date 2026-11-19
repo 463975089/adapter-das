@@ -111,10 +111,10 @@ if tl is not None:
         two = ((pw + 127) << 23).to(tl.float32, bitcast=True)  # 2^pw
         kf = tl.where(sgn == 1, -(mant * two), mant * two)
         acc = tl.zeros((SLOT_TILE,), tl.float32)
-        for h in tl.static_range(H):
+        for h in range(H):
             qv = tl.load(q_ptr + (i * H + h) * D + d)
             wh = tl.load(w_ptr + i * H + h)
-            acc += wh * tl.sum(kf * qv[None, :], axis=1)
+            acc += wh * tl.maximum(tl.sum(kf * qv[None, :], axis=1), 0.0)
         # fp32 scales at the page tail (both writer arms agree on this)
         sfbase = page.to(tl.int64) * (PS * 33) + PS * 32
         sf = tl.load(sf_ptr + sfbase + slot)
@@ -254,10 +254,10 @@ if tl is not None:
         two = ((pw + 127) << 23).to(tl.float32, bitcast=True)
         kf = tl.where(sgn == 1, -(mant * two), mant * two)
         acc = tl.zeros((TT,), tl.float32)
-        for h in tl.static_range(H):
+        for h in range(H):
             qv = tl.load(q_ptr + (i * H + h) * D + d)
             wh = tl.load(w_ptr + i * H + h)
-            acc += wh * tl.sum(kf * qv[None, :], axis=1)
+            acc += wh * tl.maximum(tl.sum(kf * qv[None, :], axis=1), 0.0)
         sf = tl.load(sf_ptr + t, mask=tmask, other=0.0)
         tl.store(
             out_ptr + i.to(tl.int64) * T + t,
@@ -385,6 +385,52 @@ def triton_paged_ps1_mqa_logits(
     return out
 
 
+if tl is not None:
+
+    @triton.jit
+    def _ragged_mqa_logits_matmul_kernel(
+        Q, W, K, SF, KS, KE, OUT, N, T,
+        H: tl.constexpr, D: tl.constexpr,
+        BM: tl.constexpr, BN: tl.constexpr,
+    ):
+        rows = tl.program_id(0) * BM + tl.arange(0, BM)
+        cols = tl.program_id(1) * BN + tl.arange(0, BN)
+        ds = tl.arange(0, D)
+        ks = tl.load(KS + rows, rows < N, other=0)
+        ke = tl.load(KE + rows, rows < N, other=0)
+        # Entire tiles outside every row window only need the -inf fill.
+        if (tl.program_id(1) * BN >= tl.max(ke, 0)) or (
+            (tl.program_id(1) + 1) * BN <= tl.min(ks, 0)
+        ):
+            tl.store(
+                OUT + rows[:, None].to(tl.int64) * T + cols[None, :],
+                tl.full((BM, BN), float("-inf"), tl.float32),
+                (rows[:, None] < N) & (cols[None, :] < T),
+            )
+            return
+        # Decode E4M3 bytes exactly; BF16 represents every finite E4M3 value.
+        u = tl.load(K + cols[None, :].to(tl.int64) * D + ds[:, None],
+                    cols[None, :] < T, other=0).to(tl.int32)
+        exponent = (u >> 3) & 15
+        mantissa = u & 7
+        power = tl.where(exponent == 0, -6, exponent - 7)
+        mantissa = tl.where(exponent == 0, mantissa, mantissa + 8).to(tl.float32) * .125
+        kf = mantissa * ((power + 127) << 23).to(tl.float32, bitcast=True)
+        kf = tl.where((u & 128) != 0, -kf, kf).to(tl.bfloat16)
+        logits = tl.zeros((BM, BN), tl.float32)
+        for head in range(H):
+            q = tl.load(Q + (rows[:, None].to(tl.int64) * H + head) * D + ds[None, :],
+                        rows[:, None] < N, other=0).to(tl.bfloat16)
+            dot = tl.dot(q, kf)
+            weight = tl.load(W + rows * H + head, rows < N, other=0)
+            logits += tl.maximum(dot, 0.) * weight[:, None]
+        scale = tl.load(SF + cols, cols < T, other=0)
+        valid = (cols[None, :] >= ks[:, None]) & (cols[None, :] < ke[:, None])
+        logits = tl.where(valid, logits * scale[None, :], float('-inf'))
+        tl.store(OUT + rows[:, None].to(tl.int64) * T + cols[None, :], logits,
+                 (rows[:, None] < N) & (cols[None, :] < T))
+
+
 def triton_ragged_mqa_logits(q_fp8, kv, kv_scales, weights, cu_starts, cu_ends):
     """deep_gemm.fp8_mqa_logits face (ragged): out [N,T] fp32, -inf outside
     each row's [ks, ke). Same contract as mqa_logits_emu._ragged_fp8_mqa_logits
@@ -408,6 +454,14 @@ def triton_ragged_mqa_logits(q_fp8, kv, kv_scales, weights, cu_starts, cu_ends):
     sf = kv_scales.reshape(-1).to(torch.float32).contiguous()
     out = torch.empty((N, T), dtype=torch.float32, device=q_b.device)
     if N == 0 or T == 0:
+        return out
+    # Large prefill batches reuse K across query rows through BF16 MFMA.
+    # Small decode batches retain the vector path to avoid padded matrix work.
+    if N >= 32 and D == 128:
+        _ragged_mqa_logits_matmul_kernel[(triton.cdiv(N, 32), triton.cdiv(T, 128))](
+            q_b, w, k_u8, sf, ks, ke, out, N, T,
+            H=H, D=D, BM=32, BN=128, num_warps=8,
+        )
         return out
     TT = 256
     _ragged_mqa_logits_kernel[(N, triton.cdiv(T, TT))](
