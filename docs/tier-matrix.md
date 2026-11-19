@@ -4,6 +4,17 @@
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
+## vllm_inverse_rope
+
+Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| hcu | candidate Packaged native kernel compiled befo |
+| stock | candidate Default: original Core inverse RoPE |
+
+路由变量：（auto）
+
 ## cuda_graph
 
 HIP driver guard for breakable prefill graph capture
