@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 
 import pytest
+import torch
 
 from hcu_adapter import model_load as api
 from hcu_adapter.bridges import vllm_model_load as host
@@ -21,10 +22,12 @@ from vllm.v1.worker import gpu_model_runner as v1
 from vllm.v1.worker.gpu import model_runner as v2
 from hcu_adapter.bridges.vllm_worker import Worker
 from test_vllm_post_model_load import config
+from test_vllm_bridge import _stub_runtime_owners
 
 
 @pytest.fixture(autouse=True)
 def isolation(monkeypatch):
+    _stub_runtime_owners(monkeypatch)
     envs.disable_envs_cache()
     monkeypatch.setattr(api, "_mutation_guards", api._Callbacks())
     monkeypatch.delenv("VLLM_ELASTIC_EP_SCALE_UP_LAUNCH", raising=False)
@@ -39,7 +42,8 @@ def worker(monkeypatch, version, events):
     runner_type = v1 if version == 1 else v2
     runner = object.__new__(runner_type.GPUModelRunner)
     runner.vllm_config = cfg
-    runner.model = object()
+    runner.model = torch.nn.Module()
+    runner.speculator = None  # No draft checkpoint in this mutation-only fixture.
     runner.reset_lora_state = lambda: events.append("reset-lora")
     runner.reset_encoder_cache = lambda: events.append("reset-encoder")
     runner.reset_mm_cache = lambda: events.append("reset-mm")
@@ -53,6 +57,7 @@ def worker(monkeypatch, version, events):
     monkeypatch.setattr(runner_type, "reload_weights", load)
     result.model_runner = runner
     result.weight_transfer_engine = NS(
+        model=runner.model,
         supports_draft_weight_update=True,
         start_weight_update=lambda: events.append("engine-start"),
         reset_weight_update_target=lambda: events.append("engine-reset"),

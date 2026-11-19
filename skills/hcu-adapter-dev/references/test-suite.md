@@ -1,5 +1,11 @@
 # 自动化测试套件要求
 
+`cases/vllm_dsv41_indexer_cpu.py` 使用真实 Triton 解释器执行 scorer 的 CPU
+oracle。部分 DTK interpreter 将比较结果转回整数操作数 dtype；夹具先探测
+布尔 handle 能力，仅在需要时修正解释器比较结果，测试结束后恢复绑定。
+保留独立分数/掩码参考和原精确断言，不修改编译内核或 vendor 包；解释器
+原生返回布尔 handle 时不接入。CPU oracle 不替代设备、Graph 或模型验收。
+
 DSA writer 回归见 `tests/kernels/test_mqa_triton_gfx938.py`：在调用时解析
 新 kvcache/旧 attention 路径，区分页跨度 ABI；依赖导入错误不能当作接口迁移
 而隐藏。pytest 必须实际执行两种池布局、融合写入和派发的数值/top-k 断言，
@@ -21,6 +27,31 @@ guard 的非 None 返回属于契约违规，不能被回调异常包装成主�
 `test_bootstrap.py`、portable sequence/isolation 子集，以及原 vLLM 健康、
 selector 和真实 metadata/spawn 门禁。双宿主 import 探针拒绝框架/Torch/
 kernel/provider import；named consumer 回归不得冒称 SGLang engine 试验。
+
+vLLM 启动编排测试应显式隔离当前所有 provider 的安装边界（包括 MiniMax
+ABI），并断言顺序；遗漏新 owner 会让 CPU 顺序测试意外导入真实设备路径。
+组合健康测试使用真实 `ProcessLocalActions`，逐个覆盖内建 owner 的失败短路、
+激活期间的暂缓聚合及返回后的完整检查；同时验证已锁存的宿主错误在激活仍
+进行时也先拒绝。不要用缺少生命周期接口的 `SimpleNamespace` 或全局健康
+stub 掩盖准入失败。真实 vLLM host、CUDA 未初始化和模块来源需分别记录；
+隐藏 GPU 后官方 ROCm import 若要求设备，保留原始收集错误；显式 CPU
+metadata doubles 的范围见下段，不能据此记为 HCU 通过。
+
+针对平台/Worker/AR 的 CPU doubles，可将 ROCm 导入期的架构描述单独放在
+可恢复的 metadata context 中；退出该 context 后恢复设备查询拒绝守卫，
+不把该合成描述当成硬件准入证据。AOT policy 回归仅替身独立的
+`CacheBase.get_system` 设备描述，普通/AOT collector 本体及 factor 断言保留。
+复用启动 owner 夹具时，显式保留被测 owner（例如 AR 或带事件记录的 FP8/AR），
+不得替身宿主失败锁存或扩展健康接口。
+独立 host lane 记录本阶段 Git HEAD/合并父提交，以及 Core、Adapter、Plugin
+等组件的已安装版本和模块路径；镜像标签不代表 Core 版本。版本信息用于溯源，
+不能改为共享车道的精确 wheel 准入，也不能代替设备或模型验证。
+inventory 探针本身失败时须在执行测试前退出，不能继续报 GREEN；可选组件
+未安装仍记录为 null，不因此新增组件或版本限制。
+独立 host lane 须声明 `AR_ADAPTER_ROOT` 阶段根并保留显式覆盖。wheel 阶段的
+checkout 可通过包符号链接指向安装目录；解析声明文件与实际模块的精确路径，
+不能用模块是否位于 checkout 目录下判断，也不能省略外来根的拒绝对照。fresh-process 生命周期探针在子进程中
+显式不选择无关 provider，保留原健康查询与超时；父进程配置不变。
 
 vLLM 扩展生命周期：source 与独立 wheel installed 分开跑。check_health 的
 必需参数须在激活前拒绝；报告替换/重复、sink 失败、caught error 后其他

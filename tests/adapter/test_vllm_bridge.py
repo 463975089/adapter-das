@@ -27,7 +27,7 @@ from hcu_adapter.extensions import (
 )
 
 
-def _stub_runtime_owners(monkeypatch, calls=None):
+def _stub_runtime_owners(monkeypatch, calls=None, *, preserve=()):
     """Ordering doubles must not execute real providers on a synthetic HCU."""
     from importlib import import_module
     for name, action, label in (
@@ -39,7 +39,10 @@ def _stub_runtime_owners(monkeypatch, calls=None):
         ('vllm_flashmla', 'install', 'prefill'),
         ('vllm_flashmla_decode', 'install', 'decode'),
         ('vllm_pcp', 'install', 'pcp'),
+        ('vllm_minimax_abi', 'install', 'minimax-abi'),
     ):
+        if name in preserve:
+            continue
         owner = import_module('hcu_adapter.bridges.' + name)
         monkeypatch.setattr(owner, action, lambda label=label: calls.append(label) if calls is not None else None)
         if hasattr(owner, 'require_healthy'):
@@ -323,7 +326,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "dtk",
         "runtime-abi",
         "fp8",
-        "scaled-mm", "allreduce", "mhc", "indexer", "prefill", "decode", "pcp",
+        "scaled-mm", "allreduce", "mhc", "indexer", "prefill", "decode", "pcp", "minimax-abi",
         "adapter-version",
         ("extensions", "0.1.0", "0.32.0+rocm723"),
     ]
@@ -383,6 +386,7 @@ def test_adapter_version_comes_from_the_shipping_distribution(monkeypatch):
 def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
     monkeypatch,
 ):
+    _stub_runtime_owners(monkeypatch)
     validation_calls = []
 
     class HcuFlashAttentionBackend:
@@ -494,6 +498,7 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
 
 
 def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
+    _stub_runtime_owners(monkeypatch)
     class HcuFlashAttentionBackend:
         @classmethod
         def validate_configuration(cls, **kwargs):
