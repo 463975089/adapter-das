@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import logging
 import os
+import re
 import sys
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from pathlib import PurePath
@@ -178,16 +179,15 @@ def install() -> None:
     pid = os.getpid()
     if _installed_pid == pid:
         return
-    # The multiprocessing resource tracker only manages OS resources. It
-    # inherits the host environment but must not load GPU/framework bridges.
-    argv = getattr(sys, "orig_argv", ())
-    if any(
-        arg == "-c"
-        and argv[index + 1].startswith("from multiprocessing.resource_tracker import main;")
-        for index, arg in enumerate(argv[:-1])
-    ):
-        _installed_pid = pid
-        return
+    original_argv = getattr(sys, "orig_argv", ())
+    if sys.argv == ["-c"] and "-c" in original_argv:
+        index = original_argv.index("-c") + 1
+        if index < len(original_argv) and re.fullmatch(
+            r"from multiprocessing\.resource_tracker import main;main\([0-9]+\)",
+            original_argv[index],
+        ):
+            _installed_pid = pid
+            return
     if not _is_hip():
         _installed_pid = pid
         return

@@ -1,8 +1,19 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-17）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-18）；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
+
+## vllm_inverse_rope
+
+Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| hcu | candidate Packaged native kernel compiled befo |
+| stock | candidate Default: original Core inverse RoPE |
+
+路由变量：（auto）
 
 ## cuda_graph
 
@@ -42,7 +53,7 @@ V41 LightOp FP4 indexer with variable allocator pages
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| lightop | candidate Default for FP4 cache only; PCP1 eag |
+| lightop | candidate Eligible V4.1 auto defaults to MXFP4 |
 | stock | candidate Explicit stock fallback: existing FP |
 
 路由变量：`HCU_VLLM_FP4_INDEXER_IMPL`
@@ -98,6 +109,16 @@ vLLM V4.1 compatibility for the opt-in PCP extension
 | 档位 | 状态 / 备注 |
 |---|---|
 | scoped | candidate FP8 SHUFFLE scoring, delayed mHC and |
+
+路由变量：（auto）
+
+## mamba_state_scatter
+
+SGLang Mamba verify-state copy launch geometry
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate gfx936/gfx938 FP32 entries >=1024: f |
 
 路由变量：（auto）
 
@@ -566,6 +587,18 @@ GDN/gated-delta-rule 线性注意力（sglang fla 面）
 | aiter | validated auto 首选（2026-11 档位：aiter > triton）：D |
 
 路由变量：`HCU_LINEAR_ATTN_GDN`
+
+## linear_attn_gdn_verify
+
+SGLang GDN MTP target verification
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | production explicit upstream rollback; also aut |
+| aiter | validated vendor verify bridge in gdn_aiter.py |
+| auto | production default policy: qualified DTK2610 st |
+
+路由变量：`HCU_LINEAR_ATTN_GDN_VERIFY`
 
 ## fused_moe
 

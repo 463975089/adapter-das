@@ -405,3 +405,22 @@ Breakable Prefill. Invoke that original to use the existing eager target or
 no-runner draft fallback. Other Prefill backends and Decode Graph ownership are
 unchanged. A plugin that captures through a private copy of the entry point
 cannot see this guard and will enter the CUDA driver path on HCU.
+
+
+## HIP multimem 探测回退（2026-11-15）
+
+`multimem_gate` 在 SGLang 宿主桥的算子准备完成后安装，真实 `torch.version.hip` 非空时，将社区 `MultimemAllGatherer.__init__` 的 `enabled` 参数固定为 False；其它参数、类和原生 `tensor_model_parallel_all_gather` 保留。安装保留函数对象与已有别名，不改社区磁盘、不伪装硬件、不新增数值内核或环境旋钮；CUDA 保留原行为。绑定登记为 platform_detect / multimem-nccl-fallback。
+
+起因是两组独立 P 实例的 warmup：一个 TP rank 在 symmetric-memory 探测 socket bind 失败后回退，另一个仍停在 rendezvous；真实等待栈分别位于正常请求 broadcast 与 logits `_build`。这证明探测/回退分歧，不能单凭该栈确认另一次 VMFault 根因。构造合同、缓存别名、重复安装、未知/后期漂移及真实 consumer fallback 的专用回归通过；L0 通过，完整模型与三长度原生缓存/MTP复验另记外部实验结果。Graph 沿用同一原生 fallback，本轮最终D graph实际验收之前不宣称新验证已完成。
+
+本轮已执行完整模型边界验证：64K C26/N130：TTFT P90 7.076s、TPOT 29.706ms、MTP 74.72%/3.240；128K C30/N150：TTFT P90 14.455s、TPOT 32.615ms、MTP 69.25%/3.076；256K C14/N140：TTFT P90 13.986s、TPOT 23.992ms、MTP 71.99%/3.158。启动40个四长度质量题、8项文本视觉smoke以及所选并发算术/完整序列质量通过，原生P/D逐请求85%缓存及MTP合同通过；D沿用graph8与EAGLE3/replaySSM。全部首批请求保留，N≥128 P90通过不表示突发逐请求均达标。最终源码提交后还须新容器重复。宿主桥的安装沿用try/warning异常隔离；未知构造合同不安装、不宣称能力已生效，正式复验另要求实际门控日志合同。结构回归原有qsa_pool未隔离失败保留，未改其实现。
+
+
+## 2026-11-16 PD 辅助进程与 HIP multimem 评审分支
+
+本轮以 upstream release/sglang_v0.5.22 的 0318ca3129fd1cc4642db52bd3e6faa308ce4ece 为基线，应用来源 2e723ccf83e726c197ab4ece26cd656555b1bec0 相对旧基线的四个本地提交，无文本冲突。保留上游 swiglu_limit 优先解析、JIT include 惰性绑定及 CI 更新；新增辅助解释器入口防护和真实 HIP multimem 不支持时的确定性回退，沿现有 bootstrap/sglang bridge 所有权安装。
+
+配套 plugin 分支 feat/qwen38-pd-prefill-opt-v0522 基于 81315b299ff4620205372e1b9997b226e3fb650b，官方 SGLang 保持 release/v0.5.22 的 baa9befa381511cd4d56f83980951e5a45fffc6d。此前 2026-11-16 服务 smoke/质量及三长度短测使用旧 plugin 28861d1、adapter 2e723cc；属于旧证据，不外推到本次上游同步后的新组合。新分支未重启服务、未执行 GPU/Graph/模型性能验收；本次离线检查结果另列。
+
+本次离线检查：bootstrap、multimem、上游AITER MoE bridge和JIT sources共79项通过、16项跳过；显式指定官方SGLang树运行multimem消费者契约，未执行GPU编译或真实collective。L0为GREEN（31条提示，未宣称strict通过），源码/空白检查通过。完整日志在外部实验目录pd-disag/codex-work/upstream-pr-20261116/logs，服务和模型验证仍pending。
+

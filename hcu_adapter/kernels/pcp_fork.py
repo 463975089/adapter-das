@@ -30,6 +30,7 @@ _reference = None
 _engram_validator = None
 _classes = None
 _forward_context_resolver = None
+_forward_mqa_provider = None
 
 
 class PcpAttentionError(RuntimeError):
@@ -118,6 +119,24 @@ def bound_reference():
 def bound_engram_validator():
     """Read-only: the Engram validator currently bound, or None."""
     return _engram_validator
+
+
+def set_forward_mqa_provider(provider):
+    """Bind an optional forward_mqa provider before the owned classes are built."""
+    global _forward_mqa_provider
+    if not callable(provider):
+        raise PcpAttentionError("PCP forward_mqa provider must be callable")
+    with _lock:
+        if _forward_mqa_provider is provider:
+            return
+        if _classes is not None or _forward_mqa_provider is not None:
+            raise PcpAttentionError("PCP forward_mqa provider already bound; restart process")
+        _forward_mqa_provider = provider
+
+
+def bound_forward_mqa_provider():
+    """Return the optional forward_mqa provider without constructing or changing classes."""
+    return _forward_mqa_provider
 
 
 def _require_reference():
@@ -253,6 +272,15 @@ def build_classes():
         )
         from vllm.models.deepseek_v41.attention import DeepseekV4Attention, DeepseekV4Indexer
 
+        def forward_mqa_impl(self, q, kv, positions, output):
+            return DeepseekV41ROCMAiterMLAAttention.forward_mqa(
+                self, q, kv, positions, output)
+
+        if _forward_mqa_provider is not None:
+            forward_mqa_impl = _forward_mqa_provider(DeepseekV41ROCMAiterMLAAttention)
+            if not callable(forward_mqa_impl):
+                raise PcpAttentionError("PCP provider must supply a callable forward_mqa")
+
         class HcuV41PcpBackend(DeepseekV41ROCMAiterMLASparseBackend):
             @classmethod
             def supports_pcp(cls) -> bool:
@@ -325,7 +353,7 @@ def build_classes():
                     raise TypeError("HCU PCP attention requires its BF16 output allocation")
                 metadata = _forward_context().attn_metadata
                 if metadata is None:
-                    return super().forward_mqa(q, kv, positions, output)
+                    return forward_mqa_impl(self, q, kv, positions, output)
                 if not isinstance(metadata, dict) or self.swa_cache_layer.prefix not in metadata:
                     raise RuntimeError("HCU PCP attention requires native local SWA metadata")
                 swa = metadata[self.swa_cache_layer.prefix]
@@ -336,8 +364,8 @@ def build_classes():
                 # AMD inverse RoPE sees only initialized, actual local query rows.
                 output[count:].zero_()
                 if count:
-                    return super().forward_mqa(
-                        q[:count], kv[:count], positions[:count], output[:count]
+                    return forward_mqa_impl(
+                        self, q[:count], kv[:count], positions[:count], output[:count]
                     )
 
             def _forward_decode(self, q, *args, **kwargs):

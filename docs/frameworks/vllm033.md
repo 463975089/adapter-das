@@ -50,6 +50,16 @@ DSV41 整模型或性能验收完成。该后端不处理 CT W4A8 MoE 的 INT4 p
 
 ## 验证
 
+### PCP 逆 RoPE
+
+配置 `ops.vllm_inverse_rope: hcu` 选择 Plugin 的 BF16 输出逆 RoPE，默认 `stock`。
+Adapter 在构造 PCP 注意力类前接收 Plugin 的 `forward_mqa` 实现。
+该配置要求启用 PCP 模型扩展。`HCU_DISABLE_OPS=vllm_inverse_rope` 选择原实现，
+策略变化须重启进程。Prefill 的压缩 KV 和 SWA KV 均沿用 Core 的反量化路径。
+
+HCU 算子处理尚未旋转的 BF16 输出尾部，内核资源位于 Plugin wheel 中。
+显式选择后的缺失依赖在模型构造前拒绝，形状不适配时使用 Core 逆 RoPE。
+
 FlashMLA prefill/decode 的隐式 `native` 默认只在实际 vendor wheel 与调用 ABI
 均可用时接入；缺包、缺符号或签名漂移保留官方 stock，且不锁存启动失败，
 不应让普通 BF16 模型依赖可选 V4.1 provider。环境或配置中显式选择 `native`

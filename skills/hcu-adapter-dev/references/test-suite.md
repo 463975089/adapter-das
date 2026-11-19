@@ -262,6 +262,36 @@ FP8 grouped GEMM 小形状门见 `test_gemm_fp8.py` 的
 同时更新输入/权重/尺度与 counts/expert IDs。该直接内核合同不能
 代替真实 DeepEP 分布式 dispatch/combine 或模型精度证据。
 
+GDN target-verify vendor 路由的回归在
+tests/kernels/test_gdn_verify_aiter.py，接线在 gdn_aiter.py；保持原函数对象和
+缓存别名，不能只换一个 module 属性。真实 SGLang gate 是二维 [tokens, heads]，
+dt_bias 可为 BF16，线性 MTP 的 parent map 可为 None；这些变体不能用只有
+三维 gate / FP32 bias / tree 的夹具代替。对拍独立 FP32 递推、全部快照槽位及
+初始状态不被写回；Graph 同时覆盖首次 auto 调用就在 capture 内与多轮变输入。
+auto 的架构探测须使用已分配输入 tensor 的设备，不在安装时初始化默认 GPU。
+vendor 数值夹具须在隔离的函数命名空间显式绑定 AITER，避免进程默认 auto
+把范围外的 ragged/fixed 变体回退成上游、造成误测；不能重绑全局入口影响同车测试。
+auto 正面设备测试仅在已验证构建/架构运行，其他环境明确 platform skip；
+CPU 接线仍覆盖未验证版本/架构/合同回上游和显式 triton/总闸优先级。
+vendor 已执行后的异常不能重试上游，因为快照可能已经写入。
+
+
+BoltOps HIPC 编译子进程也须隔离宿主启动环境：其缓存标识包含
+aicc --version 的完整输出；继承 SGLang PYTHONPATH 时，Python helper 会把
+带时间戳的 adapter 日志混入版本输出，导致标识不稳定并反复冷编译。
+可在测试 runner 通过 vendor 公开 BOLT_OPS_AICC 指定包装器，仅在 exec
+同一 aicc 时设置 HCU_ADAPTER_HOST=none、_HCU_ADAPTER_ACTIVE_HOST=none
+并清空 PYTHONPATH；主测试进程继续使用真实 SGLang 环境。保留编译参数、
+数值断言和原始 FAIL，此隔离不能作为放宽门禁的理由。
+
+channel-FP8 MoE 的三组 swiglu-clamp 用例位于 tests/kernels/test_aiter_moe.py。
+gfx936 当前没有可执行的 AITER channel-FP8 MoE provider，测试在执行时读取
+当前分配设备的真实 gcnArchName（去掉冒号后的 feature suffix），于分配 tensor
+前明确 skip；不在模块收集阶段初始化设备。其他架构继续要求 AITER 实际执行，
+并保留原数值阈值与变输入 Graph 检查，不能因 provider 返回 None 而通用跳过。
+
+
+
 Mamba2 graph 数值门见 `test_l15_execution_chains.py` 的
 `test_mamba2_decode_fresh_input_graph`：独立 CPU FP32 计算投影、卷积、
 SSM 与门控归一化，保留激活存储 dtype。捕获后连续三轮改变输入与
@@ -1050,3 +1080,36 @@ SHA256 `71cbc0c5e9e521a595988a3c4bd8463e29fd4574dd7362cd0a871bb52a8d9d8c`。
 - vendor 压测 BHTD→THD 使用 transpose；Tq>Tk 的 causal 全遮蔽行参考输出零。
   Graph CU 在设备上按 shape 构造，避免 pageable CPU 长度复制，保留原数值阈值。
   快关优先级由 `test_env_guards.py` 验证；算子通过不替代实际六步生成。
+
+Mamba verify-state scatter 的回归位于 `tests/kernels/test_mamba_state_scatter.py`
+和 `tests/adapter/test_mamba_state_scatter_bridge.py`：复制路径要求完整目标状态按位
+相等，覆盖非 identity source-row、无效 source/destination/step、entry 尾块和外层
+stride；Graph 同时改变输入值与映射元数据。桥接测试保留已缓存 wrapper 别名，
+并验证 fresh-process 显式快关与 spawn 子进程。真实桥接夹具必须兼容自动 bootstrap
+已经安装路由的进程：隔离原始 JIT 后测试，再恢复进入测试前的绑定，不能把
+HOSTnone 单独通过误作完整 suite 兼容证据。
+
+
+Mamba scatter routing CPU regressions exercise exact gfx936/gfx938 architecture names
+and feature suffixes, per-input-device probe caching, retained aliases and source-row
+arguments, plus rejection of other architectures and dtype/device/size contracts.
+The real wrapper/Graph and spawn probes accept either supported HCU architecture;
+a CPU skip does not validate gfx938 device execution or serving.
+
+
+GDN verify auto qualification admits gfx936/gfx938 on the matched DTK stack,
+without a fixed batch ceiling. Positive batch size, packed TP2/draft4 shapes,
+dtype/layout/index and state/snapshot contracts remain mandatory. CPU routing
+covers both exact architecture names and feature suffixes beyond the former
+18/64 limits, including empty-batch rejection.
+
+Device regressions compare AITER and upstream Triton at N=65/128/256/512 with
+BF16/FP32 bias and linear/tree parents. The entire written snapshot pool is
+checked in bounded blocks against a CPU copy of the Triton result; untouched
+slots and source state must remain exact. Independent FP32 recurrence additionally
+checks first/middle/last active sequences. N=128/512 Graph tests replay the
+original data and three changed-input/source-index/destination-index/parent maps,
+including a zero-length padded row. N=128 also covers first-call auto capture.
+An explicit low-free-memory skip is a resource condition, not device qualification;
+only executed cases count as numerical evidence.
+

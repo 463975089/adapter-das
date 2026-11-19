@@ -249,6 +249,12 @@ void merge_state_v2(
   CHECK_SHAPE(v_merged, v_a);
   CHECK_SHAPE(s_merged, s_a);
   CHECK_EQ(v_merged.scalar_type(), v_a.scalar_type());
+  // The launcher reinterprets BOTH v sides as v_merged's scalar_t and BOTH
+  // lse sides as float*: same-width-but-different dtypes must raise instead
+  // of silently corrupting the merge (review #81 R9 P2).
+  CHECK_EQ(v_b.scalar_type(), v_a.scalar_type());
+  CHECK_EQ(s_a.scalar_type(), at::ScalarType::Float);
+  CHECK_EQ(s_b.scalar_type(), at::ScalarType::Float);
   CHECK_EQ(s_merged.scalar_type(), at::ScalarType::Float);
   DISPATCH_BY_SCALAR_DTYPE(v_merged.dtype(), CALL_MERGE_ATTN_STATES_LAUNCHER);
 }
