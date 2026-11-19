@@ -102,6 +102,17 @@ vLLM 0.33 V4.1 PCP attention owned by the adapter kernel module
 
 路由变量：`HCU_VLLM_PCP_IMPL`
 
+## vllm_pcp_q_rope
+
+vLLM V4.1 PCP prefill Q-only RoPE
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| hcu | candidate Opt-in eager gfx938 PCP prefill, in- |
+| stock | candidate Default: upstream fused query prepar |
+
+路由变量：（auto）
+
 ## vllm_dsv41_pcp_compat
 
 vLLM V4.1 compatibility for the opt-in PCP extension

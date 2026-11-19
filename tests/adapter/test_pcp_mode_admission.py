@@ -134,3 +134,23 @@ def test_non_pcp_config_stays_native_even_in_native_mode(clean_env, native, monk
     cfg = object()
     assert pcp_fork.select_attention(cfg) == "native-attention"
     assert native.calls == [cfg]
+
+
+def test_published_stock_q_rope_cannot_be_enabled_in_place(clean_env):
+    from hcu_adapter import hcu_config
+
+    for name in ("_q_rope_provider", "_q_rope_binding", "_q_rope_failure"):
+        clean_env.setattr(pcp_fork, name, None)
+    ops = {}
+    clean_env.setattr(hcu_config, "load", lambda: {"ops": ops, "overrides": {}})
+    clean_env.setenv("HCU_VLLM_PCP_IMPL", "native")
+
+    pcp_fork.set_q_rope_provider(None)
+    pcp_fork.require_q_rope_healthy()
+    ops[pcp_fork.Q_ROPE_OP] = "hcu"
+    with pytest.raises(pcp_fork.PcpAttentionError, match="restart process"):
+        pcp_fork.require_q_rope_healthy()
+
+    ops.clear()
+    with pytest.raises(pcp_fork.PcpAttentionError, match="restart process"):
+        pcp_fork.set_q_rope_provider(None)
