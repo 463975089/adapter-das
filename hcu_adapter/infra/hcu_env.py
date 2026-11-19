@@ -149,6 +149,33 @@ def _auto_hcu_fork_impl():
 
 
 REGISTRY = {
+    "HCU_TRITON_FAST_LAUNCH": {
+        "env": "HCU_TRITON_FAST_LAUNCH", "default": "0",
+        "about": "MLA Triton selector 的可选 CompiledKernel launch replay。"
+                 "=0 使用 Triton 通用 JIT 派发（候选评测配置）。"
+                 "只影响已启用的 Triton 路径，不改变 selector 分流。",
+    },
+    "HCU_TRITON_FUSED_SELECTORS": {
+        "env": "HCU_TRITON_FUSED_SELECTORS", "default": "1",
+        "about": "vLLM native MLA sparse decode 的 selector 默认开启。=1 在有界 HCU "
+                 "shape 上用单内核过滤、升序排序、写 padded ids/counts；"
+                 "超融合预算回退三步 Triton。=0 使用 Base eager selector。",
+    },
+    "HCU_VLLM_MHC_DELAYED_FUSION": {
+        "env": "HCU_VLLM_MHC_DELAYED_FUSION", "default": "0",
+        "hosts": ("vllm",),
+        "about": "Opt in to fused gate/collapse for vLLM 0.33 AITER staged delayed Pre, hc4/hidden5120/1-64 rows; startup only",
+    },
+    "HCU_VLLM_MHC_MEGA": {
+        "env": "HCU_VLLM_MHC_MEGA", "default": "1",
+        "hosts": ("vllm",),
+        "about": "Shifted mega_mhc seam defaults on for the validated gfx938 vLLM and DeepGEMM builds in AITER mode. 0 disables it at startup.",
+    },
+    "HCU_DSV41_W4A8_MOE_EXPECTED_M": {
+        "env": "HCU_DSV41_W4A8_MOE_EXPECTED_M", "default": "0",
+        "hosts": ("vllm",),
+        "about": "Enable the small-batch masked GEMM hint for eligible V4.1 W4A8 experts; startup only",
+    },
     "HCU_VLLM_FLASHMLA_DECODE": {
         "env": "HCU_VLLM_FLASHMLA_DECODE", "default": "native",
         "hosts": ("vllm",),

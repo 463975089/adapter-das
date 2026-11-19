@@ -91,8 +91,11 @@ def test_native_preserves_original_and_registers(setup, monkeypatch):
     assert record['implementation'] == 'native'
     assert bridge.install()  # Idempotent, no second wrapper.
     assert target.rocm_sparse_attn_prefill is routed
-    # Lookup through the module global is the real model's calling convention.
+    # A forward must not repeat the startup policy lookup.
+    policy_lookup = []
+    monkeypatch.setattr(bridge, 'selected_mode', lambda: policy_lookup.append(True) or 'native')
     assert target.rocm_sparse_attn_prefill(*range(10)) == 'stock'
+    assert not policy_lookup
     assert seen[0]['provider'] is provider
 
 
@@ -125,8 +128,12 @@ def test_late_policy_or_binding_drift_latches_failure(setup, monkeypatch, change
     if change == 'stock': monkeypatch.setenv(bridge.MODE_VARIABLE, 'stock')
     if change == 'kill': monkeypatch.setenv('HCU_DISABLE_OPS', bridge.OP)
     if change == 'invalid': monkeypatch.setenv(bridge.MODE_VARIABLE, 'bad')
-    if change == 'binding': target.rocm_sparse_attn_prefill = official
+    if change == 'binding':
+        target.rocm_sparse_attn_prefill = official
+        with pytest.raises(bridge.FlashMLACompatibilityError, match='binding changed'):
+            saved(*range(10))
     with pytest.raises(bridge.FlashMLACompatibilityError): bridge.require_healthy()
+    with pytest.raises(bridge.FlashMLACompatibilityError): saved(*range(10))
     monkeypatch.setenv(bridge.MODE_VARIABLE, 'native')
     monkeypatch.delenv('HCU_DISABLE_OPS', raising=False)
     target.rocm_sparse_attn_prefill = saved
@@ -197,6 +204,8 @@ def test_fork_adopts_healthy_binding_but_preserves_failure(setup, monkeypatch, f
     def child():
         try:
             if not failed:
+                with pytest.raises(bridge.FlashMLACompatibilityError, match='child runtime activation'):
+                    target.rocm_sparse_attn_prefill(*range(10))
                 with pytest.raises(bridge.FlashMLACompatibilityError): bridge.require_healthy()
             bridge.install()
             bridge.require_healthy()
