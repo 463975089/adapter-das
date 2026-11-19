@@ -479,7 +479,7 @@ def check_registry_ops_in_catalog(r):
 # governance §3b: operator implementations, actual dispatch facades and mechanisms.
 _KERNEL_TIERS = {"emu", "triton", "cpp", "fork", "ref", "aiter", "lightop", "boltops", "dtk", "rccl"}
 _KERNEL_FACADES = {"gemm", "gather", "norm", "index_ops", "fused_transform"}
-_KERNEL_MECHANISMS = {"runtime_config", "lightop_usage"}
+_KERNEL_MECHANISMS = {"runtime_config", "lightop_usage", "pcp_dspark"}
 
 
 def check_impl_naming(r):
