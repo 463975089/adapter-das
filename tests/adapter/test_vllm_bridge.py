@@ -36,6 +36,7 @@ def _stub_runtime_owners(monkeypatch, calls=None, *, preserve=()):
         ('vllm_allreduce', 'prepare_runtime', 'allreduce'),
         ('vllm_mhc', 'install', 'mhc'),
         ('vllm_sparse_indexer', 'install', 'indexer'),
+        ('vllm_sparse_flashmla', 'install', 'sparse-flashmla'),
         ('vllm_flashmla', 'install', 'prefill'),
         ('vllm_flashmla_decode', 'install', 'decode'),
         ('vllm_pcp', 'install', 'pcp'),
@@ -326,7 +327,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "dtk",
         "runtime-abi",
         "fp8",
-        "scaled-mm", "allreduce", "mhc", "indexer", "prefill", "decode", "pcp", "minimax-abi",
+        "scaled-mm", "allreduce", "mhc", "indexer", "sparse-flashmla", "prefill", "decode", "pcp", "minimax-abi",
         "adapter-version",
         ("extensions", "0.1.0", "0.32.0+rocm723"),
     ]
@@ -421,6 +422,7 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
     registry = ModuleType("vllm.v1.attention.backends.registry")
     registry.AttentionBackendEnum = SimpleNamespace(
         FLASH_ATTN="FLASH_ATTN",
+        FLASHMLA_SPARSE="FLASHMLA_SPARSE",
         TRITON_ATTN="TRITON_ATTN",
     )
     for name, module in {
@@ -525,6 +527,7 @@ def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
     registry = ModuleType("vllm.v1.attention.backends.registry")
     registry.AttentionBackendEnum = SimpleNamespace(
         FLASH_ATTN="FLASH_ATTN",
+        FLASHMLA_SPARSE="FLASHMLA_SPARSE",
         TRITON_ATTN="TRITON_ATTN",
     )
     for name, module in {

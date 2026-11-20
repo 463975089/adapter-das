@@ -76,6 +76,39 @@ HumanEval 或性能已验证。Plugin 的统一迁移候选为
 [vllm-plugin-das#490](https://github.com/HYGON-AI/vllm-plugin-das/pull/490)。
 另行尝试的启动契约套件为 24 passed、10 failed：缺少 Torch/vLLM，未计入上述通过项。
 
+### D576 sparse FlashMLA 与 HY4 sink
+
+`--attention-backend FLASHMLA_SPARSE` 使用 Adapter 注册的 DTK provider。
+仅在实际 gfx936/gfx938、vLLM 0.33 和兼容 `flash-mla` ABI 存在时注册；
+普通自动后端优先级不变。`HCU_DISABLE_OPS=vllm_sparse_flashmla` 在新进程中
+跳过注册，显式选择但不可用会在平台选择时拒绝。发布后 owner、provider 或
+快关变化会锁存失败，不能恢复后继续使用旧执行路径。
+
+复用 Core `HYV4FlashMLASparseImpl` 的 sink、padding、forward 与 cache 路径，
+仅在私有函数命名空间绑定 DTK 的 prefill/decode/metadata 入口。Core 源码及
+模块全局符号不变。旧 DTK prefill ABI 没有 `out`，调用后复制到 Core 的目标
+buffer。该桥不是 QK-FP8 优化，不改变 BF16 Q 或 packed FP8 KV 的精度。
+
+DTK 带 sink 的 output 对齐完整分母，但非空行返回的 LSE 仅包含真实 key 的贡献；
+空行 output 为零，LSE 为算子哨兵值，不能作为数学分母使用。
+本候选拒绝 DCP，避免将这个 LSE 交给 CUDA 的跨 rank 合并；目标 PCP16/DCP1
+不做该合并。不得以伪造 AMD/NVIDIA 架构查询来扩大支持。
+
+2026-11-20，POD1_CN2 的实际 gfx938/BW1301_LC 上，Core `c440c08`、Torch
+2.11/DTK2610 与 FlashMLA `ge1ff2c`：6 项 CPU ABI/owner 检查、12 项 BF16
+prefill 数值检查（含空行）、4 项真实 Core writer→packed FP8 decode 及变输入 Graph
+检查通过。配置探针验证 PCP16＋主干/自然 MTP3 和 sink 后端选择；没有加载
+整模权重。首轮把 DTK LSE 当作包含 sink 的分母时 3 项失败，按上述实际 ABI
+区分两种分母后重测，空行也只验 output 和有效行的 LSE，原失败日志保留。
+53 项宿主启动检查通过，L0 为 GREEN。HumanEval 和 PD 性能尚未执行。
+
+```bash
+HCU_ADAPTER_HOST=none VLLM_PLUGINS=__disabled__ \
+  python -m pytest -q tests/adapter/test_sparse_flashmla_abi.py
+HCU_ADAPTER_HOST=none VLLM_PLUGINS=__disabled__ \
+  python -m pytest -q tests/vendor/test_hy4_sparse_flashmla.py
+```
+
 ### PCP 逆 RoPE
 
 配置 `ops.vllm_inverse_rope: hcu` 选择 Plugin 的 BF16 输出逆 RoPE，默认 `stock`。

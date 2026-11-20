@@ -87,6 +87,13 @@ BACKEND_CATALOG = {
             },
         },
     },
+    "vllm_sparse_flashmla": {
+        "var": None,
+        "summary": "Core D576 sparse FlashMLA with DTK vendor ABI and attention sinks",
+        "backends": {
+            "native": {"status": "candidate", "note": "Explicit FLASHMLA_SPARSE; native metadata/PCP/cache; DCP excluded; whole-model qualification pending"},
+        },
+    },
     "vllm_flashmla_decode": {
         "var": "HCU_VLLM_FLASHMLA_DECODE",
         "summary": "vLLM 0.33 V4.1 native packed-FP8 sparse decode without BF16 KV gather",

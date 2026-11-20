@@ -1,6 +1,6 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-19）；事实源 = `BACKEND_CATALOG`（hcu_adapter/infra/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-20）；事实源 = `BACKEND_CATALOG`（hcu_adapter/infra/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
 
@@ -22,6 +22,16 @@ HIP driver guard for breakable prefill graph capture
 | 档位 | 状态 / 备注 |
 |---|---|
 | prefill-bcg-driver-truth | candidate Preserves prefill graphs and queries |
+
+路由变量：（auto）
+
+## vllm_sparse_flashmla
+
+Core D576 sparse FlashMLA with DTK vendor ABI and attention sinks
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Explicit FLASHMLA_SPARSE; native met |
 
 路由变量：（auto）
 
