@@ -102,6 +102,30 @@ def require_available():
                            'DTK flash-mla provider and enable ' + OP)
 
 
+def configure_cache_dtype(vllm_config):
+    """Resolve public E4M3 aliases before Core's early sparse-backend probe.
+
+    MLAAttention applies this same Core rule after backend selection. HY4
+    probes capability earlier, so the physical cache name must already agree.
+    Other backends/precisions keep their own configuration contracts.
+    """
+    attention = getattr(vllm_config, 'attention_config', None)
+    backend = getattr(attention, 'backend', None)
+    cache = getattr(vllm_config, 'cache_config', None)
+    dtype = getattr(cache, 'cache_dtype', None)
+    if (getattr(backend, 'name', backend) != 'FLASHMLA_SPARSE'
+            or dtype not in ('fp8', 'fp8_e4m3')):
+        return
+    require_available()
+    from vllm.model_executor.layers.attention.mla_attention import (
+        _canonicalize_sparse_mla_kv_cache_dtype,
+    )
+    owner = _backend_registry().AttentionBackendEnum.FLASHMLA_SPARSE.get_class()
+    resolved = _canonicalize_sparse_mla_kv_cache_dtype(owner, dtype)
+    cache.cache_dtype = resolved
+    _LOG.info('HCU sparse MLA cache format: %s -> %s', dtype, resolved)
+
+
 def install():
     global _publication
     _lifecycle.require_runtime_healthy()

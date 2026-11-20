@@ -89,6 +89,15 @@ HumanEval 或性能已验证。Plugin 的统一迁移候选为
 模块全局符号不变。旧 DTK prefill ABI 没有 `out`，调用后复制到 Core 的目标
 buffer。该桥不是 QK-FP8 优化，不改变 BF16 Q 或 packed FP8 KV 的精度。
 
+2026-11-21 的首轮 PCP16 启动发现：HY4 会在创建 `MLAAttention` 前预检
+sparse backend，而 Core 到后者才把公开 E4M3 名称转换为 packed 格式。
+Adapter 现在在平台配置入口提前调用 Core 同一 canonicalization helper，
+仅对显式 `FLASHMLA_SPARSE` 的 `fp8`/`fp8_e4m3` 解析为 `fp8_ds_mla`。
+不扩大 backend dtype 能力表，不转换其他 backend、E5M2 或 BF16；不可用的
+provider 在转换前拒绝。该动作只在配置期运行。
+新增配置及原 ABI CPU 检查18项通过，另53项宿主回归通过；实际 EngineArgs
+和 HY4 早期 selector 确认使用 packed 名称。完整模型及精度/性能仍须实测。
+
 DTK 带 sink 的 output 对齐完整分母，但非空行返回的 LSE 仅包含真实 key 的贡献；
 空行 output 为零，LSE 为算子哨兵值，不能作为数学分母使用。
 本候选拒绝 DCP，避免将这个 LSE 交给 CUDA 的跨 rank 合并；目标 PCP16/DCP1

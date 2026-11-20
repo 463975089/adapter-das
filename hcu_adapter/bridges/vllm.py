@@ -391,6 +391,9 @@ def _hcu_platform_class() -> type:
         @classmethod
         def check_and_update_config(cls, vllm_config) -> None:
             require_runtime_healthy()
+            from hcu_adapter.bridges.vllm_sparse_flashmla import configure_cache_dtype
+
+            configure_cache_dtype(vllm_config)
             _configure_indexer_kv_dtype(vllm_config)
             # Core validates the effective config and chooses its default worker.
             from hcu_adapter.bridges.vllm_moe_aiter import configure_padding_policy
