@@ -56,6 +56,26 @@ DSV41 整模型或性能验收完成。该后端不处理 CT W4A8 MoE 的 INT4 p
 
 ## 验证
 
+### HY4 W4A8 注册边界
+
+`features/ct_w4a8/ct_w4a8_registration.py` 的
+`set_additional_config_provider(name, factory)` 允许插件在现有 CT 事务中注入
+独立 `hcu_` 配置；保持 `compressed-tensors`、FP8 等官方 owner 和既有
+`hcu_dsv41_ct_w4a8` 名称。Adapter 不包含 HY4 模型判断、量化格式、HIPC
+转换或 MoE 执行代码。这些实现由 vllm-plugin-das 的对应 provider 提供。
+
+factory 在框架激活时才调用。所有额外名称在第一处公开注册前检查冲突，
+注册开始后失败继续沿用既有 commit-fatal 处理。重复同一 factory 幂等；
+禁止更换 owner 或发布后新增 provider。健康检查包含额外配置的公开 selector
+和 factory 归属，沿用 `HCU_VLLM_CT_W4A8_IMPL` 与现有快关，不新增配置开关。
+
+本次 CPU 检查为 108 passed、23 skipped（4 项 fork，19 项需要真实 vLLM host）；
+覆盖 CT 原有及新增注册、公开扩展与共享 lifecycle、双宿主 bootstrap。
+框架/provider 由显式 doubles 隔离，不代表 HY4 加载、kernel、PCP/R16、
+HumanEval 或性能已验证。Plugin 的统一迁移候选为
+[vllm-plugin-das#490](https://github.com/HYGON-AI/vllm-plugin-das/pull/490)。
+另行尝试的启动契约套件为 24 passed、10 failed：缺少 Torch/vLLM，未计入上述通过项。
+
 ### PCP 逆 RoPE
 
 配置 `ops.vllm_inverse_rope: hcu` 选择 Plugin 的 BF16 输出逆 RoPE，默认 `stock`。

@@ -45,6 +45,9 @@ def owner(request, monkeypatch):
     quant = NS(register_quantization_config=register,
                get_quantization_config=resolve, QUANTIZATION_METHODS=methods)
     if module is ct:
+        if hasattr(module, '_additional_config_providers'):
+            monkeypatch.setattr(module, '_additional_config_providers', {})
+            monkeypatch.setattr(module, '_additional_publications', {})
         monkeypatch.setattr(module, 'import_module', lambda name: quant)
         monkeypatch.setattr(module, '_config_provider', lambda: cls)
         method = module.NAME
@@ -142,3 +145,66 @@ def test_invalid_before_publication_is_correctable(owner, monkeypatch):
     assert reports[0].status is ExtensionStatus.ACTIVE
     lifecycle.require_extension_healthy(next(iter(owner.spec.capabilities)))
     assert owner.calls == [owner.method]
+
+
+@pytest.mark.parametrize('owner', [ct], indirect=True)
+def test_ct_bundle_registers_distinct_provider_and_checks_its_owner(owner):
+    extra = type('HY4Config', (), {'get_name': classmethod(lambda cls: 'hcu_hy4_ct_w4a8')})
+    provider = lambda: extra
+    ct.set_additional_config_provider('hcu_hy4_ct_w4a8', provider)
+    ct.set_additional_config_provider('hcu_hy4_ct_w4a8', provider)
+    _, lifecycle = load(owner)
+    assert owner.calls == [ct.NAME, 'hcu_hy4_ct_w4a8']
+    assert owner.quant.get_quantization_config('hcu_hy4_ct_w4a8') is extra
+    lifecycle.require_extension_healthy('dsv41-ct-w4a8')
+    original = owner.quant.get_quantization_config
+    owner.quant.get_quantization_config = lambda name: object()
+    with pytest.raises(ExtensionCommitError):
+        ct.check_health()
+    owner.quant.get_quantization_config = original
+    with pytest.raises(ExtensionCommitError):
+        ct.check_health()
+
+
+@pytest.mark.parametrize('owner', [ct], indirect=True)
+def test_ct_bundle_preflights_foreign_provider_before_any_publication(owner):
+    extra = type('HY4Config', (), {'get_name': classmethod(lambda cls: 'hcu_hy4_ct_w4a8')})
+    owner.quant.register_quantization_config('hcu_hy4_ct_w4a8')(object())
+    owner.calls.clear()
+    ct.set_additional_config_provider('hcu_hy4_ct_w4a8', lambda: extra)
+    reports, _ = load(owner)
+    assert reports[0].status is ExtensionStatus.FAILED
+    assert owner.calls == []
+    assert ct.NAME not in owner.quant.QUANTIZATION_METHODS
+
+
+@pytest.mark.parametrize('owner', [ct], indirect=True)
+def test_ct_bundle_refuses_stock_names_rebinding_and_late_additions(owner):
+    extra = type('HY4Config', (), {'get_name': classmethod(lambda cls: 'hcu_hy4_ct_w4a8')})
+    provider = lambda: extra
+    for name in ('compressed-tensors', ct.NAME, '', 'fp8'):
+        with pytest.raises(ValueError):
+            ct.set_additional_config_provider(name, provider)
+    ct.set_additional_config_provider('hcu_hy4_ct_w4a8', provider)
+    with pytest.raises(RuntimeError):
+        ct.set_additional_config_provider('hcu_hy4_ct_w4a8', lambda: object())
+    load(owner)
+    with pytest.raises(RuntimeError, match='before publication'):
+        ct.set_additional_config_provider('hcu_other_ct_w4a8', lambda: object())
+
+
+@pytest.mark.parametrize('owner', [ct], indirect=True)
+def test_ct_bundle_partial_publication_latches_failure(owner):
+    extra = type('HY4Config', (), {'get_name': classmethod(lambda cls: 'hcu_hy4_ct_w4a8')})
+    ct.set_additional_config_provider('hcu_hy4_ct_w4a8', lambda: extra)
+    original = owner.quant.register_quantization_config
+    def register(quantization):
+        if quantization == 'hcu_hy4_ct_w4a8':
+            raise RuntimeError('provider registration interrupted')
+        return original(quantization)
+    owner.quant.register_quantization_config = register
+    with pytest.raises(ExtensionCommitError):
+        load(owner)
+    assert owner.quant.get_quantization_config(ct.NAME) is owner.cls
+    with pytest.raises(ExtensionCommitError):
+        ct.check_health()

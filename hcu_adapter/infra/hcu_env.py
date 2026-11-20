@@ -177,7 +177,7 @@ REGISTRY = {
     "HCU_VLLM_CT_W4A8_IMPL": {
         "env": "HCU_VLLM_CT_W4A8_IMPL", "default": "native",
         "hosts": ("vllm",),
-        "about": "vLLM 0.33 V4.1 CT W4A8 config registration: native or stock; startup only; kill vllm_ct_w4a8 wins",
+        "about": "vLLM 0.33 CT W4A8 config registration bundle: native or stock; startup only; kill vllm_ct_w4a8 wins",
     },
     "HCU_VLLM_PCP_IMPL": {
         "env": "HCU_VLLM_PCP_IMPL", "default": "stock",
