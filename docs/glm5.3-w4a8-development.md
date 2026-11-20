@@ -90,7 +90,7 @@ DeepEP 采用镜像对应提交 `a755fa7e14631af7e8a6a0d6ead217101d3bfdda` 的 `
 
 ## 2026-11-04 可审查的 HIPC COV5 接入
 
-新增独立构建器 `tools/build_deepgemm_w4a8_cov5.py` 和可选机制 `hcu_adapter.deepgemm_cov5`。前者固定实际编译的四份 vendor 源码/头文件摘要，只生成独立 HIPC1002 模块并原子发布；后者仅在模块显式出现在 Python 路径时接入，验证完整 wheel 版本、wrapper 字节及扩展 ABI 元数据。以私有 op facade 和模块局部默认值保留原函数对象、签名、校验与已缓存别名，不改动共享配置或 masked 等其他算子。新 catalog、registry、UI 快照和已有 `HCU_DISABLE_OPS` 快关同步登记，没有新增环境变量。
+新增独立构建器 `tools/build_deepgemm_w4a8_cov5.py` 和可选机制 `hcu_adapter.features.deep_gemm.deepgemm_cov5`。前者固定实际编译的四份 vendor 源码/头文件摘要，只生成独立 HIPC1002 模块并原子发布；后者仅在模块显式出现在 Python 路径时接入，验证完整 wheel 版本、wrapper 字节及扩展 ABI 元数据。以私有 op facade 和模块局部默认值保留原函数对象、签名、校验与已缓存别名，不改动共享配置或 masked 等其他算子。新 catalog、registry、UI 快照和已有 `HCU_DISABLE_OPS` 快关同步登记，没有新增环境变量。
 
 真实专家检查经过原公共 API，默认选择 HIPC1002，gate/up 和 down 保持 INT8/FP32 scale 并通过原 QDQ 误差检查。两次 GEMM 各做两次变输入 graph replay，沿用原误差门限通过；缓存别名、函数 code、共享配置和 masked op 身份检查通过，显式 WASP1006 拒绝。任务产物为 `w4a8-contiguous-provider-mode1002-v1.json`；该组件验证仍不替代完整服务验收。配方统一采用公开 `--cuda-graph-max-bs-decode 16`，等价于先前兼容别名的目标设置。
 

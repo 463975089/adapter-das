@@ -16,7 +16,7 @@ from types import ModuleType, SimpleNamespace as NS
 import pytest
 import torch
 
-from hcu_adapter import extensions as ext
+from hcu_adapter.infra import extensions as ext
 from hcu_adapter.bridges import vllm as bridge
 from test_vllm_bridge import _stub_runtime_owners
 

@@ -33,7 +33,7 @@ class GrammarLaunchTests(unittest.TestCase):
         self.context = patch.dict("sys.modules", modules)
         self.context.start()
         self.addCleanup(self.context.stop)
-        self.registry = patch("hcu_adapter.registry.register", self.record)
+        self.registry = patch("hcu_adapter.infra.registry.register", self.record)
         self.registry.start()
         self.addCleanup(self.registry.stop)
         sampling.install_grammar_bitmask()

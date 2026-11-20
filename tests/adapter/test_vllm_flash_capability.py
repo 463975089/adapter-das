@@ -10,7 +10,7 @@ import sys
 import pytest
 
 from hcu_adapter.bridges import vllm as bridge
-from hcu_adapter.extensions import ExtensionReport, ExtensionStatus
+from hcu_adapter.infra.extensions import ExtensionReport, ExtensionStatus
 from test_vllm_bridge import _stub_runtime_owners
 
 

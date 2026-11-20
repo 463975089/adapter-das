@@ -15,7 +15,7 @@ import sys
 import pytest
 import torch
 
-from hcu_adapter import w4a16_moe
+from hcu_adapter.features.ct_w4a8 import w4a16_moe
 
 
 def _install_fake_ep_moe(monkeypatch):

@@ -84,6 +84,7 @@ def _causal_cos(got, ref):
     "(HCU_KDA_PREFILL_IMPL=emu) carries e2e. strict: XPASS (red) alerts us "
     "the day DTK fixes the kernel -- then flip the default routing.",
 )
+@pytest.mark.emu_parity
 def test_chunk_kda_zero_gate_parity():
     """LIVE-path minimum case: chunk_kda (l2 inside) + zero gate + raw-beta.
 
@@ -138,6 +139,7 @@ def test_chunk_kda_zero_gate_parity():
     )
 
 
+@pytest.mark.emu_parity
 def test_chunk_kda_onehot_placement_and_values():
     """Placement probe: known-good standalone, nondeterministic after the
     decode kernel has run in the same process (64 cols vs row+1) — race

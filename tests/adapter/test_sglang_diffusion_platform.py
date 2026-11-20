@@ -8,7 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from hcu_adapter import registry, sglang_diffusion as diffusion
+from hcu_adapter.infra import registry
+from hcu_adapter.bridges import sglang_diffusion as diffusion
 
 
 @pytest.fixture
@@ -55,7 +56,7 @@ class Deny(importlib.abc.MetaPathFinder):
   if fullname.split('.')[0] in {'torch','sglang','vllm','aiter','triton'}:
    raise AssertionError(fullname)
 sys.meta_path.insert(0,Deny())
-from hcu_adapter import sglang_diffusion
+from hcu_adapter.bridges import sglang_diffusion
 from hcu_adapter.bridges import sglang
 assert callable(sglang.hcu_diffusion_platform_plugin)
 assert not any(name in sys.modules for name in ('torch','sglang','vllm','aiter','triton'))

@@ -20,8 +20,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from hcu_adapter import dsv41_activation as activation
-from hcu_adapter.extensions import ExtensionCommitError, ExtensionContext
+from hcu_adapter.features.dsv41 import dsv41_activation as activation
+from hcu_adapter.infra.extensions import ExtensionCommitError, ExtensionContext
 
 METHOD = activation.QUANTIZATION_METHOD
 
@@ -67,7 +67,7 @@ def isolated(monkeypatch):
     def fake_import(name):
         if name == "vllm.model_executor.layers.quantization":
             return quant
-        if name == "hcu_adapter.dsv41_channel_fp8":
+        if name == "hcu_adapter.features.dsv41.dsv41_channel_fp8":
             return candidate
         return real_import(name)
 
@@ -165,7 +165,7 @@ def test_health_refuses_a_registry_record_that_lost_its_owner(isolated, monkeypa
     activation.activate_extension(CONTEXT)
     activation.check_health()
 
-    from hcu_adapter import registry as adapter_registry
+    from hcu_adapter.infra import registry as adapter_registry
 
     original = adapter_registry.get(activation.OP)
     assert original is not None
@@ -185,7 +185,7 @@ def test_health_refuses_a_registry_record_with_a_foreign_target(isolated, monkey
     _bind_guards(monkeypatch)
     activation.activate_extension(CONTEXT)
 
-    from hcu_adapter import registry as adapter_registry
+    from hcu_adapter.infra import registry as adapter_registry
 
     original = adapter_registry.get(activation.OP)
     try:

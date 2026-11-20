@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import threading
 
-from hcu_adapter import hcu_config, hcu_env
-from hcu_adapter.kill_switch import op_disabled
+from hcu_adapter.infra import hcu_config, hcu_env
+from hcu_adapter.infra.kill_switch import op_disabled
 
 # Same operator-facing knob the bridge records and health-checks. `select_attention`
 # must read it too: that function decides which class actually runs, so a `stock`
@@ -286,7 +286,7 @@ def validate_config(cfg) -> bool:
                 errors.append(str(error))
             except ValueError as error:
                 errors.append(str(error))
-    from hcu_adapter.fp4_indexer import applicable as fp4_applicable, validate_config as validate_fp4
+    from hcu_adapter.features.dsv41.fp4_indexer import applicable as fp4_applicable, validate_config as validate_fp4
     if fp4_applicable(cfg):
         # The FP4 owner supplies its producer/cache/reader while PCP preserves
         # replicated K preparation and rank-local query metadata.

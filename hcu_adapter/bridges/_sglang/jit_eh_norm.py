@@ -3,7 +3,7 @@ from functools import wraps
 
 
 def install():
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
 
     try:
         module = importlib.import_module("sglang.kernels.ops.layernorm.fused_eh_norm")

@@ -1,5 +1,5 @@
 """Compatibility contract used by the opt-in vLLM V4.1 PCP extension."""
-from hcu_adapter import registry
+from hcu_adapter.infra import registry
 
 
 def register_compatibility():

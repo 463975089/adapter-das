@@ -431,7 +431,13 @@ def flash_attn_with_kvcache(
             maxL = max(int((cu_q[1:] - cu_q[:-1]).max()), 1)
     lens_q = (cu_q[1:] - cu_q[:-1]).to(torch.int64)
 
-    if os.environ.get("HCU_FA_EMU_DEBUG", "") and not torch.cuda.is_current_stream_capturing():
+    try:
+        from hcu_adapter.infra import hcu_env
+
+        _fa_dbg = hcu_env.resolve("HCU_FA_EMU_DEBUG")[0]
+    except Exception:
+        _fa_dbg = ""  # standalone sgl-kernel wheel: no HCU env surface
+    if _fa_dbg and not torch.cuda.is_current_stream_capturing():
         import logging
 
         logging.getLogger("hcu.adapter").warning(

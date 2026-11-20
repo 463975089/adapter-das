@@ -411,6 +411,10 @@ requires_gpu = pytest.mark.skipif(
 
 
 @requires_gpu
+@pytest.mark.skipif(
+    __import__("sgl_kernel._native", fromlist=["native_available"]).native_available() is False,
+    reason="requires the native_ops wheel (setup_hip.py build_ext --inplace)",
+)
 def test_quant_v2_masked_m_cuda_graph_replay():
     # The DeepEP masked path is on the decode/MTP CUDA-graph route: the
     # call must be capturable WITHOUT a host sync (masked_m read on

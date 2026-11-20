@@ -1,6 +1,6 @@
 def install():
     from .kernels.qsa_scatter_triton import scatter_rows
-    from .registry import register, MECH_REBIND
+    from .infra.registry import register, MECH_REBIND
     import functools
 
     def patch(module):

@@ -21,7 +21,7 @@ import json
 import torch
 import torch.nn.functional as F
 
-from hcu_adapter.slimquant import (
+from hcu_adapter.features.slimquant.slimquant import (
     _invoke_w4a8,
     _per_token_group_quant_int8,
     fused_experts_w4a8,

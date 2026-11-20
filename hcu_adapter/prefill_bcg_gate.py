@@ -13,7 +13,7 @@ _MARK = "_hcu_prefill_bcg_driver_truth"
 def install():
     import torch
 
-    from hcu_adapter.kill_switch import op_disabled
+    from hcu_adapter.infra.kill_switch import op_disabled
 
     if not torch.version.hip or op_disabled("prefill_graph_driver"):
         return
@@ -25,8 +25,10 @@ def install():
     if getattr(bcg.is_hip, _MARK, False):
         return
 
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
 
+    # Validate registration before publishing either namespace. A rejected
+    # registration must not leave an active but unreported driver gate.
     registry.register(
         "cuda_graph",
         "prefill-bcg-driver-truth",

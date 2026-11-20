@@ -88,7 +88,7 @@ def hcu_create_flashmla_kv_indices(
     )
 
 
-from hcu_adapter import registry as _registry
+from hcu_adapter.infra import registry as _registry
 
 _registry.register(
     "flashmla_kv_indices", "SGLang Triton page-table builder",

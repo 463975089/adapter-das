@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 def _impl():
     """Lazy: triton is GPU-host only; CPU runs cover the oracle alone."""
     try:
-        from hcu_adapter import hadamard_triton
+        from hcu_adapter.features.hadamard import hadamard_triton
 
         return hadamard_triton
     except ImportError:
@@ -39,7 +39,7 @@ def _impl():
 
 
 def _emu():
-    from hcu_adapter.hadamard_emu import hadamard_transform as fn
+    from hcu_adapter.features.hadamard.hadamard_emu import hadamard_transform as fn
 
     return fn
 

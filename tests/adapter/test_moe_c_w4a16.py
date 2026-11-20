@@ -30,7 +30,8 @@ import torch
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hcu_adapter import hcu_env, moe_c_w4a16  # noqa: E402
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.features.ct_w4a8 import moe_c_w4a16  # noqa: E402
 
 
 def test_pad_law_matches_wheel_ks():
@@ -145,9 +146,9 @@ def test_registry_entry_and_manual_reconcile():
 
 
 def test_sglang_bridge_wiring_outermost():
-    src = (ROOT / "hcu_adapter" / "bridges" / "sglang.py").read_text(
+    src = (ROOT / "hcu_adapter" / "bridges" / "sglang_moe.py").read_text(
         encoding="utf-8"
-    )
+    )  # fused_experts chain moved here by layout A-batch (sglang.py stub keeps order)
     assert "moe_c_w4a16 as _mcw" in src
     assert "_mcw.install()" in src
     # chained after every other fused_experts arm (10 -> 10.5 -> 10.6 -> 10.7)

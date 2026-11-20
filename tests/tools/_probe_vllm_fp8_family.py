@@ -36,7 +36,7 @@ def main():
         kFp8DynamicTensorSym,kFp8DynamicTokenSym,kFp8StaticChannelSym,
     )
     from vllm.model_executor.kernels.linear.scaled_mm.pytorch import _supports_torch_fp8_scaled_mm
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     before=list(linear._POSSIBLE_FP8_KERNELS[linear.PlatformEnum.ROCM])
     native_before=_supports_torch_fp8_scaled_mm()
     bridge.hcu_runtime_plugin()

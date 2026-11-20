@@ -243,13 +243,29 @@ def test_fused_add_backend_default_ladder(monkeypatch):
         _reset_fused_add_cache(ln)
 
 
-def test_fused_add_backend_unknown_value_falls_through_ladder(monkeypatch):
+def test_fused_add_backend_unknown_value_is_a_hard_error(monkeypatch):
+    """governance 3b-8: unknown explicit tier raises at resolution --
+    no silent ladder descent."""
     monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", "wat")
     import sgl_kernel.layernorm as ln
 
     _reset_fused_add_cache(ln)
     try:
-        assert ln._resolve_fused_add_impl() in ("lightop", "triton")
+        with pytest.raises(ValueError, match="unknown tier 'wat'"):
+            ln._resolve_fused_add_impl()
+    finally:
+        _reset_fused_add_cache(ln)
+
+
+def test_fused_add_torch_tier_retired_from_runtime(monkeypatch):
+    """governance 3b-9: torch/emu are development-time only."""
+    monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", "torch")
+    import sgl_kernel.layernorm as ln
+
+    _reset_fused_add_cache(ln)
+    try:
+        with pytest.raises(ValueError, match="unknown tier 'torch'"):
+            ln._resolve_fused_add_impl()
     finally:
         _reset_fused_add_cache(ln)
 
@@ -295,14 +311,17 @@ def test_fused_add_lightop_parity(gemma, dtype, monkeypatch):
 
 
 @requires_gpu
-def test_fused_add_lightop_one_strike_fallback(monkeypatch):
-    """A raising vendor call must not escape: tier disabled for the process,
-    this call (and later ones) run on triton."""
+def test_fused_add_vendor_failure_propagates(monkeypatch):
+    """governance 3b-8 (2026-11-19 calibration): the resolved vendor tier's
+    RUNTIME failure propagates as-is -- the old one-strike (disable tier,
+    silently serve triton forever) is exactly the silent descent the law
+    removes. A vendor crash must be VISIBLE."""
     import sgl_kernel.layernorm as ln
 
     _reset_fused_add_cache(ln)
     try:
         saved = ln._LIGHTOP_FUSED_ADD
+        monkeypatch.setenv("HCU_FUSED_ADD_RMS_IMPL", "lightop")
         ln._FUSED_ADD_IMPL = "lightop"  # force the vendor branch armed
         ln._LIGHTOP_FUSED_ADD = (
             lambda x, r, w, e: (_ for _ in ()).throw(RuntimeError("boom")),
@@ -312,16 +331,10 @@ def test_fused_add_lightop_one_strike_fallback(monkeypatch):
         x = torch.randn(8, 256, device="cuda", dtype=torch.bfloat16)
         residual = torch.randn(8, 256, device="cuda", dtype=torch.bfloat16)
         w = torch.randn(256, device="cuda", dtype=torch.bfloat16).abs()
-        x0, r0 = x.clone(), residual.clone()
 
-        ln._do_fused_add(x, residual, w, 1e-6, False)  # must not raise
-
-        assert ln._LIGHTOP_FUSED_ADD is None  # one strike → disabled
-        rf = r0.float() + x0.float()
-        ref = rf * torch.rsqrt(rf.pow(2).mean(-1, keepdim=True) + 1e-6) * w.float()
-        torch.testing.assert_close(
-            residual.float(), rf, rtol=1.0, atol=0.5)
-        torch.testing.assert_close(x.float(), ref, rtol=1.0, atol=0.5)
+        with pytest.raises(RuntimeError, match="boom"):
+            ln._do_fused_add(x, residual, w, 1e-6, False)
+        assert ln._LIGHTOP_FUSED_ADD is not None  # tier NOT silently disabled
         ln._LIGHTOP_FUSED_ADD = saved
     finally:
         _reset_fused_add_cache(ln)

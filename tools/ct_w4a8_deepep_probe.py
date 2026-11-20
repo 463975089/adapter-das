@@ -30,7 +30,7 @@ def run(args):
     import torch
     import torch.distributed as dist
 
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     if (hcu_env.resolve("HCU_ADAPTER_HOST")[0] != "sglang"
             or hcu_env.resolve("HCU_W4A8_MOE")[0] != "int8"):

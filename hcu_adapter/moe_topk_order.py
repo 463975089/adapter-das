@@ -18,7 +18,7 @@ import logging
 import threading
 import types
 
-from . import registry as _reg
+from .infra import registry as _reg
 
 _LOCK = threading.RLock()
 _DISPATCH = "_hcu_ordered_native_topk_impl"
@@ -129,7 +129,7 @@ def _install_function(function):
 
 
 def install():
-    from . import hcu_env
+    from .infra import hcu_env
 
     if not hcu_env.enabled("HCU_MOE_STABLE_TOPK"):
         return

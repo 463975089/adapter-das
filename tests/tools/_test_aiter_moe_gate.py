@@ -88,8 +88,8 @@ def _ref_blockwise(x, w1q, w1s, w2q, w2s, tw, ti, NI, TOPK):
 
 
 def main():
-    from hcu_adapter import aiter_moe
-    from hcu_adapter.hcu_env import resolve
+    from hcu_adapter.features.aiter import aiter_moe
+    from hcu_adapter.infra.hcu_env import resolve
 
     dev = "cuda"
     M, TOPK = 512, 8
@@ -104,7 +104,17 @@ def main():
         w1_scale=w1s, w2_scale=w2s, a1_scale=None, block_shape=[128, 128],
     )
     if out is None:
-        FAILS.append("A-noaiter (kernel declined tuned shape)")
+        import glob as _g
+        import os as _os
+        import re as _re
+        import aiter as _ai
+        _base = _os.path.dirname(_ai.__file__)
+        _hits = _g.glob(_os.path.join(_base, "configs", "**", "*.json"), recursive=True)
+        if not any(_re.search(r"gfx93[68]", h) for h in _hits):
+            print("A-noaiter: SKIP -- wheel ships no gfx93x tuned configs "
+                  "(environment coverage gap; generate/export them)")
+        else:
+            FAILS.append("A-noaiter (kernel declined tuned shape)")
     else:
         ref = _ref_blockwise(x, w1q, w1s, w2q, w2s, tw, ti, NI, TOPK)
         d = (out.float() - ref).abs()

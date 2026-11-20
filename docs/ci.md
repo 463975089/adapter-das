@@ -51,10 +51,20 @@ L1.5 v2/代表矩阵的下列 HCU 计数是**拆分前兼容快照的历史证�
 | **L1 GPU 数值门禁** | `ci/l1_gpu_gate.sh`：L0 + pytest（test_ops_cpu / kernels / adapter）+ 精选 tools 门禁（config 目录、fa3-emu CP 形状、rope 三路一致、aiter-MoE 分发、deepgemm contiguous triton）+ vendor wheel 探针（WARN 级） | HCU 容器，1 卡，自动挑空闲（VRAM<5%） | 5-15min | 容器侧手动/定时执行，结果回帖 MR（自动化触发器随托管平台重接） |
 | **L1.5 上游单测精选（已落地 l15_upstream 段）** | sglang 官方 `test/registered/attention/unittests` 的 dsa+kda+dense+mla 四目录（`-k "not tilelang"`）：**88 绿/2 排除/101 合法 skip（fa4/flashinfer/trtllm 平台性）/208 子用例，暖缓存 ~1min、冷缓存 ~35min**。首役战果（2026-10-17）：五修打通——shfl `__shfl_*_sync`→非 sync（dpsk_v4_topk 编译复活）、`get_mla_metadata` 新 API、`flash_mla_with_kvcache` 输出秩随输入、flashinfer `_grouped_size` ABSENT+deny 组合、`attn_backend_gate`（fa4/flashinfer 构造期 ImportError→kit 优雅 skip）。mla 加餐（2026-10-18）：首跑 8 失败同根——flashmla 后端 unified 模式的 extend 路径整体委托 flashinfer 父类（`forward_extend`→`super()`），flashinfer 桩 `__getattr__` 记 FAIL；修法=桩内 `_hcu_stub_raise`（unittest 栈帧→SkipTest，serving 栈保持 NotImplementedError），8 失败→25 合法 skip、26 绿全保（flash_mla 移植面获正面检验）。**判定：MTP/fp8-KV/DSA 内核面全绿 → serving 层病在 srt 状态机**。**环境铁律**：容器两份 sglang（pip dist-packages vs `/sglang-v0521` 源码树，serving 与 JIT include 均指后者）；pytest 必须显式 `PYTHONPATH=/sglang-v0521/python:$ROOT`（缺一静默测错树/adapter 不加载）+ `-e HCU_DEEPGEMM_BRIDGE=1`；**多线放大版（R-17 三绑定铁律）**：rel/v0.5.22 线的一切门禁须在 `/sglang-v0522` 树+对应容器跑——`ci/l1_gpu_gate.sh` 已支持 `--up-tree <path>`/`HCU_UP_TREE` 显式指树（指定不存在即 loud fail 不静默落回自动探测），错树假绿=双线模型第一杀手；JIT 内核首编 ~5min/颗（ninja 编译非挂死）。tilelang 两用例=DTK 0.1.12+dtk2604 warp 划分 bug（threads=384→6 warp 不整除，编译期 InternalError），平台已知红待 DTK 修 | HCU 容器，1 卡 | 暖 ~2min / 冷 ~35min | 与 L1 同车（`ci/l1_gpu_gate.sh` l15_upstream 段自动发现上游树，无树则 SKIP） |
 | **L1.5b 上游机制目录（l15_mech 段，R-14 批 A）** | unittests 六机制目录 gdn/hybrid_linear/mamba/swa/lightning/dsv4（旧树无目录自动 SKIP），env 契约同 l15_upstream（`PYTHONPATH=/sglang-v0521/python:$ROOT` + `HCU_DEEPGEMM_BRIDGE=1` + `-k "not tilelang"`），另加 `-rs` 列 skip 理由。**known-fail 预算绊线**：段判绿按计数不按 pytest rc=1——`passed≥90 且 failed≤42`（基线 38/99 的 ±10%）才 PASS，越线/超时(124)即红进 FAILS，防"登记失败"膨胀成"回归自由"；账本见下节。首跑 826s（dsv4 JIT 败三连不缓存，每跑重付编译尝试） | HCU 容器，1 卡 | 暖 ~5-14min | 与 L1 同车（`ci/l1_gpu_gate.sh`） |
-| **L1.5 v2 manifest 影子段（已落地，默认 observe）** | `tests/manifests/l15_v0522.json` 固化 Attention/Mechanism selector 与 Batch 1–4 候选；`tools/l15_manifest.py` 提供 validate/inventory/collect/verify/run，并按同名 pytest 模块确定性拆分进程、用插件 JSON 合并精确 nodeid 结果。分类快照包含 3292 个精确 nodeid：**3182 contract-green、106 platform-skip、4 diagnostic-known-fail，0 unobserved**。Normalization 修复后 RMSNorm **2033/2033**、fused-add RMSNorm **560/560**、后端 parity **14/14**；Sampling scalar 兼容基线 **54/54**（平局精确-k 的补充验证见 PR #27）；Attention 为 88 passed/13 platform skip，KV store 316/316，RoPE 2/2。4 个 diagnostic 为 DSv4 数值、两项 CuTeDSL 工具链路径和 GDN 长链；MLA FP8 `fp8e4b8` 因目标架构不支持且生产使用 `fp8e4nv`，归入 platform-skip。结果以紧凑格式写入 `l15_v0522_classified.json`（11 个 source group 保存精确 nodeid，skip/fail 等差异放入稀疏 `test_overrides`）与仅含计数的 classification report；工具读取时展开成原有逐 nodeid 语义。`contract-green` 仍不等于 kernel route 覆盖，`core-green` 须另补 route evidence。当前 CI 默认收集 `current,batch-1,batch-2,batch-3,batch-4`，manifest 路径保持 observe，不替代旧目录门。 | HCU 容器，1 卡执行；双卡通信另见 L1.5-comm | 依 source group/冷 JIT 而定 | 与 L1 同车，默认非阻塞 |
+| **L1.5 v2 manifest 影子段（已落地，默认 observe）** | `tests/manifests/l15_v0522.json` 固化 Attention/Mechanism selector 与 Batch 1–4 候选；`tools/l15_manifest.py` 提供 validate/inventory/collect/verify/run，并按同名 pytest 模块确定性拆分进程、用插件 JSON 合并精确 nodeid 结果。分类快照包含 3292 个精确 nodeid：**3182 contract-green、106 platform-skip、4 diagnostic-known-fail，0 unobserved**。Normalization 修复后 RMSNorm **2033/2033**、fused-add RMSNorm **560/560**、后端 parity **14/14**；Sampling scalar 兼容基线 **54/54**（平局精确-k 的补充验证见 PR #27）；Attention 为 88 passed/13 platform skip，KV store 316/316（2026-11-19 起移出 CI 选择集：该组直测上游 JIT 算子 store_cache，上游 AMD CI 自持；手工复跑：`pytest <up>/test/registered/kernels/ops/kvcache/test_store_cache.py`），RoPE 2/2。4 个 diagnostic 为 DSv4 数值、两项 CuTeDSL 工具链路径和 GDN 长链；MLA FP8 `fp8e4b8` 因目标架构不支持且生产使用 `fp8e4nv`，归入 platform-skip。结果以紧凑格式写入 `l15_v0522_classified.json`（10 个 source group 保存精确 nodeid，skip/fail 等差异放入稀疏 `test_overrides`）与仅含计数的 classification report；工具读取时展开成原有逐 nodeid 语义。`contract-green` 仍不等于 kernel route 覆盖，`core-green` 须另补 route evidence。当前 CI 默认收集 `current,batch-1,batch-2,batch-3,batch-4`，manifest 路径保持 observe，不替代旧目录门。 | HCU 容器，1 卡执行；双卡通信另见 L1.5-comm | 依 source group/冷 JIT 而定 | 与 L1 同车，默认非阻塞 |
 | **L1.5 五类代表矩阵** | `tests/manifests/l15_family_matrix_v1.json` 当前固定 Dense/MLA/MoE/量化/Mamba 共 **58 个**无权重 case（Dense 10、MLA 17、MoE 14、量化 10、Mamba 7）；`tools/l15_family_matrix.py` 严格运行安全 pytest nodeid，逐 case 输出 argv、超时和结果 artifact。2026-11-11 完整候选为 **58/58 PASS**，共 219 个 pytest 节点，源码完整性通过；它补足“行为族代表性”，不替代真实模型 L2，晋级 core 仍需 route evidence。 | HCU 容器，恰好 1 卡，无模型/服务/网络 | 依冷 JIT，逐 case timeout 1200s | `L15_FAMILY_MATRIX_MODE=observe|blocking` 显式启用，默认 off；可用 `L15_FAMILY_MATRIX_FAMILIES` 选族 |
 | **L1.5-comm 双卡通信（独立层）** | 固定 3 case、显式两设备、safe argv：CP AllGather 两 rank 四形状 **passed**；Aiter AR stress 因 vendor custom-AR 动态库符号不兼容 **skipped/platform**；AR+RMSNorm fused 在 rank 子进程/通信清理阶段失败，保留 **diagnostic-known-fail**。observe 汇总为 1 passed/1 skipped/1 failed；无 `core-green`，blocking 不自动申请第二张卡。 | HCU 容器，恰好 2 卡 | 依 vendor 初始化而定 | `L15_COMM_MODE=observe|blocking` 显式启用 |
 | **L2 e2e** | 0.6B 四判定（launch/生成/锚点/长文）+ 多卡项（AR/EP/PD）= `tests/tools/run_model_suite.sh` / cookbook 配方 | HCU 容器，1-2 卡 | ~1h | 夜间 / 发版 / 手动（勿挂 MR，太慢太占卡） |
+
+> **2026-11-19 决策：L1.5 上游注册用例默认退出 CI（`L15_UPSTREAM_MODE=off`）。**
+> 这些用例触发的是上游自己的 JIT kernel（`sgl_kernel_jit_*`：kvcache 7 个行宽、
+> dpsk_v4 ×3、concat_mla_absorb_q、fused_metadata_copy、causal_conv1d……），上游 AMD CI
+> 已在 AMD 硬件上自持；冷容器在 `l15_exact` 里为 17 颗内核付出约 16 分钟编译，是纯迭代
+> 延迟（验收轮 5 实测）。门禁 CI 只跑 adapter 自己的面（L0 / L1-CPU / L1 kernels+gates /
+> vendor）。需要时手工或夜间复跑：`L15_UPSTREAM_MODE=manifest bash ci/l1_gpu_gate.sh
+> --up-tree <tree>`（manifest 精确 nodeid + 五家族矩阵），或 `L15_UPSTREAM_MODE=dirs ...`
+> （旧目录制 l15_upstream/l15_mech）。上游 JIT 算子单测 `kvcache-store`（316 case）同时
+> 从 manifest 选择集移出，手工命令见上表 L1.5 v2 行。
 
 ### 启动就绪严格入口（2026-11-03）
 
@@ -89,7 +99,19 @@ manifest 保持不变；新增打包验证后，远端隐藏 GPU 的 CPU 回归�
 发现 30 个历史改写文件，因此旧通过记录只证明旧组合，尚不满足新要求；
 详见 [源码完整性门禁](history/l15-readiness-202611-log.md#源码完整性门禁)。
 
-### L1.5b KNOWN_FAILURES 账本（l15_mech 六机制目录，2026-10-19 首跑分诊）
+### L1 日志已知噪音（上游/镜像层，不影响判定）
+
+以下行来自**上游 sglang 的探测性导入**或**镜像内 DTK 运行时**，不是 adapter
+缺陷，gate 判定不受影响（2026-11-19 容器验收轮核实）：
+
+| 日志行 | 来源 | 处置 |
+|---|---|---|
+| `Could not open /var/log/hylog/.` | 镜像 DTK 运行时 banner 探测（容器无该目录） | gate 序言已 `mkdir -p` 消音；根治在镜像侧 |
+| `Ignore import error ... inkling: No module named 'quack'` | 上游模型注册表逐个 try-import 各模型族，inkling 需 quack 轮子（镜像未装、该模型不在验证矩阵） | 上游自捕获自忽略；装 quack 轮子即消，无需求则留 |
+| `Failed to import from custom_ar with ImportError('sgl_kernel.allreduce: HCU custom AR retired ...')` | **我方退役桩按设计发声**（R-01：AR 档=aiter.dist GraphSafe，NCCL 为上游自带路径），被上游 custom AR 探测的 except 臂打印 | 设计行为——退役声明就该被看见；AR 实际走 GraphSafe/NCCL |
+| `Failed to import pynvml` | 上游探测 NVIDIA NVML（HCU 镜像无、也不应有） | 上游自处理；无需安装 |
+
+## L1.5b KNOWN_FAILURES 账本（l15_mech 六机制目录，2026-10-19 首跑分诊）
 
 基线（容器 g53-tp8，新镜像 sf_b075-20261018-0048，/tmp/l1_mech_first.log）：
 `38 failed / 99 passed / 15 skipped / 173 subtests passed in 826.58s`。失败共六族

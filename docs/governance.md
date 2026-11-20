@@ -10,7 +10,7 @@
 > 新后端、新机制）以 **plugin 形态**承载——plugin 是与 adapter **不同的
 > 代码仓**，经上游 seam / 注册机制接入，其代码不进本仓。两条线如果混进
 > glue 单体，就是历史上"同一个算子好几个库都有"的土壤。
-> 配套机制代码：`hcu_adapter/registry.py`（运行时注册表 + dump）、
+> 配套机制代码：`hcu_adapter/infra/registry.py`（运行时注册表 + dump）、
 > `ci/l0_gate.py`（三条静态规约）。本文的每条 HARD 规则都应能被 L0 检查。
 
 ## 0. 目标终态（薄入口 + 宿主分发 + 双仓边界）
@@ -24,7 +24,7 @@
 运行时 seam、函数换绑与进程内适配仍可用于恢复上游行为。
 
 - `sitecustomize.py` 固定为三行自动加载入口，只调用
-  `hcu_adapter.bootstrap.install()`；宿主探测和 common/host 顺序由
+  `hcu_adapter.infra.bootstrap.install()`；宿主探测和 common/host 顺序由
   `bootstrap.py` 负责，宿主实现位于 `hcu_adapter/bridges/`。
 - 判据一句话：**改官方代码行为**（换绑、断言放宽、判定词 wrap）是行为
   还原手段，其实现体留在本仓、按宿主放入 `hcu_adapter/bridges/`，按算子/
@@ -76,7 +76,7 @@ CUDA 语义的调用面，把每个符号路由到 HCU 侧最合适的实现：
 - 性能在"跑通"之后按 §3 裁决链逐点做：triton 先行产物转 ref 备胎，
   lightop/aiter 等价核就位后路由切 vendor（catalog 状态演进）。
 
-**落地形态（2026-10-12 bw7 首验）**：`hcu_adapter/platform_seam.py`
+**落地形态（2026-10-12 bw7 首验）**：`hcu_adapter/infra/platform_seam.py`
 （编排器在 sitecustomize 最先调它——`common.py` import 时就用 is_hip()
 冻结 FP8_E4M3_MAX，判定函数必须抢在所有 sglang import 前换掉）。合成态
 三原则：**模型层 CUDA 语义 + 内核层 HIP 真值 + 硬件层不动**——只翻
@@ -99,13 +99,13 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
 | **内核库** `sgl_kernel/*.py` | adapter | 算子的数值实现（triton 首档 / vendor 封装 / torch 兜底）与宿主 ABI 影子面 | 依赖 sglang 内部模块（保持 framework-free） |
 | **宿主桥** `hcu_adapter/bridges/<host>.py` | adapter | 宿主级行为还原 glue、ABI 适配和安装顺序；common 只放跨框架守卫 | 数值内核；把一个宿主的补丁装进另一个宿主；上游没有的新能力 |
 | **算子/机制桥** `hcu_adapter/<域>.py` | adapter | 函数换绑、断言放宽、判定词 wrap——install() 入口 + 开关 + register 登记 | **任何数值逻辑**（数学放内核库）；上游没有的新能力（那归 plugin 仓） |
-| **分发器** `hcu_adapter/bootstrap.py` | adapter | 探测宿主 + 先 common 后唯一宿主桥；失败隔离 | 具体桥实现、宿主 eager import、数值逻辑 |
-| **自动入口** `sitecustomize.py` | adapter | `from hcu_adapter.bootstrap import install; install()` | 探测、分支、桥实现 |
+| **分发器** `hcu_adapter/infra/bootstrap.py` | adapter | 探测宿主 + 先 common 后唯一宿主桥；失败隔离 | 具体桥实现、宿主 eager import、数值逻辑 |
+| **自动入口** `sitecustomize.py` | adapter | `from hcu_adapter.infra.bootstrap import install; install()` | 探测、分支、桥实现 |
 | **上游 seam** | sglang / vLLM（各自机制） | 正式插件接入。sglang：`--quantization`、attention-backend registry、moe-runner-backend 等（entry_points 组 `sglang.srt.plugins`）；vLLM：`platform_plugins` / `general_plugins`（§7.2，Adapter 独占注册） | — |
 | **plugin** | **独立仓** | 上游没有的新能力，目的即性能优化：算子融合、专项内核、新后端、新调度机制；优先经上游 seam 接入，无 seam 时提供自己的注册入口 | 把行为补丁反向塞回 adapter 职责面 |
 
 一句话红线（L0 `glue-numerics` 强制）：**算子数学只准出现在内核库；
-`sitecustomize.py`、`hcu_adapter/bootstrap.py` 与 `hcu_adapter/bridges/*.py`
+`sitecustomize.py`、`hcu_adapter/infra/bootstrap.py` 与 `hcu_adapter/bridges/*.py`
 不 import triton、不出现 `@triton.jit`、不引用 `tl.*`。**
 
 ## 2. 算子的两个角色（解决"重复实现"）
@@ -204,6 +204,23 @@ sglang 符号面，shim 妥协不进契约。
 7. **实现文件档位与配置值分开管理**：`_emu` 是 Torch/仿真实现的文件后缀；
    已发布的后端选择值 `torch` 仍是合法配置值，不是文件命名档位。
    结构整理不修改 catalog 算子键、配置默认或已接受的配置值；此类接口迁移须单独评审。
+8. **运行时零降级（2026-11-19 定，lizhg 拍板）**：运行路径禁止一切
+   try-catch 式降档——native→triton→torch 梯子、vendor one-strike
+   （失败置 None 落下一档）、"无调优配置→stock triton (log-once)"、
+   桥安装失败静默走上游，均属违规。合法形态：**启动期一次性解析**到
+   唯一实现档（按静态平台事实的 auto 规则属选择、非降级），解析结果
+   集中打印（P7：serve 启动一次、一行一算子 op→档→依据→安装状态；
+   安装链碎行降 INFO 默认静默，仅 WARNING+ 出声，`HCU_ADAPTER_LOG`
+   显式放开），该档运行期故障带算子名硬报错。性能问题的第一排查步
+   是对比 tier 解析表——静默降级让"实际跑的什么档"不可考，此为
+   本条立法动机。serve 地板：native 必需（`HCU_REQUIRE_NATIVE` 硬门）
+   且最低 triton；一切运行（L1 测试与推理）均在 HCU 上，无 CPU 本地面。
+9. **emu = 开发期数值对拍工具（2026-11-19 定）**：emu 档退出运行时
+   路由（auto 规则不得落 emu；配置 emu = 解析期报错）。保留两个合法
+   场景：算子开发期 emu×triton 手工对拍（用例保留 `emu_parity` mark，
+   CI deselect，nightly/手工单算子可跑）；CI 数值对拍只跑 triton×vendor
+   双档互证，triton-only 算子 CI 跳过对拍。triton-only 算子的清零
+   （补 triton 或寻源 vendor）见 `docs/tier-disposition.md` 处置表。
 
 ## 4. 运行时注册表与 dump（"现在谁在跑"必须一行可答）
 
@@ -362,7 +379,7 @@ PR#17 实证），重则不炸、出数值/维度错（KV 布局类语义）。�
 
 存量锚点增量补登，首批范本（本节落文同笔）：
 
-- `hcu_adapter/platform_seam.py::_replace_version_gates`（①双命名空间）：
+- `hcu_adapter/infra/platform_seam.py::_replace_version_gates`（①双命名空间）：
   版本门冻结于 utils.common，包级 `from .common import *` 拷贝两树皆有；
   ≤v0.5.22 无人在 import 期经包命名空间调用（patch common 即够），
   main@fd19cfb 起 kda 后端链经包拷贝调用 → common+pkg 双命名空间同补；
@@ -434,7 +451,7 @@ Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查�
 ### 7.2 双宿主共建边界
 
 进程内 lifecycle/health 事务实现在 framework-free 的
-`hcu_adapter/runtime_lifecycle.py`；宿主桥只注入 action ID / 公开错误类型及
+`hcu_adapter/infra/runtime_lifecycle.py`；宿主桥只注入 action ID / 公开错误类型及
 启动、选型编排。共享锁、inflight、report 绑定、fork 与失败锁存不可拆成
 相互反调的宿主/owner 锁。共享回归同时覆盖双宿主 Adapter bootstrap/import
 契约与独立 consumer 生命周期；不得把它宣传为新增 SGLang engine 激活功能。
@@ -454,7 +471,7 @@ Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查�
   `bridges/vllm.py` 禁 import sglang（common 与包内机制层禁宿主已由 §1 覆盖）；
 - **vLLM 扩展宿主权责边界（extension API v1）**：Adapter **独占**
   `vllm.platform_plugins` / `vllm.general_plugins` 两个官方入口；独立 plugin
-  经 `hcu_adapter.extensions` entry-point 组接入，只交付可选优化实现
+  经 `hcu_adapter.extensions` entry-point 组接入（实现位于 hcu_adapter/infra/extensions.py，协议名不随文件迁移变更），只交付可选优化实现
   （`ExtensionSpec` + 实现），不得复制版本/平台/DTK 门禁——宿主适配只有
   一个启动裁决点。激活发生在版本、平台和 DTK runtime guard **之后**；
   optional 扩展的干净准备失败降级为进程内报告，显式 required 扩展/capability
@@ -527,7 +544,40 @@ Adapter 不保存 Plugin backend 路径，正式 registry 发布与健康检查�
 | `sgl_kernel/` | SGLang 宿主 ABI 契约层；影子包名称由上游锁定 | 契约文件按 §3b 豁免；不为本次 DeepInfer 整理改动此目录 |
 | `hcu_adapter/` 顶层 | 历史 SGLang 侧桥接实现，以及多宿主共用的配置、registry、引导等机制 | 现有实现按任务逐步整理，新计算实现不再增加顶层平铺文件 |
 | `hcu_adapter/kernels/` | 当前由 DeepInfer 桥消费的上游契约实现；不依赖宿主模型类 | 新计算实现进入此目录，使用算子族＋档位命名；门面须有真实校验、选位或组合职责 |
+| `hcu_adapter/bridges/` | 宿主绑定、安装与契约分发；**按宿主分文件**（判据见下表） | 绑定与分发归此层；不放纯计算实现 |
 | `hcu_adapter/bridges/_deepinfer/` | DeepInfer 宿主绑定、安装和契约分发 | `tilelang_ops.py`、`tile_kernels.py` 对接上游符号面；不放纯计算实现 |
+| `hcu_adapter/features/<族>/`（新设） | 单个模型/量化/特性族的全部专属文件（数学+接线+注册内聚） | 判据：删除该特性后文件即无意义的，按族归此；**族是搬家最小单位**（单文件不迁） |
+| `hcu_adapter/infra/`（新设） | 跨特性公共机制：env/registry/bootstrap/JIT 缓存/atomic_io/configs | 判据：两个以上特性族共用的非计算件归此 |
+
+## 宿主绑定归属判定（bridges 内部结构，2026-11-18 定）
+
+装载分发链已定形：`sitecustomize → bootstrap.install() → bridges/common →
+bridges.<host>`（按 `HCU_ADAPTER_HOST` 分发）。文件归属按**宿主指向**判定，
+四类互斥：
+
+1. **框架专属桥**：只服务一个宿主的接线——命名强制 `sglang_*.py` /
+   `vllm_*.py` 前缀（vLLM 侧已按此分文件；sglang 侧从巨石 `sglang.py`
+   按注释编号节切分为 `sglang_<topic>.py`，主文件保留 install 编排与公共件）；
+2. **框架无关件**：两个宿主共同消费的守卫/机制（如 `bridges/common.py`
+   跨框架 guards）——无前缀命名，任何宿主桥可 import；
+3. **平台机制面**（`_deepinfer/` 等）：vendored 后端绑定，按后端名组织，
+   不按宿主；
+4. **新宿主接入**：先立 `bridges/<host>.py` 分发入口与命名前缀，再写专题。
+
+**接线面（顶层散布的宿主换绑文件）的去处**：框架专属语义 → 并入
+`sglang_*.py` 专题；模型/特性专属 → `features/<族>/`。判据问句按序：
+是数学实现？→ `kernels/`；是特性专属？→ `features/<族>/`；是宿主接线？→
+`bridges/sglang_*`；是跨族公共件？→ `infra/`。
+
+**约束与回退条款**（2026-11-18 全量迁移收官，转为全面约束）：
+- L0 目录归属检查为**全面约束**：新文件即刻受约束；存量豁免白名单已随
+  全量迁移清零（13→0，2026-11-18），任何顶层计算件回潮即 RED；
+- 搬家以"族"为最小单位；`features/<族>/` 存在时顶层同名前缀文件必须为 0
+  （L0 家族完整性检查）；
+- 改旧顶层文件不强制顺手搬家（避免无关 diff 污染）；以特性为主题的 MR
+  触发整族归家条款；
+- 迁移模块时同步 bridge import、catalog `impl` 路径、plugin 导入及
+  provider 身份检查（原文条款继续适用）。
 
 `kernels/` 独立命名空间避免导入 `sgl_kernel.__init__` 时提前启动 SGLang 的
 AOT/stub 注册。当前消费方是 DeepInfer；未来其他宿主复用时，仍需各自 bridge

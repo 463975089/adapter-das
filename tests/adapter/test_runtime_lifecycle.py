@@ -15,9 +15,9 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from hcu_adapter import extensions as ext
-from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
-import hcu_adapter.runtime_lifecycle as lifecycle
+from hcu_adapter.infra import extensions as ext
+from hcu_adapter.infra.runtime_lifecycle import ProcessLocalLifecycle
+import hcu_adapter.infra.runtime_lifecycle as lifecycle
 
 
 CAP='shared-test-capability'
@@ -161,7 +161,7 @@ class Deny(importlib.abc.MetaPathFinder):
         if fullname.split('.')[0] in {'torch','vllm','sglang','sgl_kernel','hcu_vllm_das'}:
             raise AssertionError('forbidden framework import: '+fullname)
 sys.meta_path.insert(0,Deny())
-from hcu_adapter import runtime_lifecycle as shared
+from hcu_adapter.infra import runtime_lifecycle as shared
 sg=importlib.import_module('hcu_adapter.bridges.sglang')
 vl=importlib.import_module('hcu_adapter.bridges.vllm')
 assert issubclass(vl.ProcessLocalActions,shared.ProcessLocalLifecycle)

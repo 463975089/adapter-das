@@ -4,7 +4,7 @@ from functools import lru_cache
 
 import torch
 
-from hcu_adapter.kill_switch import op_disabled
+from hcu_adapter.infra.kill_switch import op_disabled
 
 logger = logging.getLogger(__name__)
 

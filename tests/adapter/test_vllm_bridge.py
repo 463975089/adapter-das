@@ -20,7 +20,7 @@ import pytest
 import torch
 
 from hcu_adapter.bridges import vllm as bridge
-from hcu_adapter.extensions import (
+from hcu_adapter.infra.extensions import (
     ExtensionReport,
     ExtensionStatus,
     RequiredExtensionError,
@@ -661,14 +661,44 @@ def test_fused_rms_norm_supports_aliased_residual_destination(monkeypatch):
     torch.testing.assert_close(out, _rms_reference(summed, weight, 1e-6))
 
 
-def test_sglang_calls_vllm_bridge_before_grammar_bridge():
-    source = (
-        __import__("pathlib").Path(__file__).resolve().parents[2]
-        / "hcu_adapter"
-        / "bridges"
-        / "sglang.py"
-    ).read_text(encoding="utf-8")
+def test_sglang_calls_vllm_bridge_before_grammar_bridge(monkeypatch):
+    from importlib import import_module
+    from hcu_adapter.bridges import sglang_vendor_routes
 
-    rms_call = source.index("_vllm_bridge.install_rms_norm_bridge()")
-    grammar_bridge = source.index("apply_token_bitmask_inplace_cuda")
-    assert rms_call < grammar_bridge
+    calls = []
+    # Execute the extracted orchestration, replacing only unrelated providers.
+    for name in (
+        "hcu_adapter.infra.triton_libdev", "hcu_adapter.infra.triton_pdl",
+        "hcu_adapter.features.gdn.fla_hcu_router",
+        "hcu_adapter.features.gdn.gdn_aiter",
+        "hcu_adapter.features.gdn.mamba_state_scatter",
+        "hcu_adapter.features.gdn.gdn_cutedsl_fallback",
+        "hcu_adapter.bridges.sglang_fa_vendor",
+        "hcu_adapter.bridges.sglang_layernorm",
+    ):
+        parent, attribute = name.rsplit(".", 1)
+        stub = ModuleType(name)
+        stub.install = lambda: None
+        monkeypatch.setitem(sys.modules, name, stub)
+        monkeypatch.setattr(import_module(parent), attribute, stub, raising=False)
+    monkeypatch.setattr(bridge, "install_rms_norm_bridge", lambda: calls.append("rms"))
+
+    class Kernel(ModuleType):
+        def __setattr__(self, name, value):
+            if name == "apply_token_bitmask_inplace_cuda":
+                calls.append("grammar")
+            super().__setattr__(name, value)
+
+    kernel = Kernel("sgl_kernel")
+    bitmask = ModuleType("sglang.kernels.ops.grammar.bitmask_ops")
+    bitmask.apply_token_bitmask_inplace_triton = lambda *args: None
+    monkeypatch.setitem(sys.modules, "sgl_kernel", kernel)
+    monkeypatch.setitem(sys.modules, bitmask.__name__, bitmask)
+
+    sglang_vendor_routes.install()
+
+    assert calls == ["rms", "grammar"]
+    assert (
+        kernel.apply_token_bitmask_inplace_cuda
+        is bitmask.apply_token_bitmask_inplace_triton
+    )

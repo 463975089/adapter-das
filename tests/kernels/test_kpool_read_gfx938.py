@@ -19,8 +19,8 @@ Run on a GPU node:
 import pytest
 import torch
 
-from hcu_adapter.kpool_read_triton import cp_gather_indexer_k_quant_cache_triton
-from hcu_adapter.kpool_write_emu import cp_gather_indexer_k_quant_cache_emu
+from hcu_adapter.features.dsa.kpool_read_triton import cp_gather_indexer_k_quant_cache_triton
+from hcu_adapter.features.dsa.kpool_write_emu import cp_gather_indexer_k_quant_cache_emu
 
 PAGE = 64
 D = 128

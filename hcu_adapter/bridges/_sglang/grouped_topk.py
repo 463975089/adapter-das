@@ -55,7 +55,7 @@ def install():
     import importlib
     import sys
 
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     from hcu_adapter.ops.selector import select
 
     if select("sglang_grouped_topk", "torch") != "triton":

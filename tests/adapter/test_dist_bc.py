@@ -14,7 +14,7 @@ import types
 import numpy as np
 import pytest
 
-from hcu_adapter import dist_bc
+from hcu_adapter.infra import dist_bc
 
 
 def function(namespace=None):
@@ -74,7 +74,7 @@ def test_unsupported_or_foreign_bindings_fail_without_mutation():
 
 
 def test_public_install_needs_no_writable_source(monkeypatch, tmp_path):
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
 
     common = types.ModuleType("sglang.srt.utils.common")
     common.__file__ = str(tmp_path / "nonexistent-readonly-common.py")
@@ -102,7 +102,7 @@ def _rank_worker(rank, source, rendezvous):
     """Spawned rank: execute the exact community function, not a protocol copy."""
     import datetime
     import torch.distributed as distributed
-    from hcu_adapter.dist_bc import _install_function
+    from hcu_adapter.infra.dist_bc import _install_function
 
     spec = importlib.util.spec_from_file_location("_upstream_broadcast_fixture", source)
     module = importlib.util.module_from_spec(spec)

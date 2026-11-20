@@ -16,7 +16,8 @@ import types
 import pytest
 import torch
 
-from hcu_adapter import hcu_env, jit_fp8_ffi as bridge
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.features.jit import jit_fp8_ffi as bridge
 
 _CACHE = """def cache_once(fn):
     result_map = {}
@@ -43,7 +44,7 @@ def test_gpu_dsv4_output_storage_and_variable_graph_replay(layout, group_size):
     if os.environ.get("HCU_TEST_JIT_GPU") != "1":
         pytest.skip("requires explicit remote HIP compiler validation")
     assert torch.version.hip and torch.cuda.is_available()
-    from hcu_adapter import jit_sources
+    from hcu_adapter.features.jit import jit_sources
     from sglang.kernels.ops.moe import dsv4
 
     jit_sources.install()
@@ -211,6 +212,7 @@ def _child(sources, queue):
         queue.put(repr(exc))
 
 
+@pytest.mark.fresh_process
 def test_spawn_original_cache_protocol(sources):
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()

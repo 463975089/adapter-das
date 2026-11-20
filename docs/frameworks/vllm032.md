@@ -22,7 +22,7 @@ adapter-das
   ├─ HcuPlatform
   ├─ vLLM 版本、HCU 硬件和 DTK runtime 门禁
   ├─ 官方已有行为的 HCU 兼容
-  └─ hcu_adapter.extensions API v1
+  └─ hcu_adapter.extensions API v1（实现: infra/extensions.py）
         │
         │ hcu_adapter.extensions
         ▼
@@ -77,11 +77,11 @@ Plugin 交付 `ExtensionSpec` 和可选优化实现，不得重复声明两个�
 ```text
 Python 启动
   -> sitecustomize.py
-  -> hcu_adapter.bootstrap.install()
+  -> hcu_adapter.infra.bootstrap.install()
   -> import vllm
   -> vllm.platform_plugins 选择 HcuPlatform
   -> vllm.general_plugins 执行 Adapter runtime guards
-  -> Adapter 发现 hcu_adapter.extensions
+  -> Adapter 发现 hcu_adapter.infra.extensions
   -> 可选 Plugin 激活
   -> Engine 启动
 ```
@@ -147,7 +147,7 @@ gfx938 尚无本次实机证据，不继承 gfx936 的通过结论。注册和 p
 会响亮失败。官方 native support 返回真时不再注册；官方 ROCm 候选列表将来
 纳入该 fallback 后应删除本桥。可用已有
 `VLLM_DISABLED_KERNELS=TritonFP8ScaledMMLinearKernel` 禁用，诊断登记可从
-`hcu_adapter.registry.records()["vllm_fp8_linear"]` 查看。
+`hcu_adapter.infra.registry.records()["vllm_fp8_linear"]` 查看。
 
 独立数值/Graph探针（无模型，GPU3，allocator上限4GiB，非单位尺度与bias）：
 

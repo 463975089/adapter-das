@@ -161,7 +161,7 @@ def test_changed_capture_contract_is_rejected():
 
 
 def test_public_hip_install_without_source_files(moe, monkeypatch, tmp_path):
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
 
     model, _, _ = moe
     package = types.ModuleType("sglang.srt.models")

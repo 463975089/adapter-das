@@ -11,9 +11,10 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from hcu_adapter import fp4_indexer, hcu_config
+from hcu_adapter.features.dsv41 import fp4_indexer
+from hcu_adapter.infra import hcu_config
 from hcu_adapter.bridges import vllm as bridge
-from hcu_adapter.extensions import ExtensionReport, ExtensionStatus
+from hcu_adapter.infra.extensions import ExtensionReport, ExtensionStatus
 
 
 def config(dtype="auto", model_type="deepseek_v41"):
@@ -139,7 +140,8 @@ def guarded(name, *args, **kwargs):
         raise AssertionError('framework import ' + name)
     return original(name, *args, **kwargs)
 builtins.__import__ = guarded
-from hcu_adapter import fp4_indexer, hcu_config
+from hcu_adapter.features.dsv41 import fp4_indexer
+from hcu_adapter.infra import hcu_config
 hcu_config._STATE = {'loaded': True, 'path': None, 'ops': {},
                      'overrides': {}, 'hosts': {}}
 cfg = NS(attention_config=NS(indexer_kv_dtype='auto'),

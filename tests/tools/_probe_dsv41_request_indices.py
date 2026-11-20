@@ -11,7 +11,7 @@ def check():
     import torch
     from sglang.srt.layers.attention.dsv4 import dsv41_sparse
     from sglang.srt.layers.attention import deepseek_v4_backend
-    from hcu_adapter import dsv41_request_indices as bridge
+    from hcu_adapter.features.dsv41 import dsv41_request_indices as bridge
 
     alias = deepseek_v4_backend.token_req_indices
     assert alias is dsv41_sparse.token_req_indices

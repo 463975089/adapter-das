@@ -79,7 +79,7 @@ if HAS_TRITON:
 
 @lru_cache(maxsize=1)
 def _backend():
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     from hcu_adapter.ops.selector import select
 
     backend = select("int8_scaled_mm", "triton")

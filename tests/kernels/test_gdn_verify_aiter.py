@@ -25,7 +25,7 @@ SENTINEL = -7.0
 def routed_face():
     if torch.version.hip is None:
         pytest.skip("DTK AITER route requires HIP")
-    from hcu_adapter import gdn_aiter as bridge
+    from hcu_adapter.features.gdn import gdn_aiter as bridge
     from sglang.kernels.ops.attention.fla import fused_sigmoid_gating_recurrent as face
     provider = pytest.importorskip("aiter.ops.triton.fla.fused_sigmoid_gating_recurrent")
     vendor = getattr(provider, "fused_sigmoid_gating_delta_rule_update", None)
@@ -197,7 +197,7 @@ def test_verify_output_snapshot_and_source_contract(routed_face, n, steps, kind)
     p, meta = make_case(n, steps, kind)
     ref_out, ref_cache, written = fp32_reference(p, meta)
     before = p["initial_state_source"].clone()
-    from hcu_adapter.gdn_aiter import _verify_contract_supported
+    from hcu_adapter.features.gdn.gdn_aiter import _verify_contract_supported
     assert _verify_contract_supported(p, torch), "fixture must exercise the AITER route"
     out = fn(**p)
     torch.cuda.synchronize()
@@ -219,7 +219,7 @@ def test_verify_graph_replay_changes_values_indices_and_tree(routed_face, dt_bia
         p["dt_bias"] = p["dt_bias"].to(dt_bias_dtype)
     if not parents_enabled:
         p["retrieve_parent_token"] = None
-    from hcu_adapter.gdn_aiter import _verify_contract_supported
+    from hcu_adapter.features.gdn.gdn_aiter import _verify_contract_supported
     assert _verify_contract_supported(p, torch), "Graph must capture the AITER route"
     for _ in range(2):
         fn(**p)
@@ -252,7 +252,7 @@ def test_verify_graph_replay_changes_values_indices_and_tree(routed_face, dt_bia
 @pytest.fixture
 def automatic_verify_face(routed_face):
     """Same official face/kernel globals, isolated binding under auto policy."""
-    from hcu_adapter import gdn_aiter as bridge
+    from hcu_adapter.features.gdn import gdn_aiter as bridge
     from aiter.ops.triton.fla.fused_sigmoid_gating_recurrent import (
         fused_sigmoid_gating_delta_rule_update as vendor,
     )
@@ -316,12 +316,13 @@ def test_auto_target_verify_unqualified_normalization_uses_upstream(automatic_ve
     check_result(p, meta, out, ref_out, ref_cache, written, before)
 
 
+@pytest.mark.fresh_process
 def test_explicit_verify_rollback_in_fresh_sglang_process():
     env = dict(os.environ, HCU_LINEAR_ATTN_GDN_VERIFY="triton",
                HCU_ADAPTER_HOST="sglang")
     env.pop("_HCU_ADAPTER_ACTIVE_HOST", None)
     script = """
-from hcu_adapter import gdn_aiter as bridge
+from hcu_adapter.features.gdn import gdn_aiter as bridge
 from sglang.kernels.ops.attention.fla import fused_sigmoid_gating_recurrent as face
 fn = face.fused_sigmoid_gating_delta_rule_update
 assert not hasattr(fn, bridge._VERIFY_MARKER)

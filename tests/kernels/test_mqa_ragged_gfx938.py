@@ -32,8 +32,8 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from hcu_adapter import mqa_logits_emu as emu_mod  # noqa: E402
-from hcu_adapter.mqa_logits_triton import triton_ragged_mqa_logits as tri  # noqa: E402
+from hcu_adapter.features.dsa import mqa_logits_emu as emu_mod  # noqa: E402
+from hcu_adapter.features.dsa.mqa_logits_triton import triton_ragged_mqa_logits as tri  # noqa: E402
 
 FAILS = []
 

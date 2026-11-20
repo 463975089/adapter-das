@@ -200,7 +200,7 @@ def load_provider():
 
     # TileLang is a separate opt-in capability. Import failures mean unavailable;
     # they never substitute another implementation under the TileLang label.
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     tilelang_enabled = hcu_env.enabled('VLLM_HCU_USE_AITER_TILELANG_MHC')
     tilelang_module = None
     tilelang_pre = None

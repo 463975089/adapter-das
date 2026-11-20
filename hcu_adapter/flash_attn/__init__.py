@@ -14,7 +14,7 @@ in sys.path), this adapter does NOT intercept and the real wheel serves. Only
 when the wheel is absent do lazy stubs cover the imports (`from flash_attn
 import x` binds; calling x raises a clear error). The sgl_kernel-level
 routing (fa3 backend -> vendor vs in-tree emulation) lives in
-`hcu_adapter/fa_vendor.py`, which is what sglang actually calls through.
+`bridges/sglang_fa_vendor.py`, which is what sglang actually calls through.
 
 Covered prefixes: flash_attn, flash_attn_interface.
 """

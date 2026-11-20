@@ -229,11 +229,11 @@ BACKEND_CATALOG = {'deep_ep.BucketBuffer': {'rccl': {'status': 'candidate',
                                                                 'sampler *_ref (scatter instead of mask '
                                                                 'indexing); no performance qualification'}},
  'tile_kernels.engram.fused_weight': {'torch': {'status': 'candidate',
-                                                'implementation': 'hcu_adapter.kernels.engram_init_emu.fused_weight',
+                                                'implementation': 'hcu_adapter.kernels.engram_init.fused_weight',
                                                 'limitations': 'Pinned initialization contract; no model/e2e '
                                                                'or throughput qualification'}},
  'tile_kernels.torch.engram.make_offsets': {'torch': {'status': 'candidate',
-                                                      'implementation': 'hcu_adapter.kernels.engram_init_emu.make_offsets',
+                                                      'implementation': 'hcu_adapter.kernels.engram_init.make_offsets',
                                                       'limitations': 'Pinned initialization contract; no '
                                                                      'model/e2e or throughput '
                                                                      'qualification'}},

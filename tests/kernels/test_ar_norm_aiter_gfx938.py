@@ -128,7 +128,8 @@ def _rank_worker(rank, world, master_port):
     not (torch.cuda.is_available() and torch_version_hip is not None),
     reason="needs HIP GPU (aiter tier)")
 def test_bridge_scheduled():
-    from hcu_adapter import ar_norm_aiter, hcu_env
+    from hcu_adapter.features.aiter import ar_norm_aiter
+    from hcu_adapter.infra import hcu_env
 
     if hcu_env.resolve("HCU_AR_NORM_IMPL")[0] != "aiter":
         pytest.skip("HCU_AR_NORM_IMPL did not resolve to aiter")
@@ -139,6 +140,7 @@ def test_bridge_scheduled():
     not (torch.cuda.is_available() and torch_version_hip is not None),
     reason="needs HIP GPU (aiter tier)")
 @pytest.mark.skipif(_visible_gpus() < 2, reason="needs >=2 visible GPUs")
+@pytest.mark.fresh_process
 def test_fused_parity_and_graph_replay():
     import socket
 

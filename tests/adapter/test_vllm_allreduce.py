@@ -16,9 +16,10 @@ import sys
 from types import ModuleType, SimpleNamespace
 import pytest
 import torch
-from hcu_adapter import registry as adapter_registry, allreduce_aiter
-from hcu_adapter.allreduce import MIB
-from hcu_adapter.extensions import ExtensionCommitError
+from hcu_adapter.infra import registry as adapter_registry
+from hcu_adapter.features.aiter import allreduce_aiter
+from hcu_adapter.features.aiter.allreduce import MIB
+from hcu_adapter.infra.extensions import ExtensionCommitError
 from hcu_adapter.bridges import vllm as bridge, vllm_allreduce as compat
 from test_vllm_bridge import _stub_runtime_owners
 from vllm import envs, _aiter_ops as ops_module
@@ -417,7 +418,8 @@ def test_real_platform_config_worker_and_communicator_chain(monkeypatch, provide
     if case == "kill": monkeypatch.setenv("HCU_DISABLE_OPS", "aiter_ar")
     if case == "child-veto": monkeypatch.setenv("VLLM_ROCM_USE_AITER_CUSTOM_AR", "0")
     if case == "config":
-        from hcu_adapter import hcu_config, hcu_env
+        from hcu_adapter.infra import hcu_config
+        from hcu_adapter.infra import hcu_env
         config_file = tmp_path / "hcu.json"
         config_file.write_text('{"version":1,"ops":{"allreduce":"aiter"}}')
         monkeypatch.setenv("HCU_CONFIG", str(config_file))

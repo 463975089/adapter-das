@@ -11,6 +11,7 @@ rms_norm + torch silu tiers.
 Run: HIP_VISIBLE_DEVICES=6 HCU_CONFIG=<file> python tests/tools/_test_hcu_config.py
 """
 
+import math
 import os
 import subprocess
 import sys
@@ -20,7 +21,8 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from hcu_adapter import hcu_config, hcu_env  # noqa: E402
+from hcu_adapter.infra import hcu_config  # noqa: E402
+from hcu_adapter.infra import hcu_env  # noqa: E402
 
 FAILS = []
 
@@ -139,14 +141,24 @@ r = subprocess.run(
 )
 ok("wizard-list", "silu_and_mul" in r.stdout and "planned" in r.stdout,
    r.stdout[-200:] + r.stderr[-200:])
-good = write_cfg("version: 1\nops:\n  silu_and_mul: torch\n")
+good = write_cfg("version: 1\nops:\n  silu_and_mul: aiter\n")
 r2 = subprocess.run(
     [sys.executable, os.path.join(root, "tools", "hcu_config_wizard.py"),
      "--check", good],
     capture_output=True, text=True, timeout=120,
 )
-ok("wizard-check", "OK" in r2.stdout and "HCU_SILU_MUL_IMPL = torch" in r2.stdout,
+ok("wizard-check", "OK" in r2.stdout and "HCU_SILU_MUL_IMPL = aiter" in r2.stdout,
    r2.stdout[-200:] + r2.stderr[-200:])
+# governance 3b-9: retired tiers (emu/torch) are refused at config load
+bad = write_cfg("version: 1\nops:\n  silu_and_mul: torch\n")
+r3 = subprocess.run(
+    [sys.executable, os.path.join(root, "tools", "hcu_config_wizard.py"),
+     "--check", bad],
+    capture_output=True, text=True, timeout=120,
+)
+ok("wizard-retired-refused",
+   "retired" in (r3.stdout + r3.stderr) and "OK" not in r3.stdout,
+   (r3.stdout + r3.stderr)[-200:])
 
 # 11. GPU parity in fresh processes (backend caches resolve once/process)
 if torch.cuda.is_available():
@@ -169,7 +181,8 @@ if torch.cuda.is_available():
             "(torch.nn.functional.silu(xf[:, :512]) * xf[:, 512:]"
             ").to(torch.bfloat16).float();"
             "md = (got.float() - ref).abs().max().item();"
-            "print('MAXDIFF', md)"
+            "mref = ref.abs().max().item();"
+            "print('MAXDIFF', md, 'MAXREF', mref)"
         )
         # Fresh-process tier parity only: skip the host-bridge install
         # (HCU_ADAPTER_HOST=none). The bridges double subprocess startup
@@ -180,17 +193,37 @@ if torch.cuda.is_available():
         env = dict(os.environ, HCU_CONFIG=pcfg, HCU_ADAPTER_HOST="none",
                    HIP_VISIBLE_DEVICES=os.environ.get(
                        "HIP_VISIBLE_DEVICES", "6"))
+        # 3b-9 hardening: earlier in-process steps may leave explicit impl
+        # vars in os.environ (with_cfg's env_extra is caller-cleaned); the
+        # parity child must resolve from ITS config file only -- a leaked
+        # HCU_*_IMPL=torch now raises at resolution (strict pick) instead
+        # of silently serving torch math.
+        for _k in ("HCU_SILU_MUL_IMPL", "HCU_RMS_NORM_IMPL",
+                   "HCU_FUSED_ADD_RMS_IMPL"):
+            env.pop(_k, None)
         return subprocess.Popen([sys.executable, "-c", code],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, env=env)
 
     def parity_check(tag, r):
         out, err = r.communicate(timeout=300)
-        md = None
+        md = mref = None
         for line in out.splitlines():
             if line.startswith("MAXDIFF"):
-                md = float(line.split()[1])
-        ok(tag, md is not None and md < 0.05, f"md={md} {err[-200:]}")
+                parts = line.split()
+                md = float(parts[1])
+                mref = float(parts[3]) if len(parts) > 3 else 0.0
+        # scale-aware bound: the fallback tiers may legitimately differ
+        # from the fp32 reference by one bf16 ulp of the largest output
+        # (the vendored native activation.cu rounds silu to bf16 BEFORE
+        # the product -- faithful to upstream, double rounding). 0.05
+        # was tighter than 1 ulp once outputs reach |x| ~ 8 (ulp 0.0625,
+        # observed 2026-11-19 gate B).
+        allowed = 0.05
+        if mref and mref > 0:
+            allowed = max(allowed, 2.0 ** (math.floor(math.log2(mref)) - 7))
+        ok(tag, md is not None and md <= allowed,
+           f"md={md} mref={mref} allowed={allowed} {err[-200:]}")
 
     # One fresh-process parity per op, on its production tier (aiter rms,
     # lightop silu). The torch tiers are pure-Python fallbacks already

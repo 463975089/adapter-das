@@ -92,7 +92,7 @@ def install():
     if torch.version.hip is None:
         return  # hardware truth; do not change CUDA hosts or probe GPU memory
     import sglang.srt.models.deepseek_v2 as model
-    import hcu_adapter.registry as _reg
+    import hcu_adapter.infra.registry as _reg
 
     _install_forward(model.DeepseekV2MoE.forward)
     _reg.register(

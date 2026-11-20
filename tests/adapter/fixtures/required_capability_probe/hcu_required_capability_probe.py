@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from hcu_adapter.extensions import ExtensionSpec
+from hcu_adapter.infra.extensions import ExtensionSpec
 
 
 def _spec(name, capability, priority):

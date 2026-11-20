@@ -30,7 +30,7 @@ import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from hcu_adapter.model_env import (  # noqa: E402
+from hcu_adapter.infra.model_env import (  # noqa: E402
     _model_path_from_argv,
     apply_from_argv,
     apply_model_env,

@@ -14,7 +14,7 @@
 
 - `sitecustomize.py` remains a three-line bootstrap entry.
 - Adapter exclusively owns `vllm.platform_plugins` and `vllm.general_plugins`.
-- Plugin optimizations enter only through `hcu_adapter.extensions` API v1.
+- Plugin optimizations enter only through `hcu_adapter.infra.extensions` API v1.
 - Do not change kernels, catalog, environment variables, kill switches, or runtime host arbitration.
 - Accept `>=0.32.0,<0.33.0`; do not claim an unbounded `>=0.3.0` compatibility range.
 - Keep all new tests pytest-collectable with no module-level side effects.
@@ -73,13 +73,13 @@ git commit -m "test: recognize DeepInfer in host bootstrap contracts"
 - Modify: `skills/hcu-adapter-dev/SKILL.md`
 
 **Interfaces:**
-- Consumes: Adapter entry points in `pyproject.toml`, Extension API v1 in `hcu_adapter/extensions.py`, vLLM guards in `hcu_adapter/bridges/vllm.py`
+- Consumes: Adapter entry points in `pyproject.toml`, Extension API v1 in `hcu_adapter/infra/extensions.py`, vLLM guards in `hcu_adapter/bridges/vllm.py`
 - Produces: one operator guide describing ownership, install/startup order, fallback semantics, and verification commands
 
 - [ ] **Step 1: Add the vLLM 0.32 deployment guide**
 
 Document the three-component structure, exact ownership of official vLLM entry
-points, `hcu_adapter.extensions` activation order, baseline-without-Plugin
+points, `hcu_adapter.infra.extensions` activation order, baseline-without-Plugin
 semantics, pinned compatibility bundle fields, and portable/HCU verification
 commands.
 

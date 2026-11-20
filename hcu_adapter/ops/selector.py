@@ -3,7 +3,7 @@
 
 import importlib
 
-from hcu_adapter import hcu_config as config, kill_switch
+from hcu_adapter.infra import hcu_config as config, kill_switch
 
 
 def guard(op):

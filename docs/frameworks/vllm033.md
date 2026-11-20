@@ -17,12 +17,18 @@ HCU 身份清单为 `gfx928`、`gfx92a`、`gfx936`、`gfx938`；设备属性中�
 | --- | --- | --- |
 | OpenDAS/vllm | 官方模型、调度、runner、通信及公共接口；必要的 DTK 构建兼容 | 官方 release 起步，逐文件说明构建差异 |
 | adapter-das | 真实 HCU 探测、版本及 runtime ABI 准入、公共快关、扩展报告与进程健康 | 唯一 `vllm.platform_plugins` / `vllm.general_plugins` owner |
-| vllm-plugin-das | 官方没有的 HCU 格式、算法与可选优化 | `hcu_adapter.extensions`，继而使用官方公开 registry |
+| vllm-plugin-das | 官方没有的 HCU 格式、算法与可选优化 | `hcu_adapter.infra.extensions`，继而使用官方公开 registry |
 
 本仓不得为通过一个 provider 检查而伪造 NVIDIA/CDNA 架构，也不得硬编码
 Plugin 类路径。普通 MHA/GQA 的默认 Triton 选型不覆盖 MLA/Sparse MLA；
 后两者仍由官方 ROCm priority 决定。显式 Flash 后端依赖当前 PID 的唯一
 `hcu-flash-attention` owner 与健康检查，不能用另一个扩展的 ACTIVE 报告替代。
+
+`infra/` 与 `features/` 的布局迁移须同步目标 Plugin 的静态导入、动态
+`_seams` 模块表和 provider 身份检查。Adapter 自身单测不能替代组合验证：
+使用目标 Plugin wheel 的真实 metadata 加载扩展 factory，并检查 RMS 等延迟
+导入；保持 discovery 不导入宿主或 Torch。延后某个模型的 checkpoint 测试，
+不意味着可跳过它的扩展发现契约。目录归属规则不以旧路径转发壳绕过。
 
 ## v0.33 源码审计结论
 

@@ -6,7 +6,10 @@ from unittest.mock import create_autospec
 
 import pytest
 
-from hcu_adapter import hcu_env, kill_switch, registry, sglang_diffusion
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.infra import registry
+from hcu_adapter.infra import kill_switch
+from hcu_adapter.bridges import sglang_diffusion
 
 
 @pytest.mark.parametrize('value,killed,expected', [('0', False, False), ('1', False, True), ('1', True, False), ('refused(old-aiter)', False, False)])

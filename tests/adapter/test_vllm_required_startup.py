@@ -8,7 +8,7 @@ import os
 import pytest
 
 from hcu_adapter.bridges import vllm as bridge
-from hcu_adapter import extensions
+from hcu_adapter.infra import extensions
 
 
 @dataclass
@@ -35,7 +35,7 @@ def startup(monkeypatch):
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     from hcu_adapter.bridges import vllm_allreduce
     monkeypatch.setattr(vllm_allreduce, "prepare_runtime", lambda: None)
-    from hcu_adapter import kill_switch
+    from hcu_adapter.infra import kill_switch
     monkeypatch.setattr(kill_switch, "log_state", lambda: None)
     from hcu_adapter.bridges import vllm_minimax_abi
     monkeypatch.setattr(vllm_minimax_abi, "install", lambda: False)
@@ -193,7 +193,8 @@ def _record_startup_evidence(case, mode, caplog):
 @pytest.mark.parametrize("mode", ["default", "explicit", "blank", "malformed-extension", "malformed-capability"])
 def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_summary(startup, monkeypatch, caplog, mode):
     import logging
-    from hcu_adapter import bootstrap, hcu_env
+    from hcu_adapter.infra import bootstrap
+    from hcu_adapter.infra import hcu_env
 
     points, checks = startup
     contexts, order = [], []
@@ -254,7 +255,9 @@ def test_host_none_actual_bootstrap_and_runtime_resolve_sources_without_common_s
 @pytest.mark.parametrize("mode", ["default", "explicit", "blank", "malformed"])
 def test_real_vllm_bootstrap_common_logs_once_then_actual_runtime_preserves_policy(startup, monkeypatch, caplog, mode):
     import logging
-    from hcu_adapter import bootstrap, hcu_env, hcu_config, nccl_topo_guard, tvmffi_warmup
+    from hcu_adapter.infra import bootstrap, tvmffi_warmup
+    from hcu_adapter.infra import hcu_config, nccl_topo_guard
+    from hcu_adapter.infra import hcu_env
 
     points, checks = startup
     contexts, order = [], []

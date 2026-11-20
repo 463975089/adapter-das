@@ -38,7 +38,7 @@ from hcu_adapter import model_load as api
 from hcu_adapter.bridges import vllm_model_load as host
 from hcu_adapter.bridges import vllm as bridge
 from hcu_adapter.bridges.vllm_worker import Worker
-from hcu_adapter.extensions import ExtensionContext, ExtensionSpec, activate_extensions
+from hcu_adapter.infra.extensions import ExtensionContext, ExtensionSpec, activate_extensions
 from test_vllm_bridge import _stub_runtime_owners
 
 

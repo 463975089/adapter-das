@@ -13,7 +13,7 @@ from functools import lru_cache
 
 import torch
 
-from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
+from hcu_adapter.infra.runtime_lifecycle import ProcessLocalLifecycle
 
 _PUBLICATION = ProcessLocalLifecycle(runtime_action="vllm-aiter-moe-publication")
 _OP = None
@@ -23,7 +23,7 @@ LOG = logging.getLogger("hcu.adapter.vllm.moe")
 
 @lru_cache(maxsize=1)
 def _compatibility_for_process(pid):
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     return HcuUnquantizedAiterCompatibility(hcu_env.arch_name())
 
@@ -36,7 +36,7 @@ def configure_padding_policy(moe_backend):
     """Keep valid padded routes before workers spawn/cached env reads begin."""
     from vllm import envs
 
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     requested = moe_backend == "aiter" or (
         moe_backend == "auto"

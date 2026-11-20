@@ -159,7 +159,7 @@ def _kernel_address(tensor, device_index):
 
 
 def _copy_mla_rows(*args, **kwargs):
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     from hcu_adapter.kernels.kvcacheio_triton import copy_rows
 
     registry.register(

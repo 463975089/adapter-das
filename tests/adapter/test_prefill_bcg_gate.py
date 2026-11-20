@@ -9,7 +9,8 @@ import types
 import pytest
 import torch
 
-from hcu_adapter import prefill_bcg_gate as gate, registry
+from hcu_adapter import prefill_bcg_gate as gate
+from hcu_adapter.infra import registry
 
 
 @pytest.fixture

@@ -19,9 +19,10 @@ from dataclasses import dataclass
 import logging
 import os
 
-from hcu_adapter import hcu_env, registry
-from hcu_adapter.kill_switch import op_disabled
-from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.infra import registry
+from hcu_adapter.infra.kill_switch import op_disabled
+from hcu_adapter.infra.runtime_lifecycle import ProcessLocalLifecycle
 
 MODE_VARIABLE = "HCU_VLLM_PCP_IMPL"
 OP_NAME = "vllm_pcp"

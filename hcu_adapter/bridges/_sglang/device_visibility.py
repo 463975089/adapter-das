@@ -4,7 +4,7 @@ from functools import wraps
 
 
 def install():
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     from sglang.srt.platforms.cuda import CudaDeviceMixin
 
     original = CudaDeviceMixin.reindex_device_id

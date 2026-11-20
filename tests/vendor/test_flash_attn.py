@@ -266,7 +266,7 @@ def test_fa_graph_replay_tracks_fresh_inputs():
 def fallback_host(monkeypatch):
     import sys
     import types
-    from hcu_adapter import hcu_env, registry
+    from hcu_adapter.infra import hcu_env, registry
 
     monkeypatch.setattr(torch.version, "hip", "test-hip")
     monkeypatch.setattr(hcu_env, "resolve", lambda name: ("vendor", "explicit"))
@@ -297,7 +297,7 @@ def fallback_host(monkeypatch):
 
 def test_e5m2_guard_updates_consumers_and_preserves_fallback(fallback_host):
     from types import SimpleNamespace
-    from hcu_adapter import fa_vendor
+    from hcu_adapter.bridges import sglang_fa_vendor as fa_vendor
 
     overrides, consumer, original = fallback_host
     fa_vendor._install_e5m2_backend_guard()
@@ -319,7 +319,8 @@ def test_e5m2_guard_updates_consumers_and_preserves_fallback(fallback_host):
     ("vendor", "gfx936", None),
 ])
 def test_e5m2_guard_disabled_keeps_all_bindings(fallback_host, monkeypatch, mode, arch, hip):
-    from hcu_adapter import fa_vendor, hcu_env, registry
+    from hcu_adapter.bridges import sglang_fa_vendor as fa_vendor
+    from hcu_adapter.infra import hcu_env, registry
 
     overrides, consumer, original = fallback_host
     monkeypatch.setattr(hcu_env, "resolve", lambda name: (mode, "explicit"))
@@ -333,7 +334,8 @@ def test_e5m2_guard_disabled_keeps_all_bindings(fallback_host, monkeypatch, mode
 
 
 def test_e5m2_guard_registration_failure_is_atomic(fallback_host, monkeypatch):
-    from hcu_adapter import fa_vendor, registry
+    from hcu_adapter.bridges import sglang_fa_vendor as fa_vendor
+    from hcu_adapter.infra import registry
 
     overrides, consumer, original = fallback_host
     register = registry.register

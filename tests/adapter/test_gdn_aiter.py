@@ -12,7 +12,7 @@ from unittest import mock
 
 import pytest
 
-from hcu_adapter import gdn_aiter as bridge
+from hcu_adapter.features.gdn import gdn_aiter as bridge
 
 
 DEV = types.SimpleNamespace(type="cuda", index=0)
@@ -154,7 +154,7 @@ def test_binding_is_idempotent():
 
 @pytest.mark.parametrize("mode", ["auto", "triton"])
 def test_unavailable_auto_and_explicit_rollback_do_not_import_vendor(mode):
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     with mock.patch.object(hcu_env, "resolve", return_value=(mode, "test")), \
          mock.patch.object(bridge, "_verify_auto_stack_supported", return_value=False), \
          mock.patch.object(bridge, "_load_target_verify_providers", side_effect=AssertionError("must not import")), \
@@ -163,7 +163,7 @@ def test_unavailable_auto_and_explicit_rollback_do_not_import_vendor(mode):
 
 
 def test_invalid_selector_is_loud():
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     with mock.patch.object(hcu_env, "resolve", return_value=("bad", "test")):
         with pytest.raises(ValueError, match="must be"):
             bridge._install_target_verify_aiter()
@@ -181,7 +181,7 @@ def test_fresh_interpreter_cached_alias_route():
 
 
 def test_registered_kill_switch_wins_over_explicit_aiter():
-    from hcu_adapter import kill_switch
+    from hcu_adapter.infra import kill_switch
     assert "gdn_verify" in kill_switch.SWITCHES
     with mock.patch.dict(os.environ, {
         "HCU_DISABLE_OPS": "gdn_verify", "HCU_LINEAR_ATTN_GDN_VERIFY": "aiter",
@@ -303,7 +303,7 @@ def test_auto_missing_package_is_upstream():
 
 
 def test_default_installer_uses_auto_without_gpu_query():
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     ns, vendor = faces()
     torch, probes = auto_torch()
     with mock.patch.dict(os.environ, {"HCU_DISABLE_OPS": ""}), \
@@ -323,7 +323,7 @@ def test_default_installer_uses_auto_without_gpu_query():
 
 
 def test_auto_abi_failure_retains_original_callable():
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     ns, _ = faces()
     code = ns["face"].__code__
     torch, _ = auto_torch()
@@ -337,7 +337,7 @@ def test_auto_abi_failure_retains_original_callable():
 
 
 def test_explicit_aiter_preserves_manual_provider_selection():
-    from hcu_adapter import hcu_env, registry
+    from hcu_adapter.infra import hcu_env, registry
     ns, vendor = faces()
     torch, probes = auto_torch("gfx938")
     with mock.patch.object(hcu_env, "resolve", return_value=("aiter","explicit")), \
@@ -366,7 +366,7 @@ def test_auto_vendor_error_never_retries_after_snapshot_write():
 
 
 def test_gdn_entry_installs_verify_without_enabling_prefill_or_packed_decode():
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     # Env-independence: close the aiter import gate so the auto route stays
     # on the upstream fla faces on hosts where the vendor wheel is actually
     # importable (the upstream #104 suite ran on an aiter-less host, so the
@@ -383,8 +383,8 @@ def test_gdn_entry_installs_verify_without_enabling_prefill_or_packed_decode():
 
 
 def test_auto_policy_registered_as_default_with_explicit_rollback():
-    from hcu_adapter import hcu_env
-    from hcu_adapter.hcu_config import BACKEND_CATALOG
+    from hcu_adapter.infra import hcu_env
+    from hcu_adapter.infra.hcu_config import BACKEND_CATALOG
     assert hcu_env.REGISTRY["HCU_LINEAR_ATTN_GDN_VERIFY"]["default"] == "auto"
     assert set(BACKEND_CATALOG["linear_attn_gdn_verify"]["backends"]) == {
         "auto", "triton", "aiter",

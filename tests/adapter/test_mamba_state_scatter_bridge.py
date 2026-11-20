@@ -6,7 +6,7 @@
 import hashlib
 import types
 import pytest
-from hcu_adapter import mamba_state_scatter as bridge
+from hcu_adapter.features.gdn import mamba_state_scatter as bridge
 
 
 class Kernel:
@@ -118,7 +118,7 @@ def test_registration_failure_rolls_back(monkeypatch):
 
 
 def test_explicit_disable_precedes_import(monkeypatch):
-    from hcu_adapter import kill_switch
+    from hcu_adapter.infra import kill_switch
     monkeypatch.setattr(kill_switch,"op_disabled",lambda op: op=="mamba_state_scatter")
     monkeypatch.setattr(bridge.importlib,"import_module",lambda *a,**k: pytest.fail("imported"))
     assert bridge.install() is False
@@ -130,7 +130,7 @@ def test_real_upstream_alias_graph_and_strided_indices(monkeypatch):
     if not torch.cuda.is_available():pytest.skip("requires assigned HCU")
     if torch.cuda.get_device_properties(0).gcnArchName.split(":")[0] not in ("gfx936", "gfx938"):
         pytest.skip("requires gfx936 or gfx938 HCU")
-    from hcu_adapter import registry,kill_switch
+    from hcu_adapter.infra import registry,kill_switch
     monkeypatch.setattr(kill_switch,"op_disabled",lambda op: False)
     monkeypatch.setattr(registry,"_RECORDS",{})
     monkeypatch.setattr(registry,"_BOUND",{})
@@ -189,7 +189,7 @@ def test_fresh_process_explicit_disable_uses_registered_environment(disabled):
     )
     code = """
 import builtins
-from hcu_adapter import mamba_state_scatter
+from hcu_adapter.features.gdn import mamba_state_scatter
 original_import = builtins.__import__
 def refuse(name, *args, **kwargs):
     if name.split(".")[0] in {"torch", "sglang", "triton"}:
@@ -211,7 +211,7 @@ def _spawn_state_copy(queue):
     try:
         import importlib
         import torch
-        from hcu_adapter import mamba_state_scatter as route
+        from hcu_adapter.features.gdn import mamba_state_scatter as route
 
         torch.cuda.set_device(0)
         mod = importlib.import_module(route._MODULE)
@@ -239,6 +239,7 @@ def _spawn_state_copy(queue):
         raise
 
 
+@pytest.mark.fresh_process
 def test_spawn_process_installs_route_and_preserves_source_rows(monkeypatch):
     import multiprocessing
     import torch

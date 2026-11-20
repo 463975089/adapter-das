@@ -36,7 +36,7 @@ def main():
         exit_code = 1
     finally:
         from hcu_adapter.bridges.vllm import extension_reports
-        from hcu_adapter import hcu_env
+        from hcu_adapter.infra import hcu_env
         reports = [dict(entry_point=r.entry_point_name, name=r.extension_name,
                         status=r.status.value, capabilities=sorted(r.capabilities), reason=r.reason)
                    for r in extension_reports()]

@@ -34,7 +34,7 @@ def _chunk_mb():
     global _CHUNK_MB
     if _CHUNK_MB is None:
         try:
-            from hcu_adapter import hcu_env
+            from hcu_adapter.infra import hcu_env
 
             _CHUNK_MB = max(1, int(hcu_env.resolve("HCU_FLASHMLA_SPARSE_CHUNK_MB")[0]))
         except Exception:
@@ -54,7 +54,7 @@ def flash_mla_sparse_fwd(
 ):
     if q.dim() != 3:
         raise ValueError(f"flash_mla_sparse (HCU emu): q must be (s_q, H, d), got {q.shape}")
-    from hcu_adapter import hcu_config
+    from hcu_adapter.infra import hcu_config
 
     if hcu_config.load()["ops"].get("sglang_mla_sparse", "emu") == "dtk":
         from hcu_adapter.kernels.sglang_flashmla_dtk import (

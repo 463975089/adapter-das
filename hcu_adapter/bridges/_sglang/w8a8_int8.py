@@ -5,7 +5,8 @@ from types import FunctionType
 def install():
     import torch
 
-    from hcu_adapter import hcu_env, registry
+    from hcu_adapter.infra import hcu_env
+    from hcu_adapter.infra import registry
 
     if torch.version.hip is None:
         return

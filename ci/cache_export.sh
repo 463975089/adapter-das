@@ -10,6 +10,18 @@
 # the same payload and are name-keyed to that hash -- keep the exporter
 # tree at the revision you will test on the importer.
 #
+# THIRD KEY (2026-11-19 forensics): every sglang-JIT build key also folds in
+# the materialized adapter compiler bundle path ~/.cache/hcu_adapter/jit-inputs/<key>,
+# and that key hashes hcu_adapter/features/jit/* + jit_sources.py + jit_compat.py
+# bytes. Any edit there (even a comment-level change) changes the -I path and
+# therefore EVERY build key -- the seed goes 100% stale. Evidence: jit_seed_v3
+# (exported 08:04) was exported before dcc4d33 (12:26, jit_sources.py); the
+# next acceptance round rebuilt 17 modules, ~16 min inside l15_exact alone,
+# and the 512 variant appeared under a THIRD build-<hash> whose build.ninja
+# differed only in the two -I bundle paths. Rule: export the seed from the
+# FINAL tree after the last adapter commit; re-export whenever the jit
+# transform layer changes.
+#
 # Also ships tvm-ffi (+ torch_extensions): a cold ~/.cache/tvm-ffi makes
 # tvm_ffi spawn its optional torch-dlpack builder at import, and that
 # builder self-deadlocks on HCU (forked child re-imports torch/HSA, both

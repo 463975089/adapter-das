@@ -19,7 +19,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from hcu_adapter.deep_gemm_contig_triton import (  # noqa: E402
+from hcu_adapter.features.deep_gemm.deep_gemm_contig_triton import (  # noqa: E402
     get_mk_alignment_for_contiguous_layout,
     m_grouped_bf16_gemm_nt_contiguous,
 )

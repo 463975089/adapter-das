@@ -281,6 +281,16 @@ def sgl_per_token_group_quant_8bit(
     # is_contiguous() guard below would wrongly reject every legal
     # column-major buffer (review #80).
     native = native_op("sgl_per_token_group_quant_8bit")
+    if input.is_cuda and native is None:
+        # governance 3b-8/9 (2026-11-19): CUDA tensors get the native
+        # kernel tier or a named error -- the silent torch-loop
+        # fallback below served production on an emu path. CPU
+        # tensors keep the torch face (contract tests).
+        raise RuntimeError(
+            "sgl_per_token_group_quant_8bit: no native sgl_kernel ops registered in this "
+            "process (governance 3b-8: no torch fallback on the CUDA "
+            "path) -- install the native wheel (setup_hip.py "
+            "build_ext --inplace or packaging/build.sh)")
     if (
         native is not None
         and input.is_cuda
@@ -327,6 +337,16 @@ def _quant_v2(input, output_q, output_s, group_size, scale_ue8m0,
     # row-guard in the kernel), so the masked path stays CUDA-graph
     # capturable like upstream's MaskedLayoutScheduler (v2.cu:203-247).
     native = native_op("sgl_per_token_group_quant_8bit_v2")
+    if input.is_cuda and native is None:
+        # governance 3b-8/9 (2026-11-19): CUDA tensors get the native
+        # kernel tier or a named error -- the silent torch-loop
+        # fallback below served production on an emu path. CPU
+        # tensors keep the torch face (contract tests).
+        raise RuntimeError(
+            "sgl_per_token_group_quant_8bit_v2: no native sgl_kernel ops registered in this "
+            "process (governance 3b-8: no torch fallback on the CUDA "
+            "path) -- install the native wheel (setup_hip.py "
+            "build_ext --inplace or packaging/build.sh)")
     if (
         native is not None
         and input.is_cuda

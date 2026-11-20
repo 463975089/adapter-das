@@ -21,6 +21,7 @@ ops:
 
 - **查找顺序**（先中先得）：`$HCU_CONFIG` 指定路径 → `./hcu_adapter.yaml|.yml|.json`
   → adapter 根目录（sitecustomize.py 旁）同名文件。
+  `infra/` 模块迁移不改变这个部署位置；从其他目录启动宿主也使用同一规则。
 - **未写条目 = 生产默认**；文件里只写要覆盖的算子。
 - **校验是严格的**：未知算子名、未知后端值、选择 `planned` 状态的后端，都会在
   加载时**响亮报错**（防手滑静默回退默认）。启动日志出现
@@ -45,7 +46,7 @@ vLLM 0.33/gfx936 的 C4 indexer 候选通过 `ops.vllm_sparse_indexer: native`
 裁决链；注册后改变策略须新进程。限制与验证见
 [vLLM C4 indexer](frameworks/vllm033-sparse-indexer.md)，不表示完整 V4 已通过。
 
-`hcu_adapter/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
+`hcu_adapter/infra/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
 后端 → 状态与备注。向导和未来的 Web UI 都从它渲染，新后端接线后自动出现在选择项里。
 **实现归籍与角色（active/ref）规约见 [governance.md](governance.md)**：算子数学
 只在 `sgl_kernel/`，行为桥放 `hcu_adapter/<域>.py` 并登记运行时注册表——启动日志

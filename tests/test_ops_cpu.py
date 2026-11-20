@@ -431,10 +431,17 @@ def test_shadow_impl_resolvers_reach_hcu_env(monkeypatch, capsys):
     assert "ModuleNotFoundError" not in capsys.readouterr().err
 
     # Explicit env must actually flow through hcu_env (source 'explicit').
-    monkeypatch.setenv("HCU_RMS_NORM_IMPL", "torch")
-    monkeypatch.setenv("HCU_SILU_MUL_IMPL", "torch")
+    # 3b-9 (2026-11-19): torch/emu are retired from runtime routing, so an
+    # explicit torch request is now a resolution error -- the invariant
+    # (env-driven, silent resolution) is asserted with a legal tier instead.
+    monkeypatch.setenv("HCU_RMS_NORM_IMPL", "triton")
+    monkeypatch.setenv("HCU_SILU_MUL_IMPL", "triton")
     monkeypatch.setattr(layernorm, "_RMS_IMPL", None)
     monkeypatch.setattr(elementwise, "_IMPL_CHOICE", None)
-    assert layernorm._resolve_rms_impl() == "torch"
-    assert elementwise._resolve_impl() == "torch"
+    assert layernorm._resolve_rms_impl() == "triton"
+    assert elementwise._resolve_impl() == "triton"
+    with pytest.raises(ValueError, match="unknown tier 'torch'"):
+        monkeypatch.setattr(layernorm, "_RMS_IMPL", None)
+        monkeypatch.setenv("HCU_RMS_NORM_IMPL", "torch")
+        layernorm._resolve_rms_impl()
     assert "ModuleNotFoundError" not in capsys.readouterr().err

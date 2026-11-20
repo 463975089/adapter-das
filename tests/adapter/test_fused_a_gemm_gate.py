@@ -15,7 +15,8 @@ import types
 import pytest
 import torch
 
-from hcu_adapter import fused_a_gemm_gate as gate, registry
+from hcu_adapter.infra import registry
+from hcu_adapter.features.dsa import fused_a_gemm_gate as gate
 
 _GEMM = "sglang.kernels.ops.gemm.fused_a_gemm"
 _DEEPSEEK = "sglang.srt.models.deepseek_v2"

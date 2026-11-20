@@ -99,7 +99,7 @@ def register() -> None:
         sys.meta_path.insert(0, _FlashInferFinder())
 
     try:
-        from hcu_adapter import registry as _reg
+        from hcu_adapter.infra import registry as _reg
 
         _reg.register(
             "rms_norm",
@@ -141,7 +141,7 @@ def register() -> None:
         )
         _f.allowlist.update(_FI_SAMPLING_ALLOW)
         try:
-            from hcu_adapter import registry as _reg
+            from hcu_adapter.infra import registry as _reg
 
             _reg.register(
                 "sampling",

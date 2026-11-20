@@ -142,7 +142,7 @@ def test_gather_read_roundtrip():
     rows bit-for-bit (k bytes and fp32 scales), incl. cross-page and partial
     requests. Guards the gfx938 torch gather (aiter read kernel is dead:
     illegal address / zero output)."""
-    from hcu_adapter import kpool_write_emu as kw
+    from hcu_adapter.features.dsa import kpool_write_emu as kw
 
     dev = "cuda"
     n_pages, n_tok = 4, 3 * PAGE
@@ -185,7 +185,7 @@ def test_gather_read_roundtrip():
 def test_gather_read_dispatches_multipage_table(monkeypatch, keyword_args, mode):
     from types import SimpleNamespace
 
-    from hcu_adapter import kpool_write_emu as kw
+    from hcu_adapter.features.dsa import kpool_write_emu as kw
 
     index = pytest.importorskip("sglang.kernels.ops.kvcache.dsa_index_k_cache")
     # Restore the host's descriptor after install_read_patch replaces it.
@@ -227,7 +227,7 @@ def test_gather_read_dispatches_multipage_table(monkeypatch, keyword_args, mode)
 def test_emu_bit_equal_stock():
     """When HCU_KPOOL_WRITE_EMU=1, the emu must match the stock kernels byte
     for byte on this layout — correctness keep-out for any future enablement."""
-    from hcu_adapter import kpool_write_emu
+    from hcu_adapter.features.dsa import kpool_write_emu
 
     kpool_write_emu.install_patch()
     dev = "cuda"

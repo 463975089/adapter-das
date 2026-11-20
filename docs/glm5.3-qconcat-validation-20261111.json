@@ -229,6 +229,6 @@
   "pr_base_commit": "1ab11bdc9de19b7578349c8259c02a56ab289b68",
   "runtime_source_sha256": {
     "hcu_adapter/jit_concat_mla.py": "738dc141f9b2a69f3a1b05e07f638942b7784cdbac0cdc3f34ca49f38766e8ea",
-    "hcu_adapter/registry.py": "99abd6313794a92064bb96cafbf4bdd67064b80bd9e055ff069727c710eb4e5b"
+    "hcu_adapter/infra/registry.py": "99abd6313794a92064bb96cafbf4bdd67064b80bd9e055ff069727c710eb4e5b"
   }
 }

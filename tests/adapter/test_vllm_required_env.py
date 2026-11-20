@@ -11,7 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from hcu_adapter import hcu_env, hcu_config, registry
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.infra import registry
+from hcu_adapter.infra import hcu_config
 from hcu_adapter.bridges import vllm as bridge
 
 NAMES = ("HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS", "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES")

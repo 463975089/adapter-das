@@ -13,9 +13,9 @@ Package layout (single package; the former framework-neutral
     aiter/ flash_attn/ flashinfer/ fla_hcu/   vendor stubs & vendored kernels
 
 Import-weight contract: importing ``hcu_adapter`` (or
-``hcu_adapter.extensions`` for the vLLM plugin seam) must stay light —
+``hcu_adapter.infra.extensions`` for the vLLM plugin seam) must stay light —
 no torch / vLLM / sgl_kernel. The vendor-stub registrations that DO pull
-torch live in :mod:`hcu_adapter.stubs` (two stub subpackages bind torch
+torch live in :mod:`hcu_adapter.infra.stubs` (two stub subpackages bind torch
 constants at module level) and are triggered exactly once by
 ``import sgl_kernel`` (see sgl_kernel/__init__.py), preserving the timing:
 the meta-path finders install before any sglang module import. ``from <lib>
@@ -25,6 +25,6 @@ the missing kernel; entries with device-agnostic semantics are served by
 our triton kernels (currently ``aiter.silu_and_mul``).
 """
 
-from .bootstrap import detect_host
+from .infra.bootstrap import detect_host
 
 __all__ = ["detect_host"]

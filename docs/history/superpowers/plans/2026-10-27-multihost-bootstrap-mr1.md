@@ -34,7 +34,7 @@
 
 **Files:**
 - Create: `hcu_adapter/__init__.py`
-- Create: `hcu_adapter/bootstrap.py`
+- Create: `hcu_adapter/infra/bootstrap.py`
 - Test: `tests/adapter/test_bootstrap.py`
 - Modify: `sgl_kernel/_adapters/hcu_env.py`
 - Modify: `docs/env-vars.md`

@@ -33,7 +33,8 @@ import torch
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from hcu_adapter import hcu_env, wna16_channel_moe  # noqa: E402
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.features.ct_w4a8 import wna16_channel_moe  # noqa: E402
 
 
 def test_channel_predicate_matches_only_nonpositive_group():
@@ -154,9 +155,9 @@ def test_registry_entry_and_manual_reconcile():
 
 
 def test_sglang_bridge_wiring():
-    src = (ROOT / "hcu_adapter" / "bridges" / "sglang.py").read_text(
+    src = (ROOT / "hcu_adapter" / "bridges" / "sglang_moe.py").read_text(
         encoding="utf-8"
-    )
+    )  # fused_experts chain moved here by layout A-batch (sglang.py stub keeps order)
     assert "wna16_channel_moe as _wnch" in src
     assert "_wnch.install()" in src
     # chained after the other two fused_experts arms (10 -> 10.5 -> 10.6)

@@ -20,7 +20,7 @@ def install():
 
     import flashinfer.sampling as sampling
 
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
 
     for name, implementation in (
         ("top_k_renorm_probs", top_k_renorm_probs),
@@ -61,7 +61,7 @@ def install_grammar_bitmask():
     # JIT 唯一实现：只约束原 kernel 的 launch 参数，保留计算体与别名。
     from sglang.kernels.ops.grammar.bitmask_ops import apply_token_bitmask_inplace_kernel
 
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
 
     kernel = apply_token_bitmask_inplace_kernel
     original = kernel.run

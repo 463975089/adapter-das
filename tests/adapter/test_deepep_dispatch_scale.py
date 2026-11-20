@@ -14,7 +14,7 @@ class Tensor:
 
 
 def load_bridge(native):
-    source = Path(__file__).resolve().parents[2] / "hcu_adapter/bridges/sglang.py"
+    source = Path(__file__).resolve().parents[2] / "hcu_adapter/bridges/sglang_deep_ep.py"
     tree = ast.parse(source.read_text())
     namespace = {"_ll_orig": native, "logging": logging, "_sys": sys,
                  "torch": SimpleNamespace(Tensor=Tensor)}

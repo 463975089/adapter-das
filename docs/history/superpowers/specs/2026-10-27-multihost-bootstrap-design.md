@@ -34,7 +34,7 @@ hcu_adapter/
 `sitecustomize.py` contains only:
 
 ```python
-from hcu_adapter.bootstrap import install
+from hcu_adapter.infra.bootstrap import install
 
 install()
 ```

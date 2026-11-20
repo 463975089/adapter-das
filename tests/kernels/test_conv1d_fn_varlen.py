@@ -162,7 +162,7 @@ def test_triton_parity():
 
 def test_emu_parity():
     """GREEN GATE: conv1d_fn_emu == step reference across shapes/branches."""
-    from hcu_adapter.conv1d_fn_emu import conv1d_fn_emu
+    from hcu_adapter.features.gdn.conv1d_fn_emu import conv1d_fn_emu
 
     for tag, (D, W, lens, init) in {
         "short-seq-init": (16, 4, [2, 5], True),

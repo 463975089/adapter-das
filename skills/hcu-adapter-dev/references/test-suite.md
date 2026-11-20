@@ -19,6 +19,11 @@ post-load/guard dispatch；另以真实 vLLM Worker/config 验证桥上的原覆
 公开门面迁移须检查 source/wheel/install 来源及实际消费者的 callable ABI，
 不能用安装成功代替宿主语义验证。
 
+目录迁移还须覆盖函数体内的延迟导入。`tests/vendor/test_flash_attn.py -k
+e5m2_guard` 是不需 GPU 的 Adapter 启动契约，须在 HOSTnone、隐藏设备的独立
+进程运行；不能因测试文件位于 vendor/ 而遗漏，也不能用预先注入包根属性掩盖
+旧导入路径。该检查不执行或验证 FlashAttention 设备内核。
+
 guard 的非 None 返回属于契约违规，不能被回调异常包装成主动 refused；分别断言
 诊断分类、owner/operation/role、原异常 cause、后续 guard 不执行和 dispatch 状态
 恢复。误返回的协程须关闭而不执行。修复共享 dispatch 时同步保留真实宿主入口回归。

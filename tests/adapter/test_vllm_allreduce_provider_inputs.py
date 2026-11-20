@@ -40,7 +40,7 @@ def provider_read():
 
 
 def configured(monkeypatch, tmp_path, name, value):
-    from hcu_adapter import hcu_config
+    from hcu_adapter.infra import hcu_config
     # Current catalog exposes enable, not these provider controls. A test-only
     # compound catalog row exercises real HCU_CONFIG parsing/resolution without
     # adding a production configuration surface or monkeypatching resolve.
@@ -55,7 +55,7 @@ def configured(monkeypatch, tmp_path, name, value):
 
 @pytest.mark.parametrize('name,value,expected', INPUTS)
 def test_config_only_provider_input_refused_before_mutation(monkeypatch, tmp_path, provider, provider_read, name, value, expected):
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     enable(monkeypatch)
     configured(monkeypatch, tmp_path, name, value)
     assert hcu_env.resolve(name, host='vllm') == (value, 'config')
@@ -70,7 +70,8 @@ def test_config_only_provider_input_refused_before_mutation(monkeypatch, tmp_pat
 
 @pytest.mark.parametrize('name,value,expected', INPUTS)
 def test_explicit_environment_wins_config_and_reaches_provider_getter(monkeypatch, tmp_path, provider, provider_read, name, value, expected):
-    from hcu_adapter import allreduce, hcu_env
+    from hcu_adapter.features.aiter import allreduce
+    from hcu_adapter.infra import hcu_env
     enable(monkeypatch)
     configured(monkeypatch, tmp_path, name, '128' if name == INPUTS[0][0] else 'auto')
     monkeypatch.setenv(name, value)
@@ -94,7 +95,7 @@ def test_empty_provider_environment_refused_before_mutation(monkeypatch, provide
 
 
 def test_provider_defaults_match_policy_without_importing_provider(provider_read):
-    from hcu_adapter import allreduce
+    from hcu_adapter.features.aiter import allreduce
     assert provider_read('AITER_AR_MAX_SIZE_MB') == allreduce.Policy(True).admission_bytes
     assert provider_read('AITER_AR_TRANSPORT') == allreduce.Policy(True).transport
     assert provider_read('AITER_AR_SMALL_MESSAGE') == allreduce.Policy(True).small_message

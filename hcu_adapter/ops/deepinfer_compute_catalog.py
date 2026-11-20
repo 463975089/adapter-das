@@ -314,7 +314,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                 '(device-only); no '
                                                                                 'performance qualification'}},
  'tile_kernels.quant.batched_transpose_weight_sf': {'torch': {'status': 'candidate',
-                                                              'implementation': 'hcu_adapter.kernels.weight_scale_emu.batched_transpose_weight_sf',
+                                                              'implementation': 'hcu_adapter.kernels.weight_scale.batched_transpose_weight_sf',
                                                               'limitations': 'GPU UE8M0 int32, '
                                                                              'block32/block128, grouped '
                                                                              'layouts and reused outs; no '
@@ -339,7 +339,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                         'limitations': 'Contiguous BF16 inputs, K divisible by 32; no e2e '
                                                        'qualification'}},
  'deep_gemm.transform_sf_into_required_layout': {'torch': {'status': 'candidate',
-                                                           'implementation': 'hcu_adapter.kernels.weight_scale_emu.transform_sf_into_required_layout',
+                                                           'implementation': 'hcu_adapter.kernels.weight_scale.transform_sf_into_required_layout',
                                                            'limitations': 'SM100 packed UE8M0 ABI; no PSUM '
                                                                           'gaps or SM90 float-scale mode; no '
                                                                           'model qualification'}},
@@ -645,7 +645,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                         'or performance '
                                                                                         'qualification'}},
  'flash_mla.fused_norm_rope_attn_rope_cast.permute_q_b_proj': {'torch': {'status': 'candidate',
-                                                                         'implementation': 'hcu_adapter.kernels.mla_layout_emu.permute_q_b_proj',
+                                                                         'implementation': 'hcu_adapter.kernels.mla_layout.permute_q_b_proj',
                                                                          'limitations': 'Byte-preserving '
                                                                                         'initialization '
                                                                                         'permutation only; '
@@ -653,7 +653,7 @@ BACKEND_CATALOG = {'deep_gemm.cublaslt_gemm_nt': {'native': {'status': 'candidat
                                                                                         'or model '
                                                                                         'qualification'}},
  'flash_mla.fused_norm_rope_attn_rope_cast.permute_wv_proj': {'torch': {'status': 'candidate',
-                                                                        'implementation': 'hcu_adapter.kernels.mla_layout_emu.permute_wv_proj',
+                                                                        'implementation': 'hcu_adapter.kernels.mla_layout.permute_wv_proj',
                                                                         'limitations': 'Byte-preserving '
                                                                                        'initialization '
                                                                                        'permutation only; no '

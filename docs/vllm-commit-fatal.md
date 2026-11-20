@@ -1,6 +1,6 @@
 # Fatal extension commit failures
 
-`hcu_adapter.extensions.ExtensionCommitError(message, reports=())` is the
+`hcu_adapter.infra.extensions.ExtensionCommitError(message, reports=())` is the
 public signal that activation published state and cannot safely continue in
 this process. An owner raises it after its commit boundary. The host preserves
 actual earlier ACTIVE/current FAILED reports and stops later activation, even

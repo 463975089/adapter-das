@@ -12,9 +12,9 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from hcu_adapter import extensions as ext
+from hcu_adapter.infra import extensions as ext
 from hcu_adapter.bridges import vllm as bridge
-from hcu_adapter import runtime_lifecycle as lifecycle
+from hcu_adapter.infra import runtime_lifecycle as lifecycle
 
 
 CAP = 'test-capability'

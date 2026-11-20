@@ -7,7 +7,7 @@ import types
 
 import pytest
 
-from hcu_adapter import multimem_gate as gate
+from hcu_adapter.bridges import sglang_multimem_gate as gate
 
 
 @pytest.fixture
@@ -99,7 +99,7 @@ def test_non_hip_does_not_import_provider(monkeypatch):
 
 def test_hip_install_registers_real_constructor_fallback(consumer, monkeypatch):
     cls, calls, x = consumer
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     registrations = []
     monkeypatch.setattr(registry, 'register', lambda *a, **k: registrations.append((a, k)))
     provider = types.ModuleType('sglang.srt.distributed.device_communicators')

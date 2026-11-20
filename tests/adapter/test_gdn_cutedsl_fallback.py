@@ -10,7 +10,7 @@ from unittest import mock
 
 import torch
 
-from hcu_adapter.gdn_cutedsl_fallback import _triton_gated_delta_rule_mtp
+from hcu_adapter.features.gdn.gdn_cutedsl_fallback import _triton_gated_delta_rule_mtp
 
 
 class GdnCutedslFallbackTests(unittest.TestCase):
@@ -90,7 +90,7 @@ class GdnCutedslFallbackTests(unittest.TestCase):
 
     def test_probe_reports_absent_cuda_runtime(self):
         """A missing ``cuda`` package is a normal 'not available', not a fault."""
-        from hcu_adapter import gdn_cutedsl_fallback as subject
+        from hcu_adapter.features.gdn import gdn_cutedsl_fallback as subject
 
         exc = ModuleNotFoundError("No module named 'cuda'", name="cuda")
         with mock.patch.dict(sys.modules, {"sglang": None}):
@@ -103,7 +103,7 @@ class GdnCutedslFallbackTests(unittest.TestCase):
 
     def test_probe_lets_unrelated_import_errors_escape(self):
         """Only the CuTeDSL dependency itself may be swallowed."""
-        from hcu_adapter import gdn_cutedsl_fallback as subject
+        from hcu_adapter.features.gdn import gdn_cutedsl_fallback as subject
 
         exc = ModuleNotFoundError("No module named 'onnxruntime'", name="onnxruntime")
         with mock.patch("builtins.__import__", side_effect=exc):
@@ -112,7 +112,7 @@ class GdnCutedslFallbackTests(unittest.TestCase):
 
     def test_install_returns_quietly_when_cuda_absent(self):
         """install() must not raise, so the bridge never logs a traceback."""
-        from hcu_adapter import gdn_cutedsl_fallback as subject
+        from hcu_adapter.features.gdn import gdn_cutedsl_fallback as subject
 
         exc = ModuleNotFoundError("No module named 'cuda'", name="cuda")
         fake_torch = types.SimpleNamespace(version=types.SimpleNamespace(hip="6.0"))
