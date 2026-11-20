@@ -401,13 +401,21 @@ def install() -> None:
             )
 
         try:
-            from hcu_adapter.bridges._sglang import grouped_topk, sampling
+            from hcu_adapter.bridges._sglang import grouped_topk
 
             grouped_topk.install()
+        except Exception:
+            logging.getLogger("hcu.adapter").warning(
+                "HCU adapter: grouped top-k not installed", exc_info=True,
+            )
+
+        try:
+            from hcu_adapter.bridges._sglang import sampling
+
             sampling.install()
         except Exception:
             logging.getLogger("hcu.adapter").warning(
-                "HCU adapter: grouped_topk/sampling bridge not installed", exc_info=True
+                "HCU adapter: sampling not installed", exc_info=True,
             )
 
         # P7 (governance 3b-8, 2026-11-19): the tier resolution table is

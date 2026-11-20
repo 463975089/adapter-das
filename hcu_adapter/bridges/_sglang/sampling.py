@@ -13,44 +13,66 @@ def top_p_renorm_probs(probs, top_p):
 
 
 def install():
-    install_grammar_bitmask()
-
     import importlib
     import sys
 
     import flashinfer.sampling as sampling
 
     from hcu_adapter.infra import registry
+    from ._publication import Binding, publish
 
-    for name, implementation in (
-        ("top_k_renorm_probs", top_k_renorm_probs),
-        ("top_p_renorm_probs", top_p_renorm_probs),
-    ):
-        setattr(sampling, name, implementation)
-        registry.register(
-            "sampling", implementation, f"flashinfer.sampling.{name}",
-            registry.MECH_REBIND,
-            detail="SGLang native HIP Triton renormalization through CUDA import face",
-        )
+    # Prepare every provider/consumer before touching host symbols or records.
     from hcu_adapter.kernels.sglang_tree_sampling_triton import (
         tree_speculative_sampling_target_only,
     )
 
     module = importlib.import_module("sglang.kernels.ops.speculative.sampling")
     original = module.tree_speculative_sampling_target_only
+    grammar = _prepare_grammar_bitmask()
+    bindings = [] if grammar is None else [grammar]
+
+    renormalizers = (
+        ("top_k_renorm_probs", top_k_renorm_probs),
+        ("top_p_renorm_probs", top_p_renorm_probs),
+    )
+    for name, implementation in renormalizers:
+        bindings.append(Binding.prepare(sampling, name, implementation))
     for name, loaded in list(sys.modules.items()):
         if name.startswith("sglang.") and loaded is not None:
             if vars(loaded).get("tree_speculative_sampling_target_only") is original:
-                loaded.tree_speculative_sampling_target_only = tree_speculative_sampling_target_only
-    registry.register(
-        "sglang_tree_sampling", tree_speculative_sampling_target_only,
-        "sglang.kernels.ops.speculative.sampling.tree_speculative_sampling_target_only",
-        registry.MECH_REBIND,
-        detail="Target-only tree traversal and residual sampling without FlashInfer headers",
-    )
+                bindings.append(Binding.prepare(
+                    loaded, "tree_speculative_sampling_target_only",
+                    tree_speculative_sampling_target_only,
+                ))
+
+    def register():
+        if grammar is not None:
+            _register_grammar_bitmask(grammar.implementation)
+        for name, implementation in renormalizers:
+            registry.register(
+                "sampling", implementation, f"flashinfer.sampling.{name}",
+                registry.MECH_REBIND,
+                detail="SGLang native HIP Triton renormalization through CUDA import face",
+            )
+        registry.register(
+            "sglang_tree_sampling", tree_speculative_sampling_target_only,
+            "sglang.kernels.ops.speculative.sampling.tree_speculative_sampling_target_only",
+            registry.MECH_REBIND,
+            detail="Target-only tree traversal and residual sampling without FlashInfer headers",
+        )
+
+    publish(bindings, register)
 
 
 def install_grammar_bitmask():
+    from ._publication import publish
+
+    binding = _prepare_grammar_bitmask()
+    if binding is not None:
+        publish([binding], lambda: _register_grammar_bitmask(binding.implementation))
+
+
+def _prepare_grammar_bitmask():
     import functools
 
     import torch
@@ -61,7 +83,7 @@ def install_grammar_bitmask():
     # JIT 唯一实现：只约束原 kernel 的 launch 参数，保留计算体与别名。
     from sglang.kernels.ops.grammar.bitmask_ops import apply_token_bitmask_inplace_kernel
 
-    from hcu_adapter.infra import registry
+    from ._publication import Binding
 
     kernel = apply_token_bitmask_inplace_kernel
     original = kernel.run
@@ -77,10 +99,15 @@ def install_grammar_bitmask():
         return original(*args, **kwargs)
 
     run._hcu_grammar_launch = True
+    return Binding.prepare(kernel, "run", run)
+
+
+def _register_grammar_bitmask(run):
+    from hcu_adapter.infra import registry
+
     registry.register(
         "sampling", run,
         "sglang.kernels.ops.grammar.bitmask_ops.apply_token_bitmask_inplace_kernel.run",
         registry.MECH_REBIND,
         detail="Bound grammar Triton launch to 1024 threads using the hardware warp size",
     )
-    kernel.run = run

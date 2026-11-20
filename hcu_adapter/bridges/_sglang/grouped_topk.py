@@ -57,6 +57,7 @@ def install():
 
     from hcu_adapter.infra import registry
     from hcu_adapter.ops.selector import select
+    from ._publication import Binding, publish
 
     if select("sglang_grouped_topk", "torch") != "triton":
         return
@@ -65,16 +66,21 @@ def install():
     if getattr(original, "_hcu_grouped_topk", False):
         return
     wrapped = wrap(original, module._RENORMALIZE_SUM_EPSILON)
+    bindings = []
     for name, loaded in list(sys.modules.items()):
         if not name.startswith("sglang.") or loaded is None:
             continue
         for symbol in ("biased_grouped_topk_gpu", "biased_grouped_topk"):
             if vars(loaded).get(symbol) is original:
-                setattr(loaded, symbol, wrapped)
-    registry.register(
-        "sglang_grouped_topk",
-        "sglang.kernels.ops.moe.moe_fused_gate.moe_fused_gate",
-        "sglang.srt.layers.moe.topk.biased_grouped_topk_gpu",
-        registry.MECH_REBIND,
-        detail="Explicit Triton FP32 288-expert top8 single-group prefill; other calls retain current provider",
-    )
+                bindings.append(Binding.prepare(loaded, symbol, wrapped))
+
+    def register():
+        registry.register(
+            "sglang_grouped_topk",
+            "sglang.kernels.ops.moe.moe_fused_gate.moe_fused_gate",
+            "sglang.srt.layers.moe.topk.biased_grouped_topk_gpu",
+            registry.MECH_REBIND,
+            detail="Explicit Triton FP32 288-expert top8 single-group prefill; other calls retain current provider",
+        )
+
+    publish(bindings, register)
