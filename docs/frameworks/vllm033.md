@@ -165,3 +165,11 @@ metadata、官方 general-plugin loader 与 config spawn/unpickle 共 17 项检�
 
 
 mHC 行为适配候选、启动配置、缓存/生命周期及未闭合门禁见 [v0.33 mHC](vllm033-mhc.md)。默认仍为原始官方，不代表已知 gfx936 TileLang 分支通过。
+
+HY4 sparse FlashMLA 的持久索引表复用 Core 的
+`get_sparse_mla_index_group_max_rows`：表容量按 decode 行数设置，超出容量的
+prefill 沿用 Core 临时转换路径。原生 HY4 构造时按完整 prefill budget 建表，
+在98304 tokens、78层时仅物理索引表就约58.5GiB；S256/MTP3按1025行
+（含sentinel）分配后，普通PCP16启动已通过主干/MTP权重加载。未降低batch
+budget，也未复制转换kernel或修改Core全局。CPU ABI/config检查21项通过；
+整模启动仍受独立的gfx938 sparse indexer准入问题阻塞，精度与性能尚未通过。

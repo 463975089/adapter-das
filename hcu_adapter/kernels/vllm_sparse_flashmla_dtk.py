@@ -3,8 +3,9 @@
 """Restore Core's sparse FlashMLA calls using the DTK vendor ABI.
 
 The native metadata builder, cache reader/writer, PCP path, query padding and
-sink handling remain Core-owned. Private function namespaces change only the
-three imported vendor callables; no Core module global or source is rewritten.
+sink handling remain Core-owned. Private function namespaces bind the vendor
+callables and Core's existing decode-row capacity helper; no Core module global
+or source is rewritten.
 Remove these bindings when Core exposes an operator-provider seam.
 """
 from __future__ import annotations
@@ -40,7 +41,18 @@ def sparse_entry(provider):
     return sparse
 
 
+def make_index_group_builder(logical_topk_indices):
+    """Use Core's decode-row bound for its persistent conversion tables."""
+    from vllm.config import get_current_vllm_config
+    from vllm.v1.attention.backends.mla.index_group import (
+        SparseMLAIndexGroupBuilder, get_sparse_mla_index_group_max_rows,
+    )
+    rows = get_sparse_mla_index_group_max_rows(get_current_vllm_config())
+    return SparseMLAIndexGroupBuilder(logical_topk_indices, max_decode_rows=rows)
+
+
 def build_backend(vendor):
+    from vllm.model_executor.layers.attention.sparse_mla_attention import SparseMLACommonImpl
     from vllm.models.hy_v4.nvidia.flashmla_sparse import (
         HYV4FlashMLASparseBackend as NativeBackend,
         HYV4FlashMLASparseImpl as NativeImpl,
@@ -49,7 +61,11 @@ def build_backend(vendor):
         FlashMLASparseMetadataBuilder as NativeBuilder,
     )
 
-    class HcuSparseFlashMLAImpl(NativeImpl):
+    class HcuIndexCapacityImpl(SparseMLACommonImpl):
+        __init__ = bind_native(SparseMLACommonImpl.__init__,
+            {'SparseMLAIndexGroupBuilder': make_index_group_builder})
+
+    class HcuSparseFlashMLAImpl(NativeImpl, HcuIndexCapacityImpl):
         # DTK reports the key-only LSE with sinks. Do not advertise the native
         # CUDA DCP merge until its single-sink normalization is restored.
         supports_dcp = False

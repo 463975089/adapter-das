@@ -144,3 +144,52 @@ def test_killed_registration_does_not_probe_vendor(monkeypatch):
     with pytest.raises(RuntimeError, match='unavailable'):
         bridge.require_available()
     importlib.reload(bridge)
+
+
+def test_index_group_uses_native_decode_capacity_not_prefill_budget(monkeypatch):
+    from vllm.v1.attention.backends.mla import index_group
+    import vllm.config
+    cfg = SimpleNamespace(scheduler_config=SimpleNamespace(
+        max_num_batched_tokens=98304, max_num_seqs=256),
+        speculative_config=SimpleNamespace(num_speculative_tokens=3, parallel_drafting=False),
+        use_v2_model_runner=True, attention_config=SimpleNamespace(hisparse_config=None))
+    monkeypatch.setattr(vllm.config, 'get_current_vllm_config', lambda: cfg)
+    monkeypatch.setattr(index_group, '_create_side_stream', lambda device: object())
+    monkeypatch.setattr(index_group, '_create_event', object)
+    logical = torch.empty((98304, 2048), dtype=torch.int32, device='meta')
+    builder = kernel.make_index_group_builder(logical)
+    group, _ = builder.register_layer(True, cfg)
+    assert group.logical_topk_indices is logical
+    assert group.physical_topk_indices.shape == (1025, 2048)
+    assert group.valid_topk_counts.shape == (1025,)
+
+
+def test_owned_mro_binds_capacity_without_changing_native_constructor():
+    from vllm.model_executor.layers.attention.sparse_mla_attention import SparseMLACommonImpl
+    from vllm.v1.attention.backends.mla.flashmla_sparse import FlashMLASparseImpl
+    vendor = SimpleNamespace(flash_mla_sparse_fwd=vendor_sparse,
+        flash_mla_with_kvcache=lambda **kwargs: None, get_mla_metadata=lambda: None)
+    impl = kernel.build_backend(vendor).get_impl_cls()
+    middle = impl.__mro__[impl.__mro__.index(FlashMLASparseImpl) + 1]
+    assert middle is not SparseMLACommonImpl
+    assert middle.__init__.__code__ is SparseMLACommonImpl.__init__.__code__
+    assert middle.__init__.__globals__['SparseMLAIndexGroupBuilder'] is kernel.make_index_group_builder
+    assert SparseMLACommonImpl.__init__.__globals__['SparseMLAIndexGroupBuilder'] is not kernel.make_index_group_builder
+
+
+def test_prefill_larger_than_decode_capacity_uses_native_temporary_converter(monkeypatch):
+    from vllm.v1.attention.backends.mla import index_group
+    group = index_group.SparseMLAIndexGroup.__new__(index_group.SparseMLAIndexGroup)
+    group.physical_topk_indices = torch.empty((3, 8), device='meta', dtype=torch.int32)
+    logical = torch.empty((4, 8), device='meta', dtype=torch.int32)
+    req_ids = torch.empty((4,), device='meta', dtype=torch.int32)
+    table = torch.empty((2, 4), device='meta', dtype=torch.int32)
+    calls = []
+    sentinel = object()
+    monkeypatch.setattr(index_group, 'triton_convert_req_index_to_global_index',
+        lambda *args, **kwargs: calls.append((args, kwargs)) or sentinel)
+    assert group._convert_once(0, logical, req_ids, table, 64,
+        block_stride_rows=None, return_valid_counts=True) is sentinel
+    assert calls[0][0] == (req_ids, table, logical)
+    assert calls[0][1]['return_valid_counts'] is True
+    assert 'out' not in calls[0][1]
