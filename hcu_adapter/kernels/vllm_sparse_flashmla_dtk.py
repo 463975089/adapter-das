@@ -10,22 +10,7 @@ Remove these bindings when Core exposes an operator-provider seam.
 """
 from __future__ import annotations
 
-from types import FunctionType
-
-
-def bind_native(function, substitutions):
-    if not substitutions or any(name not in function.__code__.co_names
-                                or name not in function.__globals__
-                                for name in substitutions):
-        raise RuntimeError('sparse FlashMLA native callable anchor changed')
-    namespace = dict(function.__globals__)
-    namespace.update(substitutions)
-    bound = FunctionType(function.__code__, namespace, function.__name__,
-                         function.__defaults__, function.__closure__)
-    bound.__kwdefaults__ = function.__kwdefaults__
-    bound.__annotations__ = function.__annotations__
-    bound.__qualname__ = function.__qualname__
-    return bound
+from hcu_adapter.infra.native_namespace import bind_native
 
 
 def sparse_entry(provider):

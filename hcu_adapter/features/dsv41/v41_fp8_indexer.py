@@ -522,6 +522,7 @@ def build():
             def __init__(self, *args, **kwargs):
                 cfg = _resolve("current_config")
                 is_v41 = _is_v41(cfg.model_config.hf_config)
+                self._hcu_hy4 = getattr(cfg.model_config.hf_config, 'model_type', None) in ('hy_v4', 'hy_v4_mtp')
                 if is_v41:
                     _resolve("health")
                     if _resolve("enabled"):
@@ -592,6 +593,9 @@ def build():
                         raise ValueError("FP4 reader must not insert a second K")
                     return self._fp4_execute(hidden_states, q_quant, weights)
                 if not self._hcu_owned:
+                    if getattr(self, '_hcu_hy4', False):
+                        from hcu_adapter.features.dsa import hy4_sparse_indexer
+                        return hy4_sparse_indexer.forward(self, hidden_states, q_quant, k, weights)
                     return super().forward_hip(hidden_states, q_quant, k, weights)
                 if k is not None or not isinstance(q_quant, torch.Tensor):
                     raise ValueError(

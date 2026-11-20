@@ -1,8 +1,28 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-20）；事实源 = `BACKEND_CATALOG`（hcu_adapter/infra/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-21）；事实源 = `BACKEND_CATALOG`（hcu_adapter/infra/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
+
+## vllm_hy4_pcp_profile
+
+Core HY4 MRV2 rank-local PCP memory profile bound
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Eager TP1/PCP>1/DCP1 only; keeps sch |
+
+路由变量：（auto）
+
+## vllm_hy4_sparse_indexer
+
+Core HY4 PCP FP8 indexer with bounded native scoring ABI glue
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| native | candidate Core PCP/cache/top-k; vendor FP8 pre |
+
+路由变量：（auto）
 
 ## vllm_inverse_rope
 

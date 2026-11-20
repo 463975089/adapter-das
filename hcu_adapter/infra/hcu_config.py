@@ -66,6 +66,20 @@ class HcuConfigError(RuntimeError):
 # backends   selectable backend -> {status, note}
 
 BACKEND_CATALOG = {
+    "vllm_hy4_pcp_profile": {
+        "var": None,
+        "summary": "Core HY4 MRV2 rank-local PCP memory profile bound",
+        "backends": {
+            "native": {"status": "candidate", "note": "Eager TP1/PCP>1/DCP1 only; keeps scheduler/runtime budgets; model/performance qualification pending"},
+        },
+    },
+    "vllm_hy4_sparse_indexer": {
+        "var": None,
+        "summary": "Core HY4 PCP FP8 indexer with bounded native scoring ABI glue",
+        "backends": {
+            "native": {"status": "candidate", "note": "Core PCP/cache/top-k; vendor FP8 prefill and native NORMAL paged decode; whole-model/Graph/performance pending"},
+        },
+    },
     "vllm_inverse_rope": {
         "var": None,
         "summary": "Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output",
