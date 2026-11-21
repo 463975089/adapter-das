@@ -132,9 +132,12 @@ def test_native_preserves_original_and_method(setup, monkeypatch):
     assert record['target'] == bridge.TARGET and record['implementation'] == 'native'
     assert bridge.install()
     assert target.rocm_sparse_attn_decode is routed
+    policy_lookup = []
+    monkeypatch.setattr(bridge, 'selected_mode', lambda: policy_lookup.append(True) or 'native')
     # The real call path reads the module global, so the rebind is intercepted.
     assert target.DeepseekV41ROCMAiterMLAAttention()._forward_decode(
         None, None, None, None, None, False, None) == 'stock'
+    assert not policy_lookup
     assert seen and seen[0]['provider'] is vendor.flash_mla_with_kvcache
     assert seen[0]['metadata_factory'] is vendor.get_mla_metadata
     assert seen[0]['epilogue'] is target.rocm_inverse_rope_mxfp8_rows
@@ -242,8 +245,13 @@ def test_late_drift_latches_failure(setup, monkeypatch, change):
     if change == 'global': target.rocm_sparse_attn_decode = build_module().rocm_sparse_attn_decode
     if change == 'method': cls._forward_decode = lambda self: 0
     if change == 'epilogue': target.rocm_inverse_rope_mxfp8_rows = lambda *a: None
+    if change in ('global', 'method', 'epilogue'):
+        with pytest.raises(bridge.FlashMLADecodeCompatibilityError, match='binding/method/epilogue drift'):
+            saved_global(*([None] * 18))
     with pytest.raises(bridge.FlashMLADecodeCompatibilityError):
         bridge.require_healthy()
+    with pytest.raises(bridge.FlashMLADecodeCompatibilityError):
+        saved_global(*([None] * 18))
     # Restoring inputs must not re-admit the process.
     monkeypatch.setenv(bridge.MODE_VARIABLE, 'native')
     monkeypatch.delenv('HCU_DISABLE_OPS', raising=False)
@@ -299,6 +307,8 @@ def test_fork_adopts_healthy_binding_but_preserves_failure(setup, monkeypatch, f
     def child():
         try:
             if not failed:
+                with pytest.raises(bridge.FlashMLADecodeCompatibilityError, match='child runtime activation'):
+                    target.rocm_sparse_attn_decode(*([None] * 18))
                 with pytest.raises(bridge.FlashMLADecodeCompatibilityError):
                     bridge.require_healthy()
             bridge.install()

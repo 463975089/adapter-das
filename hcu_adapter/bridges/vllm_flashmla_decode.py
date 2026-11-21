@@ -99,14 +99,28 @@ def _require_signature(fn, names, defaults=None, integer_return=False):
         raise FlashMLADecodeCompatibilityError('FlashMLA decode ABI changed: ' + fn.__name__)
 
 
+def _check_bindings(p):
+    if (getattr(p.module, 'rocm_sparse_attn_decode', None) is not p.replacement
+            or getattr(p.module, 'DeepseekV41ROCMAiterMLAAttention', None) is not p.cls
+            or getattr(p.cls, '_forward_decode', None) is not p.method
+            or getattr(p.module, 'rocm_inverse_rope_mxfp8_rows', None) is not p.epilogue):
+        _refuse('FlashMLA decode binding/method/epilogue drift; start a fresh process')
+
+
 def _check(p):
     if selected_mode() != 'native':
         _refuse('FlashMLA decode policy changed; start a fresh process')
-    if (p.module.rocm_sparse_attn_decode is not p.replacement
-            or p.module.DeepseekV41ROCMAiterMLAAttention is not p.cls
-            or p.cls._forward_decode is not p.method
-            or p.module.rocm_inverse_rope_mxfp8_rows is not p.epilogue):
-        _refuse('FlashMLA decode binding/method/epilogue drift; start a fresh process')
+    _check_bindings(p)
+
+
+def _require_dispatch_healthy():
+    # Policy is startup-only. Lifecycle boundaries resolve it and latch drift.
+    if _failure is not None:
+        raise FlashMLADecodeCompatibilityError(_failure)
+    p = _publication
+    if p is None or p.pid != os.getpid():
+        raise FlashMLADecodeCompatibilityError('FlashMLA decode requires child runtime activation')
+    _check_bindings(p)
 
 
 def _native_provider():
@@ -136,6 +150,22 @@ def require_healthy():
             _check(_publication)
         except BaseException as error:
             _refuse('FlashMLA decode publication/policy drift; start a fresh process', error)
+
+
+def qualify_after_model_load(config, device):
+    """Preflight the installed provider on the V4.1 worker before Graph capture."""
+    if _publication is None or _publication.pid != os.getpid():
+        return
+    architectures = getattr(config.model_config, 'architectures', ()) or ()
+    hf_config = getattr(config.model_config, 'hf_config', None)
+    if (not any(name.startswith('DeepseekV41') for name in architectures)
+            and getattr(hf_config, 'model_type', None) not in ('deepseek_v41', 'deepseek_v41_text')):
+        return
+    from hcu_adapter.kernels.mla_decode_rope_triton import qualify_inverse_rope
+    from hcu_adapter.kernels.mla_native_plan_triton import qualify_native_plan
+
+    qualify_native_plan(device)
+    qualify_inverse_rope(device)
 
 
 def install():
@@ -193,7 +223,7 @@ def install():
                    extra_cache_nan_free=False, adaptive_splits=False,
                    inv_rope_positions=None, inv_rope_cos_sin_cache=None,
                    output_mxfp8=None) -> int:
-            require_healthy()
+            _require_dispatch_healthy()
             arguments = dict(q=q, kv_cache=kv_cache, swa_k_cache=swa_k_cache,
                 swa_only=swa_only, topk_indices=topk_indices, topk_lens=topk_lens,
                 swa_indices=swa_indices, swa_lens=swa_lens,

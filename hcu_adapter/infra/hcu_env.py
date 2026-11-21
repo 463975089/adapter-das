@@ -149,6 +149,33 @@ def _auto_hcu_fork_impl():
 
 
 REGISTRY = {
+    "HCU_TRITON_FAST_LAUNCH": {
+        "env": "HCU_TRITON_FAST_LAUNCH", "default": "0",
+        "about": "MLA Triton selector 的可选 CompiledKernel launch replay。"
+                 "=0 使用 Triton 通用 JIT 派发（候选评测配置）。"
+                 "只影响已启用的 Triton 路径，不改变 selector 分流。",
+    },
+    "HCU_TRITON_FUSED_SELECTORS": {
+        "env": "HCU_TRITON_FUSED_SELECTORS", "default": "1",
+        "about": "vLLM native MLA sparse decode 的 selector 默认开启。=1 在有界 HCU "
+                 "shape 上用单内核过滤、升序排序、写 padded ids/counts；"
+                 "超融合预算回退三步 Triton。=0 使用 Base eager selector。",
+    },
+    "HCU_VLLM_MHC_DELAYED_FUSION": {
+        "env": "HCU_VLLM_MHC_DELAYED_FUSION", "default": "0",
+        "hosts": ("vllm",),
+        "about": "Opt in to fused gate/collapse for vLLM 0.33 AITER staged delayed Pre, hc4/hidden5120/1-64 rows; startup only",
+    },
+    "HCU_VLLM_MHC_MEGA": {
+        "env": "HCU_VLLM_MHC_MEGA", "default": "1",
+        "hosts": ("vllm",),
+        "about": "Shifted mega_mhc seam defaults on for the validated gfx938 vLLM and DeepGEMM builds in AITER mode. 0 disables it at startup.",
+    },
+    "HCU_DSV41_W4A8_MOE_EXPECTED_M": {
+        "env": "HCU_DSV41_W4A8_MOE_EXPECTED_M", "default": "1",
+        "hosts": ("vllm",),
+        "about": "Default on for eligible V4.1 W4A8 experts; 0 disables the small-batch masked GEMM hint at startup.",
+    },
     "HCU_VLLM_FLASHMLA_DECODE": {
         "env": "HCU_VLLM_FLASHMLA_DECODE", "default": "native",
         "hosts": ("vllm",),
@@ -343,6 +370,41 @@ REGISTRY = {
                  "过滤与异步流程及已有别名，不读写或重编译 deepseek_v4.py。"
                  "关融合不是绕法（mapper 后的组 targets 只认融合名）；"
                  "=0 跳过安装。",
+    },
+    "HCU_LIGHTOP_PER_TOKEN_FP8": {
+        "env": "HCU_LIGHTOP_PER_TOKEN_FP8", "default": "1",
+        "about": "vLLM 0.33 动态 per-token FP8 激活量化改走 LightOp "
+                 "per_token_quant_fp8（绑定 QuantFP8.forward_cuda，"
+                 "forward_hip 的 fallback 也经此）。仅当 scale/scale_ub 为 "
+                 "None、PER_TOKEN、无 token padding、2D 连续 bf16 时命中；"
+                 "其余契约与任何 LightOp 异常一律回退上游原方法。"
+                 "零行 scale 上游取下界 1/(448*512)、LightOp 给 0（两者反量化"
+                 "结果都是 0）；amax 低于下界的行 scale 语义不同。"
+                 "默认开启，符合条件的图捕获也启用。HCU_LIGHTOP_PER_TOKEN_FP8_GRAPH=0 使图捕获回退上游。"
+                 "注：这条会改数值（正常行约 0.06% 元素差 1 ulp；"
+                 "amax 低于 clamp 下界的行 scale 语义不同），"
+                 "验收未通过时用 =0 回到上游实现。",
+    },
+    "HCU_LIGHTOP_PER_TOKEN_INT8": {
+        "env": "HCU_LIGHTOP_PER_TOKEN_INT8", "default": "1",
+        "about": "vLLM 0.33 动态 per-token INT8 激活量化改走 LightOp "
+                 "per_token_dynamic_quant_int8（原生 op，直接写 [M,1] scale；"
+                 "绑定 vllm._custom_ops.scaled_int8_quant，树内调用点全是 "
+                 "ops. 模块属性访问，一处覆盖）。仅当 scale/azp 为 None、"
+                 "symmetric、2D 连续、16 字节对齐、bf16 且 hidden%16==0、"
+                 "0<hidden<=8192 时命中；其余契约与任何 LightOp 异常一律回退"
+                 "上游原函数。数值与上游 bit-identical（scale 相等、q 逐元素"
+                 "无差、零行 scale 两边都是 0），所以不设诊断开关。"
+                 "注意别用 lightop.quant.per_token_quant_int8：那条 native "
+                 "快路只覆盖 K==128，其余宽度落 Triton 且慢 2.7~2.95×。"
+                 "默认开启，符合条件的图捕获也启用。HCU_LIGHTOP_PER_TOKEN_INT8_GRAPH=0 使图捕获回退上游。",
+    },
+    "HCU_LIGHTOP_FP8_AMAX_DIAG": {
+        "env": "HCU_LIGHTOP_FP8_AMAX_DIAG", "default": "0",
+        "about": "诊断开关（默认关，仅验证轮开启）：统计每次调用的行数里 "
+                 "amax < 1/(448*512)（上游 clamp 下界）的行数与占比，"
+                 "log-once 输出。默认关是因为每次调用多一次 reduction；"
+                 "不要在生产路径打开。",
     },
     "HCU_FLASHMLA_SPARSE_CHUNK_MB": {
         "env": "HCU_FLASHMLA_SPARSE_CHUNK_MB", "default": "512",
