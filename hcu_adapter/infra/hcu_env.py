@@ -172,9 +172,9 @@ REGISTRY = {
         "about": "Shifted mega_mhc seam defaults on for the validated gfx938 vLLM and DeepGEMM builds in AITER mode. 0 disables it at startup.",
     },
     "HCU_DSV41_W4A8_MOE_EXPECTED_M": {
-        "env": "HCU_DSV41_W4A8_MOE_EXPECTED_M", "default": "0",
+        "env": "HCU_DSV41_W4A8_MOE_EXPECTED_M", "default": "1",
         "hosts": ("vllm",),
-        "about": "Enable the small-batch masked GEMM hint for eligible V4.1 W4A8 experts; startup only",
+        "about": "Default on for eligible V4.1 W4A8 experts; 0 disables the small-batch masked GEMM hint at startup.",
     },
     "HCU_VLLM_FLASHMLA_DECODE": {
         "env": "HCU_VLLM_FLASHMLA_DECODE", "default": "native",
@@ -375,7 +375,7 @@ REGISTRY = {
                  "其余契约与任何 LightOp 异常一律回退上游原方法。"
                  "零行 scale 上游取下界 1/(448*512)、LightOp 给 0（两者反量化"
                  "结果都是 0）；amax 低于下界的行 scale 语义不同。"
-                 "默认开启。图捕获默认使用上游，HCU_LIGHTOP_PER_TOKEN_FP8_GRAPH=1 显式开启。"
+                 "默认开启，符合条件的图捕获也启用。HCU_LIGHTOP_PER_TOKEN_FP8_GRAPH=0 使图捕获回退上游。"
                  "注：这条会改数值（正常行约 0.06% 元素差 1 ulp；"
                  "amax 低于 clamp 下界的行 scale 语义不同），"
                  "验收未通过时用 =0 回到上游实现。",
@@ -392,7 +392,7 @@ REGISTRY = {
                  "无差、零行 scale 两边都是 0），所以不设诊断开关。"
                  "注意别用 lightop.quant.per_token_quant_int8：那条 native "
                  "快路只覆盖 K==128，其余宽度落 Triton 且慢 2.7~2.95×。"
-                 "默认开启。图捕获默认使用上游，HCU_LIGHTOP_PER_TOKEN_INT8_GRAPH=1 显式开启。",
+                 "默认开启，符合条件的图捕获也启用。HCU_LIGHTOP_PER_TOKEN_INT8_GRAPH=0 使图捕获回退上游。",
     },
     "HCU_LIGHTOP_FP8_AMAX_DIAG": {
         "env": "HCU_LIGHTOP_FP8_AMAX_DIAG", "default": "0",

@@ -47,8 +47,9 @@ immediately (so a silently misconfigured deployment is visible without waiting
 for shutdown) and a final `hit=... fallback=...` line is flushed at exit.
 
 Gate: on by default (`HCU_LIGHTOP_PER_TOKEN_FP8=1`). Set `=0` before startup
-for the upstream path. Compilation uses upstream quantization. Graph capture
-requires HCU_LIGHTOP_PER_TOKEN_FP8_GRAPH=1 because numerical parity is approximate.
+for the upstream path. Compilation uses upstream quantization. Eligible graph
+capture uses LightOp by default with approximate numerical parity. Set
+`HCU_LIGHTOP_PER_TOKEN_FP8_GRAPH=0` to use upstream quantization in capture.
 The diagnostic runs only on eligible calls outside capture.
 """
 
@@ -182,7 +183,7 @@ def _wrap(module, original):
     amax_floor = fp8_max * scale_floor
     diag = os.environ.get(_AMAX_DIAG_ENV, "") not in ("", "0")
 
-    graph_enabled = os.getenv(_GRAPH_ENV) == "1"
+    graph_enabled = os.getenv(_GRAPH_ENV, "1") == "1"
 
     @functools.wraps(original)
     def forward_cuda(self, x, scale=None, scale_ub=None, use_triton=False):

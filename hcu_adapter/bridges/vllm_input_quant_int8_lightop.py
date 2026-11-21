@@ -73,17 +73,16 @@ captures and inputs outside the LightOp contract.
 Known limits (validate in the service, do not treat as proven)
 --------------------------------------------------------------
 * The `ones(hidden)` smooth factor is cached by device, stream and hidden
-  width. Compilation and default graph capture use the native op. With
-  HCU_LIGHTOP_PER_TOKEN_INT8_GRAPH=1, capture can use a warmed stream factor
-  or allocate a graph-local factor without publishing it into the eager cache.
+  width. Compilation uses the native op. Eligible graph capture can use a
+  warmed stream factor or allocate a graph-local factor without publishing it
+  into the eager cache. Set HCU_LIGHTOP_PER_TOKEN_INT8_GRAPH=0 to use the native
+  op in capture.
 * Accelerator placement is an explicit gate (`_device_ok`): a CPU tensor falls
   back with reason `device` instead of reaching the HCU op and logging an
   exception fallback.
 
-Gate: opt-in, off by default (`HCU_LIGHTOP_PER_TOKEN_INT8=0`); set `=1` to
-enable. Numerics do not change, but this is a vendor kernel swap on the
-hottest quantization in the model, so it stays behind a switch until the
-service A/B (kernel name switch + counters + HumanEval) has been run.
+Gate: on by default (`HCU_LIGHTOP_PER_TOKEN_INT8=1`). Set `=0` before
+startup to use upstream quantization.
 """
 
 from __future__ import annotations
@@ -251,7 +250,7 @@ def _ineligible(x, scale, azp, symmetric):
 def _wrap(original):
     """Build the replacement around the captured upstream function."""
 
-    graph_enabled = os.getenv(_GRAPH_ENV) == "1"
+    graph_enabled = os.getenv(_GRAPH_ENV, "1") == "1"
 
     @functools.wraps(original)
     def scaled_int8_quant(input, scale=None, azp=None, symmetric=True):
