@@ -105,7 +105,7 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "Core D576 sparse FlashMLA with DTK vendor ABI and attention sinks",
         "backends": {
-            "native": {"status": "candidate", "note": "Explicit FLASHMLA_SPARSE; native metadata/PCP/cache; DCP excluded; whole-model qualification pending"},
+            "native": {"status": "candidate", "note": "Explicit FLASHMLA_SPARSE; native metadata/PCP/cache; eager HY4 PCP bounds Q/output workspace locally while keeping global KV gather capacity; DCP excluded; whole-model qualification pending"},
         },
     },
     "vllm_flashmla_decode": {

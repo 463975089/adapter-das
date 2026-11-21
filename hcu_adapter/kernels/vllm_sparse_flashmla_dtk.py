@@ -10,6 +10,8 @@ Remove these bindings when Core exposes an operator-provider seam.
 """
 from __future__ import annotations
 
+from copy import copy
+
 from hcu_adapter.infra.native_namespace import bind_native
 
 
@@ -36,6 +38,48 @@ def make_index_group_builder(logical_topk_indices):
     return SparseMLAIndexGroupBuilder(logical_topk_indices, max_decode_rows=rows)
 
 
+class _QueryWorkspaceConfig:
+    """Constructor-local query capacity; all other config reads stay native."""
+
+    def __init__(self, original, rows):
+        self.original = original
+        self.scheduler_config = copy(original.scheduler_config)
+        self.scheduler_config.max_num_batched_tokens = rows
+
+    def __getattr__(self, name):
+        return getattr(self.original, name)
+
+
+def bind_query_workspace_constructor(constructor, query_rows):
+    """Bound native Q/output reservations without shrinking global KV gathers."""
+    anchors = ('get_current_vllm_config', 'get_prefill_workspace_size')
+    if any(name not in constructor.__code__.co_names for name in anchors):
+        raise RuntimeError('HY4 query workspace constructor anchor changed')
+    get_config = constructor.__globals__[anchors[0]]
+    get_kv_rows = constructor.__globals__[anchors[1]]
+
+    def query_config():
+        cfg = get_config()
+        rows = query_rows(cfg)
+        if rows is None:
+            return cfg
+        if type(rows) is not int or not 0 < rows <= cfg.scheduler_config.max_num_batched_tokens:
+            raise ValueError('Invalid HY4 query workspace row capacity')
+        return _QueryWorkspaceConfig(cfg, rows)
+
+    def kv_workspace_size(cfg):
+        original = cfg.original if isinstance(cfg, _QueryWorkspaceConfig) else cfg
+        return get_kv_rows(original)
+
+    return bind_native(constructor, {
+        anchors[0]: query_config, anchors[1]: kv_workspace_size})
+
+
+def _pcp_query_rows(cfg):
+    from hcu_adapter.features.hy4.pcp_profile import matches, local_profile_tokens
+    return local_profile_tokens(cfg) if matches(cfg) else None
+
+
 def build_backend(vendor):
     from vllm.model_executor.layers.attention.sparse_mla_attention import SparseMLACommonImpl
     from vllm.models.hy_v4.nvidia.flashmla_sparse import (
@@ -43,14 +87,18 @@ def build_backend(vendor):
         HYV4FlashMLASparseImpl as NativeImpl,
     )
     from vllm.v1.attention.backends.mla.flashmla_sparse import (
-        FlashMLASparseMetadataBuilder as NativeBuilder,
+        FlashMLASparseImpl, FlashMLASparseMetadataBuilder as NativeBuilder,
     )
 
     class HcuIndexCapacityImpl(SparseMLACommonImpl):
         __init__ = bind_native(SparseMLACommonImpl.__init__,
             {'SparseMLAIndexGroupBuilder': make_index_group_builder})
 
-    class HcuSparseFlashMLAImpl(NativeImpl, HcuIndexCapacityImpl):
+    class HcuQueryCapacityImpl(FlashMLASparseImpl):
+        __init__ = bind_query_workspace_constructor(
+            FlashMLASparseImpl.__init__, _pcp_query_rows)
+
+    class HcuSparseFlashMLAImpl(NativeImpl, HcuQueryCapacityImpl, HcuIndexCapacityImpl):
         # DTK reports the key-only LSE with sinks. Do not advertise the native
         # CUDA DCP merge until its single-sink normalization is restored.
         supports_dcp = False
