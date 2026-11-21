@@ -5,13 +5,15 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from hcu_adapter import ct_w4a8_registration as ct, dsv41_activation as channel
-from hcu_adapter import hcu_config, registry
-from hcu_adapter.extensions import (
+from hcu_adapter.features.ct_w4a8 import ct_w4a8_registration as ct
+from hcu_adapter.features.dsv41 import dsv41_activation as channel
+from hcu_adapter.infra import registry
+from hcu_adapter.infra import hcu_config
+from hcu_adapter.infra.extensions import (
     ExtensionCommitError, ExtensionContext, ExtensionStatus,
     RequiredExtensionError, activate_extensions,
 )
-from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
+from hcu_adapter.infra.runtime_lifecycle import ProcessLocalLifecycle
 
 
 @pytest.fixture(params=[ct, channel], ids=['ct', 'channel'])

@@ -1,13 +1,12 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Sparse FlashMLA forward (torch emulation) for the DSA backends.
+"""Sparse FlashMLA forward for the DSA backends.
 
 `dsa_backend._forward_flashmla_sparse` (decode/extend sparse attention over
 the indexer's top-k selectors) and the DSV4 backend both import
-``flash_mla_sparse_fwd`` from this package. On HCU there is no sparse
-FlashMLA wheel — same story as the dense emu above — so this supplies the
-API surface:
+``flash_mla_sparse_fwd`` from this package. The default Torch implementation supplies the API surface;
+ops.sglang_mla_sparse=dtk selects the supported native SGLang DTK path:
 
 Contract (flashmla v3 sparse):
 - q:        (s_q, H, d_qk) bf16 — one query row per token
@@ -35,7 +34,7 @@ def _chunk_mb():
     global _CHUNK_MB
     if _CHUNK_MB is None:
         try:
-            from hcu_adapter import hcu_env
+            from hcu_adapter.infra import hcu_env
 
             _CHUNK_MB = max(1, int(hcu_env.resolve("HCU_FLASHMLA_SPARSE_CHUNK_MB")[0]))
         except Exception:
@@ -55,6 +54,16 @@ def flash_mla_sparse_fwd(
 ):
     if q.dim() != 3:
         raise ValueError(f"flash_mla_sparse (HCU emu): q must be (s_q, H, d), got {q.shape}")
+    from hcu_adapter.infra import hcu_config
+
+    if hcu_config.load()["ops"].get("sglang_mla_sparse", "emu") == "dtk":
+        from hcu_adapter.kernels.sglang_flashmla_dtk import (
+            sparse_fwd,
+            supports_sparse,
+        )
+
+        if supports_sparse(q, kv, indices, d_v, attn_sink, topk_length):
+            return sparse_fwd(q, kv, indices, sm_scale, d_v, topk_length)
     s_q, heads, d_qk = q.shape
     kv_flat = kv.reshape(-1, kv.shape[-2], kv.shape[-1])  # [T_kv, h_kv, d_qk]
     if kv_flat.shape[1] != 1:

@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from hcu_adapter import sglang_spawn_device as subject
+from hcu_adapter.bridges import sglang_spawn_device as subject
 
 
 def entry(*, selected=None, failure=False):

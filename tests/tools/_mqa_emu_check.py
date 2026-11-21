@@ -16,7 +16,7 @@ os.environ.setdefault("HCU_SLIMQUANT", "0")
 
 import torch
 
-from hcu_adapter import mqa_logits_emu as emu
+from hcu_adapter.features.dsa import mqa_logits_emu as emu
 
 torch.manual_seed(0)
 dev = "cpu"

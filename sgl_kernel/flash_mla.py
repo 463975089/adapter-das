@@ -19,6 +19,8 @@ module supplies the same API surface:
   part in the qk dot-product only. The per-request query window is
   right-aligned (last s_q tokens), matching sglang's extend contract.
 
+V32_NO_ROPE sparse decode uses the SGLang-only packed E4M3 implementation.
+
 bf16 kvcache only for the dense paged form; fp8 kvcache (the descale_*
 kwargs) raises there.
 
@@ -86,7 +88,7 @@ def hcu_create_flashmla_kv_indices(
     )
 
 
-from hcu_adapter import registry as _registry
+from hcu_adapter.infra import registry as _registry
 
 _registry.register(
     "flashmla_kv_indices", "SGLang Triton page-table builder",
@@ -324,8 +326,17 @@ def flash_mla_with_kvcache(
     extra_k_cache=None,
     extra_indices_in_kvcache=None,
     extra_topk_length=None,
+    kv_format=None,
     **_ignored,
 ):
+    if indices is not None and kv_format == "V32_NO_ROPE":
+        if any(x is not None for x in (descale_q, descale_k, attn_sink, extra_k_cache)):
+            raise NotImplementedError("V32_NO_ROPE sparse MLA does not support external scales, sinks or extra pools")
+        from sgl_kernel.flash_mla_fp8_emu import sparse_decode
+
+        return sparse_decode(
+            q, k_cache, indices, head_dim_v, softmax_scale, topk_length, kv_format
+        )
     if block_table is None:
         # DSV4 sparse core-attention: token-level indices, fp8 V4-layout
         # pools (deepseek_v4_backend._forward_attention). tile scheduler /

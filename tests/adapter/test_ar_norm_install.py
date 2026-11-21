@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from hcu_adapter import ar_norm_aiter
+from hcu_adapter.features.aiter import ar_norm_aiter
 
 
 @pytest.mark.parametrize("legacy", [False, True])

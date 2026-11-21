@@ -4,7 +4,7 @@
 
 **Goal:** Add a versioned optional-extension host to the adapter's official vLLM 0.32 runtime callback.
 
-**Architecture:** A dependency-light `hcu_adapter.extensions` module owns discovery, validation, ordering, activation, and reports. `bridges/vllm.py` invokes it only after baseline runtime checks and stores reports in process-local state.
+**Architecture:** A dependency-light `hcu_adapter.infra.extensions` module owns discovery, validation, ordering, activation, and reports. `bridges/vllm.py` invokes it only after baseline runtime checks and stores reports in process-local state.
 
 **Tech Stack:** Python 3.11+, `importlib.metadata` entry points, pytest, setuptools.
 
@@ -13,9 +13,9 @@
 ## Global Constraints
 
 - Adapter remains the sole owner of `vllm.platform_plugins` and `vllm.general_plugins`.
-- Extension discovery group is exactly `hcu_adapter.extensions`; API version is exactly `1`.
-- Importing `hcu_adapter.extensions` must not import vLLM, Torch, or any optimization package.
-- Do not modify `sitecustomize.py`, `hcu_adapter/bootstrap.py`, or `hcu_adapter/bridges/sglang.py`.
+- Extension discovery group is exactly `hcu_adapter.infra.extensions`; API version is exactly `1`.
+- Importing `hcu_adapter.infra.extensions` must not import vLLM, Torch, or any optimization package.
+- Do not modify `sitecustomize.py`, `hcu_adapter/infra/bootstrap.py`, or `hcu_adapter/bridges/sglang.py`.
 - Optional failures are reports; explicitly required extension/capability failures stop startup.
 
 ## Review Focus
@@ -31,7 +31,7 @@
 ### Task 1: Extension API v1
 
 **Files:**
-- Create: `hcu_adapter/extensions.py`
+- Create: `hcu_adapter/infra/extensions.py`
 - Create: `tests/adapter/test_vllm_extensions.py`
 
 **Interfaces:**

@@ -7,7 +7,8 @@ from types import ModuleType
 import pytest
 import torch
 
-from hcu_adapter import fa_vendor, registry
+from hcu_adapter.infra import registry
+from hcu_adapter.bridges import sglang_fa_vendor as fa_vendor
 from sgl_kernel import flash_attn
 
 
@@ -29,6 +30,9 @@ def vendor_router(monkeypatch):
     monkeypatch.setenv('HCU_DISABLE_OPS', '')
     monkeypatch.setattr(registry, '_RECORDS', {})
     monkeypatch.setattr(registry, '_BOUND', {})
+    # This fixture tests vendor call arguments with a fake provider, not a
+    # SGLang startup. The E5M2 guard has its own tests in test_flash_attn.py.
+    monkeypatch.setattr(fa_vendor, '_install_e5m2_backend_guard', lambda: None)
     for name in ('flash_attn_varlen_func', 'flash_attn_with_kvcache'):
         monkeypatch.setattr(flash_attn, name, getattr(flash_attn, name))
     fa_vendor.install()

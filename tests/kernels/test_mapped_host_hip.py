@@ -1,6 +1,6 @@
 import pytest
 import torch
-from hcu_adapter.mapped_host_dtk import _device_ptr_for_host_tensor, _wrap_mapped_host_as_cuda_tensor
+from hcu_adapter.infra.mapped_host_dtk import _device_ptr_for_host_tensor, _wrap_mapped_host_as_cuda_tensor
 
 
 @pytest.mark.skipif(not torch.cuda.is_available() or torch.version.hip is None, reason="HIP required")

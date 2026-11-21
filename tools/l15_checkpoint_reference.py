@@ -168,7 +168,7 @@ def compare(logprobs, output_ids, observed):
 def run(args):
     if args.out.resolve() == args.smoke_report.resolve():
         raise ValueError("reference output must preserve the original smoke report")
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     if hcu_env.resolve("HCU_ADAPTER_HOST")[0] != "none":
         raise ValueError("start a fresh process with HCU_ADAPTER_HOST=none and GPUs hidden")

@@ -16,7 +16,8 @@ import types
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from hcu_adapter import platform_seam, registry  # noqa: E402
+from hcu_adapter.infra import platform_seam
+from hcu_adapter.infra import registry  # noqa: E402
 
 _NAME = "sglang.srt.layers.attention.dsa.utils"
 

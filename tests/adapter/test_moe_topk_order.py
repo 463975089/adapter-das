@@ -114,7 +114,7 @@ def test_compiled_and_cached_original_aliases_survive_warm_install():
 
 
 def test_install_disabled_and_non_hip_do_not_import_host(monkeypatch):
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     imported = []
     import builtins

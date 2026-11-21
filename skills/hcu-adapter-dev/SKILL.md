@@ -24,6 +24,9 @@ private one-use device hint; preserve its yielded logical device, visibility,
 existing callable aliases and parent environment on exceptions. Auxiliary
 non-spawn helpers must not consume the hint as a GPU assignment. See
 `docs/sglang-spawn-device.md` and `tests/adapter/test_sglang_spawn_device.py`.
+The exact CPython resource-tracker helper must return before hardware detection;
+it inherits the host environment but only serves a standard-library pipe. Match
+the original interpreter command, without skipping normal spawn/model commands.
 
 `dist_bc` 已以保留函数对象和私有 numpy
 facade 的运行时桥替代磁盘补丁；不可重新引入 common.py 写回。
@@ -241,6 +244,10 @@ vLLM worker/executor/env-cache 覆盖查询归 `bridges.vllm_model_load`，薄 W
 导入，禁止共享层反向导入宿主桥作兼容壳。验证必须含双宿主 import-blocking
 下的真实共享 dispatch，而不只检查 import 成功；详见
 `docs/frameworks/vllm032-post-model-load.md`。
+
+迁移配置模块到 `infra/` 时，配置发现仍须锚定 `sitecustomize.py` 旁的部署根，
+不能随模块目录移动。回归从其他工作目录启动，分别用源码与实际构建的 wheel
+验证根配置、cwd/显式路径优先级及坏配置拒绝，并覆盖双宿主策略解析。
 
 vLLM public registry/extension health 修改先读 `docs/vllm-flash-registry.md`。
 共享 lifecycle 机制放 `runtime_lifecycle.py`，不能长在宿主薄桥内；改动须

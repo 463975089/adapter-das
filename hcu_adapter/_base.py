@@ -134,7 +134,7 @@ class _OverlayLoader(importlib.abc.Loader):
             except Exception:
                 pass
         if self._guards:
-            from hcu_adapter import kill_switch as _ks
+            from hcu_adapter.infra import kill_switch as _ks
 
             for attr, op in self._guards.items():
                 fn = getattr(module, attr, None)

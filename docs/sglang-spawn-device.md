@@ -20,6 +20,14 @@ AR/norm policy and the official source files are unchanged. This does not remove
 all auxiliary GPU contexts; it prevents schedulers from initializing GPU0 before
 their assigned GPU. Launch paths outside maybe_reindex_device_id are not covered.
 
+The standard-library multiprocessing resource tracker also inherits the host
+environment. It runs only the tracking pipe protocol and must return from adapter
+bootstrap before hardware detection or native GPU imports. Bootstrap recognizes
+the exact CPython `-c` helper entry in `sys.orig_argv`; normal spawn workers and
+commands with additional code retain the existing host initialization. This rule
+is shared by SGLang, vLLM and DeepInfer. It removes a GPU0 context per service,
+but does not suppress the DP controller or detokenizer's adapter initialization.
+
 Regression: tests/adapter/test_sglang_spawn_device.py and test_bootstrap.py.
 Runtime validation: TP8 Qwen3.8-27B, NEXTN 3/1/4, FA3, page 64, E5M2 KV,
 real node1 image/ViT, unprofiled end-to-end requests and separate HIP Event spans.

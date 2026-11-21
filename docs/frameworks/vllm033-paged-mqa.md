@@ -176,3 +176,21 @@ nor a matched-control accuracy gain is established. Default paged-MQA remains
 The inspected mHC/FlashMLA ABI extensions do not certify arbitrary newer Core
 or binary combinations. No additional native capability, environment workaround,
 MiniMax ABI whitelist relaxation or global DeepGEMM rebinding is introduced.
+
+
+### Current-main integration gate (2026-11-21)
+
+The MR also integrates upstream main `af8b0ea8ca383dd929b15255e22e69e860bab173`,
+including its package-layout migration. The new seam/tests use
+`hcu_adapter.infra` imports; upstream's current health/all-reduce fixtures are
+preserved rather than reverting them to older fixtures. The same focused Linux
+CPU lane plus current built-in health contracts reports **221 passed,33 skipped**;
+L0 on a Git-index-byte-verified LF snapshot is **GREEN (0 warnings)**.
+An initial Windows-converted archive failed shell-LF checks; it is retained as
+invalid packaging evidence, not suppressed or counted as passing. Archive export
+must disable checkout newline conversion and match Git blobs before qualification.
+
+The 161/164 end-to-end result above belongs to the earlier immutable accuracy
+overlay. These new main-integration CPU/structural checks do not transfer that
+result to the final merged adapter or establish HCU model/image qualification;
+those validations remain pending. No running accuracy service was changed.

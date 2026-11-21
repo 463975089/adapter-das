@@ -14,9 +14,10 @@ from pathlib import Path
 import sys
 from threading import RLock
 
-from hcu_adapter import allreduce as policy_api, allreduce_aiter, registry
-from hcu_adapter.allreduce import AllReduceCompatibilityError, State, requested_policy
-from hcu_adapter.extensions import ExtensionCommitError
+from hcu_adapter.infra import registry
+from hcu_adapter.features.aiter import allreduce as policy_api, allreduce_aiter
+from hcu_adapter.features.aiter.allreduce import AllReduceCompatibilityError, State, requested_policy
+from hcu_adapter.infra.extensions import ExtensionCommitError
 
 FACTOR = "VLLM_HCU_ADAPTER_AITER_AR_POLICY"
 WRAPPER = "vllm.distributed.device_communicators.aiter_custom_all_reduce"
@@ -111,8 +112,8 @@ def _provider_identity():
     )
     sources = (Path(__file__), Path(__file__).with_name("vllm.py"),
                Path(policy_api.__file__), Path(allreduce_aiter.__file__),
-               Path(import_module("hcu_adapter.hcu_env").__file__),
-               Path(import_module("hcu_adapter.kill_switch").__file__))
+               Path(import_module("hcu_adapter.infra.hcu_env").__file__),
+               Path(import_module("hcu_adapter.infra.kill_switch").__file__))
     identity["adapter"] = {str(path.relative_to(Path(__file__).parents[1])):
                            allreduce_aiter.digest(path) for path in sources}
     # These official files affect wrapper/dispatch, including eager Gemma.
@@ -271,7 +272,8 @@ def prepare_runtime():
         _check_owner_state()
         if _installed is not None:
             return _installed[2]
-    from hcu_adapter import hcu_env, kill_switch
+    from hcu_adapter.infra import hcu_env
+    from hcu_adapter.infra import kill_switch
     _, source = hcu_env.resolve("HCU_AITER_AR", host="vllm")
     if source in ("explicit", "config") or kill_switch.op_disabled("aiter_ar"):
         return install()

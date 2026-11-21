@@ -14,7 +14,7 @@ import pytest
 
 from hcu_adapter.bridges import vllm as host
 from hcu_adapter.bridges import vllm_mhc as module
-from hcu_adapter import registry
+from hcu_adapter.infra import registry
 
 
 @pytest.fixture

@@ -43,7 +43,7 @@ _SELECTABLE = ("production", "validated", "candidate")
 # ----------------------------------------------------------------- gates
 
 def state_gate(op, backend):
-    from hcu_adapter import hcu_config
+    from hcu_adapter.infra import hcu_config
 
     meta = hcu_config.BACKEND_CATALOG[op]["backends"].get(backend)
     if meta is None:
@@ -133,7 +133,7 @@ def torch_gpu_ok():
 def pick_tier(op, dry=False, runner=None, env_extra=None):
     """Returns the decision dict for one op. `dry=True` consults the
     ladder/catalog only (no subprocesses) -- gates/mock mode."""
-    from hcu_adapter import hcu_config
+    from hcu_adapter.infra import hcu_config
 
     catspec = hcu_config.BACKEND_CATALOG[op]
     decision = {
@@ -193,7 +193,7 @@ def pick_tier(op, dry=False, runner=None, env_extra=None):
 
 
 def _default_backend(op):
-    from hcu_adapter import hcu_config
+    from hcu_adapter.infra import hcu_config
 
     spec = hcu_config.BACKEND_CATALOG[op]
     for b, meta in spec["backends"].items():
@@ -207,7 +207,7 @@ def _default_backend(op):
 def write_yaml(picks, path):
     """Minimal config: only non-default picks. Raises if the produced doc
     fails hcu_config._validate (closed loop before handoff)."""
-    from hcu_adapter import hcu_config
+    from hcu_adapter.infra import hcu_config
 
     doc = {"version": 1}
     ops = {}

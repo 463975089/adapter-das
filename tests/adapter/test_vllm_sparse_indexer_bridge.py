@@ -18,7 +18,7 @@ import pytest
 
 from hcu_adapter.bridges import vllm as host
 from hcu_adapter.bridges import vllm_sparse_indexer as module
-from hcu_adapter import registry
+from hcu_adapter.infra import registry
 
 
 def test_tools_import_without_arguments_frameworks_or_runtime_side_effects():

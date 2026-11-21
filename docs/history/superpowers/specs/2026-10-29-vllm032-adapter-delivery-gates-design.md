@@ -14,7 +14,7 @@ platform ownership back into `vllm-plugin-das` or `sitecustomize.py`.
 - Preserve Adapter ownership of `vllm.platform_plugins` and
   `vllm.general_plugins`.
 - Preserve Plugin ownership of optional optimizations through the
-  `hcu_adapter.extensions` entry-point group.
+  `hcu_adapter.infra.extensions` entry-point group.
 - Add one operator-facing vLLM 0.32 deployment and responsibility guide.
 - Accept the maintained vLLM 0.32 patch line (`>=0.32.0,<0.33.0`) while
   retaining the existing lazy platform/interface capability gates.
@@ -37,7 +37,7 @@ platform ownership back into `vllm-plugin-das` or `sitecustomize.py`.
 
 - `sitecustomize.py` remains the three-line bootstrap entry.
 - Adapter remains the only owner of the two official vLLM plugin groups.
-- Optional DAS optimizations enter only through `hcu_adapter.extensions` API v1.
+- Optional DAS optimizations enter only through `hcu_adapter.infra.extensions` API v1.
 - Official vLLM behavior is reused when available; this change adds no duplicate
   implementation.
 - Tests under `tests/adapter/` remain pytest-collectable and side-effect free.
@@ -83,7 +83,7 @@ change and make review and rollback harder.
 official vLLM 0.32
   -> vllm.platform_plugins / vllm.general_plugins
   -> adapter-das (platform, release/hardware/runtime guards)
-  -> hcu_adapter.extensions API v1
+  -> hcu_adapter.infra.extensions API v1
   -> optional vllm-plugin-das optimizations
 ```
 

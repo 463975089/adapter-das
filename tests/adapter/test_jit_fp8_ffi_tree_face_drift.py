@@ -15,7 +15,7 @@ registered.
 import sys
 import types
 
-import hcu_adapter.jit_fp8_ffi as jff
+import hcu_adapter.features.jit.jit_fp8_ffi as jff
 
 
 class _Registry:

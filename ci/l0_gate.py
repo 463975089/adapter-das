@@ -24,7 +24,7 @@ the invariants that historically broke us (see docs/ci.md):
        module body (see check_ops_import_depth)
 
   SOFT (warnings; --strict turns them into failures for local dev)
-    - registered HCU_* vars read via bare os.environ outside hcu_env.py
+    - registered HCU_* vars read via bare os.environ outside infra/hcu_env.py
       (env 三原则: behavioral reads must go through the registry)
     - .py files with CRLF endings
 
@@ -48,13 +48,28 @@ SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", "build", "d
 # helpers
 # ---------------------------------------------------------------------------
 
+_FILE_CACHE = {}
+
+
+def _walk_files(exts):
+    """One os.walk per distinct extension set (cached): 10 iter_files call
+    sites used to re-walk the whole tree (120s+ timeout on NFS mounts in
+    the L1 container -- single-digit seconds locally, ~4-10x on network
+    filesystems)."""
+    if exts not in _FILE_CACHE:
+        out = []
+        for dirpath, dirnames, filenames in os.walk(ROOT):
+            dirnames[:] = [d for d in dirnames
+                           if d not in SKIP_DIRS and not d.startswith("tmp")]
+            for fn in filenames:
+                if fn.endswith(exts):
+                    out.append(os.path.join(dirpath, fn))
+        _FILE_CACHE[exts] = tuple(out)
+    return _FILE_CACHE[exts]
+
+
 def iter_files(*exts):
-    for dirpath, dirnames, filenames in os.walk(ROOT):
-        dirnames[:] = [d for d in dirnames
-                       if d not in SKIP_DIRS and not d.startswith("tmp")]
-        for fn in filenames:
-            if fn.endswith(exts):
-                yield os.path.join(dirpath, fn)
+    yield from _walk_files(tuple(sorted(exts)))
 
 
 def rel(p):
@@ -128,13 +143,13 @@ def check_secrets(r):
 
 
 def registry_names():
-    src = open(os.path.join(ROOT, "hcu_adapter/hcu_env.py"), encoding="utf-8").read()
+    src = open(os.path.join(ROOT, "hcu_adapter/infra/hcu_env.py"), encoding="utf-8").read()
     # registry keys look like    "HCU_XXX": {   at dict depth 1
     return set(re.findall(r'^\s{4}"(HCU_[A-Z0-9_]+)":\s*\{', src, re.M))
 
 
 def catalog_var_refs():
-    src = open(os.path.join(ROOT, "hcu_adapter/hcu_config.py"), encoding="utf-8").read()
+    src = open(os.path.join(ROOT, "hcu_adapter/infra/hcu_config.py"), encoding="utf-8").read()
     refs = set(re.findall(r'"var":\s*"(HCU_[A-Z0-9_]+)"', src))
     for m in re.findall(r'"vars":\s*\{(.*?)\}', src, re.S):
         refs |= set(re.findall(r'"(HCU_[A-Z0-9_]+)"', m))
@@ -157,7 +172,7 @@ def check_catalog_refs(r, reg):
 
 def routing_glue_files():
     """Return the thin loader, dispatcher, and framework bridge sources."""
-    files = ["sitecustomize.py", "hcu_adapter/bootstrap.py"]
+    files = ["sitecustomize.py", "hcu_adapter/infra/bootstrap.py"]
     bridge_dir = os.path.join(ROOT, "hcu_adapter", "bridges")
     for base, _, names in os.walk(bridge_dir):
         files.extend(rel(os.path.join(base, name)) for name in sorted(names) if name.endswith(".py"))
@@ -202,7 +217,7 @@ def check_routing_glue_imports(r):
 
 
 def check_example_yaml(r):
-    cat = open(os.path.join(ROOT, "hcu_adapter/hcu_config.py"), encoding="utf-8").read()
+    cat = open(os.path.join(ROOT, "hcu_adapter/infra/hcu_config.py"), encoding="utf-8").read()
     ops = set(re.findall(r'^\s{4}"([a-z0-9_]+)":\s*\{', cat, re.M))
     ex = open(os.path.join(ROOT, "hcu_adapter.example.yaml"), encoding="utf-8").read()
     in_ops = False
@@ -336,7 +351,7 @@ def check_ops_import_depth(r):
 def check_bare_environ(r, reg):
     """SOFT: registered vars read via os.environ outside the registry."""
     allowed_files = {
-        "hcu_adapter/hcu_env.py",  # the registry itself
+        "hcu_adapter/infra/hcu_env.py",  # the registry itself
         "ci/l0_gate.py",
     }
     pat = re.compile(r"os\.environ(?:\.get)?\(?[\"'](HCU_[A-Z0-9_]+)")
@@ -396,7 +411,7 @@ def check_glue_has_no_numerics(r):
 def _parse_allowlist():
     """Text-patch needles allowed, parsed from registry.py (no import)."""
     src = open(os.path.join(
-        ROOT, "hcu_adapter/registry.py"), encoding="utf-8").read()
+        ROOT, "hcu_adapter/infra/registry.py"), encoding="utf-8").read()
     body = re.search(
         r"TEXT_PATCH_ALLOWLIST\s*=\s*\{(.*?)\n\}", src, re.S)
     if not body:
@@ -420,7 +435,7 @@ def check_text_patch_allowlist(r):
     needles, ok = _parse_allowlist()
     if not ok:
         r.fail("text-patch", "cannot parse TEXT_PATCH_ALLOWLIST from "
-               "hcu_adapter/registry.py")
+               "hcu_adapter/infra/registry.py")
         return
     allowed_needles = {n for _, n in needles}
     sources = []
@@ -452,7 +467,7 @@ def check_text_patch_allowlist(r):
 
 def check_registry_ops_in_catalog(r):
     """HARD: every registry.register(op=...) names a BACKEND_CATALOG op."""
-    from hcu_adapter.hcu_config import BACKEND_CATALOG
+    from hcu_adapter.infra.hcu_config import BACKEND_CATALOG
     ops = set(BACKEND_CATALOG)
     for p in iter_files(".py"):
         rp = rel(p)
@@ -479,7 +494,18 @@ def check_registry_ops_in_catalog(r):
 # governance §3b: operator implementations, actual dispatch facades and mechanisms.
 _KERNEL_TIERS = {"emu", "triton", "cpp", "fork", "ref", "aiter", "lightop", "boltops", "dtk", "rccl"}
 _KERNEL_FACADES = {"gemm", "gather", "norm", "index_ops", "fused_transform"}
-_KERNEL_MECHANISMS = {"runtime_config", "lightop_usage"}
+_KERNEL_MECHANISMS = {"runtime_config", "lightop_usage", "pcp_dspark",
+                   # W3-2: byte-preserving weight permutations --
+                   # layout mechanism, no tier semantics (no fallback
+                   # ladder exists; torch strided copies at HBM bw)
+                   "mla_layout",
+                   # W3-3: same mechanism class -- load-time ABI layouts and
+                   # device-side metadata/state plumbing (graph-capture-safe,
+                   # no numeric emulation semantics, no fallback ladder)
+                   "weight_scale",
+                   # W3-5: load-time engram norm-weight fusion (one-shot
+                   # init math, same class as weight_scale)
+                   "engram_init"}
 
 
 def check_impl_naming(r):
@@ -549,6 +575,57 @@ def check_impl_naming(r):
                    if proc.stderr.strip() else "tier-matrix stale")
     except Exception as exc:  # generator crash is still a gate failure
         r.fail("impl-naming", f"tier-matrix check crashed: {exc}")
+
+
+def check_layout_ownership(r):
+    """HARD: directory ownership rules (governance "宿主绑定归属判定" 2026-11-18).
+
+    a) New computation modules must live under kernels/ or features/<族>/
+       (never flat at hcu_adapter top level).  The 13 pre-rule top-level
+       Triton/TileLang modules are grandfathered in LEGACY_LAYOUT_ALLOWLIST;
+       an entry leaves the list only together with its family's migration.
+    b) Family integrity: once features/<family>/ exists, no top-level file
+       may still carry that family's prefix (family = migration unit; no
+       split families across old/new homes).
+    """
+    # [a] grandfathered computation modules at top level (exhaustive over
+    # the triton/tilelang inventory at rule date; shrink as families move)
+    LEGACY_LAYOUT_ALLOWLIST = set()  # fully converged 2026-11-18 (E2)
+    tops = []
+    for f in iter_files(".py"):
+        p = rel(f)
+        if (p.startswith("hcu_adapter/") and p.count("/") == 1
+                and not p.endswith("__init__.py") and not p.endswith("_base.py")):
+            tops.append(p[len("hcu_adapter/"):-3])
+    tops.sort()
+    for m in tops:
+        if m in LEGACY_LAYOUT_ALLOWLIST:
+            continue
+        src = open(os.path.join(ROOT, "hcu_adapter", m + ".py"),
+                   encoding="utf-8").read()
+        if re.search(r"@triton\.jit|@tilelang\.jit|import triton|import tilelang", src):
+            r.fail("layout", f"hcu_adapter/{m}.py is a new computation module at "
+                   "top level; kernels/ or features/<family>/ only "
+                   "(governance 算子三居地图)")
+    # [b] family integrity: features/<fam>/ exists -> zero top-level siblings
+    FAMILY_PREFIXES = {
+        "dsv4": ("dsv4",), "dsv41": ("dsv41", "v41"),
+        "ct_w4a8": ("ct_w4a8",), "deep_gemm": ("deep_gemm", "deepgemm"),
+        "hadamard": ("hadamard",), "gdn": ("gdn", "conv1d", "kda", "mamba"),
+        "dsa": ("dsa",), "slimquant": ("slimquant",), "mqa_logits": ("mqa",),
+        "allreduce": ("allreduce", "ar_norm"), "aiter": ("aiter",),
+    }
+    feat_root = os.path.join(ROOT, "hcu_adapter", "features")
+    if os.path.isdir(feat_root):
+        for fam in sorted(os.listdir(feat_root)):
+            pref = FAMILY_PREFIXES.get(fam)
+            if not pref:
+                continue
+            stray = [m for m in tops
+                     if any(m == p or m.startswith(p + "_") for p in pref)]
+            if stray:
+                r.fail("layout", f"features/{fam}/ exists but top-level "
+                       f"members remain: {', '.join(stray)}")
 
 
 def check_dual_dist_packaging(r):
@@ -680,6 +757,7 @@ def main():
     check_text_patch_allowlist(r)
     check_registry_ops_in_catalog(r)
     check_impl_naming(r)
+    check_layout_ownership(r)
     check_dual_dist_packaging(r)
 
     print(f"l0 gate: scanned {n_py} py / {n_sh} sh / {n_sec} text files")

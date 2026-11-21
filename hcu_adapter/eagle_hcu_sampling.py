@@ -5,7 +5,7 @@
 
 import inspect
 
-from . import registry
+from .infra import registry
 
 _installed = False
 

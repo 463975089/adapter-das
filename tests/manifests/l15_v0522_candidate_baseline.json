@@ -3874,8 +3874,8 @@
   ],
   "upstream": {
     "binding_files": {
-      "python/pyproject.toml": "6bf7a1f03c235ed0404d91067987995e6f1e06ea8182c206853a7f4cdb830f3c",
-      "python/sglang/version.py": "b10f7d9ea276972352b1e9de0eb0bbb47d8ebe64c29469e15ea016a12019bb22"
+      "python/pyproject.toml": "a0edfad905b6037c80f84b1e7d8f72dfc9a4de103ae8702549a9dfd1f4a14b58",
+      "python/sglang/version.py": "65e0e4a34288679a06919801a6e7ea68c752a1b6a7728e50b0a279babec2ff07"
     },
     "project": "sglang",
     "tree_markers": [

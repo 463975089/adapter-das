@@ -16,7 +16,7 @@ import types
 import pytest
 import torch
 
-from hcu_adapter import spec_h2d_pin as bridge
+from hcu_adapter.bridges import sglang_spec_h2d_pin as bridge
 
 
 _SOURCE = """def eagle_prepare_for_decode(batch):
@@ -152,7 +152,8 @@ def test_invalid_stock_allocation_is_not_hidden(caplog):
 
 
 def test_public_install_and_disable(source, monkeypatch, tmp_path):
-    from hcu_adapter import hcu_env, registry
+    from hcu_adapter.infra import hcu_env
+    from hcu_adapter.infra import registry
 
     ns, batch, _, results = _case(source)
     module = types.ModuleType("sglang.srt.speculative.eagle_utils")
@@ -181,7 +182,7 @@ def test_public_install_and_disable(source, monkeypatch, tmp_path):
 
 
 def test_cuda_install_does_not_import_community(monkeypatch):
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     monkeypatch.setattr(hcu_env, "enabled", lambda name: True)
     monkeypatch.setitem(sys.modules, "torch",
@@ -205,7 +206,7 @@ def test_spawned_interpreter_installs_its_own_binding(source):
     # Same child-startup economics as the wqkv/fp4 spawn tests: the
     # auto-installed host bridge adds a ~25s sglang import the child never
     # uses, and under load it pushed past the old 40s queue budget.
-    from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
+    from hcu_adapter.infra.bootstrap import HOST_ENV  # canonical env name
     saved_host = os.environ.get(HOST_ENV)
     os.environ[HOST_ENV] = "none"
     context = multiprocessing.get_context("spawn")
@@ -227,3 +228,52 @@ def test_spawned_interpreter_installs_its_own_binding(source):
         queue.close()
 
 
+
+
+def test_idle_verify_optional_decode_layout_preserves_objects():
+    from dataclasses import dataclass, fields
+    from hcu_adapter.bridges.sglang_spec_kv import _install_idle_verify_metadata
+
+    @dataclass
+    class Verify:
+        custom_mask: object
+        positions: object
+
+    verify = Verify(object(), object())
+    original_fields = fields(Verify)
+    with pytest.raises(AttributeError, match="kv_indptr"):
+        _ = verify.kv_indptr
+    assert _install_idle_verify_metadata(Verify)
+    assert verify.kv_indptr is None
+    assert fields(Verify) == original_fields
+    assert not _install_idle_verify_metadata(Verify)
+    marker = object()
+    verify.kv_indptr = marker
+    assert verify.kv_indptr is marker
+    assert Verify(object(), object()).kv_indptr is None
+
+    class NewVerify:
+        kv_indptr = marker
+
+    assert not _install_idle_verify_metadata(NewVerify)
+    assert NewVerify.kv_indptr is marker
+
+
+def test_idle_metadata_registration_failure_and_disable(monkeypatch):
+    from hcu_adapter.infra import registry
+    from hcu_adapter.bridges.sglang_spec_kv import _install_idle_verify_metadata
+
+    class Verify:
+        pass
+
+    def reject(*args, **kwargs):
+        raise ValueError("registration refused")
+
+    monkeypatch.delenv("HCU_DISABLE_OPS", raising=False)
+    monkeypatch.setattr(registry, "register", reject)
+    with pytest.raises(ValueError, match="registration refused"):
+        _install_idle_verify_metadata(Verify)
+    assert not hasattr(Verify, "kv_indptr")
+    monkeypatch.setenv("HCU_DISABLE_OPS", "nextn_idle_metadata")
+    assert not _install_idle_verify_metadata(Verify)
+    assert not hasattr(Verify, "kv_indptr")

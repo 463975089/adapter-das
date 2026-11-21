@@ -72,7 +72,7 @@ def adapter_contracts(root):
                         targets.add(keyword.value.value)
                 else:
                     dynamic.append(f"{path.relative_to(root).as_posix()}:{node.lineno}")
-    registry = ast.parse((root / "hcu_adapter/registry.py").read_text(encoding="utf-8"))
+    registry = ast.parse((root / "hcu_adapter/infra/registry.py").read_text(encoding="utf-8"))
     needles = None
     for node in registry.body:
         if isinstance(node, ast.Assign) and any(

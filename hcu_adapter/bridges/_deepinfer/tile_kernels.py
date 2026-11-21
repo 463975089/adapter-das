@@ -10,8 +10,8 @@ operators raise at call time, naming the actual unresolved production symbol.
 import sys
 import types
 
-from . import hcu_env
-from hcu_adapter import registry
+from ...infra import hcu_env
+from hcu_adapter.infra import registry
 
 _MODULES = {
     "": ("set_num_sms", "get_num_sms", "set_pdl", "use_deterministic_algorithms", "set_token_alignment"),
@@ -77,13 +77,13 @@ def install():
             parent, _, child = name.rpartition(".")
             setattr(sys.modules[parent], child, module)
     sys.modules["tile_kernels.config"].is_ascend = _is_ascend
-    from hcu_adapter.kernels.engram_init_emu import fused_weight, make_offsets
+    from hcu_adapter.kernels.engram_init import fused_weight, make_offsets
     from hcu_adapter.kernels.engram_runtime_emu import engram_gate_fwd, engram_hash
     from hcu_adapter.kernels import mhc_emu as mhc_providers
     from hcu_adapter.kernels.quant_emu import per_token_cast
     if native:
         from hcu_adapter.kernels.quant_lightop import per_token_cast
-    from hcu_adapter.kernels.weight_scale_emu import batched_transpose_weight_sf
+    from hcu_adapter.kernels.weight_scale import batched_transpose_weight_sf
 
     for suffix, symbol, provider in (
         ("engram", "fused_weight", fused_weight),
@@ -91,14 +91,14 @@ def install():
     ):
         op = "tile_kernels." + suffix + "." + symbol
         setattr(sys.modules["tile_kernels." + suffix], symbol, provider)
-        registry.register(op, "hcu_adapter.kernels.engram_init_emu." + symbol, op, "seam")
+        registry.register(op, "hcu_adapter.kernels.engram_init." + symbol, op, "seam")
     for symbol, provider in (("engram_gate_fwd", engram_gate_fwd), ("engram_hash", engram_hash)):
         op = "tile_kernels.engram." + symbol
         setattr(sys.modules["tile_kernels.engram"], symbol, provider)
         registry.register(op, "hcu_adapter.kernels.engram_runtime_emu." + symbol, op, "seam")
     sys.modules["tile_kernels.quant"].batched_transpose_weight_sf = batched_transpose_weight_sf
     registry.register("tile_kernels.quant.batched_transpose_weight_sf",
-                      "hcu_adapter.kernels.weight_scale_emu.batched_transpose_weight_sf",
+                      "hcu_adapter.kernels.weight_scale.batched_transpose_weight_sf",
                       "tile_kernels.quant.batched_transpose_weight_sf", "seam")
     sys.modules["tile_kernels.quant"].per_token_cast = per_token_cast
     registry.register("tile_kernels.quant.per_token_cast", per_token_cast.__module__ + '.per_token_cast',

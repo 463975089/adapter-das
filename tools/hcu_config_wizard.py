@@ -6,7 +6,7 @@
 Prompts op by op, lists each selectable backend with its gate status,
 and writes a minimal hcu_adapter.yaml containing ONLY the non-default
 selections. This is the CLI stepping stone for the planned web UI --
-both render from hcu_adapter.hcu_config.BACKEND_CATALOG, so a
+both render from hcu_adapter.infra.hcu_config.BACKEND_CATALOG, so a
 new backend wired into the catalog shows up here (and in the UI)
 automatically.
 
@@ -33,13 +33,14 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_HERE))
 
-from hcu_adapter import hcu_config  # noqa: E402
+from hcu_adapter.infra import hcu_config  # noqa: E402
 
 # production-status backends are what a bare Enter keeps
 _ORDER = {"production": 0, "validated": 1, "candidate": 2, "broken": 3,
-          "planned": 4}
+          "retired": 4, "planned": 5}
 _STATUS_TAG = {"production": "", "validated": " [validated]",
                "candidate": " [candidate]", "broken": " [BROKEN - see note]",
+               "retired": " [RETIRED - governance 3b-9, refused]",
                "planned": " [planned - not wired]"}
 
 
@@ -64,7 +65,7 @@ def list_catalog():
         items = sorted(spec["backends"].items(),
                        key=lambda kv: _ORDER.get(kv[1]["status"], 9))
         for name, meta in items:
-            sel = " (selectable)" if meta["status"] != "planned" else ""
+            sel = " (selectable)" if meta["status"] not in ("planned", "retired") else ""
             print(f"   {name:<18}{_STATUS_TAG[meta['status']]}{sel}")
             if meta.get("note"):
                 print(f"   {'':18}{meta['note']}")
@@ -102,7 +103,7 @@ def interactive(out_path):
     for op in sorted(hcu_config.BACKEND_CATALOG):
         spec = hcu_config.BACKEND_CATALOG[op]
         selectable = [b for b, m in spec["backends"].items()
-                      if m["status"] != "planned"]
+                      if m["status"] not in ("planned", "retired")]
         if not selectable:
             continue
         default = defaults.get(op) or selectable[0]

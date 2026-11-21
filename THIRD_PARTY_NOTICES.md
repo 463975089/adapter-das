@@ -38,6 +38,22 @@
 > 这些来源属 HYGON 团队自有仓库，无外部许可证义务；为满足来源可追溯
 > 要求登记固定 commit。
 
+### sgl-kernel AOT 源码（Apache-2.0，逐字引入）
+
+- 项目：sglang（sgl-kernel 子树），Copyright SGLang Team 及原文件内版权方
+  （activation.cu 原始来源为 FlashInfer，Apache-2.0）
+- 引入版本：上游 v0.5.22 `python/sglang/kernels/aot/{csrc,include}`
+- 本地路径：逐字引入仅加 HYGON 出处头（不改动内容）：
+  `csrc/elementwise/activation.cu`、
+  `include/hip/{hip_act_and_mul.cuh,hip_vec_dtypes.h,hip_math_def.h}`、
+  `include/hip/impl/hip_vec_{bf16,fp32,half}_impl.h`；以及
+  `include/activation_utils.h`（上游 utils.h 的最小节选：dispatch 宏 +
+  hip 头包含，逐字，出处见文件头注释；完整 utils.h 的 FP8 段 gfx942
+  门控不兼容 gfx936，不引入）。
+  同模式的历史逐字引入一并补登记：`csrc/attention/merge_attn_states.cu`、
+  `include/pytorch_extension_utils_rocm.h`。
+- HYGON 修改：仅文件头加出处注释；构建经 `setup_hip.py -DUSE_ROCM=1`。
+
 ### sglang-das fork（Apache-2.0，sglang 衍生）
 
 - 仓库一：<https://github.com/maxiaobetter/sglang-das>，分支
@@ -69,3 +85,11 @@
   HYGON Copyright + `Modified by`（H2 样式，如 `engram_gate_triton.py`）。
 - 纯原创：文件头两行（Copyright + SPDX-Apache-2.0），脚本
   `tools/compliance/add_hygon_headers.py` 可批量补齐并幂等跳过已有头。
+
+### SGLang Mamba state scatter（Apache-2.0）
+
+- 来源：sgl-project/sglang，commit `baa9befa381511cd4d56f83980951e5a45fffc6d`。
+- 原路径：`python/sglang/kernels/ops/mamba/mamba_state_scatter_triton.py`。
+- 本地路径：`hcu_adapter/kernels/mamba_state_scatter_triton.py`。
+- 修改：仅将 request / element-block 的 CTA 映射展平到 grid x；保留 source-row、
+  step/destination/source bounds、64-bit offsets、masked read/write 与原函数参数 ABI。

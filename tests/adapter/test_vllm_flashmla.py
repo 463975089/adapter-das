@@ -11,7 +11,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from hcu_adapter import hcu_config, hcu_env, registry
+from hcu_adapter.infra import registry
+from hcu_adapter.infra import hcu_config
+from hcu_adapter.infra import hcu_env
 from hcu_adapter.bridges import vllm as host
 from test_vllm_flashmla_decode import setup as decode_setup
 

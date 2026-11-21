@@ -20,8 +20,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def main():
-    from hcu_adapter import registry
-    from hcu_adapter.hcu_config import BACKEND_CATALOG
+    from hcu_adapter.infra import registry
+    from hcu_adapter.infra.hcu_config import BACKEND_CATALOG
 
     op = "silu_and_mul"
 

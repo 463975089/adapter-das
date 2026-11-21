@@ -7,8 +7,8 @@ FP8 keys with FP32 page-tail scales. Existing DeepInfer MX and SGLang
 preshuffled-cache routes are not repurposed or modified by registration.
 """
 
-from hcu_adapter import hcu_config, registry
-from hcu_adapter.kill_switch import op_disabled
+from hcu_adapter.infra import hcu_config, registry
+from hcu_adapter.infra.kill_switch import op_disabled
 
 OP = "vllm_paged_mqa_logits"
 

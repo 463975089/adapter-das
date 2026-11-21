@@ -16,7 +16,7 @@ Run: pytest tests/adapter/test_lightop_meta_size.py -v
 import sys
 import types
 
-from hcu_adapter import lightop_metadata, registry
+from hcu_adapter.infra import lightop_metadata, registry
 
 _SIZEOF_SIGNAL = 25984
 

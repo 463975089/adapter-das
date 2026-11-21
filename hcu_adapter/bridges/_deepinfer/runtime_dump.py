@@ -10,8 +10,8 @@ from pathlib import Path
 import sys
 import tempfile
 
-from . import hcu_env
-from hcu_adapter import registry
+from ...infra import hcu_env
+from hcu_adapter.infra import registry
 from hcu_adapter.ops.deepinfer_catalog import BACKEND_CATALOG
 
 

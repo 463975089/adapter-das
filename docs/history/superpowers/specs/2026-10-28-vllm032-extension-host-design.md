@@ -9,8 +9,8 @@ or operator implementations into the adapter repository.
 
 ## Goals
 
-- Add Extension API v1 under `hcu_adapter.extensions`.
-- Discover only the `hcu_adapter.extensions` entry-point group.
+- Add Extension API v1 under `hcu_adapter.infra.extensions`.
+- Discover only the `hcu_adapter.infra.extensions` entry-point group.
 - Activate extensions after vLLM version, selected-platform, and DTK runtime
   checks have passed.
 - Keep optional extension failures observable but non-fatal; explicitly
@@ -42,10 +42,10 @@ or operator implementations into the adapter repository.
 
 ## Interface
 
-`hcu_adapter.extensions` defines API version `1`, `ExtensionContext`,
+`hcu_adapter.infra.extensions` defines API version `1`, `ExtensionContext`,
 `ExtensionSpec`, `ExtensionReport`, `ExtensionStatus`,
 `RequiredExtensionError`, and `activate_extensions()`. Discovery uses entry
-point group `hcu_adapter.extensions`. Specs activate by descending priority,
+point group `hcu_adapter.infra.extensions`. Specs activate by descending priority,
 then declared name; reports are returned in deterministic entry-point order.
 Duplicate entry-point names, duplicate declared extension names, malformed
 specs, incompatible API versions, and activation errors become failed reports.
@@ -63,13 +63,13 @@ startup.
   and import isolation.
 - Runtime tests prove extension activation occurs after version/platform/DTK
   checks, once per PID, and reports are retained.
-- Wheel tests prove `hcu_adapter/extensions.py` is shipped.
+- Wheel tests prove `hcu_adapter/infra/extensions.py` is shipped.
 - Existing vLLM bridge, complete CPU/adapter, official v0.32 source contract,
   and installed-wheel contract remain green.
 
 ## Cross-repository contract
 
 The DAS plugin changes its only extension entry point from
-`hcu_vllm_adapter.extensions` to `hcu_adapter.extensions`, imports API types
+`hcu_vllm_adapter.extensions` to `hcu_adapter.infra.extensions`, imports API types
 from that namespace, depends on `sgl-kernel>=0.1.0`, and continues to package
 no vLLM platform/general entry points.

@@ -56,7 +56,7 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 | docs/hygon-oss-landscape.md | HYGON-AI 组织开源库图谱：vendor 档能力源归属、协作边界、SkillHub 技能（按季核对） | 库清单与组织页不符 / vendor wheel 换代未同步 vendor-kernels |
 | docs/image-dtk2610.md | DTK 26.10/py3.12 基础镜像 pip 态部署：装/不装清单、三 wheel 顺序、五自检、[VERIFY] 销项表 | 上游 pyproject 依赖变更未同步 / VERIFY 项未销 |
 | docs/architecture.md | 分层机制：影子库/is_cuda 语义路由/三档路由/横向机制（配 architecture.html 一页图） | §3 图与 `hcu_adapter/` 目录结构不符 |
-| **docs/governance.md** | **治理宪法**：双仓边界（adapter=行为还原 / plugin 独立仓=性能新能力）、seam→rebind→text-patch 裁决链、active-ref 角色、运行时注册表与 dump、plugin 接入时序 / 双宿主共建 / 维护闭环（§7） | 与 ci/l0_gate.py 三规则或 `hcu_adapter/registry.py` 行为不符 |
+| **docs/governance.md** | **治理宪法**：双仓边界（adapter=行为还原 / plugin 独立仓=性能新能力）、seam→rebind→text-patch 裁决链、active-ref 角色、运行时注册表与 dump、plugin 接入时序 / 双宿主共建 / 维护闭环（§7） | 与 ci/l0_gate.py 三规则或 `hcu_adapter/infra/registry.py` 行为不符 |
 | docs/ci.md | CI 当前分层与实测账：L0 → L1/L1.5 GPU → L2 扩展验证（含双线三绑定铁律） | GATES 列表与 l1_gpu_gate.sh 不符 |
 | docs/l15-test-inventory.md | L1.5 v2 逐文件候选账：分类、logical op、路由证据、纳入/排除和晋级条件 | 上游版本变更、nodeid 漂移或 manifest 已更新但清单未同步 |
 | docs/l15-family-matrix.md | L1.5 Dense/MLA/MoE/量化/Mamba 五类无权重代表行为矩阵、runner 和 DoD | 固定 case、上游 exact nodeid 或 family 边界与实际执行不符 |
@@ -142,3 +142,6 @@ moe_align capture 崩（527ad97）。金索引法：docs/models.md 备注列 + c
 
 
 vLLM 0.33 mHC 行为适配候选：`docs/frameworks/vllm033-mhc.md`；数学委托官方 Torch，公开 OOT 注册归宿主桥，post/head 保留，完整四维及模型门禁未闭合。
+## GLM-5.3 Flash 交接
+
+模型候选源码与未完成验证见 [GLM-5.3 Flash 交接](glm5.3-flash-handoff.md)。

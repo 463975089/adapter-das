@@ -117,7 +117,7 @@ def test_run_records_diagnostic_without_gate_and_checks_final_bytes(tmp_path, mo
     monkeypatch.setattr(probe, "fingerprint", lambda _: bound)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setitem(sys.modules, "transformers", SimpleNamespace(__version__="test"))
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     monkeypatch.setattr(hcu_env, "resolve", lambda _: ("none", "test"))
     calls = []
 

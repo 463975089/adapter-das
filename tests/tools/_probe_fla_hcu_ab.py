@@ -52,7 +52,7 @@ def bench(fn, iters=20, warmup=5):
 
 print("=== 1) KDA prefill chunk: fork triton vs emu ===")
 from hcu_adapter.fla_hcu.kda import chunk_kda
-from hcu_adapter.kda_prefill_emu import kda_extend_emu
+from hcu_adapter.features.gdn.kda_prefill_emu import kda_extend_emu
 
 for (T1, T2) in [(1536, 512), (2048, 0), (8192, 0)]:
     B = 2 if T2 else 1
@@ -93,7 +93,7 @@ for (T1, T2) in [(1536, 512), (2048, 0), (8192, 0)]:
         print(f"  time: emu={t_e:.1f}ms fork={t_f:.2f}ms  speedup={t_e/t_f:.0f}x")
 
 print("=== 2) causal_conv1d_fn varlen: fork vs emu ===")
-from hcu_adapter.conv1d_fn_emu import conv1d_fn_emu
+from hcu_adapter.features.gdn.conv1d_fn_emu import conv1d_fn_emu
 from hcu_adapter.fla_hcu.conv1d_triton import causal_conv1d_fn
 
 DIM, W = 2048, 4
@@ -122,7 +122,7 @@ t_f = bench(lambda: causal_conv1d_fn(x, wt, bias, conv_states=cs_f, query_start_
 print(f"  time: emu={t_e:.2f}ms fork={t_f:.2f}ms speedup={t_e/t_f:.1f}x")
 
 print("=== 3) causal_conv1d_update: fork vs emu ===")
-from hcu_adapter.conv1d_update_emu import causal_conv1d_update_emu
+from hcu_adapter.features.gdn.conv1d_update_emu import causal_conv1d_update_emu
 from hcu_adapter.fla_hcu.conv1d_triton import causal_conv1d_update
 
 BS = 16

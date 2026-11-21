@@ -1,6 +1,6 @@
 # Flash publication and process-local health
 
-The transaction implementation is shared in `hcu_adapter/runtime_lifecycle.py`
+The transaction implementation is shared in `hcu_adapter/infra/runtime_lifecycle.py`
 (stdlib plus framework-free extension protocol). The vLLM bridge supplies only
 its protected runtime action ID and existing public error type, public wrappers,
 admission and selector/activation orchestration. Locks, report/PID bindings,

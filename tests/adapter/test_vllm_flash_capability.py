@@ -10,7 +10,8 @@ import sys
 import pytest
 
 from hcu_adapter.bridges import vllm as bridge
-from hcu_adapter.extensions import ExtensionReport, ExtensionStatus
+from hcu_adapter.infra.extensions import ExtensionReport, ExtensionStatus
+from test_vllm_bridge import _stub_runtime_owners
 
 
 CAP = "hcu-flash-attention"
@@ -23,6 +24,7 @@ def report(name="flash", status=ExtensionStatus.ACTIVE, capabilities=(CAP,)):
 @pytest.fixture
 def platform(monkeypatch):
     """CPU platform/config doubles; real Adapter selector/report storage."""
+    _stub_runtime_owners(monkeypatch)
     class RocmPlatform:
         @classmethod
         def get_device_capability(cls):

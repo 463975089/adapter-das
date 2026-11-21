@@ -28,7 +28,7 @@ class Block:
   if name.split('.')[0] in {'torch','vllm','sglang','aiter','lightop'}:
    raise AssertionError('discovery imported '+name)
 sys.meta_path.insert(0,Block())
-from hcu_adapter import allreduce, allreduce_aiter
+from hcu_adapter.features.aiter import allreduce, allreduce_aiter
 from hcu_adapter.bridges import vllm_allreduce
 assert not vllm_allreduce.state().installed
 assert not allreduce.requested_policy().selected

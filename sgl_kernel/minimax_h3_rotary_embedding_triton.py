@@ -62,7 +62,7 @@ def minimax_h3_rotary_embedding(positions, query, key, head_size, cos_sin_cache,
             raise ValueError("Aliased MiniMax-H3 Q/K must have identical views")
         key = None
     half = cos_sin_cache.shape[1] // 2
-    from hcu_adapter.kill_switch import op_disabled
+    from hcu_adapter.infra.kill_switch import op_disabled
     if not query.is_cuda or op_disabled("minimax_h3_rotary_embedding"):
         cos = cos_sin_cache[positions, :half].unsqueeze(1)
         sin = cos_sin_cache[positions, half:].unsqueeze(1)
@@ -96,7 +96,7 @@ def minimax_h3_rotary_embedding(positions, query, key, head_size, cos_sin_cache,
 
 
 
-from hcu_adapter import registry as _registry
+from hcu_adapter.infra import registry as _registry
 
 _registry.register("minimax_h3_rotary_embedding", "H3 partial RoPE Triton/torch candidate",
                    "sgl_kernel.minimax_h3_rotary_embedding", _registry.MECH_SEAM)

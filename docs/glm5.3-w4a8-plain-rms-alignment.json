@@ -62,8 +62,8 @@
   },
   "qualified_source_sha256": {
     "sgl_kernel/layernorm.py": "31aed150387f7145add8da2b6f933fcec8326149e87b5c01e3fd5d5f43f4116e",
-    "hcu_adapter/hcu_config.py": "eb41f8a2bbce7d624bbddccbd4109f5ea9c169cb30acf0d28ba20383089a3121",
-    "hcu_adapter/hcu_env.py": "4ef8ada2ccd48ac70b5a31c9c29aa8ae70e36e9e5755b1e1c277611342c47ce3"
+    "hcu_adapter/infra/hcu_config.py": "eb41f8a2bbce7d624bbddccbd4109f5ea9c169cb30acf0d28ba20383089a3121",
+    "hcu_adapter/infra/hcu_env.py": "4ef8ada2ccd48ac70b5a31c9c29aa8ae70e36e9e5755b1e1c277611342c47ce3"
   },
   "raw_component_archive": {
     "file": "rms-alignment-v2-20261105.tar.gz",

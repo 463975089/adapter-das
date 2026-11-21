@@ -7,7 +7,7 @@ import importlib
 import sys
 import types
 
-from hcu_adapter import registry
+from hcu_adapter.infra import registry
 
 
 def install():

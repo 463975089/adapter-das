@@ -110,7 +110,7 @@ def test_mx_contract_keeps_bfloat16_output():
 
 
 def test_vllm_bridge_abi_registration_and_kill_switch(monkeypatch):
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
     from hcu_adapter.bridges import vllm_paged_mqa as bridge
     monkeypatch.delenv("HCU_DISABLE_OPS", raising=False)
     monkeypatch.setattr(registry, "_RECORDS", dict(registry._RECORDS))
@@ -218,7 +218,7 @@ def test_triton_generic_faces_keep_torch_fallback():
 
 
 def test_triton_config_seam_is_explicit_and_kill_switch_wins(monkeypatch):
-    from hcu_adapter import hcu_config, registry
+    from hcu_adapter.infra import hcu_config, registry
     from hcu_adapter.bridges import vllm_paged_mqa as bridge
     monkeypatch.setattr(hcu_config, "load", lambda: {"ops": {bridge.OP: "triton"}, "overrides": {}})
     monkeypatch.setattr(registry, "_RECORDS", dict(registry._RECORDS))
@@ -310,7 +310,7 @@ class BlockFrameworks(importlib.abc.MetaPathFinder):
             raise AssertionError('eager framework import: ' + fullname)
 sys.meta_path.insert(0, BlockFrameworks())
 from hcu_adapter.bridges.vllm_paged_mqa import get_paged_mqa_provider
-from hcu_adapter import registry
+from hcu_adapter.infra import registry
 metadata, scorer = get_paged_mqa_provider()
 assert registry.get('vllm_paged_mqa_logits')['implementation'] == sys.argv[2]
 assert not {'torch', 'vllm', 'sglang'}.intersection(sys.modules)

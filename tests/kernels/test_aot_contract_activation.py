@@ -197,3 +197,105 @@ def test_gated_16byte_alignment_rejected_on_gpu():
     x = torch.randn(3, 6, device="cuda", dtype=torch.float32)
     with pytest.raises(ValueError, match="16 bytes"):
         sgl_kernel.silu_and_mul(x)
+
+
+# ------------------------------------------------ cpp tier (native_ops.so) --
+# The vendored activation.cu registers silu_and_mul / gelu_and_mul /
+# gelu_tanh_and_mul / gelu_quick in torch.ops.sgl_kernel (setup_hip.py
+# native wheel). sgl_kernel/_native.py probes the dispatcher per op;
+# _gated_mul_impl / gelu_quick take that tier FIRST when the tensor is
+# contiguous, 16B-aligned and fp32/fp16/bf16 (utils.h:306-318 dispatch
+# face). Without the .so (pure-python install) native_op() returns None
+# and every arm below degrades to the documented triton/torch tiers.
+
+
+def test_native_arm_inert_on_cpu(monkeypatch):
+    """The native arm must never engage for CPU tensors, even if a native
+    op resolves (dispatcher namespaces are device-scoped, the guard is
+    ours): routing must fall through to the torch tier unchanged."""
+    import sgl_kernel.elementwise as ew
+
+    calls = []
+
+    def _record(name):
+        def _fake(out, inp):
+            calls.append(name)
+            return None
+
+        return _fake
+
+    monkeypatch.setattr(ew, "native_op", lambda name: _record(name))
+    torch.manual_seed(7)
+    x = torch.randn(4, 128)
+    for fn in (sgl_kernel.silu_and_mul, sgl_kernel.gelu_and_mul,
+               sgl_kernel.gelu_tanh_and_mul, sgl_kernel.gelu_quick):
+        out = fn(x)
+        assert out.shape[-1] == (128 if fn is sgl_kernel.gelu_quick else 64)
+    assert calls == []
+
+
+def _gelu_erf_formula(x):  # activation.cu:63-67, M_SQRT1_2 verbatim
+    return x * 0.5 * (1.0 + torch.special.erf(x * 0.7071067811865476))
+
+
+_GATED_FORMULAS = {
+    "silu": _silu_formula,
+    "gelu": _gelu_erf_formula,
+    "gelu_tanh": _gelu_tanh_formula,
+}
+
+
+def _native_activation_available() -> bool:
+    from sgl_kernel._native import native_op
+
+    return native_op("silu_and_mul") is not None
+
+
+requires_native = pytest.mark.skipif(
+    not _native_activation_available(),
+    reason="requires the native_ops wheel (setup_hip.py build)",
+)
+
+
+@requires_gpu
+@requires_native
+@pytest.mark.parametrize("dtype", DTYPES)
+@pytest.mark.parametrize("act, fn", GATED_FNS)
+def test_native_gated_parity_gpu(dtype, act, fn):
+    """native tier vs activation.cu math constants, all three gated ops."""
+    torch.manual_seed(11)
+    x = (torch.randn(65, 1024, device="cuda") * 3).to(dtype)
+    gate, up = x[..., :512], x[..., 512:]
+    ref = _GATED_FORMULAS[act](gate.float()) * up.float()
+    out = fn(x)
+    tol = (2e-3, 2e-3) if dtype != torch.bfloat16 else (1.0, 0.3)
+    torch.testing.assert_close(out.float(), ref.to(dtype).float(), rtol=tol[0], atol=tol[1])
+
+
+@requires_gpu
+@requires_native
+def test_native_gelu_quick_parity_gpu():
+    torch.manual_seed(12)
+    for dtype in DTYPES:
+        x = (torch.randn(9, 512, device="cuda") * 3).to(dtype)
+        ref = _gelu_quick_formula(x.float())
+        out = sgl_kernel.gelu_quick(x)
+        tol = (2e-3, 2e-3) if dtype != torch.bfloat16 else (1.0, 0.3)
+        torch.testing.assert_close(out.float(), ref.to(dtype).float(), rtol=tol[0], atol=tol[1])
+
+
+@requires_gpu
+@requires_native
+def test_native_arm_beats_triton_gpu(monkeypatch):
+    """With a native op registered the cpp tier runs before triton: a
+    poisoned triton kernel must never be reached (tier order pinned in
+    sgl_kernel/_native.py: native -> triton -> torch emu)."""
+    import sgl_kernel.elementwise as ew
+
+    def _boom(*a, **k):
+        raise AssertionError("triton tier reached although native op present")
+
+    monkeypatch.setattr(ew, "_gated_act_kernel", _boom)
+    x = torch.randn(8, 512, device="cuda", dtype=torch.bfloat16)
+    out = sgl_kernel.silu_and_mul(x)
+    assert out.shape == (8, 256)

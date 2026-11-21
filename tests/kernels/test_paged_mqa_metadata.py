@@ -21,7 +21,7 @@ import importlib.util
 import pytest
 import torch
 
-import hcu_adapter.dsa_mqa_logits_emu as M
+import hcu_adapter.features.dsa.dsa_mqa_logits_emu as M
 
 requires_lightop_gpu = pytest.mark.skipif(
     not (torch.cuda.is_available() and importlib.util.find_spec("lightop")),

@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import sys
 
-from hcu_adapter.extensions import ExtensionCommitError, ExtensionSpec
+from hcu_adapter.infra.extensions import ExtensionCommitError, ExtensionSpec
 
 
 class UnrenderableError(RuntimeError):
@@ -86,7 +86,7 @@ def exercise(config=None):
     import torch
     from importlib.metadata import entry_points
     from hcu_adapter.bridges import vllm as bridge
-    import hcu_adapter.extensions as public
+    import hcu_adapter.infra.extensions as public
     import vllm.plugins
 
     _cpu_guard()

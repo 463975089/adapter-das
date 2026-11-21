@@ -115,10 +115,13 @@ def test_kill_switch_never_builds_the_owned_classes(clean_env, native, monkeypat
 
 
 def test_native_mode_builds_the_owned_classes(clean_env, native, monkeypatch):
+    from types import SimpleNamespace
+
     clean_env.setenv("HCU_VLLM_PCP_IMPL", "native")
     monkeypatch.setattr(pcp_fork, "validate_config", lambda cfg: True)
     monkeypatch.setattr(pcp_fork, "build_classes", lambda: {"attention": "owned-attention"})
-    assert pcp_fork.select_attention(object()) == "owned-attention"
+    cfg = SimpleNamespace(speculative_config=None)
+    assert pcp_fork.select_attention(cfg) == "owned-attention"
     assert native.calls == []
 
 
@@ -131,3 +134,23 @@ def test_non_pcp_config_stays_native_even_in_native_mode(clean_env, native, monk
     cfg = object()
     assert pcp_fork.select_attention(cfg) == "native-attention"
     assert native.calls == [cfg]
+
+
+def test_published_stock_q_rope_cannot_be_enabled_in_place(clean_env):
+    from hcu_adapter.infra import hcu_config
+
+    for name in ("_q_rope_provider", "_q_rope_binding", "_q_rope_failure"):
+        clean_env.setattr(pcp_fork, name, None)
+    ops = {}
+    clean_env.setattr(hcu_config, "load", lambda: {"ops": ops, "overrides": {}})
+    clean_env.setenv("HCU_VLLM_PCP_IMPL", "native")
+
+    pcp_fork.set_q_rope_provider(None)
+    pcp_fork.require_q_rope_healthy()
+    ops[pcp_fork.Q_ROPE_OP] = "hcu"
+    with pytest.raises(pcp_fork.PcpAttentionError, match="restart process"):
+        pcp_fork.require_q_rope_healthy()
+
+    ops.clear()
+    with pytest.raises(pcp_fork.PcpAttentionError, match="restart process"):
+        pcp_fork.set_q_rope_provider(None)

@@ -59,42 +59,28 @@ def _probe_aiter():
 def _resolve_impl():
     """Backend choice for gated activations: lightop > aiter > triton.
 
-    Explicit HCU_SILU_MUL_IMPL still wins (lightop|aiter|triton|torch).
-    JIT is deliberately absent: the sglang activation JIT body costs a
-    33-49 s cold ninja build (PR #96)."""
+    Resolved ONCE, dispatched strictly (governance 3b-8: zero runtime
+    fallback). Explicit HCU_SILU_MUL_IMPL wins (lightop|aiter|triton);
+    torch/emu are retired from runtime routing (3b-9) and requesting them
+    is a resolution error. JIT is deliberately absent: the sglang
+    activation JIT body costs a 33-49 s cold ninja build (PR #96).
+    Resolution failures propagate -- no silent triton default."""
     global _IMPL_CHOICE
     if _IMPL_CHOICE is None:
-        requested, source = None, "default"
-        try:
-            from hcu_adapter import hcu_env
+        from hcu_adapter.infra import hcu_env
+        from hcu_adapter.infra import tier_policy
 
-            requested, source = hcu_env.resolve("HCU_SILU_MUL_IMPL")
-        except Exception:
-            # visibility beats silence: a silent vendor-probe failure reads
-            # as "auto mode" and hides a real wheel/env problem.
-            import traceback
-
-            traceback.print_exc()
-        try:
-            from hcu_adapter import tier_policy
-
-            tier, _impl = tier_policy.pick(
-                "silu_and_mul",
-                {
-                    "lightop": _probe_lightop,
-                    "aiter": _probe_aiter,
-                    "triton": lambda: True,
-                    "torch": lambda: True,
-                },
-                priority=tier_policy.SILU_PRIORITY,
-                requested=requested if source == "explicit" else None,
-            )
-            _IMPL_CHOICE = tier
-        except Exception:
-            import traceback
-
-            traceback.print_exc()
-            _IMPL_CHOICE = "triton"
+        requested, source = hcu_env.resolve("HCU_SILU_MUL_IMPL")
+        _IMPL_CHOICE = tier_policy.pick(
+            "silu_and_mul",
+            {
+                "lightop": _probe_lightop,
+                "aiter": _probe_aiter,
+                "triton": lambda: True,
+            },
+            priority=tier_policy.SILU_PRIORITY,
+            requested=requested if source == "explicit" else None,
+        )[0]
     return _IMPL_CHOICE
 
 if HAS_TRITON:
@@ -220,6 +206,25 @@ def _gated_mul_impl(
                 f"out shape {tuple(out.shape)} != {tuple(input.shape[:-1] + (d,))}"
             )
 
+    # cpp tier (setup_hip.py wheel, vendored activation.cu): the upstream
+    # kernel reads raw data_ptrs with token_idx*d indexing, so only fully
+    # contiguous, 16B-aligned fp16/bf16/fp32 tensors may take it; d tails are
+    # handled inside the kernel and the 16B contract was checked at entry.
+    native = native_op(
+        {"silu": "silu_and_mul", "gelu": "gelu_and_mul", "gelu_tanh": "gelu_tanh_and_mul"}[act]
+    )
+    if (
+        native is not None
+        and input.is_cuda
+        and input.is_contiguous()
+        and out.is_contiguous()
+        and input.dtype in (torch.float16, torch.bfloat16, torch.float32)
+        and input.data_ptr() % 16 == 0
+        and out.data_ptr() % 16 == 0
+    ):
+        native(out, input)
+        return out
+
     use_triton = (
         not force_native
         and HAS_TRITON
@@ -269,33 +274,44 @@ def silu_and_mul(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
     # misaligned (3,6) input straight through the lightop arm).
     _check_aot_alignment(input)
     if input.is_cuda:
+        # strict single-tier dispatch (governance 3b-8): the resolved
+        # tier runs or the error carries the op and tier name -- no
+        # descent to a lower tier, no one-strike vendor disabling.
         choice = _resolve_impl()
-        if choice == "torch":
-            return _gated_mul_impl(input, out, "silu", force_native=True)
-        if choice == "lightop" and _LIGHTOP_IMPL is not None:
+        if choice == "lightop":
+            impl = _LIGHTOP_IMPL or _probe_lightop()
+            if impl is None:
+                raise RuntimeError(
+                    "silu_and_mul: resolved tier 'lightop' unavailable "
+                    "at dispatch (probe failed post-resolution)")
             if out is None:
                 out = torch.empty(
                     input.shape[:-1] + (input.shape[-1] // 2,),
                     device=input.device, dtype=input.dtype,
                 )
-            res = _LIGHTOP_IMPL(input, out)  # lightop sig: (input, output)
+            res = impl(input, out)  # lightop sig: (input, output)
             return out if res is None else res
-        if choice == "aiter" and _AITER_IMPL is not None:
+        if choice == "aiter":
+            impl = _AITER_IMPL or _probe_aiter()
+            if impl is None:
+                raise RuntimeError(
+                    "silu_and_mul: resolved tier 'aiter' unavailable "
+                    "at dispatch (probe failed post-resolution)")
             if out is None:
                 out = torch.empty(
                     input.shape[:-1] + (input.shape[-1] // 2,),
                     device=input.device, dtype=input.dtype,
                 )
-            try:
-                # aiter ROCm signature: (out, input, limit=0.0), in-place.
-                res = _AITER_IMPL(out, input)
-                return out if res is None else res
-            except Exception:
-                # one-strike: a broken wheel must not retry every call.
-                import traceback
-
-                traceback.print_exc()
-                _AITER_IMPL = None
+            # aiter ROCm signature: (out, input, limit=0.0), in-place;
+            # a wheel failure propagates as-is.
+            res = impl(out, input)
+            return out if res is None else res
+        # choice == "triton"
+        if not HAS_TRITON:
+            raise RuntimeError(
+                "silu_and_mul: resolved tier 'triton' but triton is not "
+                "importable in this process (governance 3b-8: no torch "
+                "fallback on the CUDA path)")
     return _gated_mul_impl(input, out, "silu")
 
 
@@ -317,6 +333,21 @@ def gelu_quick(input: torch.Tensor, out: torch.Tensor = None) -> torch.Tensor:
     else:
         if out.shape != input.shape:
             raise ValueError(f"out shape {out.shape} != input shape {input.shape}")
+
+    # cpp tier (setup_hip.py wheel, vendored activation.cu): act_only kernel,
+    # same contiguous/aligned/dtype contract as the gated ops above.
+    native = native_op("gelu_quick")
+    if (
+        native is not None
+        and input.is_cuda
+        and input.is_contiguous()
+        and out.is_contiguous()
+        and input.dtype in (torch.float16, torch.bfloat16, torch.float32)
+        and input.data_ptr() % 16 == 0
+        and out.data_ptr() % 16 == 0
+    ):
+        native(out, input)
+        return out
 
     use_triton = (
         HAS_TRITON

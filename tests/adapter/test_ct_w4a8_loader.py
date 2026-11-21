@@ -5,7 +5,7 @@ from types import SimpleNamespace as NS
 import pytest
 import torch
 
-from hcu_adapter import ct_w4a8_int8_moe as native
+from hcu_adapter.features.ct_w4a8 import ct_w4a8_int8_moe as native
 
 
 def _loader(self, param, loaded_weight, weight_name, shard_id, expert_id):

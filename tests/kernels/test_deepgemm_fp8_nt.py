@@ -29,7 +29,7 @@ import torch
 
 sys.path.insert(0, "tests/kernels")
 
-from hcu_adapter.deep_gemm_dtk import fp8_gemm_nt_dequant
+from hcu_adapter.features.deep_gemm.deep_gemm_dtk import fp8_gemm_nt_dequant
 
 torch.manual_seed(23)
 

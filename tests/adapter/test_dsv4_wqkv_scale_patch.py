@@ -18,7 +18,7 @@ import types
 import pytest
 import torch
 
-from hcu_adapter import dsv4_wqkv_scale_patch as bridge
+from hcu_adapter.features.dsv4 import dsv4_wqkv_scale_patch as bridge
 
 _SOURCE = """def load_weights(self, weights, is_nextn=False):
     params = dict(self.named_parameters())
@@ -255,7 +255,8 @@ def test_post_install_code_changes_are_rejected():
 
 
 def test_public_install_and_gate_without_source_file(source, monkeypatch, tmp_path):
-    from hcu_adapter import hcu_env, registry
+    from hcu_adapter.infra import hcu_env
+    from hcu_adapter.infra import registry
 
     model, tensors, _, _, _ = _model(source)
     module = types.ModuleType("sglang.srt.models.deepseek_v4")
@@ -292,6 +293,7 @@ def _spawn_worker(source, queue):
     queue.put(True)
 
 
+@pytest.mark.fresh_process
 def test_spawned_interpreter_adapts_its_own_original_loader(source, monkeypatch):
     import multiprocessing
 
@@ -301,7 +303,7 @@ def test_spawned_interpreter_adapts_its_own_original_loader(source, monkeypatch)
     # 40s queue budget. Skip the bridge for the child only (restored so
     # later tests in this interpreter keep auto-host detection) and keep
     # a 90s budget for cold filesystems.
-    from hcu_adapter.bootstrap import HOST_ENV  # canonical env name
+    from hcu_adapter.infra.bootstrap import HOST_ENV  # canonical env name
     with monkeypatch.context() as child_env:
         child_env.setenv(HOST_ENV, "none")
         context = multiprocessing.get_context("spawn")
@@ -325,7 +327,7 @@ def test_spawned_interpreter_adapts_its_own_original_loader(source, monkeypatch)
 @pytest.mark.parametrize("host", [None, "sglang"])
 def test_spawn_failure_restores_parent_host(monkeypatch, stage, host):
     import multiprocessing
-    from hcu_adapter.bootstrap import HOST_ENV
+    from hcu_adapter.infra.bootstrap import HOST_ENV
 
     if host is None:
         monkeypatch.delenv(HOST_ENV, raising=False)

@@ -25,7 +25,11 @@ Build (DTK container, hipcc on PATH, HIP torch installed):
 
 Ops covered (see csrc/ sources for the per-op porting notes):
   merge_state_v2 / concat_mla_k / concat_mla_absorb_q / copy_to_gpu_no_ce /
-  sgl_per_token_group_quant_8bit / sgl_per_token_group_quant_8bit_v2
+  sgl_per_token_group_quant_8bit / sgl_per_token_group_quant_8bit_v2 /
+  silu_and_mul / gelu_tanh_and_mul / gelu_and_mul / gelu_quick
+  (the four activations are vendored VERBATIM from upstream aot
+  csrc/elementwise/activation.cu + its include/hip chain, and remove the
+  most frequent serve-time ninja JIT compiles once installed)
 """
 
 import os
@@ -108,6 +112,7 @@ include_dirs = [
 sources = [
     "csrc/common_extension_hcu.cc",
     "csrc/attention/merge_attn_states.cu",
+    "csrc/elementwise/activation.cu",
     "csrc/elementwise/concat_mla_absorb_q_hcu.cu",
     "csrc/elementwise/concat_mla_k_hcu.cu",
     "csrc/elementwise/copy.cu",
@@ -124,6 +129,9 @@ extra_link_args = [
 hipcc_flags = [
     "-DNDEBUG",
     f"-DOPERATOR_NAMESPACE={operator_namespace}",
+    # mirrors the upstream ROCm build: activation.cu's vendored ROCm branch
+    # (sgl_hip:: kernels) is selected by USE_ROCM, inert for the other TUs
+    "-DUSE_ROCM=1",
     "-O3",
     "-Xcompiler",
     "-fPIC",

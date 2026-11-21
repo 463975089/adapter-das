@@ -10,24 +10,25 @@ from types import SimpleNamespace
 
 from hcu_adapter.bridges import common
 import hcu_adapter
+import hcu_adapter.infra  # noqa: F401  (setattr target binding)
 
 
 def test_common_guards_run_in_pre_import_order(monkeypatch):
     events = []
     monkeypatch.setattr(
-        hcu_adapter,
+        hcu_adapter.infra,
         "hcu_env",
         SimpleNamespace(log_summary=lambda: events.append("environment")),
         raising=False,
     )
     monkeypatch.setattr(
-        hcu_adapter,
+        hcu_adapter.infra,
         "nccl_topo_guard",
         SimpleNamespace(install=lambda: events.append("nccl")),
         raising=False,
     )
     monkeypatch.setattr(
-        hcu_adapter,
+        hcu_adapter.infra,
         "tvmffi_warmup",
         SimpleNamespace(install=lambda: events.append("tvmffi")),
         raising=False,
@@ -46,19 +47,19 @@ def test_one_common_guard_failure_does_not_block_later_guards(monkeypatch):
         raise RuntimeError("summary failed")
 
     monkeypatch.setattr(
-        hcu_adapter,
+        hcu_adapter.infra,
         "hcu_env",
         SimpleNamespace(log_summary=fail_environment),
         raising=False,
     )
     monkeypatch.setattr(
-        hcu_adapter,
+        hcu_adapter.infra,
         "nccl_topo_guard",
         SimpleNamespace(install=lambda: events.append("nccl")),
         raising=False,
     )
     monkeypatch.setattr(
-        hcu_adapter,
+        hcu_adapter.infra,
         "tvmffi_warmup",
         SimpleNamespace(install=lambda: events.append("tvmffi")),
         raising=False,

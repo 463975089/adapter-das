@@ -18,13 +18,13 @@ import sys
 import pytest
 
 try:
-    from hcu_adapter import extensions
+    from hcu_adapter.infra import extensions
 except ImportError:
     extensions = None
 
 
 def _api():
-    assert extensions is not None, "hcu_adapter.extensions is not implemented"
+    assert extensions is not None, "hcu_adapter.infra.extensions is not implemented"
     return extensions
 
 
@@ -303,7 +303,7 @@ def test_importing_protocol_does_not_import_runtime_or_provider_packages():
             "-c",
             (
                 "import sys; before=set(sys.modules); "
-                "import hcu_adapter.extensions; "
+                "import hcu_adapter.infra.extensions; "
                 "loaded=set(sys.modules)-before; "
                 "blocked=('torch','vllm','lightop','hcu_vllm_das'); "
                 "assert not {n for n in loaded if n.split('.',1)[0] in blocked}, "

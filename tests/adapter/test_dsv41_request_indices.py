@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from hcu_adapter import dsv41_request_indices as bridge
+from hcu_adapter.features.dsv41 import dsv41_request_indices as bridge
 
 _SOURCE = """def token_req_indices(forward_batch, *, num_tokens=None):
     req = forward_batch.req_pool_indices.to(torch.int64)

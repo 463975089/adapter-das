@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hcu_adapter import int8_linear
+from hcu_adapter.features.ct_w4a8 import int8_linear
 
 
 def consumer(path, owner, entry):
@@ -26,7 +26,7 @@ def test_both_consumers_and_cached_aliases():
     with patch.object(int8_linear, "import_module", side_effect=lambda p: next(
             m for m in modules if m.__name__ == p)), \
             patch("sgl_kernel.int8_scaled_mm", implementation), \
-            patch("hcu_adapter.registry.register") as register:
+            patch("hcu_adapter.infra.registry.register") as register:
         int8_linear.install()
         int8_linear.install()
     assert register.call_count == 4
@@ -45,7 +45,7 @@ def test_drift_refuses_before_any_binding(bad_index):
     setattr(getattr(modules[bad_index], target[1]), target[2], lambda *args: None)
     with patch.object(int8_linear, "import_module", side_effect=lambda p: next(
             m for m in modules if m.__name__ == p)), \
-            patch("hcu_adapter.registry.register") as register:
+            patch("hcu_adapter.infra.registry.register") as register:
         with pytest.raises(RuntimeError, match="consumer changed"):
             int8_linear.install()
     register.assert_not_called()

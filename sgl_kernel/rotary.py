@@ -19,7 +19,11 @@ Layouts (both must match the CUDA kernel exactly):
 
 from __future__ import annotations
 
+import logging
+
 import torch
+
+_INTERLEAVED_AUDITED = False
 
 from .compat import HAS_TRITON, check_cuda_tensor
 
@@ -86,6 +90,26 @@ def rotary_embedding(
     use_triton = HAS_TRITON and query.is_cuda and cos_sin_cache.is_cuda and is_neox
     if key is not None and use_triton:
         use_triton = key.is_cuda
+    if not use_triton and query.is_cuda:
+        # governance 3b-8 (2026-11-19, refined): interleaved layout has NO
+        # kernel tier in this package -- a static call fact. AUTO mode
+        # routes to the torch face with ONE audited line per process
+        # (selection by fact, visible); a triton kernel for interleaved is
+        # the tracked gap (tier-disposition). CUDA+neox+triton-missing
+        # still raises: that tier SHOULD exist and its absence is a bug.
+        if not is_neox:
+            global _INTERLEAVED_AUDITED
+            if not _INTERLEAVED_AUDITED:
+                _INTERLEAVED_AUDITED = True
+                logging.getLogger("hcu.adapter").warning(
+                    "rotary_embedding: interleaved layout has no kernel "
+                    "tier -- serving on the torch face (audited auto "
+                    "selection; triton kernel is the tracked gap)")
+        else:
+            raise RuntimeError(
+                "rotary_embedding: neox layout should have the triton "
+                "tier but triton is unavailable (governance 3b-8) -- fix "
+                "the triton install")
     if not use_triton:
         impl = (
             _rotary_embedding_neox_torch

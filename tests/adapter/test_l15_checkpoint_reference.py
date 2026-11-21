@@ -240,7 +240,7 @@ def test_explicit_online_quantization_cannot_bypass_unquantized_reference_guard(
     if rerun_if_host_loaded(request):
         return
     from tools import l15_checkpoint_reference as reference
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     model = tmp_path / "model"
     model.mkdir()
@@ -265,7 +265,7 @@ def test_ct_reference_requires_matching_execution_and_byte_binding(
     import json
     from test_checkpoint_quantization_reference import configuration
     from tools import l15_checkpoint_reference as reference
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     model = tmp_path / "model"
     model.mkdir()

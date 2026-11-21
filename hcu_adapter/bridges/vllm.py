@@ -14,14 +14,15 @@ from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
-from hcu_adapter.extensions import (
+from hcu_adapter.infra.extensions import (
     ExtensionContext,
     ExtensionReport,
+    ExtensionStatus,
     ExtensionCommitError,
     RequiredExtensionError,
     activate_extensions,
 )
-from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
+from hcu_adapter.infra.runtime_lifecycle import ProcessLocalLifecycle
 
 LOG = logging.getLogger("hcu.adapter")
 
@@ -36,6 +37,10 @@ _TOOLCHAIN_ROOTS = ("DTKROOT", "ROCM_PATH", "HIP_PATH")
 _VLLM_RUNTIME_LIBRARY = "VLLM_CUDART_SO_PATH"
 _REQUIRED_EXTENSIONS = "HCU_ADAPTER_VLLM_REQUIRED_EXTENSIONS"
 _REQUIRED_CAPABILITIES = "HCU_ADAPTER_VLLM_REQUIRED_CAPABILITIES"
+_FP4_INDEXER_CAPABILITIES = frozenset({
+    "hcu-v41-fp8-indexer-eager-reference",
+    "hcu-e2m1-packer-lowering",
+})
 
 
 class VllmCompatibilityError(RuntimeError):
@@ -280,6 +285,40 @@ def require_extension_healthy(capability: str) -> None:
     _RUNTIME_ACTIONS.require_extension_healthy(capability)
 
 
+def _configure_indexer_kv_dtype(vllm_config) -> None:
+    """Resolve the paired V4.1 FP4 default before Core builds model/cache state."""
+    from hcu_adapter.features.dsv41.fp4_indexer import (
+        Fp4AdmissionError,
+        default_requested,
+        validate_config,
+    )
+
+    if not default_requested(vllm_config):
+        return
+    active = frozenset(
+        capability
+        for report in extension_reports()
+        if report.status is ExtensionStatus.ACTIVE
+        for capability in report.capabilities
+    )
+    if not _FP4_INDEXER_CAPABILITIES.issubset(active):
+        return
+    for capability in sorted(_FP4_INDEXER_CAPABILITIES):
+        require_extension_healthy(capability)
+    try:
+        plan = validate_config(vllm_config)
+    except Fp4AdmissionError as exc:
+        LOG.debug("Keeping DeepSeek V4.1 indexer_kv_dtype=auto: %s", exc)
+        return
+    if plan is None:
+        return
+    vllm_config.attention_config.indexer_kv_dtype = "mxfp4"
+    LOG.info(
+        "HCU DeepSeek V4.1 indexer_kv_dtype auto -> mxfp4 "
+        "(paired FP4 providers active, explicit indexer_kv_dtype=fp8 selects FP8)"
+    )
+
+
 def install() -> None:
     """Defer vLLM activation to its official plugin discovery lifecycle."""
 
@@ -318,7 +357,7 @@ def _hcu_platform_class() -> type:
             status = state()  # Read-only; fatal state/policy drift must refuse.
             if super().use_custom_allreduce():
                 return True
-            from hcu_adapter import hcu_env
+            from hcu_adapter.infra import hcu_env
             from vllm import envs
 
             if (
@@ -349,7 +388,8 @@ def _hcu_platform_class() -> type:
         @classmethod
         def check_and_update_config(cls, vllm_config) -> None:
             require_runtime_healthy()
-            # Upstream owns config validation/defaults, including worker choice.
+            _configure_indexer_kv_dtype(vllm_config)
+            # Core validates the effective config and chooses its default worker.
             from hcu_adapter.bridges.vllm_moe_aiter import configure_padding_policy
 
             configure_padding_policy(vllm_config.kernel_config.moe_backend)
@@ -444,7 +484,8 @@ def _log_post_install_bindings() -> None:
     function. They cannot say whether a bridge bound anything; this line and
     the rewritten dump can. It records state, it does not activate or repair.
     """
-    from hcu_adapter import hcu_env, registry
+    from hcu_adapter.infra import hcu_env
+    from hcu_adapter.infra import registry
 
     bound = registry.records()
     for op in ("vllm_flashmla_prefill", "vllm_flashmla_decode"):
@@ -526,7 +567,7 @@ def hcu_runtime_plugin() -> None:
 
 def _required_names(variable: str) -> frozenset[str]:
     """Read a comma-separated list; reject malformed nonempty requirements."""
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     raw, _source = hcu_env.resolve(variable)
     if not raw.strip():

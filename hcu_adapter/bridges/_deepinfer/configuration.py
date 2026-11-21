@@ -3,7 +3,8 @@
 
 from pathlib import Path
 
-from hcu_adapter import hcu_config as config, registry
+from hcu_adapter.infra import registry
+from hcu_adapter.infra import hcu_config as config
 from hcu_adapter.ops import selector
 
 

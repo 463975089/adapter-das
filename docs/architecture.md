@@ -24,7 +24,7 @@
 （import 成功、调用报错带指引）。
 
 其余 import 面由三行 `sitecustomize.py` 引导
-`hcu_adapter.bootstrap`，再按宿主只安装 `bridges/sglang.py` 或
+`hcu_adapter.infra.bootstrap`，再按宿主只安装 `bridges/sglang.py` 或
 `bridges/vllm.py`；跨框架启动守卫在 `bridges/common.py`，vendor 库桩仍由
 `hcu_adapter/` 接管。
 
@@ -46,7 +46,7 @@ hcu_adapter/
 内按需构造，普通 adapter 启动不提前 import vLLM。官方 ROCm/Triton 已有的
 实现直接复用，plugin 独有优化继续留在独立 plugin 仓。
 Adapter 是这两组 vLLM 宿主入口的唯一所有者；独立 plugin 不重复注册平台或
-general plugin，而是通过 `hcu_adapter.extensions` 入口组提供可选优化。运行时
+general plugin，而是通过 `hcu_adapter.extensions` 入口组提供可选优化（公共协议名，实现于 hcu_adapter/infra/extensions.py）。运行时
 顺序固定为 **vLLM 版本门禁 → HCU 平台确认 → DTK runtime guard →
 扩展发现/激活**。扩展 API 版本当前为 `1`，按 `priority` 和名称确定性排序；
 未显式要求的缺失、畸形或不兼容扩展只生成进程内报告，不阻断官方基线路径，
@@ -91,7 +91,7 @@ flowchart TB
         PLUGIN["plugin（独立仓）：算子融合 / 新内核 / 新后端（性能优化）"]
     end
     subgraph ADPT["适配层：adapter 影子库替换（本仓库）"]
-        SC["sitecustomize.py → hcu_adapter.bootstrap"]
+        SC["sitecustomize.py → hcu_adapter.infra.bootstrap"]
         HOST["bridges/common + sglang / vllm"]
         SK["sgl_kernel 同名影子包（AOT 默认内核）"]
         STUB["hcu_adapter 元路径影子库 + hcu_env + kill_switch"]
@@ -119,10 +119,10 @@ flowchart TB
 
 | 组件 | 职责 | 与其他组件的关系 |
 |---|---|---|
-| `sitecustomize.py` | PYTHONPATH 自动加载的薄入口 | 只导入并调用 `hcu_adapter.bootstrap.install()`；任何宿主逻辑进入这里都视为回归 |
-| `hcu_adapter/bootstrap.py` | 宿主探测和分发 | 显式 `HCU_ADAPTER_HOST` 优先；否则按继承标记、argv、已加载模块、包可用性选唯一宿主；common 先于宿主桥安装 |
+| `sitecustomize.py` | PYTHONPATH 自动加载的薄入口 | 只导入并调用 `hcu_adapter.infra.bootstrap.install()`；任何宿主逻辑进入这里都视为回归 |
+| `hcu_adapter/infra/bootstrap.py` | 宿主探测和分发 | 显式 `HCU_ADAPTER_HOST` 优先；否则按继承标记、argv、已加载模块、包可用性选唯一宿主；common 先于宿主桥安装 |
 | `hcu_adapter/bridges/` | 跨框架与宿主专属 glue | `common.py` 放启动守卫；`sglang.py` 保持既有桥顺序；`vllm.py` 提供 `_custom_ops` ABI 桥并**独占** vLLM 0.32 platform/general plugin 入口（官方 `vllm.platform_plugins` / `vllm.general_plugins`），在版本/平台/DTK runtime 门禁之后激活可选扩展；共建边界与版本门见 governance.md §7.2 |
-| `hcu_adapter/extensions.py` | vLLM 优化扩展 API v1 | 从 `hcu_adapter.extensions` entry-point 组发现独立 plugin；负责契约校验、确定性排序、必选 capability 判定和进程内报告，不 import vLLM/Torch/优化包 |
+| `hcu_adapter/infra/extensions.py` | vLLM 优化扩展 API v1 | 从 `hcu_adapter.extensions` entry-point 组发现独立 plugin（发布协议名，稳定不随布局迁移）；负责契约校验、确定性排序、必选 capability 判定和进程内报告，不 import vLLM/Torch/优化包 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径 | elementwise / layernorm / rope / moe / `gemm_fp8`·`gemm_int8` / `flash_mla` emu / `kvcacheio`；API 逐字对齐官方 sgl-kernel；内部按三档路由取 triton / vendor / torch |
 | `hcu_adapter/` 其余模块（机制层 + 域桥 + vendor 桩，双宿主共享） | 元路径影子库（import hook）与桥体 | `aiter` 真包优先 + 缺口填空；`flashinfer` / `flash_attn` 桩（import 成功、调用响亮报错）；`hcu_env` 环境注册表、`kill_switch` 快关；slimquant / mqa_logits_emu / dsa_topk 等模型级补丁 |
 
@@ -179,7 +179,7 @@ vendor/fallback 路径会写一条 DEBUG 路由记录。
   > 自动规则（arch/wheel 探测）> 默认值；启动日志打印每个生效值及来源，
   正确部署零环境变量。手册见 [env-vars.md](env-vars.md)、配置层见
   [config.md](config.md)。
-- **运行时注册表**（`hcu_adapter/registry.py`）：每算子活跃实现+安装机制登记，
+- **运行时注册表**（`hcu_adapter/infra/registry.py`）：每算子活跃实现+安装机制登记，
   启动日志 `HCU adapter runtime:` 逐项打印；`HCU_ADAPTER_DUMP=路径` 出 JSON
   供归因与配置级二分。规约见 [governance.md](governance.md) §4。
 - **快关**（`kill_switch.py`）：`HCU_DISABLE_OPS=aiter_ar,aiter_fa` 一翻开关绕开
@@ -194,7 +194,7 @@ vendor/fallback 路径会写一条 DEBUG 路由记录。
 ```
 python -m sglang.launch_server
   └─ PYTHONPATH = hcu-sglang-adapter : sglang/python
-       └─ sitecustomize.py → hcu_adapter.bootstrap.install()
+       └─ sitecustomize.py → hcu_adapter.infra.bootstrap.install()
             ├─ bridges/common.py（env 摘要 / NCCL topo / tvmffi 守卫）
             └─ bridges/sglang.py（只安装 sglang 宿主桥，既有顺序不变）
                  └─ sglang.kernels（BaseFusedOp）--forward_aot--> sgl_kernel 影子包

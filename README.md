@@ -80,6 +80,16 @@ pip install -e packaging/hcu-adapter   # hcu-adapter（适配层）
 # 之后正常安装/运行 sglang（不要安装官方 sgl-kernel wheel，避免同名冲突）
 ```
 
+> **性能提示（务必装 native wheel）**：`pip install -e .` / 纯 python wheel 是
+> **无 native .so** 的影子包——cpp 档永久缺席，对应算子回落 sglang 运行期
+> ninja JIT（冷容器逐变体 hipcc 编译，单实例 ~1 分钟、整包 20 分钟级，
+> 调试/单测/启动推理全都会卡在首次编译）。部署与性能验证一律用
+> `bash packaging/build.sh` 产出的 native 双 wheel；容器内快速验证可用
+> `AMDGPU_TARGETS=gfx936 python setup_hip.py build_ext --inplace`
+> 就地构建 `sgl_kernel/native_ops*.so`（`torch._C._dispatch_has_kernel(
+> "sgl_kernel::silu_and_mul")` 变 True 即生效）。已覆盖的 AOT 算子清单见
+> `setup_hip.py` 文件头。
+
 > **升级提示**（entry-points 迁移动作，vllm plugin 注册归属变化）：vllm
 > entry-points 已从 sgl-kernel 迁至 hcu-adapter。已部署环境升级到双 dist 版
 > **必须先卸载旧版 sgl-kernel**（`pip uninstall sgl-kernel`）再安装两张新
@@ -111,8 +121,8 @@ kv cache io 的 triton·torch 实现，API 逐字对齐官方 sgl-kernel）见
 
 | 组件 | 作用 |
 |---|---|
-| `sitecustomize.py` | PYTHONPATH 自动加载的三行入口；只调用 `hcu_adapter.bootstrap.install()`，不承载探测、桥实现或数值逻辑 |
-| `hcu_adapter/bootstrap.py` | 宿主分发器：按 `HCU_ADAPTER_HOST`、启动参数、已加载模块和可用包确定 `sglang` / `vllm` / `none`，先装 common，再只装所选宿主桥 |
+| `sitecustomize.py` | PYTHONPATH 自动加载的三行入口；只调用 `hcu_adapter.infra.bootstrap.install()`，不承载探测、桥实现或数值逻辑 |
+| `hcu_adapter/infra/bootstrap.py` | 宿主分发器：按 `HCU_ADAPTER_HOST`、启动参数、已加载模块和可用包确定 `sglang` / `vllm` / `none`，先装 common，再只装所选宿主桥 |
 | `hcu_adapter/bridges/` | 宿主专属 glue：`sglang.py` 保持既有桥顺序，`vllm.py` 集中 vLLM `_custom_ops` ABI 绑定，`common.py` 只放跨框架启动守卫；官方已有的行为不在这里重复实现 |
 | `sgl_kernel/` | 同名影子包 = `sglang.kernels` 的 AOT 默认内核路径：elementwise / layernorm / rope / moe / kv cache io / fp8·int8 GEMM / flash_mla emu，API 逐字对齐官方 sgl-kernel |
 | `hcu_adapter/` | 元路径影子库：`aiter` 真包（DTK vendor wheel）优先 + 缺口填空（`fused_clamp_act_mul` 等）、`flashinfer` / `flash_attn` 桩——import 成功、未实现调用响亮报错；另含 `hcu_env` 环境注册表、`kill_switch` 快关、slimquant / paged-MQA logits（emu/triton 双档）/ dsa_topk / quant·ar-norm 等 vendor 桥模型级补丁 |

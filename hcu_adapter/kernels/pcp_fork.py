@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import threading
 
-from hcu_adapter import hcu_env
-from hcu_adapter.kill_switch import op_disabled
+from hcu_adapter.infra import hcu_config, hcu_env
+from hcu_adapter.infra.kill_switch import op_disabled
 
 # Same operator-facing knob the bridge records and health-checks. `select_attention`
 # must read it too: that function decides which class actually runs, so a `stock`
@@ -24,12 +24,17 @@ from hcu_adapter.kill_switch import op_disabled
 # rollback path inert while the owned PCP classes were still built and executed.
 MODE_VARIABLE = 'HCU_VLLM_PCP_IMPL'
 OP_NAME = 'vllm_pcp'
+Q_ROPE_OP = 'vllm_pcp_q_rope'
 
 _lock = threading.RLock()
 _reference = None
 _engram_validator = None
 _classes = None
 _forward_context_resolver = None
+_q_rope_provider = None
+_q_rope_binding = None
+_q_rope_failure = None
+_forward_mqa_provider = None
 
 
 class PcpAttentionError(RuntimeError):
@@ -48,6 +53,58 @@ def selected_mode() -> str:
     if value not in ('stock', 'native'):
         raise PcpAttentionError(f'{MODE_VARIABLE} must be stock or native')
     return value
+
+
+def q_rope_selected() -> bool:
+    return (
+        selected_mode() == 'native'
+        and not op_disabled(Q_ROPE_OP)
+        and hcu_config.load()["ops"].get(Q_ROPE_OP, "stock") == "hcu"
+    )
+
+
+def _refuse_q_rope_change():
+    global _q_rope_failure
+    _q_rope_failure = "PCP Q RoPE policy/provider changed after binding; restart process"
+    raise PcpAttentionError(_q_rope_failure)
+
+
+def require_q_rope_healthy() -> None:
+    """Validate the published child policy without rebinding it."""
+    with _lock:
+        if _q_rope_failure is not None:
+            raise PcpAttentionError(_q_rope_failure)
+        if _q_rope_binding is None:
+            return
+        selected, provider = _q_rope_binding
+        try:
+            current = q_rope_selected()
+        except BaseException:
+            _refuse_q_rope_change()
+        if current != selected or _q_rope_provider is not provider:
+            _refuse_q_rope_change()
+
+
+def set_q_rope_provider(provider) -> None:
+    """Seal the effective policy and bind its worker startup initializer.
+
+    Stock uses no provider. The HCU initializer receives the Core cos/sin
+    table during dummy profiling and returns an input preparation callable.
+    """
+    global _q_rope_provider, _q_rope_binding
+    if provider is not None and not callable(provider):
+        raise PcpAttentionError("PCP Q RoPE provider must be callable")
+    with _lock:
+        require_q_rope_healthy()
+        if _q_rope_binding is not None:
+            if _q_rope_provider is not provider:
+                _refuse_q_rope_change()
+            return
+        selected = q_rope_selected()
+        if selected != (provider is not None):
+            raise PcpAttentionError("PCP Q RoPE provider does not match the selected policy")
+        _q_rope_provider = provider
+        _q_rope_binding = (selected, provider)
 
 
 def set_indexer_reference(function) -> None:
@@ -120,6 +177,24 @@ def bound_engram_validator():
     return _engram_validator
 
 
+def set_forward_mqa_provider(provider):
+    """Bind an optional forward_mqa provider before the owned classes are built."""
+    global _forward_mqa_provider
+    if not callable(provider):
+        raise PcpAttentionError("PCP forward_mqa provider must be callable")
+    with _lock:
+        if _forward_mqa_provider is provider:
+            return
+        if _classes is not None or _forward_mqa_provider is not None:
+            raise PcpAttentionError("PCP forward_mqa provider already bound; restart process")
+        _forward_mqa_provider = provider
+
+
+def bound_forward_mqa_provider():
+    """Return the optional forward_mqa provider without constructing or changing classes."""
+    return _forward_mqa_provider
+
+
 def _require_reference():
     reference = _reference
     if reference is None:
@@ -166,7 +241,7 @@ def validate_config(cfg) -> bool:
     """Validate the native PCP structure before allocating model parameters.
 
     Width is unconstrained. PP/DP/DCP=1 follows the native V41 PCP contract;
-    speculative decoding needs a larger CR2 ring contract than Core provides.
+    DSpark uses the owned CR2 history metadata for verification rollback.
     Engram uses the plugin-owned private registered-host TPxPCP table adapter,
     so its validator is injected rather than imported.
     """
@@ -186,7 +261,8 @@ def validate_config(cfg) -> bool:
         if getattr(p, name) != 1:
             errors.append(f"{name}=1 required by native V41 PCP metadata")
     if cfg.speculative_config is not None:
-        errors.append("native PCP CR2 ring does not support speculative decoding")
+        from .pcp_dspark import validate_dspark_config
+        validate_dspark_config(cfg)
     if cfg.lora_config is not None or p.enable_eplb:
         errors.append("LoRA/EPLB are not supported by this PCP model adapter")
     if p.enable_dbo:
@@ -210,7 +286,7 @@ def validate_config(cfg) -> bool:
                 errors.append(str(error))
             except ValueError as error:
                 errors.append(str(error))
-    from hcu_adapter.fp4_indexer import applicable as fp4_applicable, validate_config as validate_fp4
+    from hcu_adapter.features.dsv41.fp4_indexer import applicable as fp4_applicable, validate_config as validate_fp4
     if fp4_applicable(cfg):
         # The FP4 owner supplies its producer/cache/reader while PCP preserves
         # replicated K preparation and rank-local query metadata.
@@ -251,6 +327,15 @@ def build_classes():
             DeepseekV41ROCMAiterSparseSWABackend,
         )
         from vllm.models.deepseek_v41.attention import DeepseekV4Attention, DeepseekV4Indexer
+
+        def forward_mqa_impl(self, q, kv, positions, output):
+            return DeepseekV41ROCMAiterMLAAttention.forward_mqa(
+                self, q, kv, positions, output)
+
+        if _forward_mqa_provider is not None:
+            forward_mqa_impl = _forward_mqa_provider(DeepseekV41ROCMAiterMLAAttention)
+            if not callable(forward_mqa_impl):
+                raise PcpAttentionError("PCP provider must supply a callable forward_mqa")
 
         class HcuV41PcpBackend(DeepseekV41ROCMAiterMLASparseBackend):
             @classmethod
@@ -310,6 +395,13 @@ def build_classes():
                 # Common preparation serializes PCP gathers. AMD's fast compressor
                 # chain publishes local latent against global slots and cannot run here.
                 self.aux_stream_list = None
+                self._initialize_q_rope = None
+                self._prepare_q_rope = None
+                require_q_rope_healthy()
+                if q_rope_selected() and cfg.model_config.enforce_eager:
+                    if _q_rope_provider is None:
+                        raise PcpAttentionError("PCP Q RoPE provider is not bound")
+                    self._initialize_q_rope = _q_rope_provider
 
             def _indexer_cls(self, k_cache):
                 if k_cache is not None and k_cache.rocm_mxfp4:
@@ -319,12 +411,57 @@ def build_classes():
             forward = DeepseekV4Attention.forward
             _alloc_attn_out = DeepseekV4Attention._alloc_attn_out
 
+            def _fused_qnorm_rope_kv_insert(self, q, kv, positions, attn_metadata):
+                if _q_rope_failure is not None:
+                    raise PcpAttentionError(_q_rope_failure)
+                native = super()._fused_qnorm_rope_kv_insert
+                if ((self._initialize_q_rope is None and self._prepare_q_rope is None)
+                        or not self.use_pcp or self.kv_mxfp8
+                        or self.kv_cache_torch_dtype != torch.uint8
+                        or self.accepts_unnormed_unroped_query
+                        or self.n_local_heads != self.padded_heads
+                        or self.rope_head_dim != 64 or self.rotary_emb.is_neox_style):
+                    return native(q, kv, positions, attn_metadata)
+
+                if attn_metadata is None and self._initialize_q_rope is not None:
+                    # Core sizes the automatic KV cache after this dummy pass.
+                    self._prepare_q_rope = self._initialize_q_rope(
+                        self.rotary_emb.cos_sin_cache
+                    )
+                    self._initialize_q_rope = None
+                if self._prepare_q_rope is None or not isinstance(attn_metadata, dict):
+                    return native(q, kv, positions, attn_metadata)
+
+                swa = attn_metadata.get(self.swa_cache_layer.prefix)
+                cache = self.swa_cache_layer.kv_cache
+                if (swa is None or swa.num_prefill_tokens <= 0 or swa.num_decode_tokens
+                        or swa.cache_slot_mapping is None or swa.cache_positions is None
+                        or cache.dtype != torch.uint8 or cache.ndim != 3
+                        or cache.shape[-1] != 584):
+                    return native(q, kv, positions, attn_metadata)
+
+                cos_sin = self.rotary_emb.cos_sin_cache
+                rotate = self._prepare_q_rope(q, positions, cos_sin)
+                if rotate is None:
+                    return native(q, kv, positions, attn_metadata)
+
+                from vllm.distributed import get_pcp_group
+
+                # Preserve the Core PCP KV-collective order and original RoPE table.
+                gathered_kv = get_pcp_group().all_gather(kv.contiguous(), dim=0)
+                torch.ops._C.fused_deepseek_v4_kv_rope_insert(
+                    gathered_kv, cache, swa.cache_slot_mapping, swa.cache_positions,
+                    cos_sin, swa.block_size, None, self.kv_mxfp8,
+                )
+                rotate()
+                return q
+
             def forward_mqa(self, q, kv, positions, output):
                 if not isinstance(output, torch.Tensor):
                     raise TypeError("HCU PCP attention requires its BF16 output allocation")
                 metadata = _forward_context().attn_metadata
                 if metadata is None:
-                    return super().forward_mqa(q, kv, positions, output)
+                    return forward_mqa_impl(self, q, kv, positions, output)
                 if not isinstance(metadata, dict) or self.swa_cache_layer.prefix not in metadata:
                     raise RuntimeError("HCU PCP attention requires native local SWA metadata")
                 swa = metadata[self.swa_cache_layer.prefix]
@@ -335,8 +472,8 @@ def build_classes():
                 # AMD inverse RoPE sees only initialized, actual local query rows.
                 output[count:].zero_()
                 if count:
-                    return super().forward_mqa(
-                        q[:count], kv[:count], positions[:count], output[:count]
+                    return forward_mqa_impl(
+                        self, q[:count], kv[:count], positions[:count], output[:count]
                     )
 
             def _forward_decode(self, q, *args, **kwargs):
@@ -367,4 +504,7 @@ def select_attention(cfg):
 
     if selected_mode() == 'stock' or not validate_config(cfg):
         return native._select_dsv4_attn_cls(cfg)
+    if cfg.speculative_config is not None:
+        from .pcp_dspark import HcuV41PcpDSparkAttention
+        return HcuV41PcpDSparkAttention
     return build_classes()["attention"]

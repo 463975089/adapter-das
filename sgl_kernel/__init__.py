@@ -95,7 +95,7 @@ def build_tree_kernel_efficient(*args, **kwargs):
 # they bind torch at module level, so they are gated behind THIS import —
 # `import hcu_adapter` / its plugin seam stays torch-free, and the finders
 # still install here, before any sglang module import.
-from hcu_adapter.stubs import register_all as _hcu_register_stubs
+from hcu_adapter.infra.stubs import register_all as _hcu_register_stubs
 
 _hcu_register_stubs()
 from sgl_kernel.kvcacheio import (  # noqa: F401

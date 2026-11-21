@@ -9,7 +9,8 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from hcu_adapter import hcu_config, hcu_env
+from hcu_adapter.infra import hcu_config
+from hcu_adapter.infra import hcu_env
 
 
 def test_ar_norm_probe_checks_module_without_import(monkeypatch, tmp_path):

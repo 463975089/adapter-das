@@ -37,6 +37,7 @@ _PROBE_OPS = (
     "copy_to_gpu_no_ce",
     "sgl_per_token_group_quant_8bit",
     "sgl_per_token_group_quant_8bit_v2",
+    "silu_and_mul",
 )
 
 _STATE = None  # None = unprobed, then True/False

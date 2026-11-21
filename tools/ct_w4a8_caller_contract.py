@@ -22,7 +22,7 @@ RELATIVE_SOURCE = "python/sglang/srt/models/deepseek_v2.py"
 
 
 def _isolated_cpu():
-    from hcu_adapter.hcu_env import resolve
+    from hcu_adapter.infra.hcu_env import resolve
 
     if (resolve("HCU_ADAPTER_HOST")[0] != "none"
             or any(os.environ.get(key) != "" for key in (

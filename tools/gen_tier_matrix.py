@@ -4,7 +4,7 @@
 """Render BACKEND_CATALOG into docs/tier-matrix.md (the tier panorama).
 
 Answers "which op has which tier, which tier is missing, at what status"
-from the single source of truth (BACKEND_CATALOG in hcu_adapter/hcu_config.py).
+from the single source of truth (BACKEND_CATALOG in hcu_adapter/infra/hcu_config.py).
 File naming (governance §3b) is only navigation; this table is the registry.
 
 L0 `impl-naming` regenerates this in memory and fails on drift, so the
@@ -32,7 +32,7 @@ GENERIC_KEYS = {"status", "note", "env", "default", "impl", "envs", "candidates"
 
 def load_catalog():
     sys.path.insert(0, str(ROOT))
-    from hcu_adapter.hcu_config import BACKEND_CATALOG
+    from hcu_adapter.infra.hcu_config import BACKEND_CATALOG
 
     return BACKEND_CATALOG
 
@@ -62,7 +62,7 @@ def render() -> str:
         "# 算子档位矩阵（自动生成，勿手改）",
         "",
         f"> 生成：`python tools/gen_tier_matrix.py`（最近 {date.today().isoformat()}）"
-        "；事实源 = `BACKEND_CATALOG`（hcu_adapter/hcu_config.py）。",
+        "；事实源 = `BACKEND_CATALOG`（hcu_adapter/infra/hcu_config.py）。",
         "> L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。",
         "> 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。",
         "",

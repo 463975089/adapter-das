@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Do not modify `sitecustomize.py`, `hcu_adapter/bootstrap.py`, or the sglang installation chain.
+- Do not modify `sitecustomize.py`, `hcu_adapter/infra/bootstrap.py`, or the sglang installation chain.
 - Target PEP 440 release tuple `0.32.0`; allow pre/dev/post/local suffixes and reject other epochs/releases.
 - Use official `vllm.platform_plugins` and `vllm.general_plugins` entry points.
 - Keep plugin-only optimizations outside this repository.

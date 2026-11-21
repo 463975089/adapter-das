@@ -3,8 +3,9 @@
 """Public configuration for the external MiniMax prefill provider."""
 import json
 import pytest
-from hcu_adapter import hcu_config, hcu_env
-from hcu_adapter.kill_switch import op_disabled
+from hcu_adapter.infra import hcu_config
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.infra.kill_switch import op_disabled
 
 
 @pytest.mark.parametrize('backend', ['triton', 'stock'])

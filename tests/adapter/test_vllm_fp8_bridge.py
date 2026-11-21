@@ -8,7 +8,7 @@ import pytest
 
 from hcu_adapter.bridges import vllm as bridge
 from hcu_adapter.bridges import vllm_fp8 as fallback
-from hcu_adapter import registry
+from hcu_adapter.infra import registry
 
 
 @pytest.fixture(params=("gfx936", "gfx938"))

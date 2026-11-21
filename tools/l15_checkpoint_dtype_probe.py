@@ -83,7 +83,7 @@ def probabilities(model, row, vocab_size):
 def run(args):
     if args.out.resolve() == args.smoke_report.resolve():
         raise ValueError("diagnostic output must preserve original smoke evidence")
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     if hcu_env.resolve("HCU_ADAPTER_HOST")[0] != "none":
         raise ValueError("use a fresh HOSTnone process with GPUs hidden")

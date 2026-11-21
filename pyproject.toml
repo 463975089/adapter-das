@@ -146,3 +146,7 @@ include = ["sgl_kernel*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "emu_parity: full-scale emu x triton numeric parity -- development/nightly only (governance 3b-9 / P8, 2026-11-19); CI gates deselect this mark; run manually per op with `pytest -m emu_parity`",
+  "fresh_process: spawns fresh interpreters / torch.distributed workers (23-53s each, ~370s total) -- relocated from the serial kernels segment to the concurrent gates lane (W4-2, 2026-11-19); spawn semantics unchanged",
+]

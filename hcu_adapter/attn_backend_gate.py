@@ -73,7 +73,7 @@ def install():
     if not installed:
         return
 
-    import hcu_adapter.registry as _reg
+    import hcu_adapter.infra.registry as _reg
 
     _reg.register(
         "flash_attention",

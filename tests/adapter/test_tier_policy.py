@@ -10,7 +10,7 @@ the probes are plain callables.
 
 import pytest
 
-from hcu_adapter import tier_policy
+from hcu_adapter.infra import tier_policy
 
 
 @pytest.fixture(autouse=True)
@@ -87,22 +87,25 @@ def test_explicit_planned_tier_is_reachable_but_not_auto():
     assert (tier, impl) == ("lightop", "L")
 
 
-def test_unavailable_explicit_tier_falls_through():
-    tier, impl = tier_policy.pick(
-        "op",
-        _cand(lightop=None, aiter="A", triton="T"),
-        requested="lightop",
-    )
-    assert (tier, impl) == ("aiter", "A")
+def test_unavailable_explicit_tier_is_a_hard_error():
+    """governance 3b-8 (2026-11-19): an explicit tier that cannot be
+    honored must raise -- silent fall-through made "what actually ran"
+    unknowable and hid broken wheels from performance triage."""
+    with pytest.raises(LookupError, match="explicit tier 'lightop' unavailable"):
+        tier_policy.pick(
+            "op",
+            _cand(lightop=None, aiter="A", triton="T"),
+            requested="lightop",
+        )
 
 
-def test_unknown_explicit_tier_falls_through():
-    tier, impl = tier_policy.pick(
-        "op",
-        _cand(aiter="A", triton="T"),
-        requested="wat",
-    )
-    assert (tier, impl) == ("aiter", "A")
+def test_unknown_explicit_tier_is_a_hard_error():
+    with pytest.raises(ValueError, match="unknown tier 'wat'"):
+        tier_policy.pick(
+            "op",
+            _cand(aiter="A", triton="T"),
+            requested="wat",
+        )
 
 
 def test_probe_exception_counts_as_unavailable():

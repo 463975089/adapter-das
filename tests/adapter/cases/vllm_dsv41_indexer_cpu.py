@@ -10,9 +10,29 @@ B, D, HEADS = 16, 128, 2
 
 @pytest.fixture(autouse=True)
 def interpret_gpu_score_on_cpu(monkeypatch):
-    from triton.runtime.interpreter import InterpretedFunction
+    import numpy as np
+    import triton.language as tl
+    from triton.runtime.interpreter import (
+        InterpretedFunction, InterpreterBuilder, TensorHandle,
+    )
     from triton.runtime.jit import JITFunction
     from hcu_adapter.kernels import shuffle_mqa_logits_triton as gpu
+    # Some vendor interpreters coerce comparison output back to the operand
+    # integer dtype. Repair only the CPU interpreter's comparison handles;
+    # the GPU kernel and independent score/mask references stay unchanged.
+    comparisons = (np.less, np.less_equal, np.greater, np.greater_equal,
+                   np.equal, np.not_equal)
+    integer = TensorHandle(np.array([0, 1], dtype=np.int32), tl.int32)
+    sample = InterpreterBuilder().create_icmpSLT(integer, integer)
+    if sample.data.dtype != np.bool_ or sample.dtype != tl.int1:
+        original = InterpreterBuilder.binary_op
+
+        def binary_op(self, lhs, rhs, op):
+            if op in comparisons:
+                return TensorHandle(op(lhs.data, rhs.data), tl.int1)
+            return original(self, lhs, rhs, op)
+
+        monkeypatch.setattr(InterpreterBuilder, "binary_op", binary_op)
     # tl.sum and its nested helpers were imported before this fixture.
     monkeypatch.setattr(JITFunction, "__call__",
         lambda self, *args, **kwargs: InterpretedFunction(self.fn)(*args, **kwargs))

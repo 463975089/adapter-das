@@ -330,10 +330,26 @@ def test_merge_state_v2_native_rejects_malformed_out():
     bad = [
         ("cpu out", torch.empty(2, 2, 32), l),
         ("short out", torch.empty(2, 2, 16, device="cuda"), l),
-        ("non-contiguous", torch.empty(2, 2, 32, 64, device="cuda")[..., :32], l),
+        # Same (2, 2, 32) shape but row stride 64: only the layout check can
+        # reject this — a dim/element mismatch would mask it (review R9 P3).
+        ("non-contiguous", torch.empty(2, 2, 64, device="cuda")[..., :32], l),
         ("v dtype", torch.empty(2, 2, 32, device="cuda", dtype=torch.float32), l),
         ("lse dtype", o, torch.empty(2, 2, device="cuda", dtype=torch.float16)),
     ]
     for tag, bad_o, bad_l in bad:
         with pytest.raises(RuntimeError):
             op(va, sa, vb, sb, bad_o, bad_l)
+
+    # The kernel reads both v sides as v_merged's scalar_t and both lse sides
+    # as float*: same-width mismatched dtypes must raise, not silently
+    # reinterpret memory (review R9 P2 — v_b/s_a/s_b were unchecked).
+    bad_inputs = [
+        ("s_a dtype", sa.to(torch.float16), 1),
+        ("v_b dtype", vb.to(torch.float16), 2),
+        ("s_b dtype", sb.to(torch.float16), 3),
+    ]
+    for tag, bad_t, pos in bad_inputs:
+        args = [va, sa, vb, sb, o, l]
+        args[pos] = bad_t
+        with pytest.raises(RuntimeError):
+            op(*args)

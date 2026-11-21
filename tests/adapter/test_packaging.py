@@ -14,6 +14,7 @@ Two wheels, independent version lines, one interlock:
 """
 
 # [L1 cold-curation 2026-11-17] 7 -> 3: keeps the stamped-pair interlock, the pure-shadow kernel wheel and the half-install sentinel; dropped faces stay in git history.
+import json
 import os
 from email.parser import Parser
 from pathlib import Path
@@ -94,18 +95,65 @@ def _copy_repo(tmp_path):
     return source
 
 
-@pytest.fixture(scope="module")
-def kernel_wheel(tmp_path_factory):
-    return _build_wheel(_copy_repo(tmp_path_factory.mktemp("src-kernel")),
+# W4-3 (2026-11-19): the whole-repo copytree ran once PER TEST (~5s each,
+# 4-5x per session) and the default wheels rebuilt per module. One
+# session-scoped copy keyed by a (path,size,mtime) fingerprint of the
+# tree, shared by every build; setuptools may litter build/egg-info into
+# it after the first wheel -- harmless, wheels are what get asserted on.
+def _repo_fingerprint():
+    import hashlib
+
+    items = []
+    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in (".git", ".pytest_cache", "__pycache__",
+                         "build", "dist") and not d.endswith(".egg-info")
+        ]
+        for fn in filenames:
+            fp = os.path.join(dirpath, fn)
+            st = os.stat(fp)
+            items.append(
+                (os.path.relpath(fp, REPO_ROOT), st.st_size, st.st_mtime_ns)
+            )
+    items.sort()
+    h = hashlib.sha1()
+    for it in items:
+        h.update(repr(it).encode())
+    return h.hexdigest()[:16]
+
+
+@pytest.fixture(scope="session")
+def repo_copy(tmp_path_factory):
+    base = tmp_path_factory.getbasetemp()
+    target = base / ("repocache-" + _repo_fingerprint())
+    if not target.exists():
+        tmp = target.with_suffix(".tmp")
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        shutil.copytree(
+            REPO_ROOT,
+            tmp,
+            ignore=shutil.ignore_patterns(
+                ".git", ".pytest_cache", "__pycache__", "build", "dist",
+                "*.egg-info",
+            ),
+        )
+        tmp.rename(target)
+    return target
+
+
+@pytest.fixture(scope="session")
+def kernel_wheel(tmp_path_factory, repo_copy):
+    return _build_wheel(repo_copy,
                         tmp_path_factory.getbasetemp(), "kernel")
 
 
-@pytest.fixture(scope="module")
-def adapter_wheel(tmp_path_factory):
+@pytest.fixture(scope="session")
+def adapter_wheel(tmp_path_factory, repo_copy):
     # the adapter dist builds from packaging/hcu-adapter with sources left
     # at the repo root (src-layout mapping, nothing copied)
-    source = _copy_repo(tmp_path_factory.mktemp("src-adapter"))
-    return _build_wheel(source / "packaging" / "hcu-adapter",
+    return _build_wheel(repo_copy / "packaging" / "hcu-adapter",
                         tmp_path_factory.getbasetemp(), "adapter")
 
 
@@ -157,8 +205,8 @@ def test_kernel_wheel_is_pure_shadow_kernel(kernel_wheel):
     archive.close()
 
 
-def test_stamped_wheel_pair_pins_exact_matching_build(tmp_path):
-    source = _copy_repo(tmp_path)
+def test_stamped_wheel_pair_pins_exact_matching_build(tmp_path, repo_copy):
+    source = repo_copy
     stamp = "20261111.g123abc"
     kernel = _build_wheel(source, tmp_path, "stamped-kernel", stamp=stamp)
     adapter = _build_wheel(source / "packaging/hcu-adapter", tmp_path,
@@ -248,3 +296,74 @@ def test_sgl_kernel_half_install_raises_sentinel():
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "SENTINEL-RAISED-OK" in result.stdout
+
+
+@pytest.mark.parametrize("layout", ["source", "wheel"])
+@pytest.mark.parametrize("host", ["sglang", "vllm"])
+@pytest.mark.parametrize("location", ["root", "cwd", "explicit", "invalid-root"])
+def test_config_discovery_survives_infra_migration(
+    tmp_path, request, layout, host, location,
+):
+    """Resolve real deployment policy from outside the source/install root.
+
+    A fresh interpreter also catches config reads during package bootstrap;
+    no global state, module path or config parser is replaced by a double.
+    """
+    root = tmp_path / layout
+    root.mkdir()
+    if layout == "source":
+        shutil.copytree(REPO_ROOT / "hcu_adapter", root / "hcu_adapter",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copyfile(REPO_ROOT / "sitecustomize.py", root / "sitecustomize.py")
+    else:
+        with zipfile.ZipFile(request.getfixturevalue("adapter_wheel")) as archive:
+            archive.extractall(root)
+    cwd = tmp_path / "launch"
+    cwd.mkdir()
+    root_config = root / "hcu_adapter.json"
+    root_config.write_text(json.dumps({
+        "version": 1, "ops": {"vllm_mhc": "stock", "silu_and_mul": "triton"},
+    }))
+    chosen = root_config
+    if location in ("cwd", "explicit"):
+        chosen = cwd / "hcu_adapter.json"
+        chosen.write_text(json.dumps({
+            "version": 1, "ops": {"vllm_mhc": "aiter", "silu_and_mul": "lightop"},
+        }))
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith(("HCU_", "_HCU_", "PYTHON"))}
+    env.update(HCU_ADAPTER_HOST="none", HIP_VISIBLE_DEVICES="",
+               CUDA_VISIBLE_DEVICES="", ROCR_VISIBLE_DEVICES="")
+    if location == "explicit":
+        chosen = tmp_path / "explicit.json"
+        chosen.write_text(root_config.read_text())
+        env["HCU_CONFIG"] = str(chosen)
+    if location == "invalid-root":
+        root_config.write_text('{"version": 999, "ops": {}}')
+    code = r'''
+import json, pathlib, sys
+root, host, chosen, location = sys.argv[1:]
+sys.path.insert(0, root)
+try:
+    from hcu_adapter.infra import hcu_config, hcu_env
+    variable = "HCU_VLLM_MHC_IMPL" if host == "vllm" else "HCU_SILU_MUL_IMPL"
+    expected = ("aiter" if host == "vllm" else "lightop") if location == "cwd" else (
+        "stock" if host == "vllm" else "triton")
+    assert hcu_env.resolve(variable, host=host) == (expected, "config")
+    assert hcu_config.path() == chosen
+    assert pathlib.Path(hcu_config.__file__).is_relative_to(root)
+except RuntimeError as error:
+    if location != "invalid-root" or "unsupported version" not in str(error):
+        raise
+else:
+    assert location != "invalid-root", "Invalid root config was silently ignored"
+assert not any(name in sys.modules for name in ("torch", "vllm", "sglang"))
+print("CONFIG-DISCOVERY-OK")
+'''
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", "-B", "-c", code,
+         str(root), host, str(chosen), location],
+        cwd=cwd, env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CONFIG-DISCOVERY-OK" in result.stdout

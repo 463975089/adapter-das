@@ -18,7 +18,7 @@ import types
 
 import pytest
 
-from hcu_adapter import jit_sources as bridge
+from hcu_adapter.features.jit import jit_sources as bridge
 
 
 def _snapshot(root):
@@ -29,7 +29,7 @@ def _snapshot(root):
 
 
 def _synthetic(root):
-    from hcu_adapter import (
+    from hcu_adapter.features.jit import (
         jit_rope, jit_store_cache, jit_ptgq, jit_dpskmeta, jit_quant_fp8,
         jit_warp, jit_concat_mla, jit_dot_product,
     )
@@ -76,7 +76,7 @@ def _git(tree, *args):
 
 
 def test_per_token_fp8_conversion_is_staged_for_both_kernel_paths(tmp_path):
-    from hcu_adapter import jit_quant_fp8
+    from hcu_adapter.features.jit import jit_quant_fp8
 
     root = tmp_path / "community" / "jit"
     root.mkdir(parents=True)
@@ -137,7 +137,7 @@ def test_complete_bundle_preserves_sources_and_all_transforms(source, tmp_path):
     warp = (bundle / "include/sgl_kernel/warp.cuh").read_text()
     assert "T _v;" in warp and "__hip_bfloat162 _v;" not in warp
     assert "__shfl_up_sync(active_mask" not in warp
-    from hcu_adapter import jit_concat_mla
+    from hcu_adapter.features.jit import jit_concat_mla
 
     concat = (bundle / "csrc" / jit_concat_mla._RELPATH).read_text()
     assert jit_concat_mla._NATIVE_Q_KERNEL in concat
@@ -178,7 +178,7 @@ def test_corrupt_bundle_refused_without_repairing_sources(source, tmp_path):
 def test_failed_transform_publishes_nothing(source, tmp_path, monkeypatch):
     root, _ = source
     before = _snapshot(root)
-    from hcu_adapter import jit_dot_product
+    from hcu_adapter.features.jit import jit_dot_product
 
     def fail(stage, register):
         assert stage != root
@@ -229,6 +229,7 @@ def _publish_child(root, cache, queue):
         queue.put(("error", repr(exc)))
 
 
+@pytest.mark.fresh_process
 def test_spawn_concurrent_publish(source, tmp_path):
     root, _ = source
     before = _snapshot(root)
@@ -288,7 +289,7 @@ def test_dpskmeta_self_healed_needle_is_skipped(tmp_path):
     # sglang main rewrote topk_bf16_small.cuh to pass lane_id as a parameter:
     # the %%laneid asm patch has no object there and must be skipped loudly,
     # while every still-present NVIDIA-only construct keeps its rewrite.
-    from hcu_adapter import jit_dpskmeta
+    from hcu_adapter.features.jit import jit_dpskmeta
 
     root = tmp_path / "stage"
     (root / "csrc/deepseek_v4").mkdir(parents=True)
@@ -316,7 +317,7 @@ def test_dpskmeta_self_healed_needle_is_skipped(tmp_path):
 def test_dpskmeta_drifted_construct_still_raises(tmp_path):
     # The construct is still present but the needle text drifted: the
     # governance §3 gate must fire, not silently skip.
-    from hcu_adapter import jit_dpskmeta
+    from hcu_adapter.features.jit import jit_dpskmeta
 
     root = tmp_path / "stage"
     (root / "csrc/deepseek_v4").mkdir(parents=True)
@@ -341,7 +342,7 @@ def test_dpskmeta_topk_binding_shim_applies_per_tree(tmp_path, variant):
     # The topk/situ structured binds carry dual candidates for the two
     # supported trees (governance §5.3 ①): whichever variant a tree has,
     # every needle it carries must land and no decomposable bind survives.
-    from hcu_adapter import jit_dpskmeta
+    from hcu_adapter.features.jit import jit_dpskmeta
 
     impl = [n for n, _ in jit_dpskmeta._PATCHES_INCLUDE["sgl_kernel/deepseek_v4/topk_impl.cuh"]]
     v2 = [n for n, _ in jit_dpskmeta._PATCHES["deepseek_v4/topk_v2.cuh"]]
@@ -377,7 +378,7 @@ def test_dpskmeta_topk_phase3_site_self_heals(tmp_path):
     # A tree that drops the 8sp coarse sites entirely (upstream self-healed
     # the extra phase-3 bind) must skip those candidates loudly, not raise,
     # while the common 6sp/to_fp32 needles keep landing.
-    from hcu_adapter import jit_dpskmeta
+    from hcu_adapter.features.jit import jit_dpskmeta
 
     impl = [
         n for n, _ in jit_dpskmeta._PATCHES_INCLUDE["sgl_kernel/deepseek_v4/topk_impl.cuh"]
@@ -402,7 +403,7 @@ def test_dpskmeta_topk_phase3_site_self_heals(tmp_path):
 
 def test_dpskmeta_scalar_topk_bounds_need_no_vector_patch(tmp_path):
     """Community baa9bef already removed these vector decompositions."""
-    from hcu_adapter import jit_dpskmeta
+    from hcu_adapter.features.jit import jit_dpskmeta
 
     layout = {
         "csrc/deepseek_v4/topk_v2.cuh": [
@@ -432,7 +433,7 @@ def test_dpskmeta_scalar_topk_bounds_need_no_vector_patch(tmp_path):
      "\n  const auto [u_lo, u_hi] = to_fp32(other_keys - 0x00010001u);"),
 ])
 def test_dpskmeta_self_heal_keeps_drift_guard(tmp_path, relpath, drift):
-    from hcu_adapter import jit_dpskmeta
+    from hcu_adapter.features.jit import jit_dpskmeta
 
     root = tmp_path / "stage"
     _write_stage(root, {relpath: [drift]})
@@ -445,7 +446,7 @@ def test_dpskmeta_self_heal_keeps_drift_guard(tmp_path, relpath, drift):
 def test_dpskmeta_topk_impl_drifted_bind_still_raises(tmp_path):
     # Drifted 6sp site in the include/ channel (argument renamed): the §3
     # gate must fire for _PATCHES_INCLUDE exactly as it does for csrc/.
-    from hcu_adapter import jit_dpskmeta
+    from hcu_adapter.features.jit import jit_dpskmeta
 
     root = tmp_path / "stage"
     _write_stage(root, {
@@ -742,7 +743,7 @@ def test_gpu_original_quant_compilation_and_variable_graph_replay(group_size, ba
     torch = _gpu()
     bridge.install()
     from importlib import import_module
-    from hcu_adapter.jit_fp8_ffi import _OutputStorage
+    from hcu_adapter.features.jit.jit_fp8_ffi import _OutputStorage
     if backend == "generic":
         api = import_module("sglang.kernels.ops.quantization.per_token_group_quant")
         module = api._jit_module(torch.bfloat16, torch.float8_e4m3fn, group_size,

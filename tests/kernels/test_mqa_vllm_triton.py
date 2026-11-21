@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def _impls():
-    from hcu_adapter import mqa_logits_emu, mqa_logits_triton
+    from hcu_adapter.features.dsa import mqa_logits_emu, mqa_logits_triton
 
     return mqa_logits_emu, mqa_logits_triton
 

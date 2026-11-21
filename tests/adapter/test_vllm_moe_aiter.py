@@ -112,7 +112,7 @@ def test_no_publication_on_import_or_config_query():
 def test_padding_default_materialized_before_cache(monkeypatch):
     from vllm import envs
 
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
     from hcu_adapter.bridges.vllm_moe_aiter import configure_padding_policy
 
     # Only the external hardware probe is substituted; real env/config readers.

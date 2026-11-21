@@ -16,6 +16,10 @@
 void concat_mla_k(at::Tensor k, at::Tensor k_nope, at::Tensor k_rope);
 void concat_mla_absorb_q(at::Tensor a, at::Tensor b, at::Tensor out);
 void copy_to_gpu_no_ce(const at::Tensor& input, at::Tensor& output);
+void silu_and_mul(at::Tensor& out, at::Tensor& input);
+void gelu_tanh_and_mul(at::Tensor& out, at::Tensor& input);
+void gelu_and_mul(at::Tensor& out, at::Tensor& input);
+void gelu_quick(at::Tensor& out, const at::Tensor& input);
 void merge_state_v2(
     at::Tensor v_a,
     at::Tensor s_a,
@@ -59,6 +63,20 @@ TORCH_LIBRARY_FRAGMENT(sgl_kernel, m) {
 
   m.def("copy_to_gpu_no_ce(Tensor input, Tensor! output) -> ()");
   m.impl("copy_to_gpu_no_ce", c10::DispatchKey::CUDA, &copy_to_gpu_no_ce);
+
+  // gated activations, vendored verbatim (csrc/elementwise/activation.cu);
+  // schemas verbatim from upstream common_extension_rocm.cc:25-34
+  m.def("silu_and_mul(Tensor! out, Tensor input) -> ()");
+  m.impl("silu_and_mul", c10::DispatchKey::CUDA, &silu_and_mul);
+
+  m.def("gelu_tanh_and_mul(Tensor! out, Tensor input) -> ()");
+  m.impl("gelu_tanh_and_mul", c10::DispatchKey::CUDA, &gelu_tanh_and_mul);
+
+  m.def("gelu_and_mul(Tensor! out, Tensor input) -> ()");
+  m.impl("gelu_and_mul", c10::DispatchKey::CUDA, &gelu_and_mul);
+
+  m.def("gelu_quick(Tensor! out, Tensor input) -> ()");
+  m.impl("gelu_quick", c10::DispatchKey::CUDA, &gelu_quick);
 
   // schema identical to the upstream aot python wrapper face (aot
   // csrc/common_extension_rocm.cc:70): destination tensors are explicit

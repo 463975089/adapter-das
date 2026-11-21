@@ -16,7 +16,12 @@ import math
 import pytest
 import torch
 
-from hcu_adapter.conv1d_update_emu import causal_conv1d_update_emu
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from _gpu_compare import gpu_compare  # noqa: E402
+
+from hcu_adapter.features.gdn.conv1d_update_emu import causal_conv1d_update_emu
 
 
 def _case():
@@ -52,16 +57,15 @@ def test_conv1d_update_output_and_indexed_state(device):
     x, weight, bias, state, slots = [value.to(device).clone() for value in inputs]
     actual = causal_conv1d_update_emu(
         x, state, weight, bias, "silu", conv_state_indices=slots)
-    observed = actual.cpu().double()
-    cosine = torch.nn.functional.cosine_similarity(
-        observed.flatten(), expected.flatten(), dim=0).item()
-    assert cosine >= 0.9999
-    assert (observed - expected).abs().max().item() <= 2e-2
+    # W4-4: GPU-native compare -- reductions on device, ONE host sync
+    # (was: .cpu().double() + cosine .item() + max .item() + two
+    # assert_close pulls = 3-4 round trips per test).
+    gpu_compare(actual, expected.to(actual.device), atol=2e-2, cosine=0.9999)
     # Comparing the entire cache also checks unselected and permuted slots.
-    torch.testing.assert_close(state.cpu(), after, rtol=0, atol=0)
+    gpu_compare(state, after.to(state.device), atol=0)
     for value, original in zip((x, weight, bias, slots),
                                (inputs[0], inputs[1], inputs[2], inputs[4])):
-        torch.testing.assert_close(value.cpu(), original, rtol=0, atol=0)
+        gpu_compare(value, original.to(value.device), atol=0)
 
 
 if __name__ == "__main__":

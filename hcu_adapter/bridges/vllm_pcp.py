@@ -19,9 +19,10 @@ from dataclasses import dataclass
 import logging
 import os
 
-from hcu_adapter import hcu_env, registry
-from hcu_adapter.kill_switch import op_disabled
-from hcu_adapter.runtime_lifecycle import ProcessLocalLifecycle
+from hcu_adapter.infra import hcu_env
+from hcu_adapter.infra import registry
+from hcu_adapter.infra.kill_switch import op_disabled
+from hcu_adapter.infra.runtime_lifecycle import ProcessLocalLifecycle
 
 MODE_VARIABLE = "HCU_VLLM_PCP_IMPL"
 OP_NAME = "vllm_pcp"
@@ -92,6 +93,12 @@ def require_healthy() -> None:
         _refuse("PCP policy invalid after registration; start a fresh process", error)
     if mode != p.mode:
         _refuse("PCP policy changed after registration; start a fresh process")
+    from hcu_adapter.kernels import pcp_fork
+
+    try:
+        pcp_fork.require_q_rope_healthy()
+    except pcp_fork.PcpAttentionError as error:
+        _refuse("PCP Q RoPE binding is unhealthy; start a fresh process", error)
 
 
 def install() -> bool:
@@ -130,4 +137,5 @@ def install() -> bool:
         _LOG.info("HCU PCP attention: adapter-owned classes active (mode=native)")
 
     _lifecycle.run_once("vllm-pcp", initialize)
+    require_healthy()
     return True

@@ -113,7 +113,7 @@ def test_fp8_grouped_expert_contract(layout, n, k, strided_scales):
     Tests the adapter Triton implementation directly. It does not claim a
     distributed DeepEP route or change its runtime selection.
     """
-    from hcu_adapter.deep_gemm_fp8_triton import (
+    from hcu_adapter.features.deep_gemm.deep_gemm_fp8_triton import (
         fp8_m_grouped_gemm_nt_masked, m_grouped_fp8_gemm_nt_contiguous,
     )
     torch.manual_seed(910 + n)

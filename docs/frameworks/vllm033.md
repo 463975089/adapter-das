@@ -17,12 +17,18 @@ HCU 身份清单为 `gfx928`、`gfx92a`、`gfx936`、`gfx938`；设备属性中�
 | --- | --- | --- |
 | OpenDAS/vllm | 官方模型、调度、runner、通信及公共接口；必要的 DTK 构建兼容 | 官方 release 起步，逐文件说明构建差异 |
 | adapter-das | 真实 HCU 探测、版本及 runtime ABI 准入、公共快关、扩展报告与进程健康 | 唯一 `vllm.platform_plugins` / `vllm.general_plugins` owner |
-| vllm-plugin-das | 官方没有的 HCU 格式、算法与可选优化 | `hcu_adapter.extensions`，继而使用官方公开 registry |
+| vllm-plugin-das | 官方没有的 HCU 格式、算法与可选优化 | `hcu_adapter.infra.extensions`，继而使用官方公开 registry |
 
 本仓不得为通过一个 provider 检查而伪造 NVIDIA/CDNA 架构，也不得硬编码
 Plugin 类路径。普通 MHA/GQA 的默认 Triton 选型不覆盖 MLA/Sparse MLA；
 后两者仍由官方 ROCm priority 决定。显式 Flash 后端依赖当前 PID 的唯一
 `hcu-flash-attention` owner 与健康检查，不能用另一个扩展的 ACTIVE 报告替代。
+
+`infra/` 与 `features/` 的布局迁移须同步目标 Plugin 的静态导入、动态
+`_seams` 模块表和 provider 身份检查。Adapter 自身单测不能替代组合验证：
+使用目标 Plugin wheel 的真实 metadata 加载扩展 factory，并检查 RMS 等延迟
+导入；保持 discovery 不导入宿主或 Torch。延后某个模型的 checkpoint 测试，
+不意味着可跳过它的扩展发现契约。目录归属规则不以旧路径转发壳绕过。
 
 ## v0.33 源码审计结论
 
@@ -49,6 +55,16 @@ E4M3FN 仅 gfx938；不覆盖布局/尺度/对齐时保留官方 Triton 行为�
 DSV41 整模型或性能验收完成。该后端不处理 CT W4A8 MoE 的 INT4 packing/HIPC。
 
 ## 验证
+
+### PCP 逆 RoPE
+
+配置 `ops.vllm_inverse_rope: hcu` 选择 Plugin 的 BF16 输出逆 RoPE，默认 `stock`。
+Adapter 在构造 PCP 注意力类前接收 Plugin 的 `forward_mqa` 实现。
+该配置要求启用 PCP 模型扩展。`HCU_DISABLE_OPS=vllm_inverse_rope` 选择原实现，
+策略变化须重启进程。Prefill 的压缩 KV 和 SWA KV 均沿用 Core 的反量化路径。
+
+HCU 算子处理尚未旋转的 BF16 输出尾部，内核资源位于 Plugin wheel 中。
+显式选择后的缺失依赖在模型构造前拒绝，形状不适配时使用 Core 逆 RoPE。
 
 FlashMLA prefill/decode 的隐式 `native` 默认只在实际 vendor wheel 与调用 ABI
 均可用时接入；缺包、缺符号或签名漂移保留官方 stock，且不锁存启动失败，

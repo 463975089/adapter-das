@@ -260,3 +260,98 @@ def test_fa_graph_replay_tracks_fresh_inputs():
                     nv.transpose(0, 1)[None].float(), True, scale,
                 )
             check(f"{b.name} graph-replay[{trial}]", out.transpose(0, 1)[None], ref)
+
+
+@pytest.fixture
+def fallback_host(monkeypatch):
+    import sys
+    import types
+    from hcu_adapter.infra import hcu_env, registry
+
+    monkeypatch.setattr(torch.version, "hip", "test-hip")
+    monkeypatch.setattr(hcu_env, "resolve", lambda name: ("vendor", "explicit"))
+    monkeypatch.setattr(hcu_env, "arch_name", lambda: "gfx936")
+    monkeypatch.setattr(registry, "_RECORDS", {})
+    monkeypatch.setattr(registry, "_BOUND", {})
+    modules = {}
+    for name in ("sglang", "sglang.srt", "sglang.srt.arg_groups",
+                 "sglang.srt.arg_groups.overrides", "sglang.srt.arg_groups.attention_hook"):
+        module = types.ModuleType(name)
+        module.__path__ = []
+        modules[name] = module
+        monkeypatch.setitem(sys.modules, name, module)
+        parent, _, attr = name.rpartition(".")
+        if parent in modules:
+            setattr(modules[parent], attr, module)
+    overrides = modules["sglang.srt.arg_groups.overrides"]
+    consumer = modules["sglang.srt.arg_groups.attention_hook"]
+
+    def original(view):
+        return {"fallback": (view.attention_backend, view.kv_cache_dtype)}
+
+    overrides._attention_backend_fa3_fp8_fallback = original
+    consumer._attention_backend_fa3_fp8_fallback = original
+    overrides.POST_PROCESS_PASSES = [original, object(), original]
+    return overrides, consumer, original
+
+
+def test_e5m2_guard_updates_consumers_and_preserves_fallback(fallback_host):
+    from types import SimpleNamespace
+    from hcu_adapter.bridges import sglang_fa_vendor as fa_vendor
+
+    overrides, consumer, original = fallback_host
+    fa_vendor._install_e5m2_backend_guard()
+    installed = overrides._attention_backend_fa3_fp8_fallback
+    assert installed is consumer._attention_backend_fa3_fp8_fallback
+    assert overrides.POST_PROCESS_PASSES[0] is installed
+    assert overrides.POST_PROCESS_PASSES[2] is installed
+    assert installed(SimpleNamespace(attention_backend="fa3", kv_cache_dtype="fp8_e5m2")) == {}
+    for backend, dtype in (("fa3", "fp8_e4m3"), ("triton", "fp8_e5m2")):
+        view = SimpleNamespace(attention_backend=backend, kv_cache_dtype=dtype)
+        assert installed(view) == original(view)
+    fa_vendor._install_e5m2_backend_guard()
+    assert overrides._attention_backend_fa3_fp8_fallback is installed
+
+
+@pytest.mark.parametrize("mode,arch,hip", [
+    ("auto", "gfx936", "test"), ("triton", "gfx936", "test"),
+    ("emu", "gfx936", "test"), ("vendor", "gfx942", "test"),
+    ("vendor", "gfx936", None),
+])
+def test_e5m2_guard_disabled_keeps_all_bindings(fallback_host, monkeypatch, mode, arch, hip):
+    from hcu_adapter.bridges import sglang_fa_vendor as fa_vendor
+    from hcu_adapter.infra import hcu_env, registry
+
+    overrides, consumer, original = fallback_host
+    monkeypatch.setattr(hcu_env, "resolve", lambda name: (mode, "explicit"))
+    monkeypatch.setattr(hcu_env, "arch_name", lambda: arch)
+    monkeypatch.setattr(torch.version, "hip", hip)
+    fa_vendor._install_e5m2_backend_guard()
+    assert overrides._attention_backend_fa3_fp8_fallback is original
+    assert consumer._attention_backend_fa3_fp8_fallback is original
+    assert overrides.POST_PROCESS_PASSES[0] is original
+    assert registry.get("flash_attention") is None
+
+
+def test_e5m2_guard_registration_failure_is_atomic(fallback_host, monkeypatch):
+    from hcu_adapter.bridges import sglang_fa_vendor as fa_vendor
+    from hcu_adapter.infra import registry
+
+    overrides, consumer, original = fallback_host
+    register = registry.register
+    count = 0
+
+    def reject_second(*args, **kwargs):
+        nonlocal count
+        count += 1
+        if count == 2:
+            raise ValueError("registration refused")
+        return register(*args, **kwargs)
+
+    monkeypatch.setattr(registry, "register", reject_second)
+    with pytest.raises(ValueError, match="registration refused"):
+        fa_vendor._install_e5m2_backend_guard()
+    assert overrides._attention_backend_fa3_fp8_fallback is original
+    assert consumer._attention_backend_fa3_fp8_fallback is original
+    assert overrides.POST_PROCESS_PASSES[0] is original
+    assert registry.get("flash_attention") is None

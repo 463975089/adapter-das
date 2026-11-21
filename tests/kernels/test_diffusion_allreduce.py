@@ -50,6 +50,7 @@ def _worker(rank, port):
     native.destroy_distributed_environment()
 
 
+@pytest.mark.fresh_process
 def test_native_diffusion_tp2_rccl_off_policy_eager_and_graph(monkeypatch):
     if torch.version.hip is None or torch.cuda.device_count() < 2:
         pytest.skip('requires two HCU devices')

@@ -141,7 +141,7 @@ def t_artifacts():
         check("yaml written", yp == ypath and os.path.isfile(ypath))
         check("report written", os.path.isfile(rpath))
 
-        from hcu_adapter import hcu_config
+        from hcu_adapter.infra import hcu_config
 
         doc = hcu_config._parse_file(ypath)
         check("yaml re-parses clean", doc is not None)
@@ -167,7 +167,7 @@ def t_choices_hygiene():
     from tools._autotune import choices
 
     print("== choices hygiene ==")
-    from hcu_adapter import hcu_config
+    from hcu_adapter.infra import hcu_config
 
     cat = hcu_config.BACKEND_CATALOG
     check("all catalog ops covered",
@@ -189,7 +189,7 @@ def t_choices_hygiene():
 
 
 def _hcu_env_keys():
-    from hcu_adapter import hcu_env
+    from hcu_adapter.infra import hcu_env
 
     return set(hcu_env.REGISTRY.keys())
 

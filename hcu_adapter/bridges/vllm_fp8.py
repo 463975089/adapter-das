@@ -54,7 +54,7 @@ def install() -> bool:
     if getattr(linear, marker, False):
         return False
 
-    from hcu_adapter import registry
+    from hcu_adapter.infra import registry
 
     # Public seam appends at the end: existing tuned/vendor/native kernels win.
     register(kernel, platform, kernel_type='fp8')

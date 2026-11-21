@@ -14,7 +14,7 @@
 
 from types import SimpleNamespace as NS
 
-from hcu_adapter import ct_w4a8_moe as cw
+from hcu_adapter.features.ct_w4a8 import ct_w4a8_moe as cw
 
 
 def _args(type_name, num_bits, **kw):

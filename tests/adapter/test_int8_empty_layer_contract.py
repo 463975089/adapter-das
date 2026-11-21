@@ -8,7 +8,7 @@ Empty inputs must never reach either compute double. No plugin is required.
 import pytest
 
 import torch
-from hcu_adapter import dsv41_int8_linear as owned
+from hcu_adapter.features.dsv41 import dsv41_int8_linear as owned
 from vllm import _custom_ops as ops
 from vllm.model_executor import parameter
 from vllm.model_executor.kernels import linear as kernel_factory

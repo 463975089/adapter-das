@@ -21,6 +21,7 @@ ops:
 
 - **查找顺序**（先中先得）：`$HCU_CONFIG` 指定路径 → `./hcu_adapter.yaml|.yml|.json`
   → adapter 根目录（sitecustomize.py 旁）同名文件。
+  `infra/` 模块迁移不改变这个部署位置；从其他目录启动宿主也使用同一规则。
 - **未写条目 = 生产默认**；文件里只写要覆盖的算子。
 - **校验是严格的**：未知算子名、未知后端值、选择 `planned` 状态的后端，都会在
   加载时**响亮报错**（防手滑静默回退默认）。启动日志出现
@@ -45,7 +46,7 @@ vLLM 0.33/gfx936 的 C4 indexer 候选通过 `ops.vllm_sparse_indexer: native`
 裁决链；注册后改变策略须新进程。限制与验证见
 [vLLM C4 indexer](frameworks/vllm033-sparse-indexer.md)，不表示完整 V4 已通过。
 
-`hcu_adapter/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
+`hcu_adapter/infra/hcu_config.py::BACKEND_CATALOG` 是唯一事实源：算子 → 可选
 后端 → 状态与备注。向导和未来的 Web UI 都从它渲染，新后端接线后自动出现在选择项里。
 **实现归籍与角色（active/ref）规约见 [governance.md](governance.md)**：算子数学
 只在 `sgl_kernel/`，行为桥放 `hcu_adapter/<域>.py` 并登记运行时注册表——启动日志
@@ -101,3 +102,23 @@ CLI 向导（`tools/hcu_config_wizard.py`）是其命令行形态；`--autotune`
 MiniMax PCP8 prefill 的 Plugin 新能力通过 `ops.vllm_minimax_prefill` 管理：
 默认 `triton`，显式 `stock` 为未融合对照，均保留 candidate 状态。
 Adapter 只提供配置/catalog/快关，数学实现位于独立 `vllm-plugin-das`。
+
+## SGLang sparse MLA 候选后端
+
+`ops.sglang_mla_sparse: dtk` 显式选择 SGLang 专属 BF16 sparse FlashMLA 实现；默认 `emu`，没有新增环境变量。当前原生范围为 BF16、H1–64、D512、top-k 2048–2112（掩码补齐到 64 的倍数）、无 attention sink，其他形状保留兼容路径。实现独立于 vLLM/DeepInfer。候选仅完成小规模数值和变输入 Graph 探针，整模型与性能验收尚未完成。
+
+### MLA HiCache 地址表传输
+
+`hicache_mla_transfer` 当前使用 candidate Triton 实现：按字节处理 device pointer table、pinned host buffer、layer-first/page-first 布局，不将地址值当作缓存数据索引。GPU 路径不读取地址表到 CPU。2026-11-01 定向诊断覆盖 528/8448/33792/65537 字节行、1/7/65 行、三层、双向拷贝与三次变输入 Graph 回放，逐字节一致；完整模型的驱逐回载与性能仍待验收。
+
+### HY3 prefill Graph 兼容开关
+
+`HCU_DISABLE_OPS=prefill_graph_driver` 在新进程中跳过流状态查询适配，保留安装前的绑定。默认启用适配；只改变驱动查询，保留 prefill Graph，不改变硬件身份。
+
+### NEXTN 空闲批次字段开关
+
+`HCU_DISABLE_OPS=nextn_idle_metadata` 在新进程中跳过缺失字段补齐。默认只为没有 `kv_indptr` 的类型提供 `None`，不改已有字段、实例值或实际 attention 后端。注册失败时不发布字段。两个停用项可用逗号合并。
+
+### FA E5M2 显式选择
+
+`HCU_FA_IMPL=vendor` 才安装 HCU E5M2 启动检查适配；auto/triton/emu、非 HIP 和未支持架构保留当前检查。支持范围为 gfx928/gfx936/gfx938，真机证据目前仅 gfx936。每个实际消费者先登记再替换，重复安装不叠加。与 Plugin 的分页布局配套运行时，在外层部署环境显式设置 `SGLANG_KV_LAYOUT_HCU_FA=1`，不改用户原启动脚本，也不扩大布局默认值。

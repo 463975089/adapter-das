@@ -4,7 +4,7 @@ import sys
 import pytest
 import torch
 
-from hcu_adapter import aiter_moe
+from hcu_adapter.features.aiter import aiter_moe
 
 
 @pytest.mark.parametrize(
