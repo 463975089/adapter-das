@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Official target27c Python/dispatcher contracts; CPU provider/group doubles.
+"""Official vLLM 0.33 Python/dispatcher contracts; CPU provider/group doubles.
 
 Core wrapper contracts migrated from the frozen experimental Plugin candidate.
 No Plugin import/activation, native math, HCU admission or model pass is claimed.
@@ -300,11 +300,25 @@ def isolated(monkeypatch):
     for name, value in (("_installed", None), ("_bindings", None), ("_attempted", False),
                         ("_commit_failure", None), ("_fork_error", False), ("_installing", False)):
         monkeypatch.setattr(compat, name, value)
-    monkeypatch.setattr(bridge, "detect_hcu", lambda: SimpleNamespace(detected=True))
+    monkeypatch.setattr(bridge, "detect_hcu", lambda: bridge.HcuDetection(
+        True, "gfx936", "CPU contract identity fixture"))
+    # This file isolates the AR owner; retain the real host health gate with
+    # unrelated optional owners explicitly unrequested in this CPU fixture.
+    for variable in ("HCU_VLLM_MHC_IMPL", "HCU_VLLM_SPARSE_INDEXER_IMPL",
+                     "HCU_VLLM_FLASHMLA_PREFILL", "HCU_VLLM_FLASHMLA_DECODE",
+                     "HCU_VLLM_PCP_IMPL"):
+        monkeypatch.setenv(variable, "stock")
     # These tests exercise official AR Python/dispatcher behavior, not the
     # independently admitted HIP loader or FP8 registration. The production
     # admission order is covered with the real loader seam in runtime_abi.
-    from hcu_adapter.bridges import vllm_fp8
+    from hcu_adapter.bridges import vllm_fp8, vllm_scaled_mm
+    from torch._inductor.codecache import CacheBase
+    # The real AOT collectors remain active; only device-system metadata is
+    # doubled because Torch queries CUDA even for a CPU-only hash contract.
+    monkeypatch.setattr(CacheBase, "get_system", staticmethod(
+        lambda: {"hash": "cpu-contract-without-accelerator-metadata"}))
+    # Scaled-MM has its own ABI/numerical gates; it is not an AR owner.
+    monkeypatch.setattr(vllm_scaled_mm, "install", lambda: False)
     monkeypatch.setattr(bridge, "_require_vllm_hip_runtime_abi", lambda: None)
     monkeypatch.setattr(vllm_fp8, "install", lambda: False)
     for name in ("_lazy_init", "init", "current_device", "get_device_properties"):
@@ -368,7 +382,13 @@ def enable(monkeypatch):
 
 def _cpu_hcu_platform(monkeypatch, architecture="gfx936"):
     """Explicit import/identity metadata double, never a hardware execution claim."""
-    import vllm.platforms.rocm as rocm
+    # ROCm resolves its architecture at import in 0.33. The property is
+    # explicit CPU test metadata, scoped to that import; device calls remain
+    # forbidden during the configuration/worker/communicator contract.
+    with monkeypatch.context() as metadata:
+        metadata.setattr(torch.cuda, "get_device_properties",
+                         lambda _: SimpleNamespace(gcnArchName=architecture))
+        import vllm.platforms.rocm as rocm
     monkeypatch.setattr(rocm, "_GCN_ARCH", architecture)
     monkeypatch.setattr(bridge, "detect_hcu", lambda: bridge.HcuDetection(
         architecture in bridge.SUPPORTED_HCU_ARCHES, architecture, "CPU identity fixture"))

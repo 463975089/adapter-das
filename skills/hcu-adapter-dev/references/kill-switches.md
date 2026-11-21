@@ -80,3 +80,8 @@ SGLang diffusion 与 SRT 的 AR 配置消费边界独立：OOT 初始化需把�
 off/refused/kill 策略传给 TP group 的 `use_srt_custom_allreduce`，回退原生
 Torch/RCCL。核实真实 worker 未初始化 custom AR，并分别验证 native factory
 与实际多 rank 数值；仅设置 `HCU_AITER_AR=0` 不能证明已关闭。
+
+MiniMax prefill fusion: `HCU_DISABLE_OPS=vllm_minimax_prefill` is a startup veto
+for the Plugin provider and retains the stock composition. It takes precedence
+over `ops.vllm_minimax_prefill: triton`. Changing a selected policy after use is
+refused; restart instead of mixing compiled/cache paths in one engine.

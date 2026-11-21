@@ -193,6 +193,14 @@ BACKEND_CATALOG = {
             "triton": {"status": "validated", "note": "Preserve official providers without execution rebinding; diagnostic startup rollback"},
         },
     },
+    "vllm_minimax_prefill": {
+        "var": None,
+        "summary": "MiniMax PCP8 native-MSA prefill and static-selector fusion (Plugin provider)",
+        "backends": {
+            "triton": {"status": "candidate", "note": "Default in the admitted MiniMax path: fused cache/Q/local-pages, stream-owned scratch, metadata reuse, device scale guard and dynamic selector; full model quality remains separate"},
+            "stock": {"status": "candidate", "note": "Explicit startup comparison: preserve unfused prefill and original static selector"},
+        },
+    },
     "vllm_minimax_qknorm_abi": {
         "var": None,
         "summary": "vLLM MiniMax fused qknorm native ABI compatibility",

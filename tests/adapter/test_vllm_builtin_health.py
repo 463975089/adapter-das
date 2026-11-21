@@ -7,8 +7,6 @@ Run with HCU_ADAPTER_HOST=none HIP_VISIBLE_DEVICES='' and this checkout on
 PYTHONPATH: python -m pytest tests/adapter/test_vllm_builtin_health.py.
 Real installed public selectors/spawn/fork are verified by separate probes.
 """
-from types import SimpleNamespace
-
 import pytest
 
 from hcu_adapter.bridges import vllm as host
@@ -24,8 +22,9 @@ def test_runtime_health_checks_each_builtin_owner(monkeypatch, failed_owner):
         if name == failed_owner:
             raise RuntimeError(name + ' owner unhealthy')
 
-    monkeypatch.setattr(host, '_RUNTIME_ACTIONS',
-                        SimpleNamespace(require_runtime_healthy=lambda: check('host')))
+    actions = host.ProcessLocalActions()
+    monkeypatch.setattr(actions, 'require_runtime_healthy', lambda: check('host'))
+    monkeypatch.setattr(host, '_RUNTIME_ACTIONS', actions)
     monkeypatch.setattr(vllm_mhc, 'require_healthy', lambda: check('mhc'))
     monkeypatch.setattr(vllm_sparse_indexer, 'require_healthy', lambda: check('indexer'))
     if failed_owner is None:

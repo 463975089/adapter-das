@@ -188,6 +188,17 @@ vLLM native FP8/INT8 Linear execution through LightOp with official Triton fallb
 
 路由变量：（auto）
 
+## vllm_minimax_prefill
+
+MiniMax PCP8 native-MSA prefill and static-selector fusion (Plugin provider)
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Default in the admitted MiniMax path |
+| stock | candidate Explicit startup comparison: preserv |
+
+路由变量：（auto）
+
 ## vllm_minimax_qknorm_abi
 
 vLLM MiniMax fused qknorm native ABI compatibility

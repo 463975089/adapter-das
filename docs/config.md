@@ -97,3 +97,7 @@ vLLM 0.33/gfx936 的 C4 indexer 候选通过 `ops.vllm_sparse_indexer: native`
 CLI 向导（`tools/hcu_config_wizard.py`）是其命令行形态；`--autotune` 变体=目标机自动探测+实测选档（平台画像→逐算子三门→阶梯降档带理由，见 [autotune.md](autotune.md)）。注意 UI 内嵌的
 目录/配方是代码快照，BACKEND_CATALOG 或 cookbook 变更后需同步（纯函数段
 在文件内 `/*==PURE-BEGIN*/ ... /*==PURE-END*/` 标记之间）。
+
+MiniMax PCP8 prefill 的 Plugin 新能力通过 `ops.vllm_minimax_prefill` 管理：
+默认 `triton`，显式 `stock` 为未融合对照，均保留 candidate 状态。
+Adapter 只提供配置/catalog/快关，数学实现位于独立 `vllm-plugin-das`。
