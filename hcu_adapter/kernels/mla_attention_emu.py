@@ -204,7 +204,13 @@ def _split_index_cache(fused_kv_cache, is_fp4):
     flat = fused_kv_cache.view(torch.uint8).as_strided(
         (num_pages, page_kv * width), (fused_kv_cache.stride(0), 1))
     values = flat[:, :page_kv * value_bytes].reshape(num_pages, page_kv, value_bytes)
-    sf = flat[:, page_kv * value_bytes:page_kv * width].reshape(num_pages, page_kv, 4).contiguous().view(torch.int32)
+    sf = flat[:, page_kv * value_bytes:page_kv * width].reshape(num_pages, page_kv, 4).contiguous()
+    # A single page is already contiguous even at an unaligned byte offset:
+    # contiguous() then aliases the original storage, so dtype-view still fails.
+    # Copy only that case; aligned tails retain the existing zero-copy path.
+    if sf.storage_offset() % 4:
+        sf = sf.clone()
+    sf = sf.view(torch.int32)
     values = values.view(torch.int8) if is_fp4 else values.view(torch.float8_e4m3fn)
     return values, sf.squeeze(-1)
 
