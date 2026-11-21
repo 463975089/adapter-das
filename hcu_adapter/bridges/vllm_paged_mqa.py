@@ -7,7 +7,7 @@ FP8 keys with FP32 page-tail scales. Existing DeepInfer MX and SGLang
 preshuffled-cache routes are not repurposed or modified by registration.
 """
 
-from hcu_adapter import registry
+from hcu_adapter import hcu_config, registry
 from hcu_adapter.kill_switch import op_disabled
 
 OP = "vllm_paged_mqa_logits"
@@ -35,6 +35,25 @@ def fp8_fp4_paged_mqa_logits(q, kv_cache, weights, context_lens, block_tables,
     )
 
 
+
+def get_triton_paged_mqa_metadata(context_lens, block_size, num_sms, indices=None):
+    if block_size != 64:
+        raise NotImplementedError("HCU paged MQA supports page64 only")
+    # The official Triton helper uses device lengths directly; no scheduling
+    # allocation or fabricated native scheduler is needed.
+    return None
+
+
+def triton_paged_mqa_logits(q, kv_cache, weights, context_lens, block_tables,
+                            schedule_metadata, max_model_len, indices=None):
+    from hcu_adapter.kernels.vllm_paged_mqa_triton import fp32_paged_mqa_logits
+
+    return fp32_paged_mqa_logits(
+        q, kv_cache, weights, context_lens, block_tables, schedule_metadata,
+        max_model_len, indices=indices,
+    )
+
+
 def get_paged_mqa_provider():
     """Return paired scheduler/scorer at model construction (also in workers).
 
@@ -44,9 +63,18 @@ def get_paged_mqa_provider():
     """
     if op_disabled(OP):
         raise NotImplementedError(f"HCU {OP} disabled via HCU_DISABLE_OPS; restart after changing policy")
+    # Use the existing public config, not a new model-private environment
+    # variable. Keep Torch as default until model/Graph qualification completes.
+    backend = hcu_config.load()["ops"].get(OP, "emu")
+    if backend == "triton":
+        metadata, scorer = get_triton_paged_mqa_metadata, triton_paged_mqa_logits
+    elif backend == "emu":
+        metadata, scorer = get_paged_mqa_logits_metadata, fp8_fp4_paged_mqa_logits
+    else:
+        raise ValueError(f"Unsupported {OP} backend: {backend!r}")
     registry.register(
-        op=OP, impl="emu",
-        target=__name__ + ".fp8_fp4_paged_mqa_logits",
+        op=OP, impl=backend,
+        target=__name__ + "." + scorer.__name__,
         mechanism=registry.MECH_SEAM, source=__name__,
     )
-    return get_paged_mqa_logits_metadata, fp8_fp4_paged_mqa_logits
+    return metadata, scorer

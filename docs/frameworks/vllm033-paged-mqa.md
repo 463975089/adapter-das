@@ -44,7 +44,7 @@ keys; it adds no data-dependent host reads or synchronization.
 
 ## Governance and rollback
 
-Catalog: `vllm_paged_mqa_logits`, backend `emu`, status **candidate**.
+Catalog: `vllm_paged_mqa_logits`, backends `emu` and `triton`, both **candidate**.
 The snapshot and generated tier matrix track the same entry. Runtime
 selection is visible through `registry.register`/adapter dump. No new env
 variable is introduced. `HCU_DISABLE_OPS=vllm_paged_mqa_logits` refuses
@@ -88,3 +88,91 @@ These are operator and seam results, NOT a full kernel/adapter/vendor sweep,
 installed-wheel qualification, checkpoint loading or serving-accuracy result.
 Keep candidate status and the dependent model PR in draft until those gates
 are completed. No benchmark or performance promotion is implied.
+
+
+## Opt-in reuse of the official vLLM Triton launcher
+
+The default remains `emu`. Through the existing public `HCU_CONFIG`, select:
+
+```json
+{"version": 1, "ops": {"vllm_paged_mqa_logits": "triton"}}
+```
+
+This explicit provider reuses
+`vllm.v1.attention.ops.rocm_aiter_mla_sparse.rocm_fp8_paged_mqa_logits_triton`;
+it does not replace global Core names, route through the differently laid-out
+SGLang cache, or add a private environment variable. The metadata function
+returns `None` after validating page64 because this launcher reads device
+lengths directly. Startup `HCU_DISABLE_OPS` takes precedence over config.
+
+The fast face is HIP/E4M3FN, next_n=1, H32/H64, D128 and aligned page64
+storage. Contiguous lengths and unit inner query/weights/table strides are
+required. Other valid generic ABI faces retain the existing Torch reader;
+MX is explicitly refused. Kernel/import errors on the supported fast face
+are not silently swallowed. Importing the provider getter stays Torch-free.
+
+The official helper returns workspace-backed scratch and leaves padding
+undefined. The adapter must return an **out-of-place**, zero-masked FP32
+tensor so an earlier result cannot be overwritten by a subsequent call.
+Never initialize/reset vLLM's workspace manager inside a production provider.
+Tests initialize it only in a fixture, including changing-input Graph replay.
+
+Focused HCU measurements and full-model accuracy are separate gates. An
+operator microbenchmark is not an end-to-end throughput claim. Keep both
+catalog entries candidate pending full repository, deployment and model gates.
+
+The catalog keeps `emu` first for wizard fallback and the UI explicitly sets
+`vllm_paged_mqa_logits` to `emu`. Default export must not enable Triton; an
+explicit Triton choice must write the op selection, not a new env variable.
+
+
+## Pinned community DFly Core: separate compatibility gate
+
+The HY4 Flash DFly qualification also checks the Core merged by
+vllm-project/vllm PR #68296 (`b067b6f6fa509a8c98c5a79d75b2aa3742d539c6`).
+An installed v0.33 wheel without that method cannot accept `method="dfly"`;
+a source version label alone does not prove speculator/attention/cache ABI
+compatibility. Do not turn a paged-MQA operator result into a DFly accuracy claim.
+
+The existing mHC bridge admits the two inspected delayed-pre signatures:
+the original v0.33 signature and the same signature with a final optional
+`fn_packed=None` projection cache. Other names/defaults remain refused before
+publication. The HCU wrapper deliberately uses the original dense `fn`, as
+Core's `forward_native` fallback does; it does not reinterpret or claim to
+accelerate the packed cache. No custom-op schema, math, default tier, environment
+variable or vendor capability is changed. Contract/lifecycle tests cover both
+ABIs, wrong cache defaults, unknown tails and dense-vs-packed argument routing.
+This does not qualify the newer Core's full mHC path or the HY4 DFly model.
+
+
+The same Core probe found a second known ABI: `rocm_sparse_attn_prefill`
+adds a trailing `kv_cache_dtype="auto"`. The bridge admits only that exact
+extension or the original 12-parameter signature. The wrapper preserves the
+scheme in stock calls; MXFP4 and other unqualified schemes must not enter the
+BF16 native candidate. Wrong defaults and unknown signature changes still fail
+before publication. Existing vendor error propagation and owner/lifecycle
+checks remain intact. These ABI contracts are CPU/mock-tested; neither adds
+new math or certifies a newer Core/native-wheel combination.
+
+A whole newer Core is not automatically compatible with an older DTK wheel:
+the isolated fixed-SHA configuration probe also encountered the independent
+MiniMax fused-wrapper ABI guard. It was not bypassed. Use matching binaries or
+a scoped DFly backport, and qualify the actual model before claiming support.
+
+
+## Companion HY4 DFly source-overlay evidence (2026-11-21)
+
+The companion plugin's explicit v0.33 DFly backport completed EvalScope 1.15
+HumanEval: **161/164 (98.1707%)**, high reasoning, native thinking budget 4096,
+total model length 8192, five speculative tokens, FLASHMLA_SPARSE, TP8/eager,
+on BW1100/gfx938. All responses stopped normally with no truncation, empty
+finals, syntax failures or request errors. The exact vendor runtime was
+`0.33.0+dtk2610.torch2130.2611101131.g7364da` (Torch 2.13/HIP 7.2).
+This is a companion source-overlay result, not independent installed-wheel,
+image, standard-dispatch or full-model Graph qualification of this adapter.
+The identical-budget target comparison is still running; neither DFly speedup
+nor a matched-control accuracy gain is established. Default paged-MQA remains
+`emu`; the optional existing-Core `triton` provider stays candidate/opt-in.
+The inspected mHC/FlashMLA ABI extensions do not certify arbitrary newer Core
+or binary combinations. No additional native capability, environment workaround,
+MiniMax ABI whitelist relaxation or global DeepGEMM rebinding is introduced.

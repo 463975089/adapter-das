@@ -374,3 +374,27 @@ Non-MX vLLM/plugin paged MQA uses the explicit provider seam in
 DeepInfer provider or SGLang preshuffled reader: page64 FP8 payload plus
 page-tail FP32 scales is a distinct layout. CPU contract success is not
 HCU Graph/model qualification; keep the catalog candidate until those gates pass.
+
+
+For the opt-in vLLM paged-MQA Triton provider, preserve the generic ABI when
+native stride/alignment assumptions do not hold (especially strided lengths
+and unaligned cache offsets). Core's result aliases workspace and has undefined
+padding: return out-of-place masked output, test result ownership and changing
+inputs under Graph replay, and never reset Core workspace state in production.
+Use existing HCU_CONFIG and keep catalog/UI/tier-matrix synchronized.
+
+When adding an opt-in candidate backend, retain the original backend ordering
+for the config wizard and set the matching explicit UI default; otherwise
+Enter/export can disagree with the runtime default. Test default/no-op export
+and explicit candidate export separately.
+
+
+### vLLM community DFly Core compatibility
+
+For HY4 Flash DFly, pin and inspect the Core from PR #68296. Stock v0.33
+without DFly registration is not made compatible by a model import or by the
+non-MX paged-MQA bridge. The mHC delayed-pre bridge accepts only its inspected
+legacy ABI or the exact optional trailing `fn_packed=None` ABI; use dense `fn`
+as the official native fallback does. Never loosen it to arbitrary `**kwargs`,
+change math or advertise a packed fast path. See
+`docs/frameworks/vllm033-paged-mqa.md` for this separate compatibility gate.

@@ -272,7 +272,10 @@ def _declare_aiter(mhc, kernels, ir, backend, provider, split_k):
         def forward_hip(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
                         hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat, pre_mix=None,
                         x=None, norm_weight=None, norm_eps=1e-6, sublayer_out=None,
-                        post_layer_mix=None, comb_res_mix=None):
+                        post_layer_mix=None, comb_res_mix=None, fn_packed=None):
+            # Newer Core optionally caches a packed projection weight. Like
+            # its forward_native fallback, our runtime consumes the original
+            # dense fn; never reinterpret the packed cache as dense weights.
             require_healthy()
             residual = self._maybe_post(residual,sublayer_out,post_layer_mix,comb_res_mix)
             return residual, *torch.ops.vllm.hcu_adapter_mhc_delayed(residual,fn,hc_scale,hc_base,
@@ -353,11 +356,17 @@ def install() -> bool:
         _require_parameters(kernels.mhc_post_torch, ('x','residual','post_layer_mix','comb_res_mix'), {})
         # Both tiers wrap these two entries: deepseek_v41 calls MHCPreDelayedOp
         # and MHCPostOp, never MHCPreOp/MHCFusedPostPreOp.
-        _require_parameters(mhc.MHCPreDelayedOp.forward_hip,
-            ('self',*pre_names[:9],'pre_mix','x','norm_weight','norm_eps',
-             'sublayer_out','post_layer_mix','comb_res_mix'),
-            dict(pre_mix=None,x=None,norm_weight=None,norm_eps=1e-6,
-                 sublayer_out=None,post_layer_mix=None,comb_res_mix=None))
+        delayed_names = ('self',*pre_names[:9],'pre_mix','x','norm_weight','norm_eps',
+                         'sublayer_out','post_layer_mix','comb_res_mix')
+        delayed_defaults = dict(pre_mix=None,x=None,norm_weight=None,norm_eps=1e-6,
+                                sublayer_out=None,post_layer_mix=None,comb_res_mix=None)
+        # Admit only the two inspected Core ABIs. fn_packed is an optional
+        # acceleration cache; Core's native fallback still uses dense fn.
+        delayed = mhc.MHCPreDelayedOp.forward_hip
+        if tuple(inspect.signature(delayed).parameters) == (*delayed_names, 'fn_packed'):
+            delayed_names = (*delayed_names, 'fn_packed')
+            delayed_defaults['fn_packed'] = None
+        _require_parameters(delayed, delayed_names, delayed_defaults)
         _require_parameters(mhc.MHCPostOp.forward_hip,
             ('self','x','residual','post_layer_mix','comb_res_mix'), {})
         for attribute in ('_maybe_post',):

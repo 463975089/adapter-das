@@ -164,6 +164,7 @@ BACKEND_CATALOG = {
         "summary": "vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales",
         "backends": {
             "emu": {"status": "candidate", "note": "Explicit HCU page64/D128 next_n=1 provider; FP32 logits and folded Q scales. CPU and gfx938 eager/Graph contracts covered; serving/wheel/throughput gates pending. Startup kill switch refuses, never selects CUDA."},
+            "triton": {"status": "candidate", "note": "Opt-in existing official vLLM Triton page64/D128 H32/H64 launcher; zero-masked independent FP32 output. Explicit ops config; Torch fallback for CPU/unsupported strides or heads. HCU model and changing-input Graph gates required."},
         },
     },
     "vllm_sparse_indexer": {

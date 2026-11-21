@@ -274,3 +274,45 @@ def test_config_and_explicit_env_precedence(setup, monkeypatch):
     monkeypatch.setenv(bridge.MODE_VARIABLE, 'stock')
     assert hcu_env.resolve(bridge.MODE_VARIABLE) == ('stock', 'explicit')
     assert bridge.install() is False
+
+
+@pytest.mark.parametrize("cache_dtype", ["auto", "bfloat16", "mxfp4_mla", "fp8_ds_mla", "future_cache"])
+def test_known_cache_dtype_abi_preserves_scheme_on_fallback(setup, monkeypatch, cache_dtype):
+    bridge, target, _, _ = setup
+    monkeypatch.setenv(bridge.MODE_VARIABLE, "native")
+    from hcu_adapter.kernels import mla_sparse_prefill_dtk
+    native_calls, stock_calls = [], []
+
+    def newer(q, kv, indices, topk_length, scale, head_dim, nope_head_dim,
+              rope_head_dim, attn_sink, output, ragged_indices=None,
+              ragged_indptr=None, kv_cache_dtype="auto"):
+        stock_calls.append(kv_cache_dtype)
+        return "stock-new"
+
+    target.rocm_sparse_attn_prefill = newer
+    monkeypatch.setattr(mla_sparse_prefill_dtk, "try_prefill",
+                        lambda **kw: native_calls.append(kw) or False)
+    assert bridge.install()
+    routed = target.rocm_sparse_attn_prefill
+    assert inspect.signature(routed) == inspect.signature(newer)
+    assert routed(*range(10), kv_cache_dtype=cache_dtype) == "stock-new"
+    assert stock_calls == [cache_dtype]
+    assert len(native_calls) == (1 if cache_dtype in ("auto", "bfloat16") else 0)
+    assert all("kv_cache_dtype" not in kw for kw in native_calls)
+
+
+def test_cache_dtype_abi_wrong_default_refused_before_rebind(setup, monkeypatch):
+    bridge, target, _, _ = setup
+    monkeypatch.setenv(bridge.MODE_VARIABLE, "native")
+    signature = inspect.signature(official)
+    params = [*signature.parameters.values(),
+              inspect.Parameter("kv_cache_dtype", inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                default="mxfp4_mla")]
+    def changed(*args, **kwargs):
+        pytest.fail("must not execute changed upstream function")
+    changed.__signature__ = signature.replace(parameters=params)
+    target.rocm_sparse_attn_prefill = changed
+    with pytest.raises(bridge.FlashMLACompatibilityError):
+        bridge.install()
+    assert target.rocm_sparse_attn_prefill is changed
+    assert registry.get(bridge.OP) is None

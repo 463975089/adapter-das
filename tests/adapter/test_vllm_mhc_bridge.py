@@ -345,3 +345,77 @@ def test_post_activation_host_health_check_still_refuses_unactivated_owner(
     booting.run_once('vllm-runtime',lambda:None)
     with pytest.raises(RuntimeError,match='before runtime activation'):
         host.require_runtime_healthy()
+
+
+@pytest.mark.parametrize("packed_default", [None, "unexpected"])
+def test_known_delayed_packed_cache_abi_is_strict(seams, monkeypatch, packed_default):
+    s = seams
+
+    def delayed(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                pre_mix=None, x=None, norm_weight=None, norm_eps=1e-6,
+                sublayer_out=None, post_layer_mix=None, comb_res_mix=None,
+                fn_packed=packed_default):
+        pass
+
+    monkeypatch.setattr(s.mhc.MHCPreDelayedOp, "forward_hip", delayed)
+    if packed_default is None:
+        assert s.m.install()
+        s.m.require_healthy()
+    else:
+        with pytest.raises(s.m.MhcCompatibilityError, match="ABI"):
+            s.m.install()
+        assert not s.calls
+
+
+def test_unknown_delayed_cache_abi_fails_before_publication(seams, monkeypatch):
+    s = seams
+
+    def delayed(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                pre_mix=None, x=None, norm_weight=None, norm_eps=1e-6,
+                sublayer_out=None, post_layer_mix=None, comb_res_mix=None,
+                other_cache=None):
+        pass
+
+    monkeypatch.setattr(s.mhc.MHCPreDelayedOp, "forward_hip", delayed)
+    with pytest.raises(s.m.MhcCompatibilityError, match="ABI"):
+        s.m.install()
+    assert not s.calls
+
+
+@pytest.mark.parametrize("packed", [None, object()])
+def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed):
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(module.__file__).read_text())
+    parent = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                  and n.name == "_declare_aiter")
+    cls = next(n for n in parent.body if isinstance(n, ast.ClassDef)
+               and n.name == "HcuMHCPreDelayedOp")
+    captured = []
+    result = (object(), object(), object(), object())
+
+    def op(*args):
+        captured.append(args)
+        return result
+
+    class Base:
+        def _maybe_post(self, residual, sublayer_out, post_mix, comb_mix):
+            return residual
+
+    namespace = dict(mhc=SimpleNamespace(MHCPreDelayedOp=Base),
+                     torch=SimpleNamespace(ops=SimpleNamespace(vllm=SimpleNamespace(
+                         hcu_adapter_mhc_delayed=op))), require_healthy=lambda: None)
+    exec(compile(ast.Module(body=[cls], type_ignores=[]), "<delayed-wrapper>", "exec"),
+         namespace)
+    residual, dense_fn, scale, base = (object() for _ in range(4))
+    output = namespace["HcuMHCPreDelayedOp"]().forward_hip(
+        residual, dense_fn, scale, base, 1e-6, 1e-6, 1e-6, 2.0, 20,
+        fn_packed=packed)
+    assert output == (residual, *result)
+    assert captured[0][0] is residual
+    assert captured[0][1] is dense_fn
+    if packed is not None:
+        assert all(value is not packed for value in captured[0])
