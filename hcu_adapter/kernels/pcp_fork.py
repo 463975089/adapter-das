@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import threading
 
-from hcu_adapter.infra import hcu_config, hcu_env
+from hcu_adapter.infra import hcu_env
 from hcu_adapter.infra.kill_switch import op_disabled
 
 # Same operator-facing knob the bridge records and health-checks. `select_attention`
@@ -35,6 +35,7 @@ _q_rope_provider = None
 _q_rope_binding = None
 _q_rope_failure = None
 _forward_mqa_provider = None
+_kv_transfer_validator = None
 
 
 class PcpAttentionError(RuntimeError):
@@ -56,11 +57,9 @@ def selected_mode() -> str:
 
 
 def q_rope_selected() -> bool:
-    return (
-        selected_mode() == 'native'
-        and not op_disabled(Q_ROPE_OP)
-        and hcu_config.load()["ops"].get(Q_ROPE_OP, "stock") == "hcu"
-    )
+    from .pcp_rope_policy import selected_mode as rope_mode
+
+    return rope_mode(Q_ROPE_OP) == "hcu"
 
 
 def _refuse_q_rope_change():
@@ -137,6 +136,31 @@ def set_engram_validator(function) -> None:
                 "PCP engram validator already bound to another owner; restart process"
             )
         _engram_validator = function
+
+
+def set_kv_transfer_validator(function) -> None:
+    """Bind an optional extension's transfer contract; default is refusal."""
+    global _kv_transfer_validator
+    if not callable(function):
+        raise PcpAttentionError("PCP transfer validator must be callable")
+    with _lock:
+        if _kv_transfer_validator is not None and _kv_transfer_validator is not function:
+            raise PcpAttentionError("PCP transfer validator already bound; restart process")
+        _kv_transfer_validator = function
+
+
+def bound_kv_transfer_validator():
+    return _kv_transfer_validator
+
+
+def validate_kv_transfer_config(cfg):
+    """Common PCP transfer gate, also used by specialized cache-format owners."""
+    if cfg.kv_transfer_config is None:
+        return
+    if _kv_transfer_validator is None:
+        raise PcpAttentionError('KV transfer requires a separate replicated-cache contract')
+    if _kv_transfer_validator(cfg) is not None:
+        raise PcpAttentionError('PCP transfer validator must return None')
 
 
 def set_forward_context_resolver(function) -> None:
@@ -272,7 +296,10 @@ def validate_config(cfg) -> bool:
     if cfg.kernel_config.monokernel:
         errors.append("monokernel bypasses common PCP preparation")
     if cfg.kv_transfer_config is not None:
-        errors.append("KV transfer requires a separate replicated-cache contract")
+        try:
+            validate_kv_transfer_config(cfg)
+        except (ValueError, PcpAttentionError) as error:
+            errors.append(str(error))
     # SWA bounded replay: native decoder replay pads each rank's replay batch to
     # the global kept rows and rebuilds PCP metadata for it; this attention reads
     # only that metadata. Prefix-cache SWA replay stays off on ROCm natively.

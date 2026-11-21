@@ -367,7 +367,9 @@ class MhcAiterRuntime:
         if self.provider.post is not None and supported:
             out = torch.empty_like(residual)
             self.provider.post(out, x, residual, post_layer_mix, comb_res_mix)
-        elif len(outer) == 1 and outer[0] > _TORCH_POST_TOKEN_CHUNK:
+        elif (len(outer) == 1 and outer[0] > _TORCH_POST_TOKEN_CHUNK
+              and x.shape == (*outer, hidden)
+              and comb_res_mix.shape == (*outer, hc, hc)):
             # The reference post operation mixes streams independently per token.
             # Bound its FP32 temporaries while keeping the full BF16 output.
             out = torch.empty_like(residual)

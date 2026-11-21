@@ -17,6 +17,14 @@ class Worker(OfficialWorker):
             self.vllm_config, self.device, default=super()._make_model_runner,
         )
 
+    def initialize_from_config(self, kv_cache_config) -> None:
+        from hcu_adapter.bridges.vllm import require_runtime_healthy
+        from hcu_adapter.bridges.vllm_kv_cache import localize_kv_cache_config
+
+        require_runtime_healthy()
+        local_config = localize_kv_cache_config(self.vllm_config, kv_cache_config)
+        return super().initialize_from_config(local_config)
+
     def load_model(self, *, load_dummy_weights: bool = False) -> None:
         from hcu_adapter.bridges.vllm import require_runtime_healthy
 

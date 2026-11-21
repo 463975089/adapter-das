@@ -377,6 +377,13 @@ def _hcu_platform_class() -> type:
         _worker_selector = None
 
         @classmethod
+        def pre_register_and_update(cls, parser=None) -> None:
+            super().pre_register_and_update(parser)
+            from .vllm_cli import add_config_switches
+
+            add_config_switches(parser)
+
+        @classmethod
         def register_worker_selector(cls, selector):
             """Let one extension specialize the default worker after Core config."""
             if not callable(selector):
@@ -388,6 +395,9 @@ def _hcu_platform_class() -> type:
         @classmethod
         def check_and_update_config(cls, vllm_config) -> None:
             require_runtime_healthy()
+            from .vllm_cli import validate_config_switches
+
+            validate_config_switches(vllm_config)
             _configure_indexer_kv_dtype(vllm_config)
             # Core validates the effective config and chooses its default worker.
             from hcu_adapter.bridges.vllm_moe_aiter import configure_padding_policy
@@ -410,6 +420,15 @@ def _hcu_platform_class() -> type:
                     and parallel.worker_cls in ("auto", OFFICIAL_MODEL_LOAD_WORKER,
                                                 POST_MODEL_LOAD_WORKER)):
                 parallel.worker_cls = cls._worker_selector(parallel.worker_cls, vllm_config)
+
+        @classmethod
+        def get_kv_cache_config_builder_cls(cls, vllm_config) -> str:
+            require_runtime_healthy()
+            from .vllm_kv_cache import select_kv_cache_builder
+
+            return select_kv_cache_builder(
+                vllm_config, super().get_kv_cache_config_builder_cls(vllm_config)
+            )
 
         @classmethod
         def get_attn_backend_cls(
