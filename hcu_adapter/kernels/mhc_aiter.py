@@ -243,7 +243,8 @@ def select_splits(tokens, hc, hidden, mode):
 class MhcAiterRuntime:
     """029 HIP pre / delayed / post / composed post+pre, with injected refs."""
 
-    def __init__(self, provider, kernels, rms_norm, pre_mix, collapse, split_k='auto'):
+    def __init__(self, provider, kernels, rms_norm, pre_mix, collapse, split_k='auto',
+                 pre_mix_collapse=None):
         if split_k not in ('auto', '1', '2', '4', '8', '16', '32'):
             raise ValueError('mHC split-K must be auto or 1/2/4/8/16/32')
         self.provider = provider
@@ -251,6 +252,7 @@ class MhcAiterRuntime:
         self.rms_norm = rms_norm
         self.pre_mix = pre_mix
         self.collapse = collapse
+        self.pre_mix_collapse = pre_mix_collapse
         self.split_k = split_k
         # Read the recorded schema ABI, not the (*args, **kwargs) wrapper.
         self._pre_tf32 = (provider.pre is not None
@@ -353,9 +355,13 @@ class MhcAiterRuntime:
             return torch.empty_like(residual)
         *outer, hc, hidden = residual.shape
         tensors = (x, residual, post_layer_mix, comb_res_mix)
-        width_matches_history = hidden != 5120
-        supported = (hc == 4 and hidden >= 1024 and hidden % 1024 == 0
-                     and width_matches_history  # No historical Post v3 acceptance at this width.
+        if hidden == 5120 and self.provider.post is not None:
+            from .mhc_post_5120_triton import post_5120, supported as post_supported
+            if post_supported(x, residual, post_layer_mix, comb_res_mix):
+                return post_5120(x, residual, post_layer_mix, comb_res_mix)
+        # Use the Torch boundary for H5120 inputs outside the exact kernel contract.
+        supported = (residual.ndim == 3 and hc == 4 and hidden >= 1024
+                     and hidden != 5120 and hidden % 1024 == 0
                      and x.shape == (*outer, hidden)
                      and post_layer_mix.shape in ((*outer, hc), (*outer, hc, 1))
                      and comb_res_mix.shape == (*outer, hc, hc)
@@ -397,9 +403,18 @@ class MhcAiterRuntime:
             hc, hidden = residual.shape[1:]
             splits = select_splits(residual.shape[0], hc, hidden, self.split_k)
             post, comb, _, gemm, sqrsum = self._staged_pre(*args, splits, x=x)
-            next_pre = self.pre_mix(gemm, sqrsum, hc_scale, hc_base,
-                                    hc, hc * hidden, rms_eps, hc_pre_eps)
-            layer = residual[:, 0].clone() if pre_mix is None else self.collapse(residual, pre_mix)
+            # Match the small-row V4.1 split-K envelope. This seam has no batch
+            # phase metadata. _pre_supported already checked the BF16/FP32 ABI.
+            if (self.pre_mix_collapse is not None and pre_mix is not None
+                    and x is None and (hc, hidden) == (4, 5120)
+                    and residual.shape[0] <= 64):
+                next_pre, layer = self.pre_mix_collapse(
+                    gemm, sqrsum, hc_scale, hc_base, residual, pre_mix,
+                    hc * hidden, rms_eps, hc_pre_eps)
+            else:
+                next_pre = self.pre_mix(gemm, sqrsum, hc_scale, hc_base,
+                                        hc, hc * hidden, rms_eps, hc_pre_eps)
+                layer = residual[:, 0].clone() if pre_mix is None else self.collapse(residual, pre_mix)
         else:
             post, comb, layer, next_pre = self.kernels.mhc_pre_delayed_torch(
                 *args, pre_mix=pre_mix, x=x)
@@ -407,6 +422,25 @@ class MhcAiterRuntime:
             layer = layer.clone()
         normed = self._norm(layer, norm_weight, norm_eps)
         return post, comb, normed, next_pre
+
+    def boundary(self, residual, fn, scale, base, previous, x, post_in, comb_in,
+                 rms_eps, pre_eps, sinkhorn_eps, post_mult, repeat):
+        """Keep native projection arithmetic when its reduction is unsplit.
+
+        The combined partial-reduction kernel matches the split projection
+        contract. An unsplit native projection uses a different sum order;
+        retain that projection and the optimized Post for those calls.
+        Neither route limits the number of token rows.
+        """
+        splits = select_splits(residual.shape[0], residual.shape[1],
+                               residual.shape[2], self.split_k)
+        if splits == 1:
+            updated = self.post(x, residual, post_in, comb_in)
+            return updated, *self.delayed(updated, fn, scale, base, rms_eps,
+                pre_eps, sinkhorn_eps, post_mult, repeat, pre_mix=previous)
+        from .mhc_boundary_triton import boundary
+        return boundary(residual, fn, scale, base, previous, x, post_in, comb_in,
+                        rms_eps, eps=pre_eps, post_mult=post_mult, repeat=repeat)
 
     def fused(self, x, residual, post_layer_mix, comb_res_mix, fn, hc_scale,
               hc_base, rms_eps, hc_pre_eps, hc_sinkhorn_eps, hc_post_mult_value,

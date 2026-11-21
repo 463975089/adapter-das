@@ -94,11 +94,25 @@ def _require_signature(function, names, defaults):
         raise FlashMLACompatibilityError('FlashMLA prefill ABI changed: ' + function.__name__)
 
 
+def _check_binding(p):
+    if getattr(p.module, 'rocm_sparse_attn_prefill', None) is not p.replacement:
+        _refuse('FlashMLA prefill binding changed; start a fresh process')
+
+
 def _check_publication(p):
     if selected_mode() != 'native':
         _refuse('FlashMLA prefill policy changed; start a fresh process for stock/kill')
-    if p.module.rocm_sparse_attn_prefill is not p.replacement:
-        _refuse('FlashMLA prefill binding changed; start a fresh process')
+    _check_binding(p)
+
+
+def _require_dispatch_healthy():
+    # Policy is startup-only. Lifecycle boundaries resolve it and latch drift.
+    if _failure is not None:
+        raise FlashMLACompatibilityError(_failure)
+    p = _publication
+    if p is None or p.pid != os.getpid():
+        raise FlashMLACompatibilityError('FlashMLA prefill requires child runtime activation')
+    _check_binding(p)
 
 
 def _native_provider():
@@ -176,7 +190,7 @@ def install():
         def dispatch(q, kv, indices, topk_length, scale, head_dim, nope_head_dim,
                      rope_head_dim, attn_sink, output, ragged_indices,
                      ragged_indptr, kv_cache_dtype):
-            require_healthy()
+            _require_dispatch_healthy()
             arguments = dict(q=q, kv=kv, indices=indices, topk_length=topk_length,
                 scale=scale, head_dim=head_dim, nope_head_dim=nope_head_dim,
                 rope_head_dim=rope_head_dim, attn_sink=attn_sink, output=output,
