@@ -47,7 +47,7 @@ def test_non_hy4_retains_original_rocm_path(monkeypatch):
 def test_native_constructor_marks_hy4_without_enabling_v41(monkeypatch):
     from hcu_adapter.features.dsa import hy4_sparse_indexer as owner
     calls = []
-    monkeypatch.setattr(owner, 'prepare', lambda: calls.append('prepared'), raising=False)
+    monkeypatch.setattr(owner, 'prepare', lambda cfg: calls.append('prepared'), raising=False)
     cfg = NS(model_config=NS(hf_config=NS(model_type='hy_v4')))
     monkeypatch.setattr(reference, '_resolvers',
         {'current_config': lambda: cfg, 'enabled': lambda: False})
@@ -161,3 +161,43 @@ def test_opaque_execution_retains_health_checks(monkeypatch):
     monkeypatch.setattr(owner, '_check', fail)
     with pytest.raises(RuntimeError, match='owner'):
         guarded(2)
+
+
+def test_hy4_constructor_preserves_core_piecewise_partition_boundary(monkeypatch):
+    from hcu_adapter.features.dsa import hy4_sparse_indexer as owner
+    from vllm.config import CompilationMode, CUDAGraphMode
+    compilation = NS(mode=CompilationMode.VLLM_COMPILE,
+        use_inductor_graph_partition=False,
+        cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE,
+        splitting_ops=['vllm::sparse_attn_indexer'])
+    cfg = NS(model_config=NS(hf_config=NS(model_type='hy_v4')),
+             compilation_config=compilation)
+    monkeypatch.setattr(reference, '_resolvers',
+        {'current_config': lambda: cfg, 'enabled': lambda: False})
+    monkeypatch.setattr(owner, '_check', lambda: None)
+    monkeypatch.setattr(owner, '_state', (os.getpid(), None, None, None, None))
+    base = reference.build()['base']
+    monkeypatch.setattr(SparseAttnIndexer, '__init__', lambda self: None)
+    layer = object.__new__(base)
+    base.__init__(layer)
+    owner.prepare(cfg)
+    assert compilation.splitting_ops == [
+        'vllm::sparse_attn_indexer', 'vllm::' + owner.OP_NAME]
+    assert reference.OP_NAME == 'vllm::hcu_v41_fp8_indexer_reference'
+
+
+@pytest.mark.parametrize('partition,mode,expected', [
+    (False, 'NONE', []), (False, 'FULL', []),
+    (True, 'FULL_AND_PIECEWISE', []),
+    (False, 'PIECEWISE', ['vllm::hcu_hy4_sparse_attn_indexer']),
+])
+def test_partition_registration_preserves_other_compile_modes(monkeypatch, partition, mode, expected):
+    from hcu_adapter.features.dsa import hy4_sparse_indexer as owner
+    from vllm.config import CompilationMode, CUDAGraphMode
+    compilation = NS(mode=CompilationMode.VLLM_COMPILE,
+        use_inductor_graph_partition=partition,
+        cudagraph_mode=getattr(CUDAGraphMode, mode), splitting_ops=[])
+    monkeypatch.setattr(owner, '_check', lambda: None)
+    monkeypatch.setattr(owner, '_state', (os.getpid(), None, None, None, None))
+    owner.prepare(NS(compilation_config=compilation))
+    assert compilation.splitting_ops == expected

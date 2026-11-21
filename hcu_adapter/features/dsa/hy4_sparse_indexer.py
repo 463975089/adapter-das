@@ -206,7 +206,8 @@ def _build():
         op_func=eager_break_during_capture(_guard_execution(reserve_profile_temporary(body, budget))),
         mutates_args=['topk_indices_buffer', 'candidate_blocks'],
         fake_impl=native.sparse_attn_indexer_fake,
-        dispatch_key=current_platform.dispatch_key)
+        dispatch_key=current_platform.dispatch_key,
+        tags=(torch._C.Tag.cudagraph_unsafe,))
     operator = getattr(torch.ops.vllm, OP_NAME)
     # The native wrapper uses torch only to dispatch this custom op. Its body,
     # kwargs/defaults and every other Core import remain unchanged.
@@ -226,10 +227,15 @@ def _guard_execution(body):
     return guarded
 
 
-def prepare():
+def prepare(config=None):
     """Publish before model compilation; retain eager callers and owner checks."""
     global _state, _failure
     _check()
+    if config is not None:
+        from hcu_adapter.features.dsv41.v41_fp8_indexer import register_splitting_op
+        # Reuse the resolved-config helper with this opaque operator's name.
+        # A renamed op must retain Core's original piecewise eager boundary.
+        bind_native(register_splitting_op, {'OP_NAME': 'vllm::' + OP_NAME})(config)
     if _state is None:
         with _lock:
             _check()

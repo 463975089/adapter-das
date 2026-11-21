@@ -575,7 +575,7 @@ def build():
                 super().__init__(*args, **kwargs)
                 if self._hcu_hy4:
                     from hcu_adapter.features.dsa import hy4_sparse_indexer
-                    hy4_sparse_indexer.prepare()
+                    hy4_sparse_indexer.prepare(cfg)
                 if self._hcu_owned:
                     logger.info(
                         "HCU_V41_FP8_INDEXER_REFERENCE: graph/eager PCP1/DCP1 "

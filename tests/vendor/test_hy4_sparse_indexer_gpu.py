@@ -96,14 +96,27 @@ def test_hy4_indexer_native_body_and_changed_input_graph(heads):
 
     # Compile the actual public route and opaque Core-body operator, rather
     # than only capturing its vendor leaf. Preparation is outside tracing.
-    owned.prepare()
+    from vllm.config import CompilationMode
+    from vllm.compilation.partition_rules import should_split
+    compilation = NS(mode=CompilationMode.VLLM_COMPILE,
+        use_inductor_graph_partition=False,
+        cudagraph_mode=CUDAGraphMode.FULL_AND_PIECEWISE,
+        splitting_ops=['vllm::sparse_attn_indexer'])
+    owned.prepare(NS(compilation_config=compilation))
+    assert torch._C.Tag.cudagraph_unsafe in getattr(torch.ops.vllm, owned.OP_NAME).default.tags
+    graphs = []
+    def compiler(graph, example_inputs):
+        graphs.append(graph)
+        return graph.forward
     def run_indexer(hidden, query, weights):
         return owned.forward(layer, hidden, query, None, weights)
-    compiled = torch.compile(run_indexer, backend='eager', fullgraph=True)
+    compiled = torch.compile(run_indexer, backend=compiler, fullgraph=True)
     with override_forward_context(NS(attn_metadata={'probe.k_cache': metadata},
                                      cudagraph_runtime_mode=CUDAGraphMode.NONE)):
         compiled_result = compiled(hidden, q, w)
     assert torch.equal(compiled_result.cpu().sort(-1).values, expected.int().sort(-1).values)
+    assert any(should_split(node, compilation.splitting_ops)
+               for graph in graphs for node in graph.graph.nodes)
 
     # Ragged verification needs identical per-request padding for Q and weights.
     starts.copy_(torch.tensor([0, 32, 32, 32], device='cuda', dtype=torch.int32))
