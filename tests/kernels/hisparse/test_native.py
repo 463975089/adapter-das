@@ -345,3 +345,21 @@ def test_pageable_host_and_bad_plan_dtype_refused(native):
     torch.cuda.synchronize()
     _equal(hot_owner, expected)
     assert owner.is_pinned()
+
+
+def test_attention_address_overflow_refused(native):
+    owner, host = _pinned(8, 16, 3)
+    hot_owner, hot, expected, _ = _hot(6, 2, 16)
+    indices, hots = _gpu([[2]]), _gpu([[2]])
+    attention = torch.empty((1, 1), dtype=torch.int32, device='cuda')
+    with pytest.raises(RuntimeError, match='fit int32'):
+        native.hisparse_gather_plan(host, hot, indices, hots, _gpu([[1]]),
+                                   None, attention, 2**63 - 1)
+    with pytest.raises(RuntimeError, match='fit int32'):
+        native.hisparse_resolve_residency(host, hot, _gpu([[1, 2]]), indices,
+            hots, _gpu([[0, 1, 2, 3]]), _gpu([[0, 1, 2, 3]], torch.int16),
+            _gpu([0]), 4, 4, attention_indices=attention,
+            attention_block_stride=2**63 - 1)
+    torch.cuda.synchronize()
+    _equal(hot_owner, expected)
+    assert owner.is_pinned()

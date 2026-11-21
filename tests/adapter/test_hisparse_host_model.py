@@ -67,6 +67,14 @@ void resolve(int rows,int topk,int* indices,int* dgi,int16_t* lru,int* out,
   }
 }
 int main() {
+  assert(attention_range_fits(12, 2, 5));
+  assert(attention_range_fits(2, 2, INT64_MAX)); // one page never multiplies stride
+  assert(attention_range_fits(4, 2, INT32_MAX - 1));
+  assert(!attention_range_fits(4, 2, INT32_MAX));
+  assert(!attention_range_fits(12, 2, INT64_MAX));
+  assert(!attention_range_fits(12, 2, 1));
+  assert(!attention_range_fits(12, 0, 5));
+
   { // hits, unique misses, duplicate references, holes, physical/attention pitch.
     int indices[]={12,20,20,-1},dgi[]={10,11,12,13};int16_t lru[]={0,1,2,3};
     int out[4],mm[4],att[4],res[4],valid[1],sh[4],sd[4],counts[1];

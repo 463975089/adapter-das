@@ -35,6 +35,17 @@ constexpr int kWarpSize = 32;
 // Empty key in the shared open-addressing table of host rows.
 constexpr int32_t kHashEmpty = -1;
 
+// Division-based check avoids overflowing the int64 stride before narrowing
+// physical attention offsets to the Core033 int32 output ABI.
+bool attention_range_fits(int64_t rows, int64_t block_size, int64_t stride) {
+  if (rows < 0 || block_size <= 0 || stride < block_size) return false;
+  if (rows == 0) return true;
+  const int64_t last_page = (rows - 1) / block_size;
+  const int64_t last_offset = (rows - 1) % block_size;
+  return last_offset <= INT32_MAX &&
+      (last_page == 0 || stride <= (INT32_MAX - last_offset) / last_page);
+}
+
 // Always use the device alias returned by HIP, never assume host UVA identity.
 // The caller must retain pinned storage until work on the current stream ends.
 const char* mapped_host_pointer(const at::Tensor& tensor) {
@@ -648,7 +659,7 @@ __global__ void hisparse_gather_plan_kernel(
   const int col_start = blockIdx.y * NUM_WARPS + warp_id;
   const int col_stride = gridDim.y * NUM_WARPS;
   const int64_t base = static_cast<int64_t>(row) * top_k;
-  for (int col = col_start; col < top_k; col += col_stride) {
+  for (int64_t col = col_start; col < top_k; col += col_stride) {
     const int32_t dst = hot_indices[base + col];
     if (lane_id == 0 && attention_indices != nullptr) {
       attention_indices[base + col] =
@@ -699,7 +710,7 @@ __global__ void hisparse_gather_compact_kernel(
   const int col_start = blockIdx.y * NUM_WARPS + warp_id;
   const int col_stride = gridDim.y * NUM_WARPS;
   const int64_t base = static_cast<int64_t>(row) * top_k;
-  for (int col = col_start; col < miss_count; col += col_stride) {
+  for (int64_t col = col_start; col < miss_count; col += col_stride) {
     const int32_t g = miss_global_indices[base + col];
     const int32_t dst = miss_hot_indices[base + col];
     if (g < 0 || dst < 0 || dst >= hot_rows) {
@@ -1097,8 +1108,9 @@ void hisparse_resolve_residency(
             indices.stride(1) == 1 && indices.size(1) == global_indices.size(1) &&
             (launch_rows <= 1 || indices.stride(0) >= indices.size(1)),
         "attention_indices must be row-major int32 matching global_indices");
-    TORCH_CHECK(attention_block_stride >= hot_block_size,
-                    "attention block stride must cover one hot block");
+    TORCH_CHECK(attention_range_fits(hot_rows, hot_block_size,
+                                     attention_block_stride),
+                "attention offsets must cover one hot block and fit int32");
     attention_indices_ptr = indices.mutable_data_ptr<int32_t>();
   }
 
@@ -1263,17 +1275,19 @@ void hisparse_gather_plan(
   // for few-row launches (local-prefill staging's single-row layout, small
   // decode batches), keeping >= 1 column per warp.
   constexpr int kTargetBlocks = 256;
-  const int max_chunks = std::max(1, (top_k + kNumWarps - 1) / kNumWarps);
+  const int max_chunks = static_cast<int>(
+      std::max<int64_t>(1, (static_cast<int64_t>(top_k) + kNumWarps - 1) / kNumWarps));
   const int num_chunks =
       std::min(max_chunks, std::max(1, kTargetBlocks / num_rows));
   const dim3 grid(num_rows, num_chunks);
   const int32_t hot_block_size =
       hot_cache.dim() == 3 ? static_cast<int32_t>(hot_cache.size(1)) : 1;
-  if (attention_indices.has_value()) {
-    TORCH_CHECK(attention_block_stride >= hot_block_size,
-                    "attention block stride must cover one hot block");
-  }
   const int64_t hot_rows = hot_cache.size(0) * hot_block_size;
+  if (attention_indices.has_value()) {
+    TORCH_CHECK(attention_range_fits(hot_rows, hot_block_size,
+                                     attention_block_stride),
+                "attention offsets must cover one hot block and fit int32");
+  }
   const int64_t hot_block_stride =
       hot_cache.stride(0) * hot_cache.element_size();
   const c10::DeviceGuard device_guard(
