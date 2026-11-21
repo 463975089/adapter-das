@@ -573,6 +573,9 @@ def build():
                             "V41 reference indexer requires source-owned FP8 K, "
                             "ratio1/2, D128")
                 super().__init__(*args, **kwargs)
+                if self._hcu_hy4:
+                    from hcu_adapter.features.dsa import hy4_sparse_indexer
+                    hy4_sparse_indexer.prepare()
                 if self._hcu_owned:
                     logger.info(
                         "HCU_V41_FP8_INDEXER_REFERENCE: graph/eager PCP1/DCP1 "

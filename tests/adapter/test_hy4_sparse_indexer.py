@@ -45,6 +45,9 @@ def test_non_hy4_retains_original_rocm_path(monkeypatch):
 
 
 def test_native_constructor_marks_hy4_without_enabling_v41(monkeypatch):
+    from hcu_adapter.features.dsa import hy4_sparse_indexer as owner
+    calls = []
+    monkeypatch.setattr(owner, 'prepare', lambda: calls.append('prepared'), raising=False)
     cfg = NS(model_config=NS(hf_config=NS(model_type='hy_v4')))
     monkeypatch.setattr(reference, '_resolvers',
         {'current_config': lambda: cfg, 'enabled': lambda: False})
@@ -54,6 +57,7 @@ def test_native_constructor_marks_hy4_without_enabling_v41(monkeypatch):
     base.__init__(layer)
     assert layer._hcu_hy4 is True
     assert layer._hcu_owned is False
+    assert calls == ['prepared']
 
 
 def test_prefill_splits_bounded_vendor_results_and_preserves_request_columns():
@@ -121,3 +125,39 @@ def test_disabled_route_does_not_publish_and_owner_loss_is_latched(monkeypatch):
     module.fp8_mqa_logits = provider
     with pytest.raises(RuntimeError, match='owner'):
         owner._check()
+
+
+def test_compiled_forward_does_not_trace_activation_lock(monkeypatch):
+    from hcu_adapter.features.dsa import hy4_sparse_indexer as owner
+    layer = NS(use_fp4_cache=False, compress_ratio=1, dcp_world_size=1,
+               candidate_blocks=None)
+    monkeypatch.setattr(owner, '_state', None)
+    monkeypatch.setattr(owner, '_failure', None)
+    monkeypatch.setattr(owner, '_check', lambda: None)
+    def route(layer, hidden_states, q, k, weights):
+        return hidden_states + weights
+    monkeypatch.setattr(owner, '_build', lambda: (os.getpid(), route, None, None, None))
+    # The published layer constructor must prepare the op before model tracing.
+    owner.prepare()
+    def run(x, weights):
+        return owner.forward(layer, x, x, x, weights)
+    compiled = torch.compile(run, backend='eager', fullgraph=True)
+    for value in (1.0, 3.0):
+        x = torch.full((4,), value)
+        torch.testing.assert_close(compiled(x, x), x + x)
+
+
+def test_opaque_execution_retains_health_checks(monkeypatch):
+    from hcu_adapter.features.dsa import hy4_sparse_indexer as owner
+    calls = []
+    def check():
+        calls.append('checked')
+    monkeypatch.setattr(owner, '_check', check)
+    guarded = owner._guard_execution(lambda value: value + 1)
+    assert guarded(2) == 3
+    assert calls == ['checked']
+    def fail():
+        raise RuntimeError('publication changed owner')
+    monkeypatch.setattr(owner, '_check', fail)
+    with pytest.raises(RuntimeError, match='owner'):
+        guarded(2)

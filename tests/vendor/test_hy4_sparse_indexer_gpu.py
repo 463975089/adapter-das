@@ -94,6 +94,17 @@ def test_hy4_indexer_native_body_and_changed_input_graph(heads):
     expected = reference().topk(8, dim=-1).indices
     assert torch.equal(result.cpu().sort(-1).values, expected.int().sort(-1).values)
 
+    # Compile the actual public route and opaque Core-body operator, rather
+    # than only capturing its vendor leaf. Preparation is outside tracing.
+    owned.prepare()
+    def run_indexer(hidden, query, weights):
+        return owned.forward(layer, hidden, query, None, weights)
+    compiled = torch.compile(run_indexer, backend='eager', fullgraph=True)
+    with override_forward_context(NS(attn_metadata={'probe.k_cache': metadata},
+                                     cudagraph_runtime_mode=CUDAGraphMode.NONE)):
+        compiled_result = compiled(hidden, q, w)
+    assert torch.equal(compiled_result.cpu().sort(-1).values, expected.int().sort(-1).values)
+
     # Ragged verification needs identical per-request padding for Q and weights.
     starts.copy_(torch.tensor([0, 32, 32, 32], device='cuda', dtype=torch.int32))
     ends.copy_(torch.tensor([12, 66, 80, 94], device='cuda', dtype=torch.int32))

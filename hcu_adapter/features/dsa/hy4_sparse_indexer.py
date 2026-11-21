@@ -203,7 +203,7 @@ def _build():
         'pack_seq_triton': layout.pack, 'unpack_seq_triton': layout.unpack})
     body = layout.scope(body, native._resolve_layer_name)
     direct_register_custom_op(op_name=OP_NAME,
-        op_func=eager_break_during_capture(reserve_profile_temporary(body, budget)),
+        op_func=eager_break_during_capture(_guard_execution(reserve_profile_temporary(body, budget))),
         mutates_args=['topk_indices_buffer', 'candidate_blocks'],
         fake_impl=native.sparse_attn_indexer_fake,
         dispatch_key=current_platform.dispatch_key)
@@ -217,12 +217,19 @@ def _build():
     return os.getpid(), route, operator, module, provider
 
 
-def forward(layer, hidden_states, q_quant, k, weights):
+def _guard_execution(body):
+    @wraps(body)
+    def guarded(*args, **kwargs):
+        # Runs behind the opaque operator boundary, not in Dynamo's graph.
+        _check()
+        return body(*args, **kwargs)
+    return guarded
+
+
+def prepare():
+    """Publish before model compilation; retain eager callers and owner checks."""
     global _state, _failure
     _check()
-    if (layer.use_fp4_cache or layer.compress_ratio != 1 or layer.dcp_world_size != 1
-            or layer.candidate_blocks is not None):
-        raise ValueError('HY4 HCU indexer requires FP8 ratio1/DCP1 without candidate blocks')
     if _state is None:
         with _lock:
             _check()
@@ -232,4 +239,16 @@ def forward(layer, hidden_states, q_quant, k, weights):
                 except BaseException as error:
                     _failure = 'HY4 sparse indexer activation failed; restart the process'
                     raise RuntimeError(_failure) from error
-    return _state[1](layer, hidden_states, q_quant, k, weights)
+    return _state[1]
+
+
+def forward(layer, hidden_states, q_quant, k, weights):
+    import torch
+    if torch.compiler.is_compiling():
+        route = _state[1]  # The layer constructor publishes before tracing.
+    else:
+        route = prepare()
+    if (layer.use_fp4_cache or layer.compress_ratio != 1 or layer.dcp_world_size != 1
+            or layer.candidate_blocks is not None):
+        raise ValueError('HY4 HCU indexer requires FP8 ratio1/DCP1 without candidate blocks')
+    return route(layer, hidden_states, q_quant, k, weights)
