@@ -28,6 +28,8 @@ def test_hy4_routes_before_native_gfx938_rejection(monkeypatch):
     calls = []
     module.forward = lambda *args: calls.append(args) or 'owned'
     monkeypatch.setitem(sys.modules, module.__name__, module)
+    import hcu_adapter.features.dsa as package
+    monkeypatch.setattr(package, 'hy4_sparse_indexer', module, raising=False)
     args = tuple(object() for _ in range(4))
     assert base.forward_hip(layer, *args) == 'owned'
     assert calls == [(layer, *args)]

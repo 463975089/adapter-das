@@ -22,7 +22,48 @@ _state = None
 _failure = None
 
 
+class _LightOpScorerOwner:
+    """Expose the existing publication check while tracking the real vendor."""
+    def __init__(self, module, original, scorer):
+        self.module, self.original, self.scorer = module, original, scorer
+
+    @property
+    def fp8_mqa_logits(self):
+        if getattr(self.module, 'mqa_logits', None) is self.original:
+            return self.scorer
+        return None
+
+
+def _lightop_provider():
+    try:
+        module = import_module('lightop.gemmopt')
+    except ModuleNotFoundError as error:
+        if error.name and ('lightop.gemmopt' == error.name
+                           or 'lightop.gemmopt'.startswith(error.name + '.')):
+            return None
+        raise
+    function = getattr(module, 'mqa_logits', None)
+    if not callable(function):
+        raise RuntimeError('HY4 LightOp MQA provider ABI changed')
+    signature = inspect.signature(function)
+    if tuple(signature.parameters)[:6] != ('Q', 'K', 'Weights', 'ks', 'ke', 'kv_scale'):
+        raise RuntimeError('HY4 LightOp MQA provider ABI changed')
+    try:
+        signature.bind(*[object() for _ in range(6)], clean_logit=True)
+    except TypeError as error:
+        raise RuntimeError('HY4 LightOp MQA provider ABI changed') from error
+    from hcu_adapter.kernels.hy4_mqa_lightop import bind_prefill
+    scorer = bind_prefill(function)
+    return _LightOpScorerOwner(module, function, scorer), scorer
+
+
 def _provider():
+    from hcu_adapter.bridges.vllm import detect_hcu
+    detection = detect_hcu()
+    if detection.detected and detection.architecture == 'gfx938':
+        selected = _lightop_provider()
+        if selected is not None:
+            return selected
     for name in ('aiter.ops.triton.attention.fp8_mqa_logits',
                  'aiter.ops.triton.fp8_mqa_logits'):
         try:
@@ -175,7 +216,7 @@ def _check():
     if _state is not None:
         import torch
         pid, _, operator, module, provider = _state
-        if (pid != os.getpid() or module.fp8_mqa_logits is not provider
+        if (pid != os.getpid() or getattr(module, 'fp8_mqa_logits', None) is not provider
                 or getattr(torch.ops.vllm, OP_NAME) is not operator):
             _failure = 'HY4 sparse indexer publication changed owner; restart the process'
             raise RuntimeError(_failure)

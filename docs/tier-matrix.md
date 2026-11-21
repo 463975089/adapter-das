@@ -20,7 +20,7 @@ Core HY4 PCP FP8 indexer with bounded native scoring ABI glue
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| native | candidate Core PCP/cache/top-k; vendor FP8 pre |
+| native | candidate Core PCP/cache/top-k; gfx938 LightOp |
 
 路由变量：（auto）
 

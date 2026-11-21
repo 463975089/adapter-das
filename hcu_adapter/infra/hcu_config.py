@@ -77,7 +77,7 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "Core HY4 PCP FP8 indexer with bounded native scoring ABI glue",
         "backends": {
-            "native": {"status": "candidate", "note": "Core PCP/cache/top-k; vendor FP8 prefill and native NORMAL paged decode; whole-model/Graph/performance pending"},
+            "native": {"status": "candidate", "note": "Core PCP/cache/top-k; gfx938 LightOp FP8 prefill with AITER fallback and native NORMAL paged decode; model/performance qualification pending"},
         },
     },
     "vllm_inverse_rope": {
