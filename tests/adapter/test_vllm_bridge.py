@@ -33,6 +33,8 @@ def _stub_runtime_owners(monkeypatch, calls=None, *, preserve=()):
     for name, action, label in (
         ('vllm_fp8', 'install', 'fp8'),
         ('vllm_scaled_mm', 'install', 'scaled-mm'),
+        ('vllm_input_quant_lightop', 'install', 'input-fp8'),
+        ('vllm_input_quant_int8_lightop', 'install', 'input-int8'),
         ('vllm_allreduce', 'prepare_runtime', 'allreduce'),
         ('vllm_mhc', 'install', 'mhc'),
         ('vllm_sparse_indexer', 'install', 'indexer'),
@@ -267,8 +269,9 @@ def test_platform_plugin_gates_once_and_returns_the_lazy_class_path(monkeypatch)
 
 
 @pytest.mark.parametrize("arch", ("gfx936", "gfx938"))
+@pytest.mark.parametrize("version", ("0.32.0+rocm723", "0.33.0"))
 def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
-    monkeypatch, arch,
+    monkeypatch, arch, version,
 ):
     calls = []
     report = ExtensionReport(
@@ -286,7 +289,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
     monkeypatch.setattr(
         bridge,
         "_ensure_vllm_compatible",
-        lambda: (calls.append("version"), "0.32.0+rocm723")[1],
+        lambda: (calls.append("version"), version)[1],
     )
     monkeypatch.setattr(
         bridge,
@@ -326,9 +329,11 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "dtk",
         "runtime-abi",
         "fp8",
-        "scaled-mm", "allreduce", "mhc", "indexer", "prefill", "decode", "pcp", "minimax-abi",
+        "scaled-mm",
+        *(["input-fp8", "input-int8"] if version == "0.33.0" else []),
+        "allreduce", "mhc", "indexer", "prefill", "decode", "pcp", "minimax-abi",
         "adapter-version",
-        ("extensions", "0.1.0", "0.32.0+rocm723"),
+        ("extensions", "0.1.0", version),
     ]
     assert bridge.extension_reports() == (report,)
 
