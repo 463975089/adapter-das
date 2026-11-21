@@ -129,7 +129,11 @@ def validate_config(cfg, *, block_size=None):
         if selected_mode() != 'native':
             errors.append('FP4 PCP8 requires HCU_VLLM_PCP_IMPL=native')
         if cfg.kv_transfer_config is not None:
-            errors.append('FP4 PCP8 KV transfer is not admitted')
+            from hcu_adapter.kernels.pcp_fork import validate_kv_transfer_config, PcpAttentionError
+            try:
+                validate_kv_transfer_config(cfg)
+            except (ValueError, PcpAttentionError) as error:
+                errors.append('FP4 PCP8 KV transfer is not admitted: ' + str(error))
         if p.data_parallel_size != 1 or not cfg.model_config.enforce_eager:
             errors.append('FP4 PCP8 requires eager DP1')
         if (not getattr(p, 'enable_expert_parallel', False)

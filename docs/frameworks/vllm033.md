@@ -119,3 +119,31 @@ metadata、官方 general-plugin loader 与 config spawn/unpickle 共 17 项检�
 
 
 mHC 行为适配候选、启动配置、缓存/生命周期及未闭合门禁见 [v0.33 mHC](vllm033-mhc.md)。默认仍为原始官方，不代表已知 gfx936 TileLang 分支通过。
+
+## KV cache placement extension seam
+
+The HCU platform forwards the official `get_kv_cache_config_builder_cls`
+selection through `hcu_adapter.bridges.vllm_kv_cache`. An extension registers
+one named pair of callbacks with `register_kv_cache_layout`. The first
+selects a qualified builder class or returns None for the native builder.
+The second transforms the worker-local KVCacheConfig before the Adapter's
+existing Worker delegates to official `initialize_from_config`.
+
+The registry rejects conflicting owners and malformed callback results. An
+extension checks its registered ownership through `require_kv_cache_layout`
+in its existing health callback. No provider preserves the normal platform
+selection and config object. The registry imports no framework, owns no
+placement algorithm and contains no Plugin class paths. Tests are in
+`tests/adapter/test_vllm_kv_cache.py`, with real platform/worker entry-point
+coverage in Plugin's `tests/vllm033/test_dsa_cache_layout.py`.
+# Layer Split migration (2026-11-17)
+
+The generic KV builder/localizer registry is replayed on official main. The
+current PCP attention remains in `hcu_adapter.kernels.pcp_fork`; Layer Split's
+attention subclass, independent pools, scheduler and transfer protocol remain in
+Plugin. `set_kv_transfer_validator` binds one optional validator for the extension
+contract. Without one, PCP transfer is refused as before; the callback must
+return None or raise, and does not bypass the other native PCP checks.
+The Plugin validates its exact owner-aware connector and rejects unqualified
+FP4/stock/kill-switch combinations. This interface migration is CPU-validated;
+historical GPU results do not qualify the migrated commits.

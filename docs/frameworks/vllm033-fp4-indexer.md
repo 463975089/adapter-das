@@ -7,12 +7,20 @@ performance claim.
 ## Constrained PCP8 integration
 
 The FP4 admission also accepts eager MRV2 TP1/PCP8/DP1/PP1/DCP1 with EP and
-DeepEP high throughput. PCP8 speculation, EPLB, DBO, LoRA and KV transfer
-remain rejected. PCP1's existing graph/speculation domain is unchanged.
+DeepEP high throughput. Nonadaptive DSpark uses an eager V4.1 TP1 draft;
+the Layer Split serving profile uses five speculative tokens. The Adapter
+compressor metadata builder retains a full native ring tail on every rank so
+verification can resume after a rejected suffix. The paired Plugin admits
+static EPLB through the calibrated expert map. Runtime EPLB, DBO and LoRA
+are rejected by the PCP8 admission checks.
 The Plugin-owned FP4 PCP attention uses the Adapter-owned PCP attention and
 reuses native replicated-cache preparation,
 local-query metadata and source-layer cache sharing, with the PCP Engram
-implementation. Core sources are not modified.
+implementation. The paired Plugin gives draft SWA caches replicated pools and
+constructs draft MoE with the target's physical PCP/EP geometry. SWA decoder
+replay checks that the draft window fits the target window. CPU and GPU
+evidence for this DSpark candidate is tracked separately from the historical
+results below. Core sources are not modified.
 
 The teacher Adapter defaults to `lightop` and the packer to `triton`.
 For comparisons explicitly set `HCU_VLLM_FP4_INDEXER_IMPL=stock` and
