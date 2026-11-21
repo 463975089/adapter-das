@@ -508,7 +508,8 @@ _KERNEL_MECHANISMS = {"runtime_config", "lightop_usage", "pcp_dspark",
                    # init math, same class as weight_scale)
                    "engram_init",
                     # DeepGEMM provider binding and staged workspace handoff.
-                    "mhc_mega"}
+                    "mhc_mega",
+                    "hisparse", "_hisparse_abi"}
 
 
 def check_impl_naming(r):

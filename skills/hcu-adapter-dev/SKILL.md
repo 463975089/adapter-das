@@ -419,3 +419,12 @@ legacy ABI or the exact optional trailing `fn_packed=None` ABI; use dense `fn`
 as the official native fallback does. Never loosen it to arbitrary `**kwargs`,
 change math or advertise a packed fast path. See
 `docs/frameworks/vllm033-paged-mqa.md` for this separate compatibility gate.
+
+Core033 HiSparse target-only provider: read `docs/frameworks/vllm033-hisparse.md`.
+Use the explicit `ensure_hisparse_ops()` seam and paired native build; ordinary
+import must not load/JIT or inspect a device. CUDA schemas/impl are absent under
+USE_ROCM, so refuse partial registration/schema drift rather than fake capability.
+Metadata uses no hardware subgroup collectives; software copy groups are not
+warp32 assertions. Resolve mapped pinned-host aliases and preserve async lifetime.
+Carry #69057 valid-front packing for counts+attention on both resident-only and
+swap paths without migrating the newer owner ABI. DFly and Graph stay unqualified.

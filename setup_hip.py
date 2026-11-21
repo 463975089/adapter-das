@@ -35,6 +35,7 @@ Ops covered (see csrc/ sources for the per-op porting notes):
 import os
 import platform
 import re
+import sys
 from pathlib import Path
 
 import torch
@@ -141,7 +142,7 @@ hipcc_flags = [
     "-w",
 ]
 
-ext_modules = [
+ext_modules = [] if "--hisparse-only" in sys.argv else [
     CUDAExtension(
         # sgl_kernel.native_ops, NOT common_ops: same TORCH_LIBRARY
         # namespace, distinct module file — no clash if an official wheel
@@ -155,6 +156,16 @@ ext_modules = [
         py_limited_api=False,
     ),
 ]
+
+# Shared native build toolchain, with an explicit small isolation lane.
+# --hisparse-only is a build command option, not a runtime environment switch.
+from hcu_adapter.kernels.hisparse_cpp import extension as hisparse_extension
+hisparse_ext = hisparse_extension(root, libraries=libraries, extra_link_args=extra_link_args)
+if "--hisparse-only" in sys.argv:
+    sys.argv.remove("--hisparse-only")
+    ext_modules = [hisparse_ext]
+else:
+    ext_modules.append(hisparse_ext)
 
 setup(
     name="sgl-kernel",
