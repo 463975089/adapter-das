@@ -197,6 +197,7 @@ sglang 符号面，shim 妥协不进契约。
    - `fused_transform.py`：按原有顺序组织 norm/RoPE/量化、输出写回和缓存写入的复合执行门面；
      单档位 RoPE 与 KV 计算分别位于 `rope_{emu,lightop}`、`kv_cache_emu`。
    - `runtime_config.py`：宿主侧配置、对齐规则及运行参数状态，无张量数值实现。
+   - `pcp_rope_policy.py`：统一解析 vLLM PCP Q RoPE 和 inverse RoPE 的启动策略。
    - `lightop_usage.py`：共享调用计数机制，无张量数值实现。
    - `pcp_dspark.py`：组织 vLLM V4.1 PCP 推测解码的压缩历史、环形槽位元数据与回滚；
      复用 Core 的压缩和注意力实现。

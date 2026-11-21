@@ -209,6 +209,20 @@ MoE router 的有限分数并列须遵循社区较小专家 ID 优先规则，�
 
 ## 任务路由（做某类事之前先读对应参考文档）
 
+### vLLM 0.33 Layer Split 配套接口
+
+- 用目标 Core 已公开的 parser、platform KV builder 和 worker 初始化接口。
+  Adapter 负责注册、准入、冲突校验和进程生命周期。Plugin 负责选择 builder、
+  解释每层的 owner/接收区、在 worker 分配前应用布局。依赖方向为 Plugin → Adapter。
+- `--enable-layer-split` 合入 `additional_config.hcu_layer_split`。校验
+  `--additional-config` 参数顺序、冲突、静态 EPLB 共存及 worker 收到的配置。
+  PCP1 的 dSpark 草稿只使用自己的配置副本。旧 Adapter 路径继续支持普通部署；
+  在准备发布 Layer Split 的 wheel 或镜像时，核对两仓配套 hooks 和实际解析结果。
+- 验收记录绑定最终 Adapter、Plugin、Core、算子和模型权重的实际来源。分开记录
+  CPU 契约、HCU 路由及数值对拍、已准入的 Graph/前缀/SWA Replay、长输入与
+  HE32、性能和正常退出。默认 RoPE 还需同版本对拍明确的 stock 路线、各算子的
+  实际调用和独立快关。历史环境的通过结果按原来源保留。
+
 vLLM 0.33/gfx936 的 C4 indexer 候选见
 `docs/frameworks/vllm033-sparse-indexer.md`。复用官方 logits/top-k 和 public
 metadata/OOT，不能用伪架构或全局 helper 重绑准入。Graph padding 取 host
