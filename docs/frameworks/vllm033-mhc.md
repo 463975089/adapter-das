@@ -130,3 +130,21 @@ Python 文件均匹配源码和 wheel；安装态独立 spawn 验证直接非法
 恢复后拒绝。真实 gfx936 再跑 pre/fused 共64 cases/256 states，保留
 原始容差、64次初始 replay、144次非空变输入及48次空 Graph replay。
 完整节点、layer/e2e、模型和性能门禁仍保持上述限制。
+
+## PCP8 dSpark 大批量 Post 临时显存
+
+2026-11-18 的 NMZ18 W4A8、PCP8、DSpark(5) 启动预热在原生 Torch Post
+中出现 OOM。fallback 对标准三维残差按最多 1024 行调用既有 Torch reference，
+逐行独立的计算和输出 dtype 保持原语义。广播组合矩阵继续交给原入口。
+二十一项 CPU 回归覆盖空输入、块边界、尾部、非连续视图和 dtype。
+
+gfx938 设备对拍覆盖 BF16 的 1、1025、32768 行，以及 FP16/FP32 的 1025 行，
+hidden 均为 5120。eager 与原生 reference 逐位一致，每组另完成三次变输入
+Graph replay。该改动随后用于 W4A8、FP4 Indexer、SWA bounded replay、
+固定 DSpark(5)、eager TP1/DP1/PCP8/EP8 的 32K 输入和 HumanEval 前20题验证，
+结果为20/20。原生 Core 算术通过注入的 reference 复用。
+
+本次设备证据位于候选工作区的 `validation/mhc_post_device.json`，模型证据位于
+`acceptance_runs/dspark_pcp_06`。每卡 KV 预算8 GiB，分配器使用
+`expandable_segments:False,max_split_size_mb:256`。精确模型、环境调整和
+退出日志记录见 Plugin 的 `docs/validation/dspark_layer_split_v033.md`。

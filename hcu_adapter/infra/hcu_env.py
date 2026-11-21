@@ -184,6 +184,11 @@ REGISTRY = {
         "hosts": ("vllm",),
         "about": "vLLM 0.33 V4.1 PCP attention: stock or native; startup policy, fresh process required to change",
     },
+    "HCU_VLLM_PCP_ROPE_IMPL": {
+        "env": "HCU_VLLM_PCP_ROPE_IMPL", "default": "auto",
+        "hosts": ("vllm",),
+        "about": "V4.1 native PCP inverse and query RoPE: auto selects HCU on gfx938, hcu or stock overrides the file; operator kill switches win",
+    },
     "HCU_VLLM_SPARSE_INDEXER_IMPL": {
         "env": "HCU_VLLM_SPARSE_INDEXER_IMPL", "default": "stock",
         "hosts": ("vllm",),

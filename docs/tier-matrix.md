@@ -10,8 +10,8 @@ Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| hcu | candidate Packaged native kernel compiled befo |
-| stock | candidate Default: original Core inverse RoPE |
+| hcu | candidate Default on eligible gfx938 native ea |
+| stock | candidate Original Core inverse RoPE |
 
 路由变量：（auto）
 
@@ -108,8 +108,8 @@ vLLM V4.1 PCP prefill Q-only RoPE
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| hcu | candidate Opt-in eager gfx938 PCP prefill, in- |
-| stock | candidate Default: upstream fused query prepar |
+| hcu | candidate Default on eligible gfx938 native ea |
+| stock | candidate Upstream fused query preparation |
 
 路由变量：（auto）
 

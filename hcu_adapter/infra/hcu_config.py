@@ -70,8 +70,8 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default: original Core inverse RoPE"},
-            "hcu": {"status": "candidate", "note": "Packaged native kernel compiled before model construction; 64-dimension tail; device/Graph/model gates pending"},
+            "stock": {"status": "candidate", "note": "Original Core inverse RoPE"},
+            "hcu": {"status": "candidate", "note": "Default on eligible gfx938 native eager V4.1 PCP; 64-dimension tail"},
         },
     },
     "cuda_graph": {
@@ -147,8 +147,8 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "vLLM V4.1 PCP prefill Q-only RoPE",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default: upstream fused query preparation"},
-            "hcu": {"status": "candidate", "note": "Opt-in eager gfx938 PCP prefill, in-place GPT-J RoPE; GPU validation pending"},
+            "stock": {"status": "candidate", "note": "Upstream fused query preparation"},
+            "hcu": {"status": "candidate", "note": "Default on eligible gfx938 native eager V4.1 PCP prefill; in-place GPT-J RoPE"},
         },
     },
     "vllm_dsv41_pcp_compat": {
