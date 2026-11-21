@@ -70,10 +70,10 @@ def resolver_owner() -> str | None:
     return _owner
 
 
-def fp4_reader_ready() -> bool:
+def fp4_reader_ready() -> bool | None:
     """Check the optional reader bound by the active plugin before choosing FP4."""
     probe = _resolvers.get("fp4_reader_ready")
-    return probe is not None and probe() is True
+    return None if probe is None else probe() is True
 
 
 def check_graph_fp4_provider() -> None:

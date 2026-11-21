@@ -305,13 +305,24 @@ def _configure_indexer_kv_dtype(vllm_config) -> None:
         return
     for capability in sorted(_FP4_INDEXER_CAPABILITIES):
         require_extension_healthy(capability)
+    cache = vllm_config.cache_config
+    provisional = (vllm_config.parallel_config.prefill_context_parallel_size == 1
+                   and getattr(cache, 'user_specified_block_size', None) is False
+                   and cache.block_size == getattr(cache, 'DEFAULT_BLOCK_SIZE', None))
     try:
-        plan = validate_config(vllm_config)
+        plan = validate_config(vllm_config, block_size=64 if provisional else None)
     except Fp4AdmissionError as exc:
         LOG.debug("Keeping DeepSeek V4.1 indexer_kv_dtype=auto: %s", exc)
         return
     if plan is None:
         return
+    from hcu_adapter.features.dsv41.v41_fp8_indexer import fp4_reader_ready
+
+    if fp4_reader_ready() is False:
+        LOG.info("Keeping DeepSeek V4.1 indexer_kv_dtype=auto: FP4 reader unavailable")
+        return
+    if provisional:
+        cache.block_size = plan.manager_block
     vllm_config.attention_config.indexer_kv_dtype = "mxfp4"
     LOG.info(
         "HCU DeepSeek V4.1 indexer_kv_dtype auto -> mxfp4 "

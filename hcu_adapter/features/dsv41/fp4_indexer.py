@@ -79,11 +79,16 @@ def _graph_capture_allowed(cfg):
     this check. The import is lazy so this admission module stays importable
     before the plugin activates and in adapter-only CPU tests.
     """
+    compilation = getattr(cfg, 'compilation_config', None)
+    mode = getattr(compilation, 'cudagraph_mode', None)
+    if (mode is not None and mode.has_full_cudagraphs()
+            and cfg.parallel_config.prefill_context_parallel_size == 1):
+        return True
     from hcu_adapter.features.dsv41.v41_fp8_indexer import resolve_graph_capture_allowed
     return bool(resolve_graph_capture_allowed()(cfg))
 
 
-def validate_config(cfg):
+def validate_config(cfg, *, block_size=None):
     """Reject unsupported deployments before native constructors allocate."""
     if not selected():
         return None
@@ -103,7 +108,7 @@ def validate_config(cfg):
     if not getattr(hf, 'kv_source_layer_ids', None) or not getattr(
             hf, 'index_source_layer_ids', None):
         errors.append('kv_source_layer_ids and index_source_layer_ids required')
-    block = cfg.cache_config.block_size
+    block = cfg.cache_config.block_size if block_size is None else block_size
     if not active:
         errors.append('at least one compressed indexer ratio is required')
     # The allocator owns ``block_size // ratio`` records per positive-ratio
@@ -149,8 +154,7 @@ def validate_config(cfg):
         errors.append('LoRA unsupported')
     if not cfg.use_v2_model_runner or not (
             cfg.model_config.enforce_eager or _graph_capture_allowed(cfg)):
-        errors.append('eager MRV2 or PIECEWISE breakable Graph required; '
-                      'full cudagraph is not admitted')
+        errors.append('eager MRV2, PIECEWISE breakable Graph, or PCP1 FULL Graph required')
     # JIT warmup is NOT rejected here: `register_warmup()` only queues a compile
     # key with `JitWarmupRegistry`, so the owner kernels are still unhashed when
     # the packer rebinds them during model construction. The plugin's
