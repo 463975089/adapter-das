@@ -9,6 +9,7 @@ tests/adapter/test_vllm_mhc_bridge.py. No framework/provider math is executed.
 import importlib
 import json
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -250,6 +251,8 @@ def _mega_seams(s, monkeypatch):
     aiter_runtime = SimpleNamespace(pre_mix_collapse=None)
     s.modules['hcu_adapter.kernels.mhc_aiter'] = SimpleNamespace(
         MhcAiterRuntime=lambda *args: aiter_runtime)
+    monkeypatch.setitem(sys.modules, 'hcu_adapter.kernels.mhc_boundary_triton',
+                        SimpleNamespace(supported=lambda *args: False))
     fake = object()
     s.modules['hcu_adapter.kernels.mhc_fused_triton'] = SimpleNamespace(
         pre_mix_collapse=fake, pre_mix_collapse_meta=object())
@@ -317,7 +320,7 @@ def test_mega_route_fallback_and_health_at_both_entries(seams, monkeypatch, entr
     assert s.m._publication.mega_provider is provider
     assert factor_inputs[0]['mega_requested'] is True
     assert factor_inputs[0]['mega'] == {'source': 'vendor'}
-    assert len(factor_inputs[0]['sources']) == 4
+    assert len(factor_inputs[0]['sources']) == 7
     assert factor_inputs[0]['delayed_fusion_requested'] is True
     assert len(factor_inputs[0]['delayed_fusion_sources']) == 2
     assert aiter_runtime.pre_mix_collapse is ops.hcu_adapter_mhc_pre_mix_collapse

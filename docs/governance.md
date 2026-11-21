@@ -200,6 +200,8 @@ sglang 符号面，shim 妥协不进契约。
    - `lightop_usage.py`：共享调用计数机制，无张量数值实现。
    - `pcp_dspark.py`：组织 vLLM V4.1 PCP 推测解码的压缩历史、环形槽位元数据与回滚；
      复用 Core 的压缩和注意力实现。
+   - `mhc_mega.py`：校验 DeepGEMM Mega mHC 的绑定和 ABI，管理 packed Fn 与工作区，
+     组织厂商算子与现有 BF16 collapse 的交接。
    L0 对 `hcu_adapter/kernels/` 按此清单或档位后缀检查；新增豁免需同步说明职责。
 7. **实现文件档位与配置值分开管理**：`_emu` 是 Torch/仿真实现的文件后缀；
    已发布的后端选择值 `torch` 仍是合法配置值，不是文件命名档位。

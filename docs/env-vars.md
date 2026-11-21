@@ -62,6 +62,14 @@ MiniMax prefill 优化使用正式配置 `ops.vllm_minimax_prefill`：准入模�
 | `HCU_VLLM_PCP_IMPL` | stock | —（candidate，默认不注册） | vLLM 0.33 V4.1 PCP attention 归属：`native` 时 adapter 侧的 `kernels/pcp_fork.py` 提供 PCP backend/indexer/attention，插件只保留模型发布并经 `set_indexer_reference` 注入 FP8 打分器；`stock` 不建任何类。正式配置 `ops.vllm_pcp: native`；快关 `HCU_DISABLE_OPS=vllm_pcp` 优先，启动后改策略须新进程。仅 eager PCP2+，真机/Graph/精度门禁未闭环。 |
 | `HCU_VLLM_SPARSE_INDEXER_IMPL` | stock | —（candidate，默认不注册） | vLLM 0.33/gfx936 C4 indexer：native 经公开 OOT 调用官方 logits/top-k；query/weights 同步打包，长度取官方 host metadata，无 GPU 长度读回。正式配置为 `ops.vllm_sparse_indexer: native`；快关 `HCU_DISABLE_OPS=vllm_sparse_indexer` 优先。启动后改变策略须新进程；模型/安装态门禁未闭环，见 [C4 接缝](frameworks/vllm033-sparse-indexer.md)。 |
 | `HCU_VLLM_MHC_IMPL` | aiter | —（candidate，默认注册） | vLLM 0.33/gfx936、gfx938 的 mHC 档位：默认 `aiter`（公开 OOT 接管 pre/delayed/fused/post），`torch` 为官方 Torch 等价实现，`stock` 为显式 opt-out。启动期选择；改变已注册策略须新进程。`HCU_DISABLE_OPS=vllm_mhc` 优先于默认值、强制回原始官方路径。默认 `aiter` 会注册 4 个 OOT；同进程若已被插件接管，互斥检查直接报错而非静默降级。gfx938 已完成 W4A8 eager 算子对拍与 HumanEval 164；Graph 和其他模型/形状仍待独立验收。 |
+| `HCU_VLLM_MHC_DELAYED_FUSION` | 0 | vLLM 0.33 AITER delayed Pre，hc4/hidden5120/1–64 行 | `1` 在准入时融合 gate 与 collapse。启动期解析，变更须重启。 |
+| `HCU_VLLM_MHC_MEGA` | 1 | AITER 模式、gfx938，且通过 vLLM 与 DeepGEMM 版本及 ABI 准入 | 启用 shifted Mega mHC。`0` 在启动期关闭，保留已有 AITER 路径。 |
+| `HCU_DSV41_W4A8_MOE_EXPECTED_M` | 1 | 通过 V4.1 W4A8 masked expert 准入 | 使用小批量 `expected_m` 调度提示。`0` 在启动期关闭提示。 |
+| `HCU_TRITON_FUSED_SELECTORS` | 1 | vLLM MLA sparse Decode，受融合预算限制 | 在准入形状上融合过滤、升序排序和 padded ids/counts 写回。超预算走三步 Triton。`0` 使用原 selector。 |
+| `HCU_TRITON_FAST_LAUNCH` | 0 | 已启用的 MLA Triton selector 路径 | `1` 允许可选的 CompiledKernel launch replay。默认使用 Triton 通用 JIT 派发。 |
+| `HCU_LIGHTOP_PER_TOKEN_INT8` | 1 | vLLM 对称动态 INT8，连续对齐的二维 BF16 激活 | 使用 LightOp 逐 token 量化。`0` 保留原实现，`HCU_LIGHTOP_PER_TOKEN_INT8_GRAPH=0` 只关闭图捕获时的 LightOp 路径。 |
+| `HCU_LIGHTOP_PER_TOKEN_FP8` | 1 | vLLM 动态 FP8 PER_TOKEN，连续二维 BF16 激活 | 使用 LightOp 逐 token 量化。低于上游 amax 下界时 scale 语义有差异。`0` 保留原实现，`HCU_LIGHTOP_PER_TOKEN_FP8_GRAPH=0` 只关闭图捕获时的 LightOp 路径。 |
+| `HCU_LIGHTOP_FP8_AMAX_DIAG` | 0 | 验证时显式启用 | 统计 FP8 量化输入中 `amax < 1/(448*512)` 的行数和占比。诊断会额外执行 reduction。 |
 | `HCU_VLLM_MHC_PRE_SPLIT_K` | auto | —（candidate） | vLLM 0.33 AITER mHC staged delayed Pre split-K。可选 auto 或 1/2/4/8/16/32；auto=32 仅针对 hc=4/hidden=5120/0<tokens<=64。启动期选择；仅在 AITER 模式下有效，改变已注册策略须新进程。 |
 | `VLLM_HCU_USE_AITER_TILELANG_MHC` | **1（默认）** | —（candidate） | vLLM 0.33 AITER mHC staged delayed-Pre 的 stage2 默认使用 `pre_big_fuse_tilelang`，stage1 仍由 AITER `mhc_pre_gemm_sqrsum` 执行。显式 `0` 恢复旧 AITER `mhc_pre_big_fuse`（已知单 token/奇数 token 数值风险，仅供诊断）；默认开启但 TileLang 不可用时回退官方 Torch，不落回旧 big_fuse。启动期选择，变更须新进程。 |
 | `HCU_JIT_FP8_FFI` | 1 | HIP 宿主安装 | generic/v2 分组量化及 DSV4 silu-mul JIT 的 FFI 存储兼容。仅将 e4m3fn 输出零拷贝 view 为 uint8，保持输入、scale、dtype 选型、原 factory 及已有 cache/别名，不改写源码。显式 0 在启动时跳过安装；已安装后不提供运行期撤销。 |

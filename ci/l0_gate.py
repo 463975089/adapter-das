@@ -505,7 +505,9 @@ _KERNEL_MECHANISMS = {"runtime_config", "lightop_usage", "pcp_dspark",
                    "weight_scale",
                    # W3-5: load-time engram norm-weight fusion (one-shot
                    # init math, same class as weight_scale)
-                   "engram_init"}
+                   "engram_init",
+                    # DeepGEMM provider binding and staged workspace handoff.
+                    "mhc_mega"}
 
 
 def check_impl_naming(r):
