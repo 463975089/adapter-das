@@ -204,12 +204,18 @@ def _split_index_cache(fused_kv_cache, is_fp4):
     flat = fused_kv_cache.view(torch.uint8).as_strided(
         (num_pages, page_kv * width), (fused_kv_cache.stride(0), 1))
     values = flat[:, :page_kv * value_bytes].reshape(num_pages, page_kv, value_bytes)
-    sf = flat[:, page_kv * value_bytes:page_kv * width].reshape(num_pages, page_kv, 4).contiguous().view(torch.int32)
+    sf = flat[:, page_kv * value_bytes:page_kv * width].reshape(num_pages, page_kv, 4).contiguous()
+    # A single page is already contiguous even at an unaligned byte offset:
+    # contiguous() then aliases the original storage, so dtype-view still fails.
+    # Copy only that case; aligned tails retain the existing zero-copy path.
+    if sf.storage_offset() % 4:
+        sf = sf.clone()
+    sf = sf.view(torch.int32)
     values = values.view(torch.int8) if is_fp4 else values.view(torch.float8_e4m3fn)
     return values, sf.squeeze(-1)
 
 
-def _paged_tokens(fused_kv_cache, block_table, token_pos, valid, is_fp4):
+def _paged_tokens(fused_kv_cache, block_table, token_pos, valid, is_fp4, *, mx_scales=True):
     """Dequantize index-cache tokens at logical positions token_pos[S, C] of query S.
 
     Block-table row i belongs to query i (vendor: block_table.size(0) == num_q_tokens; the
@@ -223,7 +229,12 @@ def _paged_tokens(fused_kv_cache, block_table, token_pos, valid, is_fp4):
     page_col = (pos // page_kv).clamp(max=block_table.shape[1] - 1)
     page = torch.where(valid, block_table.long().gather(1, page_col), 0).clamp(0, num_pages - 1)
     slot = torch.remainder(pos, page_kv)
-    return _dequant_mqa_operand(values[page, slot], sf[page, slot]).float()   # [S, C, D]
+    # Gather bytes first: FP8 advanced indexing is not available on every host.
+    selected = values.view(torch.uint8)[page, slot].view(values.dtype)
+    scales = sf[page, slot]
+    if mx_scales:
+        return _dequant_mqa_operand(selected, scales).float()
+    return selected.float() * scales.contiguous().view(torch.float32).unsqueeze(-1)
 
 
 def get_paged_mqa_logits_metadata(context_lens, block_kv, num_sms, indices=None):
@@ -231,24 +242,69 @@ def get_paged_mqa_logits_metadata(context_lens, block_kv, num_sms, indices=None)
     return torch.zeros((num_sms + 1, 2), dtype=torch.int32, device=context_lens.device)
 
 
+def _validate_fp32_paged_mqa(q, cache, weights, lengths, table):
+    """Non-MX ABI: row-major FP8 payload and page-tail FP32 K scales."""
+    if q.ndim != 4 or q.shape[1] != 1 or q.shape[-1] != 128:
+        raise NotImplementedError("FP32-scale paged MQA requires [B, 1, H, 128] Q")
+    if q.dtype != torch.float8_e4m3fn:
+        raise NotImplementedError("FP32-scale paged MQA requires E4M3FN Q")
+    if (cache.ndim != 4 or cache.shape[1:] != (64, 1, 132)
+            or cache.dtype != torch.uint8 or cache.stride(-1) != 1
+            or cache.stride(1) != 132):
+        raise NotImplementedError("FP32-scale paged MQA requires page64 uint8 D128+4 cache")
+    rows, _, heads, _ = q.shape
+    if not 1 <= heads <= 64 or weights.shape != (rows, heads):
+        raise ValueError("FP32-scale paged MQA weights must match Q rows and heads (1..64)")
+    if weights.dtype != torch.float32:
+        raise ValueError("FP32-scale paged MQA requires FP32 weights with Q scales folded in")
+    if lengths.shape not in ((rows,), (rows, 1)) or lengths.dtype != torch.int32:
+        raise ValueError("FP32-scale paged MQA lengths must be int32 [B] or [B, 1]")
+    if table.ndim != 2 or table.shape[0] != rows or table.dtype != torch.int32:
+        raise ValueError("FP32-scale paged MQA block table must be int32 [B, max_pages]")
+    if rows and (cache.shape[0] == 0 or table.shape[1] == 0):
+        raise ValueError("FP32-scale paged MQA needs at least one cache page/table column")
+    if any(t.device != q.device for t in (cache, weights, lengths, table)):
+        raise ValueError("FP32-scale paged MQA operands must share a device")
+
+
 def fp8_fp4_paged_mqa_logits(q, fused_kv_cache, weights, context_lens, block_table, schedule_meta,
-                             max_context_len, indices=None, *, output_dtype=torch.bfloat16):
-    """logits[i, t] = sum_h w[i,h] relu(q[i,h] . k(request(i), t)) for t < context_lens[i] (SM100 varlen)."""
+                             max_context_len, indices=None, *, output_dtype=None):
+    """Weighted ReLU MQA over a paged index cache, without host synchronization.
+
+    MX keeps the existing SM100 varlen/BF16 contract. Non-MX takes E4M3FN
+    Q with scales already folded into FP32 weights and a page64 cache laid
+    out as [64 * 128 FP8 bytes | 64 FP32 scales], returning FP32 logits.
+    This is NOT an interleaved 132-byte-per-token or preshuffled cache.
+    Schedule/indices only group work; block-table row i always belongs to Q i.
+    Entries beyond each row's context length are deterministically zero.
+    """
     q_x, q_sf = q
-    if q_sf is None or indices is None or q_x.shape[1] != 1:
+    mx_scales = q_sf is not None
+    if not mx_scales:
+        _validate_fp32_paged_mqa(q_x, fused_kv_cache, weights, context_lens, block_table)
+    elif q_x.ndim != 4 or indices is None or q_x.shape[1] != 1:
         raise NotImplementedError("HCU paged MQA logits implements the SM100 varlen (next_n=1, MX) contract")
+    if max_context_len < 0:
+        raise ValueError("MQA max_context_len must be nonnegative")
+    if output_dtype is None:
+        output_dtype = torch.bfloat16 if mx_scales else torch.float32
     num_q, _, num_heads, _ = q_x.shape
     is_fp4 = q_x.dtype == torch.int8
-    q_deq = _dequant_mqa_operand(q_x[:, 0], q_sf[:, 0]).float()
+    q_deq = (_dequant_mqa_operand(q_x[:, 0], q_sf[:, 0]).float()
+             if mx_scales else q_x[:, 0].float())
     w = weights.float()
-    lens = context_lens.view(-1).long()
+    lens = context_lens.reshape(-1).long()
     logits = torch.zeros(num_q, max_context_len, device=q_x.device, dtype=output_dtype)
-    cols = max(1, min(max_context_len, _LOGITS_CHUNK_ELEMENTS // max(1, num_q * num_heads)))
+    if num_q == 0:
+        return logits
+    # Bound both [Q, H, K] scores and [Q, K, D] gathered keys.
+    budget = _LOGITS_CHUNK_ELEMENTS if mx_scales else min(_LOGITS_CHUNK_ELEMENTS, 1 << 22)
+    cols = max(1, min(max_context_len, budget // max(1, num_q * max(num_heads, q_deq.shape[-1]))))
     for c0 in range(0, max_context_len, cols):
         c1 = min(max_context_len, c0 + cols)
         pos = torch.arange(c0, c1, device=q_x.device)[None, :].expand(num_q, -1)
         valid = pos < lens[:, None]
-        k = _paged_tokens(fused_kv_cache, block_table, pos, valid, is_fp4)
+        k = _paged_tokens(fused_kv_cache, block_table, pos, valid, is_fp4, mx_scales=mx_scales)
         score = torch.bmm(q_deq, k.transpose(1, 2)).relu_()
         chunk = torch.bmm(w.unsqueeze(1), score).squeeze(1)
         logits[:, c0:c1] = torch.where(valid, chunk, 0).to(output_dtype)

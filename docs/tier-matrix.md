@@ -174,6 +174,17 @@ DTK mapped CPU allocation exposed as a device tensor
 
 路由变量：（auto）
 
+## vllm_paged_mqa_logits
+
+vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Opt-in existing official vLLM Triton |
+| emu | candidate Explicit HCU page64/D128 next_n=1 pr |
+
+路由变量：（auto）
+
 ## vllm_sparse_indexer
 
 vLLM 0.33 C4 sparse indexer through public OOT and official helpers

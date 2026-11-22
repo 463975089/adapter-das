@@ -33,6 +33,7 @@ LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
+    "vllm_paged_mqa_logits": ("Explicit non-MX vLLM/plugin paged MQA provider; startup refusal", None),
     "nextn_idle_metadata": ("Missing NEXTN idle KV metadata default (startup only)", None),
     "prefill_graph_driver": ("Breakable graph HIP stream query repair (startup only)", None),
     "vllm_inverse_rope": ("Plugin inverse RoPE; fresh-process stock fallback", None),
