@@ -89,6 +89,7 @@ def build_backend(vendor):
     from vllm.v1.attention.backends.mla.flashmla_sparse import (
         FlashMLASparseImpl, FlashMLASparseMetadataBuilder as NativeBuilder,
     )
+    from vllm.v1.attention.ops.metadata import compute_token_to_req_indices
 
     class HcuIndexCapacityImpl(SparseMLACommonImpl):
         __init__ = bind_native(SparseMLACommonImpl.__init__,
@@ -108,6 +109,32 @@ def build_backend(vendor):
             {'flash_mla_with_kvcache': vendor.flash_mla_with_kvcache})
 
     class HcuSparseFlashMLAMetadataBuilder(NativeBuilder):
+        def __init__(self, kv_cache_spec, layer_names, vllm_config, device):
+            super().__init__(kv_cache_spec, layer_names, vllm_config, device)
+            self.supports_draft_decode_metadata_update = (
+                self.pcp_world_size == self.dcp_world_size == 1
+                and not self.use_hisparse
+                and vllm_config.cache_config.cache_dtype == 'fp8_ds_mla')
+
+        def update_draft_decode_metadata(self, metadata):
+            if not self.supports_draft_decode_metadata_update:
+                return super().update_draft_decode_metadata(metadata)
+            rows = metadata.num_decode_tokens
+            if (rows == metadata.num_actual_tokens == metadata.num_prefills == 0):
+                return
+            if (metadata.num_prefills != 0
+                    or rows != metadata.num_actual_tokens
+                    or rows != metadata.num_decodes
+                    or metadata.max_query_len != 1
+                    or metadata.decode_max_query_len != 1):
+                raise ValueError('DTK draft update requires uniform one-token decode metadata')
+            # Seq lengths, slots and block tables already view runner buffers.
+            # FP8 sparse scheduling uses fixed max-model cache lengths and no
+            # topk_length; causal validity comes from the changing indices.
+            # Only the builder-owned token/request map needs regeneration.
+            compute_token_to_req_indices(metadata.query_start_loc,
+                metadata.req_id_per_token, rows, rows)
+
         _build_fp8_mixed_decode_prefill = bind_native(
             NativeBuilder._build_fp8_mixed_decode_prefill,
             {'get_mla_metadata': vendor.get_mla_metadata})
