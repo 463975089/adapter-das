@@ -44,6 +44,22 @@ Plugin 类路径。普通 MHA/GQA 的默认 Triton 选型不覆盖 MLA/Sparse ML
 普通 AR 可审计公开 communicator 类选择入口；融合 AR 的注册、pass 与
 Graph 生命周期仍需单独证明，不能由普通 AR 的可达性推定支持。
 
+## 可选 Decode 算子的能力声明
+
+包的文件摘要只用于缓存失效和验证记录。实现方可在负责该算子 ABI 的模块上公开 `HCU_OPERATOR_CONTRACTS` 映射，以算子名和整数版本声明兼容范围。兼容重编译沿用契约版本。改变布局、调用语义或数值边界时升级契约版本。适配层仍校验实际入口、设备和张量布局。缺少声明或有效预检结论的路径使用原有实现并记录原因。
+
+| 契约 v1 | 声明模块 | 声明前应核对的行为 |
+| --- | --- | --- |
+| `sparse_decode_plan_h64` | FlashMLA 原生扩展 | H64 OCP FP8 sparse decode 支持外部 `int32[64,8]` 调度表与 `int32[B+1]` split 前缀和。核对分块坐标、空分区、跨行标志和 SWA/extra counts 的解释。 |
+| `mla_bf16_inverse_rope` | vLLM ROCm MLA ops | 512 维输出分为 448 维 NoPE 与 64 维 GPT-J RoPE。校验 BF16 写回、FMA 舍入、零行及有符号零。 |
+| `dsv41_q_rope_and_padded_kv_insert` | vLLM 原生扩展 | 分拆调用的 Q RoPE 与融合入口一致，原生 KV insert 保留 584 字节页、padding 与写回语义。 |
+| `dsv41_wo_a_bf16_consumer_layout` | vLLM ROCm MLA ops | WO-A 与 WO-B 之间接受 contiguous token-major BF16，权重缓存和 INT8 下游消费布局一致。 |
+| `rocm_bf16_bmm_einsum_parity` | Torch | 支持该 WO-A 形状和 stride 的 BF16 `bmm(out=...)` 与 `einsum` 逐字节一致。 |
+| `dsv41_greedy_markov` | vLLM DSpark draft 模型及 speculator | 核对逐步 bias、greedy tie-break、anchor 类型及 token 映射，覆盖同一 Graph 下变更输入。 |
+| `dsv41_draft_final_mhc_post` | vLLM DSpark draft 模型 | 核对 final Post 的调用位置、参数语义和 BF16 舍入。 |
+
+生产包发布能力声明前须用实际安装构建完成对应的原生对照及变输入 replay。镜像缺少声明时，启动预检可以确认实际行为。FlashMLA Worker 在模型加载后比较调度字段、split 前缀和、attention 输出和 inverse RoPE 写回。插件在构造期比较 Q/KV 输出、WO-A 下游消费张量和 draft final Post 数值。在 draft 权重加载后，Markov 预检使用实装模型的 Markov head 和原生逐步采样比较五步 token。LightOp clamped SwiGLU INT8 在构造期比较有效行的量化值与 FP32 scale。预检通过结果供同一 Worker 的对应设备或模型使用，Graph 捕获和回放复用该结果。DSpark LL receive 复用 AG/RS 的公开 per-token INT8 量化，借助原有 counts 保持 masked GEMM 的有效行语义。公开量化入口会处理缓冲区的 padding 行，这条路径的吞吐和 TPOT 需要重新测量。
+
 ## 普通 FP8/INT8 Linear 的 LightOp 接入
 
 通用 scaled-MM 执行桥见 [LightOp Linear](vllm-scaled-mm-lightop.md)。保留官方
@@ -173,3 +189,31 @@ prefill 沿用 Core 临时转换路径。原生 HY4 构造时按完整 prefill b
 （含sentinel）分配后，普通PCP16启动已通过主干/MTP权重加载。未降低batch
 budget，也未复制转换kernel或修改Core全局。CPU ABI/config检查21项通过；
 整模启动仍受独立的gfx938 sparse indexer准入问题阻塞，精度与性能尚未通过。
+
+## KV cache placement extension seam
+
+The HCU platform forwards the official `get_kv_cache_config_builder_cls`
+selection through `hcu_adapter.bridges.vllm_kv_cache`. An extension registers
+one named pair of callbacks with `register_kv_cache_layout`. The first
+selects a qualified builder class or returns None for the native builder.
+The second transforms the worker-local KVCacheConfig before the Adapter's
+existing Worker delegates to official `initialize_from_config`.
+
+The registry rejects conflicting owners and malformed callback results. An
+extension checks its registered ownership through `require_kv_cache_layout`
+in its existing health callback. No provider preserves the normal platform
+selection and config object. The registry imports no framework, owns no
+placement algorithm and contains no Plugin class paths. Tests are in
+`tests/adapter/test_vllm_kv_cache.py`, with real platform/worker entry-point
+coverage in Plugin's `tests/vllm033/test_dsa_cache_layout.py`.
+# Layer Split migration (2026-11-17)
+
+The generic KV builder/localizer registry is replayed on official main. The
+current PCP attention remains in `hcu_adapter.kernels.pcp_fork`; Layer Split's
+attention subclass, independent pools, scheduler and transfer protocol remain in
+Plugin. `set_kv_transfer_validator` binds one optional validator for the extension
+contract. Without one, PCP transfer is refused as before; the callback must
+return None or raise, and does not bypass the other native PCP checks.
+The Plugin validates its exact owner-aware connector and rejects unqualified
+FP4/stock/kill-switch combinations. This interface migration is CPU-validated;
+historical GPU results do not qualify the migrated commits.

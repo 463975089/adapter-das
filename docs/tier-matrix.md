@@ -30,8 +30,8 @@ Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| hcu | candidate Packaged native kernel compiled befo |
-| stock | candidate Default: original Core inverse RoPE |
+| hcu | candidate Default on eligible gfx938 native ea |
+| stock | candidate Original Core inverse RoPE |
 
 路由变量：（auto）
 
@@ -138,8 +138,8 @@ vLLM V4.1 PCP prefill Q-only RoPE
 
 | 档位 | 状态 / 备注 |
 |---|---|
-| hcu | candidate Opt-in eager gfx938 PCP prefill, in- |
-| stock | candidate Default: upstream fused query prepar |
+| hcu | candidate Default on eligible gfx938 native ea |
+| stock | candidate Upstream fused query preparation |
 
 路由变量：（auto）
 
@@ -201,6 +201,17 @@ DTK mapped CPU allocation exposed as a device tensor
 | 档位 | 状态 / 备注 |
 |---|---|
 | dtk | candidate INT8/BF16/FP8 live-ID Graph replay p |
+
+路由变量：（auto）
+
+## vllm_paged_mqa_logits
+
+vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate Opt-in existing official vLLM Triton |
+| emu | candidate Explicit HCU page64/D128 next_n=1 pr |
 
 路由变量：（auto）
 

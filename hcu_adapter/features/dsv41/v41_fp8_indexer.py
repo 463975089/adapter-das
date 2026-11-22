@@ -70,6 +70,18 @@ def resolver_owner() -> str | None:
     return _owner
 
 
+def fp4_reader_ready() -> bool | None:
+    """Check the optional reader bound by the active plugin before choosing FP4."""
+    probe = _resolvers.get("fp4_reader_ready")
+    return None if probe is None else probe() is True
+
+
+def check_graph_fp4_provider() -> None:
+    check = _resolvers.get("check_graph_fp4_provider")
+    if check is not None:
+        check()
+
+
 def _resolve(name):
     resolver = _resolvers.get(name)
     if resolver is None:
@@ -298,12 +310,25 @@ def build():
                     ~visible, -float("inf"))
             return logits
 
-        def local_topk(logits, starts, ends, k):
+        def local_topk(logits, starts, ends, k, *, valid_lengths=None):
             rows, width = logits.shape
-            output = torch.full((rows, k), -1, dtype=torch.int32, device=logits.device)
             if not rows or not width:
-                return output
+                return torch.full((rows, k), -1, dtype=torch.int32, device=logits.device)
+            if logits.is_cuda:
+                from hcu_adapter.kernels.indexer_topk_lightop import select_topk
+                native = select_topk(logits, starts, ends, k, valid_lengths=valid_lengths)
+                if native is not None:
+                    return native
+            if valid_lengths is not None:
+                columns = torch.arange(width, device=logits.device)
+                logits.masked_fill_(columns[None, :] >= valid_lengths[:, None], -float('inf'))
             top = logits.topk(min(k, width), dim=-1)
+            if logits.is_cuda:
+                from hcu_adapter.kernels.indexer_topk_post_triton import finish_topk
+                fused = finish_topk(top.values, top.indices, starts, ends, k, width)
+                if fused is not None:
+                    return fused
+            output = torch.full((rows, k), -1, dtype=torch.int32, device=logits.device)
             selected = (top.indices - starts[:, None]).to(torch.int32)
             selected.masked_fill_(top.values == -float("inf"), -1)
             ordered = top.indices.masked_fill(top.values == -float("inf"), width).sort(
@@ -335,7 +360,7 @@ def build():
                 helper = inner
             return helper
 
-        def _select(logits, starts, ends, out, candidates, block_size, write):
+        def _select(logits, starts, ends, out, candidates, block_size, write, *, bounded=False):
             if candidates is not None:
                 helper = _collaborator(
                     "candidate_select" if write else "candidate_mask")
@@ -354,7 +379,12 @@ def build():
                         helper(logits, starts, ends, candidates.shape[1],
                                block_size, candidates)
                     else:
-                        helper(logits, starts, ends, candidates, block_size)
+                        masked = False
+                        if bounded and helper is apply_candidate_mask:
+                            from hcu_adapter.kernels.indexer_live_mask_triton import mask_decode_candidates
+                            masked = mask_decode_candidates(logits, ends, candidates, block_size)
+                        if not masked:
+                            helper(logits, starts, ends, candidates, block_size)
                 except AssertionError as error:
                     # Backstop for a CUDA-only helper we could not identify by
                     # unwrapping. Keep the original text so a genuine assertion
@@ -362,7 +392,8 @@ def build():
                     raise V41IndexerError(
                         "V41 candidate-block selection failed on a non-CUDA "
                         f"tensor; the helper is likely CUDA-only ({error})") from error
-            out.copy_(local_topk(logits, starts, ends, out.shape[1]))
+            out.copy_(local_topk(logits, starts, ends, out.shape[1],
+                                 valid_lengths=ends if bounded else None))
 
         @eager_break_during_capture
         def indexer(hidden_states: torch.Tensor, prefix: str, cache: torch.Tensor,
@@ -589,9 +620,12 @@ def build():
                 raise V41IndexerError(
                     "V41 FP4 indexer execution is not bound; the plugin owns it")
 
+            def _fp4_check_dispatch(self):
+                _resolve("health")
+
             def forward_hip(self, hidden_states, q_quant, k, weights):
                 if getattr(self, "_hcu_fp4", False):
-                    _resolve("health")
+                    self._fp4_check_dispatch()
                     if k is not None:
                         raise ValueError("FP4 reader must not insert a second K")
                     return self._fp4_execute(hidden_states, q_quant, weights)

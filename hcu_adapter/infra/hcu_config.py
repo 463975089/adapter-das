@@ -84,8 +84,8 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default: original Core inverse RoPE"},
-            "hcu": {"status": "candidate", "note": "Packaged native kernel compiled before model construction; 64-dimension tail; device/Graph/model gates pending"},
+            "stock": {"status": "candidate", "note": "Original Core inverse RoPE"},
+            "hcu": {"status": "candidate", "note": "Default on eligible gfx938 native eager V4.1 PCP; 64-dimension tail"},
         },
     },
     "cuda_graph": {
@@ -168,8 +168,8 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "vLLM V4.1 PCP prefill Q-only RoPE",
         "backends": {
-            "stock": {"status": "candidate", "note": "Default: upstream fused query preparation"},
-            "hcu": {"status": "candidate", "note": "Opt-in eager gfx938 PCP prefill, in-place GPT-J RoPE; GPU validation pending"},
+            "stock": {"status": "candidate", "note": "Upstream fused query preparation"},
+            "hcu": {"status": "candidate", "note": "Default on eligible gfx938 native eager V4.1 PCP prefill; in-place GPT-J RoPE"},
         },
     },
     "vllm_dsv41_pcp_compat": {
@@ -214,6 +214,14 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "DTK mapped CPU allocation exposed as a device tensor",
         "backends": {"dtk": {"status": "candidate", "note": "INT8/BF16/FP8 live-ID Graph replay passed on gfx936; caller retains host allocation"}},
+    },
+    "vllm_paged_mqa_logits": {
+        "var": None,
+        "summary": "vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales",
+        "backends": {
+            "emu": {"status": "candidate", "note": "Explicit HCU page64/D128 next_n=1 provider; FP32 logits and folded Q scales. CPU and gfx938 eager/Graph contracts covered; serving/wheel/throughput gates pending. Startup kill switch refuses, never selects CUDA."},
+            "triton": {"status": "candidate", "note": "Opt-in existing official vLLM Triton page64/D128 H32/H64 launcher; zero-masked independent FP32 output. Explicit ops config; Torch fallback for CPU/unsupported strides or heads. HCU model and changing-input Graph gates required."},
+        },
     },
     "vllm_sparse_indexer": {
         "var": "HCU_VLLM_SPARSE_INDEXER_IMPL",

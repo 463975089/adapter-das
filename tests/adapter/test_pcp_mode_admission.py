@@ -138,12 +138,16 @@ def test_non_pcp_config_stays_native_even_in_native_mode(clean_env, native, monk
 
 def test_published_stock_q_rope_cannot_be_enabled_in_place(clean_env):
     from hcu_adapter.infra import hcu_config
+    from hcu_adapter.kernels import pcp_rope_policy
 
     for name in ("_q_rope_provider", "_q_rope_binding", "_q_rope_failure"):
         clean_env.setattr(pcp_fork, name, None)
-    ops = {}
+    ops = {pcp_fork.Q_ROPE_OP: "stock"}
     clean_env.setattr(hcu_config, "load", lambda: {"ops": ops, "overrides": {}})
     clean_env.setenv("HCU_VLLM_PCP_IMPL", "native")
+    clean_env.setenv("VLLM_HCU_DSV41_PCP_ATTENTION", "1")
+    clean_env.delenv(pcp_rope_policy.MODE_VARIABLE, raising=False)
+    clean_env.setattr(pcp_rope_policy, "_process_arch", lambda _: "gfx938")
 
     pcp_fork.set_q_rope_provider(None)
     pcp_fork.require_q_rope_healthy()
@@ -151,6 +155,6 @@ def test_published_stock_q_rope_cannot_be_enabled_in_place(clean_env):
     with pytest.raises(pcp_fork.PcpAttentionError, match="restart process"):
         pcp_fork.require_q_rope_healthy()
 
-    ops.clear()
+    ops[pcp_fork.Q_ROPE_OP] = "stock"
     with pytest.raises(pcp_fork.PcpAttentionError, match="restart process"):
         pcp_fork.set_q_rope_provider(None)

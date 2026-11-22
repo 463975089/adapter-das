@@ -94,11 +94,25 @@ def _require_signature(function, names, defaults):
         raise FlashMLACompatibilityError('FlashMLA prefill ABI changed: ' + function.__name__)
 
 
+def _check_binding(p):
+    if getattr(p.module, 'rocm_sparse_attn_prefill', None) is not p.replacement:
+        _refuse('FlashMLA prefill binding changed; start a fresh process')
+
+
 def _check_publication(p):
     if selected_mode() != 'native':
         _refuse('FlashMLA prefill policy changed; start a fresh process for stock/kill')
-    if p.module.rocm_sparse_attn_prefill is not p.replacement:
-        _refuse('FlashMLA prefill binding changed; start a fresh process')
+    _check_binding(p)
+
+
+def _require_dispatch_healthy():
+    # Policy is startup-only. Lifecycle boundaries resolve it and latch drift.
+    if _failure is not None:
+        raise FlashMLACompatibilityError(_failure)
+    p = _publication
+    if p is None or p.pid != os.getpid():
+        raise FlashMLACompatibilityError('FlashMLA prefill requires child runtime activation')
+    _check_binding(p)
 
 
 def _native_provider():
@@ -150,13 +164,19 @@ def install():
             _check_publication(_publication)
             _publication = replace(_publication, pid=os.getpid())
             return
-        # anchor-baseline(③): v0.33 rocm_sparse_attn_prefill retains 12 parameters,
-        # ragged_indices/indptr=None. Bind ONLY V4.1's imported module global;
+        # Admit the inspected legacy ABI or the optional kv_cache_dtype ABI;
+        # ragged_indices/indptr remain None. Bind ONLY V4.1's imported module global;
         # the shared ROCm op, V4.0 and already cached external aliases stay original.
         module = import_module(TARGET_MODULE)
         original = module.rocm_sparse_attn_prefill
-        _require_signature(original, _PARAMETERS,
-                           {'ragged_indices': None, 'ragged_indptr': None})
+        names = _PARAMETERS
+        defaults = {'ragged_indices': None, 'ragged_indptr': None}
+        has_cache_dtype = tuple(inspect.signature(original).parameters) == (
+            *_PARAMETERS, 'kv_cache_dtype')
+        if has_cache_dtype:
+            names = (*names, 'kv_cache_dtype')
+            defaults['kv_cache_dtype'] = 'auto'
+        _require_signature(original, names, defaults)
         if hasattr(original, '__wrapped__'):
             raise FlashMLACompatibilityError('FlashMLA prefill target already wrapped')
         try:
@@ -167,18 +187,39 @@ def install():
         # this path does not use DeepInfer's optional FP32 API or its pins.
         from hcu_adapter.kernels.mla_sparse_prefill_dtk import try_prefill
 
-        @functools.wraps(original)
-        def routed(q, kv, indices, topk_length, scale, head_dim, nope_head_dim,
-                   rope_head_dim, attn_sink, output, ragged_indices=None,
-                   ragged_indptr=None):
-            require_healthy()
+        def dispatch(q, kv, indices, topk_length, scale, head_dim, nope_head_dim,
+                     rope_head_dim, attn_sink, output, ragged_indices,
+                     ragged_indptr, kv_cache_dtype):
+            _require_dispatch_healthy()
             arguments = dict(q=q, kv=kv, indices=indices, topk_length=topk_length,
                 scale=scale, head_dim=head_dim, nope_head_dim=nope_head_dim,
                 rope_head_dim=rope_head_dim, attn_sink=attn_sink, output=output,
                 ragged_indices=ragged_indices, ragged_indptr=ragged_indptr)
-            if try_prefill(**arguments, provider=provider):
-                return None
+            # The newer ABI distinguishes packed MXFP4 storage. Never send it
+            # (or an unqualified cache scheme) to the BF16 native candidate.
+            if kv_cache_dtype in (None, 'auto', 'bfloat16'):
+                if try_prefill(**arguments, provider=provider):
+                    return None
+            if has_cache_dtype:
+                arguments['kv_cache_dtype'] = kv_cache_dtype
             return original(**arguments)
+
+        if has_cache_dtype:
+            @functools.wraps(original)
+            def routed(q, kv, indices, topk_length, scale, head_dim, nope_head_dim,
+                       rope_head_dim, attn_sink, output, ragged_indices=None,
+                       ragged_indptr=None, kv_cache_dtype='auto'):
+                return dispatch(q, kv, indices, topk_length, scale, head_dim,
+                    nope_head_dim, rope_head_dim, attn_sink, output,
+                    ragged_indices, ragged_indptr, kv_cache_dtype)
+        else:
+            @functools.wraps(original)
+            def routed(q, kv, indices, topk_length, scale, head_dim, nope_head_dim,
+                       rope_head_dim, attn_sink, output, ragged_indices=None,
+                       ragged_indptr=None):
+                return dispatch(q, kv, indices, topk_length, scale, head_dim,
+                    nope_head_dim, rope_head_dim, attn_sink, output,
+                    ragged_indices, ragged_indptr, None)
 
         # Register before publishing a function that may be cached by consumers.
         registry.register(op=OP, impl='native', target=TARGET,

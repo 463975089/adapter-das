@@ -495,6 +495,7 @@ def check_registry_ops_in_catalog(r):
 _KERNEL_TIERS = {"emu", "triton", "cpp", "fork", "ref", "aiter", "lightop", "boltops", "dtk", "rccl"}
 _KERNEL_FACADES = {"gemm", "gather", "norm", "index_ops", "fused_transform"}
 _KERNEL_MECHANISMS = {"runtime_config", "lightop_usage", "pcp_dspark",
+                   "pcp_rope_policy",  # Shared startup selection for the PCP RoPE providers.
                    # W3-2: byte-preserving weight permutations --
                    # layout mechanism, no tier semantics (no fallback
                    # ladder exists; torch strided copies at HBM bw)
@@ -505,7 +506,9 @@ _KERNEL_MECHANISMS = {"runtime_config", "lightop_usage", "pcp_dspark",
                    "weight_scale",
                    # W3-5: load-time engram norm-weight fusion (one-shot
                    # init math, same class as weight_scale)
-                   "engram_init"}
+                   "engram_init",
+                    # DeepGEMM provider binding and staged workspace handoff.
+                    "mhc_mega"}
 
 
 def check_impl_naming(r):

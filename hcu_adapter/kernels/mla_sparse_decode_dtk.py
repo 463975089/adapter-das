@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import torch
 
+from hcu_adapter.infra.hcu_env import enabled
+
 
 SUPPORTED_ARCHES = frozenset({'gfx936', 'gfx938'})
 
@@ -47,7 +49,23 @@ def _selectors_supported(dense, lengths, flat, indptr, q):
             and lengths.dtype == torch.int32 and lengths.device == q.device)
 
 
+# Bound per-row work and retain the existing implementation for larger widths.
+# This selects an implementation only; _selectors_supported is unchanged.
+_SELECTORS_FUSED_MAX_WIDTH = 4096
+_FUSED_SELECTORS_ENV = "HCU_TRITON_FUSED_SELECTORS"
+
+
 def _selectors(dense, lengths, flat, indptr, rows, num_slots):
+    source = flat if flat is not None else dense
+    if (source.is_cuda and source.numel() // rows <= _SELECTORS_FUSED_MAX_WIDTH
+            and enabled(_FUSED_SELECTORS_ENV)):
+        from .mla_selectors_triton import selectors
+
+        return selectors(dense, lengths, flat, indptr, rows, num_slots)
+    return _selectors_eager(dense, lengths, flat, indptr, rows, num_slots)
+
+
+def _selectors_eager(dense, lengths, flat, indptr, rows, num_slots):
     """CSR to padded dense, then compact invalid slots before vendor lengths.
 
     Never read indptr[-1] or any dynamic length on the host. Keep duplicate
@@ -89,8 +107,9 @@ def try_decode(*, q, kv_cache, swa_k_cache, swa_only, topk_indices, topk_lens,
 
     BF16 output owes the caller its inverse-RoPE (return 0). MXFP8 delegates
     inverse-RoPE/quantization to the original core epilogue (return every row).
-    A fresh native plan per invocation prevents stale lengths across layers,
-    warmup/capture and forwards; core metadata/schedulers are not modified.
+    A fresh plan per invocation prevents stale lengths across layers, warmup,
+    capture and forwards. Supported native descriptors are recomputed from
+    current counts; other contracts retain the native generator.
     """
     if ((head_dim, nope_head_dim, rope_head_dim) != (512, 448, 64)
             or q.ndim != 3 or not 0 < q.shape[1] <= 128 or q.shape[0] == 0
@@ -137,20 +156,28 @@ def try_decode(*, q, kv_cache, swa_k_cache, swa_only, topk_indices, topk_lens,
     # DTK D512 native decode consumes H64/H128. Pad queries/sinks only, so TP
     # slices (H4/H8/H16/...) use the same packed cache without any KV gather.
     native_heads = 64 if heads <= 64 else 128
-    queries = torch.zeros((rows, 1, native_heads, 512), dtype=q.dtype, device=q.device)
-    queries[:, 0, :heads].copy_(q)
-    sink = None
-    if attn_sink is not None:
-        sink = torch.full((native_heads,), -torch.inf, dtype=torch.float32, device=q.device)
-        sink[:heads].copy_(attn_sink[:heads])
+    from .mla_decode_io_triton import native_query_and_sink, try_mask_copy
+    queries, sink = native_query_and_sink(q, attn_sink, native_heads)
+    from .mla_native_plan_triton import prepare_native_plan
+    metadata = prepare_native_plan(main_lens, extra_lens, native_heads,
+        main_ids.shape[-1], 0 if extra_ids is None else extra_ids.shape[-1],
+        provider, metadata_factory,
+        (swa_k_cache.shape[1], 0 if swa_only else kv_cache.shape[1]))
     result, _ = provider(q=queries, k_cache=swa_k_cache.unsqueeze(-2),
         block_table=None, cache_seqlens=None, head_dim_v=512,
-        tile_scheduler_metadata=metadata_factory()[0], softmax_scale=scale,
+        tile_scheduler_metadata=metadata, softmax_scale=scale,
         causal=False, is_fp8_kvcache=True, indices=main_ids,
         topk_length=main_lens, attn_sink=sink,
         extra_k_cache=None if swa_only else kv_cache.unsqueeze(-2),
         extra_indices_in_kvcache=extra_ids, extra_topk_length=extra_lens)
     result = result[:, 0, :heads]
+    if output_mxfp8 is None:
+        from .mla_decode_rope_triton import try_mask_copy_rope
+        if try_mask_copy_rope(result, output, main_lens, extra_lens,
+                              inv_rope_positions, inv_rope_cos_sin_cache):
+            return rows
+    if output_mxfp8 is None and try_mask_copy(result, output, main_lens, extra_lens):
+        return 0
     nonempty = main_lens > 0 if swa_only else main_lens + extra_lens > 0
     result = torch.where(nonempty[:, None, None], result, 0.)
     if output_mxfp8 is not None:

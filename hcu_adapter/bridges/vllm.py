@@ -310,13 +310,24 @@ def _configure_indexer_kv_dtype(vllm_config) -> None:
         return
     for capability in sorted(_FP4_INDEXER_CAPABILITIES):
         require_extension_healthy(capability)
+    cache = vllm_config.cache_config
+    provisional = (vllm_config.parallel_config.prefill_context_parallel_size == 1
+                   and getattr(cache, 'user_specified_block_size', None) is False
+                   and cache.block_size == getattr(cache, 'DEFAULT_BLOCK_SIZE', None))
     try:
-        plan = validate_config(vllm_config)
+        plan = validate_config(vllm_config, block_size=64 if provisional else None)
     except Fp4AdmissionError as exc:
         LOG.debug("Keeping DeepSeek V4.1 indexer_kv_dtype=auto: %s", exc)
         return
     if plan is None:
         return
+    from hcu_adapter.features.dsv41.v41_fp8_indexer import fp4_reader_ready
+
+    if fp4_reader_ready() is False:
+        LOG.info("Keeping DeepSeek V4.1 indexer_kv_dtype=auto: FP4 reader unavailable")
+        return
+    if provisional:
+        cache.block_size = plan.manager_block
     vllm_config.attention_config.indexer_kv_dtype = "mxfp4"
     LOG.info(
         "HCU DeepSeek V4.1 indexer_kv_dtype auto -> mxfp4 "
@@ -382,6 +393,13 @@ def _hcu_platform_class() -> type:
         _worker_selector = None
 
         @classmethod
+        def pre_register_and_update(cls, parser=None) -> None:
+            super().pre_register_and_update(parser)
+            from .vllm_cli import add_config_switches
+
+            add_config_switches(parser)
+
+        @classmethod
         def register_worker_selector(cls, selector):
             """Let one extension specialize the default worker after Core config."""
             if not callable(selector):
@@ -393,8 +411,10 @@ def _hcu_platform_class() -> type:
         @classmethod
         def check_and_update_config(cls, vllm_config) -> None:
             require_runtime_healthy()
+            from .vllm_cli import validate_config_switches
             from hcu_adapter.bridges.vllm_sparse_flashmla import configure_cache_dtype
 
+            validate_config_switches(vllm_config)
             configure_cache_dtype(vllm_config)
             _configure_indexer_kv_dtype(vllm_config)
             # Core validates the effective config and chooses its default worker.
@@ -418,6 +438,15 @@ def _hcu_platform_class() -> type:
                     and parallel.worker_cls in ("auto", OFFICIAL_MODEL_LOAD_WORKER,
                                                 POST_MODEL_LOAD_WORKER)):
                 parallel.worker_cls = cls._worker_selector(parallel.worker_cls, vllm_config)
+
+        @classmethod
+        def get_kv_cache_config_builder_cls(cls, vllm_config) -> str:
+            require_runtime_healthy()
+            from .vllm_kv_cache import select_kv_cache_builder
+
+            return select_kv_cache_builder(
+                vllm_config, super().get_kv_cache_config_builder_cls(vllm_config)
+            )
 
         @classmethod
         def get_attn_backend_cls(
@@ -536,6 +565,16 @@ def hcu_runtime_plugin() -> None:
         from hcu_adapter.bridges.vllm_scaled_mm import install as install_scaled_mm
 
         install_scaled_mm()
+        if Version(vllm_version).release[:2] == (0, 33):
+            from hcu_adapter.bridges.vllm_input_quant_lightop import (
+                install as install_input_quant_lightop,
+            )
+            from hcu_adapter.bridges.vllm_input_quant_int8_lightop import (
+                install as install_input_quant_int8_lightop,
+            )
+
+            install_input_quant_lightop()
+            install_input_quant_int8_lightop()
         from hcu_adapter.bridges.vllm_allreduce import prepare_runtime
 
         prepare_runtime()

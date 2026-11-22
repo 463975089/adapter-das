@@ -7,7 +7,9 @@ Run: HIP_VISIBLE_DEVICES='' HCU_ADAPTER_HOST=none python -m pytest
 tests/adapter/test_vllm_mhc_bridge.py. No framework/provider math is executed.
 """
 import importlib
+import json
 import os
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -21,6 +23,8 @@ from hcu_adapter.infra import registry
 def seams(monkeypatch):
     m = importlib.reload(module)
     monkeypatch.setenv('HCU_VLLM_MHC_IMPL','torch')
+    monkeypatch.delenv('HCU_VLLM_MHC_MEGA', raising=False)
+    monkeypatch.delenv('HCU_VLLM_MHC_DELAYED_FUSION', raising=False)
     monkeypatch.delenv('HCU_DISABLE_OPS',raising=False)
     monkeypatch.setattr(host,'detect_hcu',lambda:host.HcuDetection(True,'gfx936','test'))
     monkeypatch.setattr(host,'_installed_vllm_version',lambda:'0.33.0+compatible')
@@ -174,6 +178,184 @@ def test_late_drift_refuses_read_and_retry_without_repair(seams,monkeypatch,muta
     with pytest.raises(s.m.MhcCompatibilityError):s.m.require_healthy()
     with pytest.raises(s.m.MhcCompatibilityError):s.m.install()
     assert len(s.calls)==2
+
+
+def test_mega_policy_change_after_publication_is_latched(seams, monkeypatch):
+    s = seams
+    s.m.install()
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '1')
+    with pytest.raises(s.m.MhcCompatibilityError, match='mega startup policy changed'):
+        s.m.require_healthy()
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '0')
+    with pytest.raises(s.m.MhcCompatibilityError):
+        s.m.require_healthy()
+    assert len(s.calls) == 2
+
+
+@pytest.mark.parametrize(('mode', 'arch'), [('stock', 'gfx938'),
+                                             ('torch', 'gfx938'), ('aiter', 'gfx936')])
+def test_mega_rejects_unsupported_startup_before_import(seams, monkeypatch, mode, arch):
+    s = seams
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL', mode)
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '1')
+    monkeypatch.setattr(host, 'detect_hcu', lambda: host.HcuDetection(True, arch, 'test'))
+    monkeypatch.setattr(s.m, 'import_module', lambda name: pytest.fail('imported ' + name))
+    with pytest.raises(s.m.MhcCompatibilityError, match='requires aiter mode on gfx938'):
+        s.m.install()
+    assert not s.calls and not s.records
+
+
+@pytest.mark.parametrize(('mode', 'arch', 'deepgemm', 'expected'), [
+    ('aiter', 'gfx938', True, True),
+    ('aiter', 'gfx936', True, False),
+    ('aiter', 'gfx938', False, False),
+    ('stock', 'gfx938', True, False),
+    ('torch', 'gfx938', True, False),
+])
+def test_mega_default_is_scoped_and_can_be_disabled(seams, monkeypatch, mode, arch, deepgemm, expected):
+    m = seams.m
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL', mode)
+    monkeypatch.setattr(host, '_installed_vllm_version', lambda: '0.33.0+dtk2610.torch2130.2611101131.g7364da')
+    monkeypatch.setattr(host, 'detect_hcu', lambda: host.HcuDetection(True, arch, 'test'))
+    monkeypatch.setattr(m.metadata, 'version', lambda _: (
+        '2.1.0+dtk2610.torch2130.2611122142.g793351' if deepgemm else '2.1.0'))
+    assert m.selected_mega() is expected
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '0')
+    assert not m.selected_mega()
+
+
+def test_mega_requires_binary_override_and_respects_kill_switch(seams, monkeypatch):
+    s = seams
+    assert not s.m.selected_mega()
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', 'true')
+    with pytest.raises(ValueError, match='must be 0 or 1'):
+        s.m.install()
+    assert not s.calls
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '1')
+    monkeypatch.setenv('HCU_DISABLE_OPS', 'vllm_mhc')
+    assert not s.m.install()
+    s.m.require_healthy()
+    assert not s.calls
+
+
+def _mega_seams(s, monkeypatch):
+    monkeypatch.setenv('HCU_VLLM_MHC_IMPL', 'aiter')
+    monkeypatch.setattr(host, 'detect_hcu', lambda: host.HcuDetection(True, 'gfx938', 'test'))
+    aiter = SimpleNamespace(available=True, tilelang_enabled=True, project=object(), stage2_ready=True,
+                            require_healthy=lambda: None, fingerprint=lambda: {})
+    monkeypatch.setattr(s.m, '_load_aiter_provider', lambda: aiter)
+    ops = SimpleNamespace(mhc_pre_mix_triton=object(), hc_collapse_triton=object())
+    s.m.torch.ops = SimpleNamespace(vllm=ops)
+    s.modules['torch'] = s.m.torch
+    s.modules['vllm.ir'] = SimpleNamespace(ops=SimpleNamespace(rms_norm=object()))
+    aiter_runtime = SimpleNamespace(pre_mix_collapse=None)
+    s.modules['hcu_adapter.kernels.mhc_aiter'] = SimpleNamespace(
+        MhcAiterRuntime=lambda *args: aiter_runtime)
+    monkeypatch.setitem(sys.modules, 'hcu_adapter.kernels.mhc_boundary_triton',
+                        SimpleNamespace(supported=lambda *args: False))
+    fake = object()
+    s.modules['hcu_adapter.kernels.mhc_fused_triton'] = SimpleNamespace(
+        pre_mix_collapse=fake, pre_mix_collapse_meta=object())
+    def register(name, function, *, mutates_args, fake_impl):
+        assert not mutates_args
+        assert fake_impl is not None
+        s.calls.append(name)
+        setattr(ops, name, function)
+    s.modules['vllm.utils.torch_utils'].direct_register_custom_op = register
+    return aiter_runtime, ops
+
+
+def test_mega_default_keeps_delayed_fusion_without_vendor_import(seams, monkeypatch):
+    s = seams
+    aiter_runtime, ops = _mega_seams(s, monkeypatch)
+    monkeypatch.setenv('HCU_VLLM_MHC_DELAYED_FUSION', '1')
+    assert s.m.install()
+    # An accidental Mega import would fail against the fixture's closed module map.
+    assert s.m._publication.mega_provider is None
+    assert not hasattr(ops, 'hcu_adapter_mhc_mega_seam')
+    assert aiter_runtime.pre_mix_collapse is ops.hcu_adapter_mhc_pre_mix_collapse
+
+
+def test_mega_provider_missing_refuses_before_publication(seams, monkeypatch):
+    s = seams
+    _mega_seams(s, monkeypatch)
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '1')
+    def missing_provider():
+        raise ModuleNotFoundError('deepgemm.mega_mhc')
+    s.modules['hcu_adapter.kernels.mhc_mega'] = SimpleNamespace(load_provider=missing_provider)
+    with pytest.raises(s.m.MhcCompatibilityError, match='deepgemm.mega_mhc'):
+        s.m.install()
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '0')
+    with pytest.raises(s.m.MhcCompatibilityError, match='activation failed'):
+        s.m.install()
+    assert not s.calls and not s.records
+
+
+@pytest.mark.parametrize('entry', ['fallback', 'mega', 'opaque'])
+def test_mega_route_fallback_and_health_at_both_entries(seams, monkeypatch, entry):
+    s = seams
+    aiter_runtime, ops = _mega_seams(s, monkeypatch)
+    monkeypatch.setenv('HCU_VLLM_MHC_MEGA', '1')
+    monkeypatch.setenv('HCU_VLLM_MHC_DELAYED_FUSION', '1')
+    events = []
+    health_checks = []
+    provider = SimpleNamespace(require_healthy=lambda: health_checks.append('check'),
+                               fingerprint=lambda: {'source': 'vendor'})
+    mega_runtime = SimpleNamespace(supported=lambda *args: args[5] is None,
+        seam=lambda *args: events.append('mega') or ('updated', 'post', 'comb', 'layer', 'next'),
+        seam_meta=object())
+    s.modules['hcu_adapter.kernels.mhc_mega'] = SimpleNamespace(
+        load_provider=lambda: provider, MhcMegaRuntime=lambda *args: mega_runtime)
+    aiter_runtime.delayed = lambda *args: events.append('delayed') or ('post', 'comb', 'layer', 'next')
+    def maybe_post(*args):
+        events.append('post')
+        return 'updated'
+    monkeypatch.setattr(s.mhc.MHCPreDelayedOp, '_maybe_post', maybe_post)
+    factor_inputs = []
+    def dumps(content, **kwargs):
+        factor_inputs.append(content)
+        return json.dumps(content, **kwargs)
+    monkeypatch.setattr(s.m, 'json', SimpleNamespace(dumps=dumps))
+    assert s.m.install()
+    assert s.m._publication.mega_provider is provider
+    assert factor_inputs[0]['mega_requested'] is True
+    assert factor_inputs[0]['mega'] == {'source': 'vendor'}
+    assert len(factor_inputs[0]['sources']) == 7
+    assert factor_inputs[0]['delayed_fusion_requested'] is True
+    assert len(factor_inputs[0]['delayed_fusion_sources']) == 2
+    assert aiter_runtime.pre_mix_collapse is ops.hcu_adapter_mhc_pre_mix_collapse
+    factor = s.envs.environment_variables[s.m.COMPILE_FACTOR]()
+    assert factor.startswith('aiter:') and s.m.install()
+    assert s.envs.environment_variables[s.m.COMPILE_FACTOR]() == factor
+    delayed = s.mhc.MHCPreDelayedOp().forward_hip
+    args = ('residual', 'fn', 'scale', 'base', 1e-6, 1e-6, 1e-6, 2.0, 20, 'pre_mix')
+    kwargs = dict(sublayer_out='sublayer', post_layer_mix='p', comb_res_mix='c')
+    health_checks.clear()
+    assert delayed(*args, **kwargs) == ('updated', 'post', 'comb', 'layer', 'next')
+    assert health_checks == ['check']
+    assert delayed(*args, x='entry x', **kwargs) == ('updated', 'post', 'comb', 'layer', 'next')
+    assert events == ['mega', 'post', 'delayed']
+    opaque = ops.hcu_adapter_mhc_mega_seam
+    direct_args = args + tuple(kwargs.values())
+    health_checks.clear()
+    assert opaque(*direct_args) == ('updated', 'post', 'comb', 'layer', 'next')
+    assert health_checks == ['check']
+
+    def unhealthy():
+        raise RuntimeError('provider binding changed')
+
+    provider.require_healthy = unhealthy
+    with pytest.raises(s.m.MhcCompatibilityError, match='provider binding changed'):
+        if entry == 'fallback':
+            delayed(*args, x='entry x', **kwargs)
+        elif entry == 'mega':
+            delayed(*args, **kwargs)
+        else:
+            opaque(*direct_args)
+    assert events == ['mega', 'post', 'delayed', 'mega']
+    provider.require_healthy = lambda: None
+    with pytest.raises(s.m.MhcCompatibilityError):
+        s.m.require_healthy()
 
 
 def test_invalid_policy_direct_retry_latches_before_restoring_mode(seams,monkeypatch):
@@ -345,3 +527,115 @@ def test_post_activation_host_health_check_still_refuses_unactivated_owner(
     booting.run_once('vllm-runtime',lambda:None)
     with pytest.raises(RuntimeError,match='before runtime activation'):
         host.require_runtime_healthy()
+
+
+@pytest.mark.parametrize("packed_default", [None, "unexpected"])
+def test_known_delayed_packed_cache_abi_is_strict(seams, monkeypatch, packed_default):
+    s = seams
+
+    def delayed(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                pre_mix=None, x=None, norm_weight=None, norm_eps=1e-6,
+                sublayer_out=None, post_layer_mix=None, comb_res_mix=None,
+                fn_packed=packed_default):
+        pass
+
+    monkeypatch.setattr(s.mhc.MHCPreDelayedOp, "forward_hip", delayed)
+    if packed_default is None:
+        assert s.m.install()
+        s.m.require_healthy()
+    else:
+        with pytest.raises(s.m.MhcCompatibilityError, match="ABI"):
+            s.m.install()
+        assert not s.calls
+
+
+def test_unknown_delayed_cache_abi_fails_before_publication(seams, monkeypatch):
+    s = seams
+
+    def delayed(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                pre_mix=None, x=None, norm_weight=None, norm_eps=1e-6,
+                sublayer_out=None, post_layer_mix=None, comb_res_mix=None,
+                other_cache=None):
+        pass
+
+    monkeypatch.setattr(s.mhc.MHCPreDelayedOp, "forward_hip", delayed)
+    with pytest.raises(s.m.MhcCompatibilityError, match="ABI"):
+        s.m.install()
+    assert not s.calls
+
+
+@pytest.mark.parametrize("route", ["delayed", "boundary", "mega", "mega_fallback"])
+@pytest.mark.parametrize("latched", [False, True])
+@pytest.mark.parametrize("packed", [None, object()])
+def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed, route, latched):
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(module.__file__).read_text())
+    parent = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                  and n.name == "_declare_aiter")
+    cls = next(n for n in parent.body if isinstance(n, ast.ClassDef)
+               and n.name == "HcuMHCPreDelayedOp")
+    captured, predicates, health_calls, post_calls = [], [], [], []
+    result = (object(), object(), object(), object())
+
+    def op(*args):
+        captured.append(args)
+        return result
+
+    def supported(*args):
+        predicates.append(args)
+        return route == "mega"
+
+    def boundary_supported(*args):
+        predicates.append(args)
+        return route == "boundary"
+
+    class Base:
+        def _maybe_post(self, residual, sublayer_out, post_mix, comb_mix):
+            post_calls.append(residual)
+            return residual
+
+    mega_provider = object()
+    namespace = dict(
+        mhc=SimpleNamespace(MHCPreDelayedOp=Base),
+        torch=SimpleNamespace(ops=SimpleNamespace(vllm=SimpleNamespace(
+            hcu_adapter_mhc_delayed=op, hcu_adapter_mhc_boundary=op,
+            hcu_adapter_mhc_mega_seam=op))),
+        _failure="latched provider failure" if latched else None,
+        MhcCompatibilityError=module.MhcCompatibilityError,
+        mega=SimpleNamespace(supported=supported) if route.startswith("mega") else None,
+        mega_provider=mega_provider, _check_dispatch_provider=health_calls.append,
+        split_k="auto" if route == "boundary" else "1",
+        provider=SimpleNamespace(project=object(), tilelang_enabled=True,
+                                 tilelang_pre=object()),
+        boundary_supported=boundary_supported,
+        require_healthy=lambda: pytest.fail("forward must not resolve startup policy"),
+    )
+    exec(compile(ast.Module(body=[cls], type_ignores=[]), "<delayed-wrapper>", "exec"),
+         namespace)
+    residual, dense_fn, scale, base = (object() for _ in range(4))
+
+    def invoke():
+        return namespace["HcuMHCPreDelayedOp"]().forward_hip(
+            residual, dense_fn, scale, base, 1e-6, 1e-6, 1e-6, 2.0, 20,
+            fn_packed=packed)
+
+    if latched:
+        with pytest.raises(module.MhcCompatibilityError, match="latched provider failure"):
+            invoke()
+        assert not captured and not predicates and not post_calls and not health_calls
+        return
+    output = invoke()
+    fast_path = route in ("boundary", "mega")
+    assert output == (result if fast_path else (residual, *result))
+    assert len(captured) == 1
+    assert captured[0][0] is residual
+    assert captured[0][4 if route == "boundary" else 1] is dense_fn
+    assert post_calls == ([] if fast_path else [residual])
+    assert health_calls == ([mega_provider] if route == "mega_fallback" else [])
+    for args in captured + predicates:
+        if packed is not None:
+            assert all(value is not packed for value in args)

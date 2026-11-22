@@ -21,7 +21,50 @@ AITER 模式的 delayed Pre 保持两段式：stage1 使用 `mhc_pre_gemm_sqrsum
 默认使用 TileLang `pre_big_fuse_tilelang`
 （`VLLM_HCU_USE_AITER_TILELANG_MHC=1`）。显式设为 `0` 仅用于诊断旧
 `mhc_pre_big_fuse`；默认开启但 TileLang 不可用时回退官方 Torch，不落回旧实现。
-`hidden=5120` 的 Post 继续走官方 Torch，原 `MHCPostOp`/`HCHeadOp` 语义不扩大。
+支持条件内 `hidden=5120` 的 Post 已可由 AITER provider 执行；与 Torch
+存在已知 BF16 舍入差异，不能称逐位一致。`HCHeadOp` 保持官方实现。
+
+## 实验性 DeepGEMM shifted 接缝
+
+`HCU_VLLM_MHC_MEGA` 接受显式 `0` 和 `1`。在 gfx938 的 AITER 模式下，已验证的
+vLLM 构建 `g7364da` 和 DeepGEMM 构建 `g793351` 默认开启，其他构建保持原路径。
+显式 `1` 需要 aiter 模式、gfx938、vLLM 0.33 和包含 Mega mHC 的 DeepGEMM 构建。
+核对过的供应商源码为
+`090ed77f489644c36388dc0bbc348011cfa18a04`（`publish/ys_develop_Mega_MHC`），
+包含公开的 `mega_mhc`、`mega_mhc_prepare_fn` 和对应 gfx938 原生实现。
+历史安装包为 `deepgemm 2.1.0+dtk2610.torch2130.2611122142`（DTK 26.10 / Torch 2.13）。
+供应商 main 的 `fc246fc4e4104c55a16b88d2f5682be54690469c` 缺少这两个入口。
+显式启用时，平台、导出或 ABI 不匹配会停止启动。`HCU_DISABLE_OPS=vllm_mhc`
+仍可在启动时强制使用官方路径。
+
+只替换带 sublayer_out、carried pre、`x=None`、`norm_weight=None` 的 post+pre
+接缝。Mega 的 x 是 sublayer_out，投影对象为更新后的 full-width residual。
+参数沿用 SGLang `a389ea5c7f38c18e09927eaf7b4f4eb35e229a42` 中
+`mhc_mega_boundary` 的映射，post 倍数仅传入一次。Mega 的 y 包含 decoder
+RMSNorm，因此丢弃 y，使用原有 collapse 生成未归一化 layer。不符合条件的调用
+继续执行原有 post 和 delayed Pre，并保留 `HCU_VLLM_MHC_DELAYED_FUSION`
+的独立门控。已选中的 Mega 算子执行失败后锁存错误。
+全 1 norm 权重、rmsnorm_eps=1e-6、rmsnorm_scale=1.0 仅因 y 一律丢弃才无害；
+将来若使用 y，三者必须重新定值并重跑对拍。y scratch 按 (device,tokens,hidden)
+缓存，同形状再按 stream 隔离，避免并发写竞争；缓存保留到 runtime 销毁，
+不逐出仍可能被 Graph 引用的存储。多形状/多 stream 会增加常驻 scratch 内存。
+缓存只去掉重复分配，mega 内 mandatory norm 计算仍存在。
+
+Provider 的 Python/C++ 绑定、ABI、实现摘要及开关进入发布检查和编译缓存因子。
+Fn 预打包缓存绑定张量身份和 mutation version；没有版本计数的 inference
+权重每次重新打包，避免静默复用陈旧数据。记录 repack/reuse/versionless 计数，
+首次 versionless 给一次告警，第 128 次 Python 下发输出一次 warmup 汇总，
+可用 cache_stats() 取得当前值；计数不含 Graph replay，应结合 trace 的打包 kernel
+核实是否把重打包捕获进图。加载/更新静态权重后若需 Graph
+必须重新预热和捕获；不提供已捕获 Graph 的热更新保证。
+
+历史候选 `abe53ac` 在 gfx938 上用十五种合成形状验证了 opaque op 和变输入 Graph
+回放。Mega 与 AITER 的 BF16 post 写出存在舍入差异，会传播到下游系数。
+本补丁仍需独立验证 GPU、完整 Graph、服务精度及同配置性能。
+启用 delayed fusion 时，旧路径的 pre 为 gemm_sqrsum/big_fuse/pre_mix_collapse
+三颗，Mega 路径为 main/reduce/collapse 三颗。关闭 delayed fusion 时，旧路径
+的 gate 和 collapse 分开执行。应按相同接缝范围统计，并通过同节点、同配置的
+服务 A/B 评估性能。
 
 ## 调用与生命周期
 
@@ -130,3 +173,21 @@ Python 文件均匹配源码和 wheel；安装态独立 spawn 验证直接非法
 恢复后拒绝。真实 gfx936 再跑 pre/fused 共64 cases/256 states，保留
 原始容差、64次初始 replay、144次非空变输入及48次空 Graph replay。
 完整节点、layer/e2e、模型和性能门禁仍保持上述限制。
+
+## PCP8 dSpark 大批量 Post 临时显存
+
+2026-11-18 的 NMZ18 W4A8、PCP8、DSpark(5) 启动预热在原生 Torch Post
+中出现 OOM。fallback 对标准三维残差按最多 1024 行调用既有 Torch reference，
+逐行独立的计算和输出 dtype 保持原语义。广播组合矩阵继续交给原入口。
+二十一项 CPU 回归覆盖空输入、块边界、尾部、非连续视图和 dtype。
+
+gfx938 设备对拍覆盖 BF16 的 1、1025、32768 行，以及 FP16/FP32 的 1025 行，
+hidden 均为 5120。eager 与原生 reference 逐位一致，每组另完成三次变输入
+Graph replay。该改动随后用于 W4A8、FP4 Indexer、SWA bounded replay、
+固定 DSpark(5)、eager TP1/DP1/PCP8/EP8 的 32K 输入和 HumanEval 前20题验证，
+结果为20/20。原生 Core 算术通过注入的 reference 复用。
+
+本次设备证据位于候选工作区的 `validation/mhc_post_device.json`，模型证据位于
+`acceptance_runs/dspark_pcp_06`。每卡 KV 预算8 GiB，分配器使用
+`expandable_segments:False,max_split_size_mb:256`。精确模型、环境调整和
+退出日志记录见 Plugin 的 `docs/validation/dspark_layer_split_v033.md`。

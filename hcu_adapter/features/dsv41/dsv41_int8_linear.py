@@ -1,14 +1,17 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
-"""Local empty rows for the owned DSV4.1 CT W8A8 INT8 method.
+"""Local empty rows and paired norm handoff for owned DSV4.1 CT W8A8 INT8.
 
-CT owns construction, loading, finalization and every nonempty computation.
-Only the audited native ROCm INT8 [K,N] layouts receive an empty fast path.
+CT owns construction, loading, finalization and the selected native GEMM.
+An owned decoder call can hand off byte-identical dynamic INT8 quantization;
+other nonempty inputs retain native CT apply. Empty rows remain local.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from math import prod
+
+from hcu_adapter.rms_int8_scope import lookup
 
 import torch
 from vllm.model_executor.kernels.linear.scaled_mm.aiter import (
@@ -58,7 +61,7 @@ def _metadata_tensor(value, weight, shapes, dtype, name):
 
 @register_weight_loader_v2_supported_method
 class HcuDSV41Int8LinearMethod(CompressedTensorsLinearMethod):
-    """Retain native CT's constructor/loader ABI; specialize local M=0."""
+    """Retain native CT loading/GEMM; accept one scoped exact quantization."""
 
     def process_weights_after_loading(self, layer):
         # Native INT8 transpose is not idempotent, including when K == N.
@@ -85,12 +88,57 @@ class HcuDSV41Int8LinearMethod(CompressedTensorsLinearMethod):
             # Other backends retain native postprocess and nonempty apply.
             layer._hcu_int8_empty_state = "unsupported"
 
+    def supports_shared_expert_prequantized(self, layer):
+        witness = getattr(layer, "_hcu_int8_empty_witness", None)
+        if getattr(layer, "_hcu_int8_empty_state", None) != "ready" or witness is None:
+            return False
+        scheme, weight = layer.scheme, layer.weight
+        return (
+            witness.scheme is scheme
+            and witness.kernel is scheme.kernel
+            and type(scheme.kernel) is TritonInt8ScaledMMLinearKernel
+            and scheme.strategy == "channel"
+            and not scheme.is_static_input_scheme
+            and scheme.input_symmetric
+            and layer.input_scale is None
+            and layer.input_zero_point is None
+            and layer.azp_adj is None
+            and witness.weight is weight
+            and witness.device == weight.device
+            and weight.dtype == torch.int8
+            and tuple(weight.shape) == (2304, 5120)
+            and weight.stride() == (1, 2304)
+            and layer.weight_scale.device == weight.device
+            and layer.weight_scale.dtype == torch.float32
+            and layer.weight_scale.shape in ((5120,), (5120, 1))
+            and layer.weight_scale.is_contiguous()
+        )
+
+    def apply_prequantized(self, layer, x_q, x_scale):
+        """Consume the admitted shared-expert operand without quantizing again."""
+        if (
+            x_q.ndim != 2 or x_q.shape[1] != 2304 or x_q.dtype != torch.int8
+            or not x_q.is_contiguous() or x_q.device != layer.weight.device
+            or x_scale.shape != (x_q.shape[0], 1) or x_scale.dtype != torch.float32
+            or not x_scale.is_contiguous() or x_scale.device != x_q.device
+        ):
+            raise ValueError("invalid prequantized shared-expert INT8 operand")
+        return torch.ops.vllm.int8_scaled_mm_func.default(
+            x_q, layer.weight, x_scale, layer.weight_scale, torch.bfloat16, None
+        )
+
     def apply(self, layer, x, bias=None):
         if isinstance(x, QuantizedActivation):
             raise TypeError("native CT INT8 does not support QuantizedActivation")
         if not isinstance(x, torch.Tensor):
             return super().apply(layer, x, bias)
         if x.numel() != 0:
+            quantized = lookup(x)
+            if quantized is not None and self._paired_input_supported(layer, x, bias):
+                codes, scales = quantized
+                return torch.ops.vllm.int8_scaled_mm_func(
+                    codes, layer.weight, scales, layer.weight_scale, x.dtype, bias,
+                )
             return super().apply(layer, x, bias)
         shape = x.shape
         if len(shape) < 2 or shape[-1] <= 0:
@@ -178,3 +226,46 @@ class HcuDSV41Int8LinearMethod(CompressedTensorsLinearMethod):
         if bias is not None:
             _metadata_tensor(bias, weight, ((n,),), x.dtype, "bias")
         return torch.empty((*shape[:-1], n), dtype=x.dtype, device=x.device)
+
+    # WQ-B can consume the native dynamic INT8 pair directly. The scoped
+    # RMS handoff applies only to K=5120, and leaves WQ-B (K=1280) native.
+    _hcu_wq_b_int8_apply_v1 = apply
+    _hcu_wq_b_int8_finalize_v1 = process_weights_after_loading
+
+    @staticmethod
+    def _paired_input_supported(layer, x, bias):
+        witness = getattr(layer, '_hcu_int8_empty_witness', None)
+        if witness is None or getattr(layer, '_hcu_int8_empty_state', None) != 'ready':
+            return False
+        scheme, weight = layer.scheme, layer.weight
+        kernel = scheme.kernel
+        # Only the audited dynamic symmetric native Triton provider has the
+        # exact input contract used by the producer. AITER/static/AZP stay native.
+        if (type(scheme) is not CompressedTensorsW8A8Int8
+                or type(kernel) is not TritonInt8ScaledMMLinearKernel
+                or scheme.is_static_input_scheme or not scheme.input_symmetric
+                or kernel.config.is_static_input_scheme
+                or not kernel.config.input_symmetric
+                or scheme.strategy != 'channel' or not kernel.config.is_channelwise
+                or witness.scheme is not scheme or witness.kernel is not kernel
+                or witness.weight is not weight or weight.data_ptr() != witness.data_ptr
+                or tuple(weight.shape) != witness.shape or tuple(weight.stride()) != witness.stride
+                or weight.dtype != torch.int8 or weight.device != witness.device
+                or x.device != weight.device or x.dtype != torch.bfloat16
+                or x.device.type != 'cuda'
+                or x.ndim != 2 or x.shape[1] != 5120 or not x.is_contiguous()
+                or weight.ndim != 2 or weight.shape[0] != 5120
+                or not is_weak_contiguous(weight)
+                or getattr(layer, 'input_scale', None) is not None
+                or getattr(layer, 'input_zero_point', None) is not None
+                or getattr(layer, 'azp_adj', None) is not None):
+            return False
+        scales = layer.weight_scale
+        if (scales.device != weight.device or scales.dtype != torch.float32
+                or tuple(scales.shape) not in ((weight.shape[1],), (weight.shape[1], 1))
+                or not scales.is_contiguous()):
+            return False
+        return bias is None or (
+            isinstance(bias, torch.Tensor) and bias.device == x.device
+            and bias.dtype == x.dtype and tuple(bias.shape) == (weight.shape[1],)
+            and bias.is_contiguous())

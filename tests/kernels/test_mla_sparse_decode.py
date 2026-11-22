@@ -214,14 +214,16 @@ def test_csr_selectors_are_repacked_without_host_reads(admitted):
     slots = a['swa_k_cache'].shape[0] * a['swa_k_cache'].shape[1]
     dense, lens = selectors(3, 128, slots)
     rows, width = dense.shape
-    flat = torch.empty(rows * width, dtype=torch.int32)
+    flat = torch.full((rows * width,), -1, dtype=torch.int32)
     indptr = torch.empty(rows + 1, dtype=torch.int32)
-    # Fill CSR with the same rows the dense form carries, real lengths included.
+    # Fill at the actual CSR offsets, leaving unused capacity at the end.
     indptr[0] = 0
+    cursor = 0
     for row in range(rows):
         count = int(lens[row])
-        flat[row * width:row * width + count] = dense[row, :count]
-        indptr[row + 1] = indptr[row] + count
+        flat[cursor:cursor + count] = dense[row, :count]
+        cursor += count
+        indptr[row + 1] = cursor
     a['swa_indices'] = None
     a['swa_lens'] = None
     a['swa_ragged_indices'] = flat
@@ -230,11 +232,10 @@ def test_csr_selectors_are_repacked_without_host_reads(admitted):
     assert kernel.try_decode(**a, provider=record, metadata_factory=factory,
                              epilogue=epilogue) == 0
     got, got_lens = record.calls[0]['indices'], record.calls[0]['topk_length']
-    assert got.shape[0] == 3 and got.shape[-1] % 64 == 0
-    for row in range(rows):
-        valid = [int(x) for x in got[row, 0, :got_lens[row]] if int(x) >= 0]
-        assert valid == sorted(valid), 'valid slots must precede -1 padding'
-        assert len(valid) <= int(lens[row])
+    expected_ids, expected_lens = kernel._selectors_eager(
+        dense, lens, None, None, rows, slots)
+    assert torch.equal(got, expected_ids)
+    assert torch.equal(got_lens, expected_lens)
 
 
 @pytest.mark.parametrize('change', ['dims', 'dtype', 'heads', 'cache_dtype', 'cache_rows',
