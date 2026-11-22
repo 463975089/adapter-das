@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Known answers for the independent future HIP test oracle, WITHOUT Torch/GPU."""
+"""Known answers for the independent HIP test oracle, WITHOUT Torch/GPU."""
 import ast
 from copy import deepcopy
 from pathlib import Path

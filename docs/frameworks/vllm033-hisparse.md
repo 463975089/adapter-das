@@ -70,15 +70,16 @@ port, not blind hipify of the CUDA/PTX implementation:
 - Byte copies use independent **software groups of 32 threads**, not warp
   collectives. On wave64 two groups occupy a wave; on wave32 one does. Vector
   loads/stores use ordinary HIP operations; CUDA L2-only cache hints are not
-  transplanted. Parallel coherency and actual wave execution still require HCU
-  validation.
+  transplanted. Eager gfx938 coverage is recorded below; other hardware wave
+  configurations and concurrent execution remain separate qualification gates.
 - `gather_*` verifies HIP-registered pinned CPU storage and obtains its mapped
   device alias with `hipHostGetDevicePointer`. The host VA is never passed as a
   device pointer. The caller must retain pinned storage and not overwrite it
   until the stream finishes. This port does not silently register pageable RAM,
   synchronize transfers, invent a pinned ring, or guarantee concurrent CPU/GPU
-  coherence. Mapped interior pointers, asynchronous source lifetime, and
-  multi-stream reuse remain device validation gates.
+  coherence. Mapped interior pointers are covered by eager device tests below. Asynchronous
+  source lifetime beyond the tested synchronization discipline and multi-stream
+  reuse remain device validation gates.
 - All device tensors must share the hot cache's HIP device. Row bytes are dense,
   positive and 16-byte aligned; 3D physical pages may have extra pitch but must
   not overlap. Grid/index narrowing, nonnegative block parameters, int16 slots,
@@ -104,20 +105,52 @@ baseline already has `owner`-aware binding while the pinned Core033 does not.
 Compaction correctness alone does not bridge that ABI gap.
 
 CPU loader/schema tests, a serial host execution model of the actual native
-function bodies, and HIP compilation are separate evidence from GPU correctness.
+function bodies, HIP compilation and eager GPU correctness are separate evidence.
 The host model cannot detect device races, stream/DMA lifetime bugs, hardware
-wave divergence, HIP Graph capture/replay, or model accuracy. No GPU/Graph/model
-execution was authorized in this development lane. The Plugin's target-only /
+wave divergence, HIP Graph capture/replay, or model accuracy. The target-only /
 eager admission remains necessary; loading four dispatch entries does not grant
 new architecture, DFly, Graph or full-model capabilities.
 
-Required later gates: independent reference comparisons for every output/state,
-holes/padding/resident-only/eviction/shared layers, mapped-host offset/lifetime,
-page pitch and changed inputs, wave32/wave64 where supported, actual target-only
-model accuracy, then separately qualified Graph and owner-aware DFly support.
-Never promote catalog state based on a compiler or CPU result alone.
+State/cache ownership is a caller ABI prerequisite: active request rows must be
+contiguous, independently active leaders must use distinct state rows and
+non-overlapping writable hot regions, and replay destinations must not race.
+Resolve/invalidate/gather/attention that share state must be stream-ordered or
+explicitly event-ordered. Pinned host storage must remain live and unmodified
+until the producing stream finishes. The launcher's scalar shape checks cannot
+prove these metadata content and lifetime conditions.
 
-## Prepared HCU numerical lane — NOT RUN during this task
+Required later gates: paired repository-free installed plugin/adapter delivery,
+actual target-only model accuracy for FP8 and W4A8, full backend attention replay,
+concurrent/multi-stream reuse, other supported hardware configurations, then
+separately qualified Graph and owner-aware DFly support. Never promote catalog
+state based on compiler, CPU or isolated native results alone.
+
+## Recorded eager HCU qualification — 2026-11-22
+
+The exact runtime source at commit `371360626b16e153c860b3bb37a0d9479239199b`
+(kernel SHA256 `f86627a25f49482419dbe0d385ee0f7c9431c4c82bed24ab69d7ba063e47da36`)
+was rebuilt in an isolated directory for **gfx938**, with `MAX_JOBS=2`, GPUs
+hidden for compilation, no site installation and no existing package modification.
+Source verification covered 922 tracked files with zero mismatches. The paired
+Torch was `2.13.0+dtk2610.2611161236.g6ac259`; installed Core was
+`0.33.0+dtk2610.torch2130.2611101131.g7364da`.
+
+The fresh binary SHA256 was
+`db27ecdb0b1dac6713590299b2aaa99191081b710625d85d234832b66002f48f`.
+All four exact dispatcher entries registered without initializing a GPU context
+in the CPU-only registration probe. Main-agent execution then used logical device0
+in the container's existing visibility mapping: **44 passed / 0 failed / 0 skipped**
+(21.04 seconds pytest time). This includes the original36 native cases and eight
+additional BF16/opaque-FP8-DS byte-copy layout cases. The qualification snapshot
+kept the compiled source immutable; the extra test was staged separately.
+
+This is an isolated **eager native test result**, not an installed plugin test,
+attention numerical parity, full-model accuracy, Graph, DFly, sanitizer pass or
+performance claim. Independent static review found no confirmed actionable new
+defect in this snapshot, subject to the caller ABI prerequisites above; it did
+not approve Ready.
+
+### Reproduce the isolated native lane
 
 `tests/kernels/hisparse/test_native.py` contains executable real-device tests
 with an independent Python/list reference and exact integer/byte comparisons:
@@ -130,8 +163,8 @@ Whole backing storage is compared, including gaps and guard bytes. Initial cache
 payloads match ownership. The backing pinned allocation is retained through an
 explicit stream synchronization before CPU mutation or checking.
 
-Only after the occupying model job has naturally finished and GPU use has been
-authorized, run from the immutable adapter checkout, without installing anything:
+After ensuring the selected card is free and GPU use is authorized, run from
+an immutable adapter checkout, without installing anything:
 
 ```sh
 HCU_ADAPTER_HOST=none VLLM_PLUGINS=none PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
@@ -147,3 +180,9 @@ Requires-HIP/no-device skips are explicitly **not passed device gates**. A missi
 or incompatible library fails rather than silently skipping. This is eager-only;
 it neither exercises nor grants Graph or DFly qualification. The independent
 reference's known-answer CPU tests do not substitute for running this lane.
+
+`test_typed_copy.py` additionally covers BF16 rows of576 elements (1152bytes)
+and opaque FP8-DS MLA uint8 rows of656bytes, physical block64/256, plan/compact
+paths, pinned interior storage, padded page pitch, cross-block destinations,
+missing-host zero-fill and whole-allocation guard bytes. These are exact payload
+transfer/layout checks, not attention or quantization numerical validation.
