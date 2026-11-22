@@ -418,9 +418,10 @@ def test_resolved_kernel256_preserves_state64(native, physical_block):
 def test_copy_block_metadata_above64(native, block_size, copy_kind, width):
     owner, host = _pinned(8, width, offset=19)
     hot_owner, hot, expected_storage, expected_hot = _hot(4, block_size, width)
-    destinations = [block_size - 1, block_size, block_size + 63,
+    destinations = [block_size - 1, block_size, block_size + min(63, block_size - 2),
                     2 * block_size - 1, 2 * block_size, 2 * block_size + 64,
                     3 * block_size - 1]
+    assert len(destinations) == len(set(destinations))  # No cross-warp write races.
     globals_ = [0, 1, 2, 99, 3, 4, 5]
     for g, dst in zip(globals_, destinations):
         row = expected_hot[dst // block_size, dst % block_size]

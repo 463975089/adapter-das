@@ -189,7 +189,8 @@ int main() {
     std::vector<char> host(8*width),actual(offset+4*pitch+17,0x55);
     for(int i=0;i<8*width;++i)host[i]=char(i%113);
     int globals[]={0,1,2,99,3,4,5};
-    int dst[]={block-1,block,block+63,2*block-1,2*block,2*block+64,3*block-1};
+    int dst[]={block-1,block,block+min(63,block-2),2*block-1,2*block,2*block+64,3*block-1};
+    for(int i=0;i<7;++i)for(int j=i+1;j<7;++j)assert(dst[i]!=dst[j]);
     int mask[]={1,1,1,1,1,1,1},count[]={7},attention[7];
     std::vector<char> expected=actual;
     for(int i=0;i<7;++i){
