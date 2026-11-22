@@ -161,6 +161,57 @@ int main() {
         hisparse_invalidate_written_slots_kernel(dgi,state,requests,written,2,1,1,4);
     assert(dgi[0]==-1 && dgi[1]==9 && dgi[2]==-1 && dgi[3]==11);
   }
+
+  for (int physical_block : {64, 256}) {
+    int table[]={1},indices[]={63,-1,64,64,65},request[]={0},source[]={1,2},state[]={0};
+    int dgi[64];int16_t lru[64];
+    for(int i=0;i<64;++i){dgi[i]=256+i;lru[i]=i;}
+    int out[5],mask[5],attention[5],resolved[5],valid[1],sh[5],sd[5],counts[1];
+    std::fill(sh,sh+5,-77);std::fill(sd,sd+5,-77);
+    unsigned long long stats[2]={0,0};
+    blockDim.x=1;gridDim.x=1;threadIdx.x=blockIdx.x=0;
+    std::memset(smem_raw,0,sizeof(smem_raw));
+    hisparse_resolve_residency_kernel(table,indices,request,source,nullptr,
+        resolved,valid,sh,sd,counts,out,attention,mask,dgi,lru,stats,state,
+        1,1,4*physical_block,1,1024,1,physical_block,5,64,65,64,256,
+        2,1,2,256,0,0,0,0,0,5,5,1);
+    int want_out[]={physical_block+63,-1,physical_block,physical_block,physical_block+1};
+    int want_attention[]={319,256,256,257,-1},want_resolved[]={319,-1,320,320,321};
+    assert(std::equal(out,out+5,want_out));
+    assert(std::equal(attention,attention+5,want_attention));
+    assert(std::equal(resolved,resolved+5,want_resolved));
+    assert(valid[0]==4 && counts[0]==2 && sh[0]==320 && sh[1]==321);
+    assert(sd[0]==physical_block && sd[1]==physical_block+1);
+    assert(dgi[0]==320 && dgi[1]==321 && stats[0]==2 && stats[1]==2);
+  }
+  for(int block : {64,128,256}) {
+    constexpr int width=16;const int pitch=block*width+24,offset=3;
+    std::vector<char> host(8*width),actual(offset+4*pitch+17,0x55);
+    for(int i=0;i<8*width;++i)host[i]=char(i%113);
+    int globals[]={0,1,2,99,3,4,5};
+    int dst[]={block-1,block,block+63,2*block-1,2*block,2*block+64,3*block-1};
+    int mask[]={1,1,1,1,1,1,1},count[]={7},attention[7];
+    std::vector<char> expected=actual;
+    for(int i=0;i<7;++i){
+      auto* p=expected.data()+offset+(dst[i]/block)*pitch+(dst[i]%block)*width;
+      if(globals[i]<8)std::memcpy(p,host.data()+globals[i]*width,width);
+      else std::memset(p,0,width);
+    }
+    for(int kind=0;kind<2;++kind){
+      std::fill(actual.begin(),actual.end(),0x55);
+      blockDim.x=32;gridDim.x=gridDim.y=1;blockIdx.x=blockIdx.y=0;
+      for(threadIdx.x=0;threadIdx.x<32;++threadIdx.x){
+        if(kind==0)hisparse_gather_plan_kernel(host.data(),actual.data()+offset,
+            globals,dst,mask,attention,nullptr,8,4*block,width,pitch,block,7,256);
+        else hisparse_gather_compact_kernel(host.data(),actual.data()+offset,
+            globals,dst,count,8,4*block,width,pitch,block,7);
+      }
+      assert(actual==expected);
+      if(kind==0)for(int i=0;i<7;++i)
+        assert(attention[i]==(dst[i]/block)*256+dst[i]%block);
+    }
+  }
+
   std::cout << "serial host model: resolve/replay/resident/padding/plan/compact/invalidate passed\n";
 }
 '''

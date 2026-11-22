@@ -52,8 +52,10 @@ def _equal(gpu, cpu):
 
 def _resolve_reference(indices, hot_table, dgi, lru, *, host_rows, requests,
                        states, source, resident, block_size, attention_stride,
-                       stats):
+                       stats, source_block_size=None, resident_block_size=None):
     """Independent request union, oldest-first eviction and stable list filter."""
+    source_size = block_size if source_block_size is None else source_block_size
+    resident_size = block_size if resident_block_size is None else resident_block_size
     rows, topk = len(indices), len(indices[0])
     hot = [[-1] * topk for _ in indices]
     attention = deepcopy(hot)
@@ -79,13 +81,14 @@ def _resolve_reference(indices, hot_table, dgi, lru, *, host_rows, requests,
             for col, token in enumerate(indices[row]):
                 g, resident_row = token, -1
                 if source is not None:
-                    page = token // block_size if token >= 0 else -1
+                    page = token // source_size if token >= 0 else -1
                     physical = source[req][page] if 0 <= page < len(source[req]) else 0
-                    g = physical * block_size + token % block_size if physical > 0 else -1
-                    if resident is not None and 0 <= page < len(resident[state]):
-                        physical = resident[state][page]
+                    g = physical * source_size + token % source_size if physical > 0 else -1
+                    resident_page = token // resident_size if token >= 0 else -1
+                    if resident is not None and 0 <= resident_page < len(resident[state]):
+                        physical = resident[state][resident_page]
                         if physical >= 0 and physical != 0:
-                            resident_row = physical * block_size + token % block_size
+                            resident_row = physical * resident_size + token % resident_size
                 if g >= host_rows:
                     g = -1
                 resolved[row][col] = g
@@ -362,4 +365,79 @@ def test_attention_address_overflow_refused(native):
             attention_block_stride=2**63 - 1)
     torch.cuda.synchronize()
     _equal(hot_owner, expected)
+    assert owner.is_pinned()
+
+
+@pytest.mark.parametrize('physical_block', [64, 256])
+def test_resolved_kernel256_preserves_state64(native, physical_block):
+    # Scheduler/source addressing is 256, independently of the 64-slot state.
+    # Exercise both a separate 64-row hot pool and a 256-row physical page.
+    owner, host = _pinned(1024, 16, offset=19)
+    hot_owner, hot, expected_storage, expected_hot = _hot(4, physical_block, 16)
+    indices = [[63, -1, 64, 64, 65]]
+    dgi_ref, lru_ref = [list(range(256, 320))], [list(range(64))]
+    for slot, g in enumerate(dgi_ref[0]):
+        expected_hot[1, slot].copy_(host[g])
+    hot.copy_(expected_hot.to(device='cuda'))
+    dgi, lru = _gpu(dgi_ref), _gpu(lru_ref, torch.int16)
+    outputs = {k: torch.full((1, 5), -77, dtype=torch.int32, device='cuda')
+               for k in ('hot', 'mask', 'resolved', 'sh', 'sd')}
+    attention = torch.full((1, 5), -77, dtype=torch.int32, device='cuda')
+    counts, swaps = _gpu([-77]), _gpu([-77])
+    stats = torch.zeros(2, dtype=torch.uint64, device='cuda')
+    stats_ref = [0, 0]
+    expected = _resolve_reference(indices, [[1]], dgi_ref, lru_ref,
+        host_rows=1024, requests=[0], states=[0], source=[[1, 2]], resident=None,
+        block_size=physical_block, attention_stride=256, stats=stats_ref,
+        source_block_size=256)
+    # Literal known answers prevent the oracle from silently retaining 64.
+    assert expected['resolved'] == [[319, -1, 320, 320, 321]]
+    assert expected['attention'] == [[319, 256, 256, 257, -1]]
+    native.hisparse_resolve_residency(host, hot, _gpu([[1]]), _gpu(indices),
+        outputs['hot'], dgi, lru, _gpu([0]), 64, 64, outputs['mask'], stats,
+        attention, 256, _gpu([0]), _gpu([[1, 2]]), 256,
+        outputs['resolved'], counts, outputs['sh'], outputs['sd'], swaps)
+    native.hisparse_gather_compact(host, hot, outputs['sh'], outputs['sd'], swaps)
+    for col in range(expected['swaps'][0]):
+        physical = expected['sd'][0][col]
+        expected_hot[physical // physical_block, physical % physical_block].copy_(
+            host[expected['sh'][0][col]])
+    torch.cuda.synchronize()
+    for key, value in outputs.items():
+        _equal(value, expected[key])
+    for actual, value in [(attention, expected['attention']), (counts, expected['counts']),
+                          (swaps, expected['swaps']), (dgi, dgi_ref), (lru, lru_ref),
+                          (stats, stats_ref), (hot_owner, expected_storage)]:
+        _equal(actual, value)
+    assert owner.is_pinned()
+
+
+@pytest.mark.parametrize('block_size', [64, 128, 256])
+@pytest.mark.parametrize('copy_kind', ['plan', 'compact'])
+@pytest.mark.parametrize('width', [16, 528])
+def test_copy_block_metadata_above64(native, block_size, copy_kind, width):
+    owner, host = _pinned(8, width, offset=19)
+    hot_owner, hot, expected_storage, expected_hot = _hot(4, block_size, width)
+    destinations = [block_size - 1, block_size, block_size + 63,
+                    2 * block_size - 1, 2 * block_size, 2 * block_size + 64,
+                    3 * block_size - 1]
+    globals_ = [0, 1, 2, 99, 3, 4, 5]
+    for g, dst in zip(globals_, destinations):
+        row = expected_hot[dst // block_size, dst % block_size]
+        if g < len(host):
+            row.copy_(host[g])
+        else:
+            row.zero_()
+    if copy_kind == 'plan':
+        attention = torch.full((1, 7), -77, dtype=torch.int32, device='cuda')
+        native.hisparse_gather_plan(host, hot, _gpu([globals_]),
+            _gpu([destinations]), _gpu([[1] * 7]), None, attention, 256)
+    else:
+        native.hisparse_gather_compact(host, hot, _gpu([globals_]),
+                                     _gpu([destinations]), _gpu([7]))
+    torch.cuda.synchronize()
+    _equal(hot_owner, expected_storage)  # Includes page gaps and guard bytes.
+    if copy_kind == 'plan':
+        _equal(attention, [[dst // block_size * 256 + dst % block_size
+                            for dst in destinations]])
     assert owner.is_pinned()

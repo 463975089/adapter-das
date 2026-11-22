@@ -53,3 +53,21 @@ def test_independent_numerical_oracle_multiple_request_states():
     assert out['sh'][0][:2] == [22, 23] and out['sh'][2][0] == 14
     assert config['lru'] == [[2, 3, 0, 1], [1, 3, 0, 2]]
     assert stats == [6, 3]
+
+
+def test_independent_numerical_oracle_kernel256_state64():
+    _, resolve = _oracle()
+    for physical_block in (64, 256):
+        dgi, lru, stats = [list(range(256, 320))], [list(range(64))], [0, 0]
+        out = resolve([[63, -1, 64, 64, 65]], [[1]], dgi, lru,
+                      host_rows=1024, requests=[0], states=[0], source=[[1, 2]],
+                      resident=None, block_size=physical_block,
+                      attention_stride=256, stats=stats, source_block_size=256)
+        assert out['resolved'] == [[319, -1, 320, 320, 321]]
+        assert out['hot'] == [[physical_block + 63, -1, physical_block,
+                               physical_block, physical_block + 1]]
+        assert out['attention'] == [[319, 256, 256, 257, -1]]
+        assert out['sh'] == [[320, 321, -77, -77, -77]]
+        assert out['sd'] == [[physical_block, physical_block + 1, -77, -77, -77]]
+        assert out['swaps'] == [2] and out['counts'] == [4] and stats == [2, 2]
+        assert dgi[0][:2] == [320, 321] and len(dgi[0]) == 64
