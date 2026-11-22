@@ -82,7 +82,69 @@ def _provider():
     raise RuntimeError('HY4 FP8 MQA vendor provider is unavailable')
 
 
-def make_prefill(provider, compact, temporary_bytes):
+class PrefillWindows:
+    """Pass full vendor rows to native top-k using the original row windows.
+
+    State belongs to one synchronous native indexer call, including reentrant
+    calls. Candidate filtering and DCP retain the compressed native layout.
+    """
+    def __init__(self, ops):
+        self.ops = ops
+        self.current = ContextVar('hy4_prefill_windows', default=None)
+
+    def scope(self, body):
+        parameters = inspect.signature(body).parameters
+        positions = {name: i for i, name in enumerate(parameters)}
+        names = ('dcp_world_size', 'candidate_blocks', 'use_fp4_cache')
+        if any(name not in positions for name in names):
+            raise RuntimeError('native indexer window-policy anchors changed')
+
+        @wraps(body)
+        def scoped(*args, **kwargs):
+            def value(name):
+                index = positions[name]
+                return kwargs.get(name, args[index] if index < len(args)
+                                  else parameters[name].default)
+            enabled = (value('dcp_world_size') == 1
+                       and value('candidate_blocks') is None
+                       and not value('use_fp4_cache'))
+            token = self.current.set(NS(enabled=enabled, pending=None))
+            try:
+                return body(*args, **kwargs)
+            finally:
+                self.current.reset(token)
+        return scoped
+
+    def try_prefill(self, provider, query, keys, scales, weights, starts, ends):
+        state = self.current.get()
+        if state is None or not state.enabled:
+            return None
+        if state.pending is not None:
+            raise RuntimeError('native indexer has an unconsumed logit window')
+        scores = provider(query, keys, scales, weights, starts, ends)
+        import torch
+        if (scores.shape != (query.shape[0], keys.shape[0])
+                or scores.dtype != torch.float32 or scores.stride(1) != 1
+                or scores.device != query.device):
+            raise RuntimeError('HY4 vendor MQA result ABI changed')
+        state.pending = (scores, starts, ends)
+        return scores
+
+    def top_k_per_row_prefill(self, logits, starts, ends, *args, **kwargs):
+        state = self.current.get()
+        pending = None if state is None else state.pending
+        if pending is not None:
+            if logits is not pending[0]:
+                raise RuntimeError('native indexer changed full-logit ownership')
+            starts, ends = pending[1:]
+            state.pending = None
+        return self.ops.top_k_per_row_prefill(logits, starts, ends, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self.ops, name)
+
+
+def make_prefill(provider, compact, temporary_bytes, *, windows=None):
     """Bound the full vendor result while retaining Core's compressed budget."""
     def prefill(q, kv, weights, starts, ends, max_seqlen_k):
         import torch
@@ -94,6 +156,11 @@ def make_prefill(provider, compact, temporary_bytes):
         rows, columns = query.shape[0], keys.shape[0]
         if rows and max_seqlen_k and 4 * columns > temporary_bytes:
             raise ValueError('HY4 vendor full-logit row exceeds the temporary memory budget')
+        if (windows is not None and rows and max_seqlen_k and columns
+                and 4 * rows * columns <= temporary_bytes):
+            scores = windows.try_prefill(provider, query, keys, scales, weights, starts, ends)
+            if scores is not None:
+                return scores
         output = torch.empty((rows, max_seqlen_k), dtype=torch.float32, device=query.device)
         if not rows or not max_seqlen_k:
             return output
@@ -238,10 +305,13 @@ def _build():
         raise RuntimeError('HY4 sparse indexer operator already has an owner')
     budget = min(128, envs.VLLM_SPARSE_INDEXER_MAX_LOGITS_MB) * 1024 * 1024
     layout = DecodeLayout(PackSeqTritonKernel(), UnpackSeqTritonKernel())
+    windows = PrefillWindows(native.ops)
     body = bind_native(inspect.unwrap(native.sparse_attn_indexer), {
-        'fp8_fp4_mqa_logits': make_prefill(provider, compact, budget),
+        'fp8_fp4_mqa_logits': make_prefill(provider, compact, budget, windows=windows),
         'fp8_fp4_paged_mqa_logits': make_paged(rocm_fp8_paged_mqa_logits_triton, layout),
-        'pack_seq_triton': layout.pack, 'unpack_seq_triton': layout.unpack})
+        'pack_seq_triton': layout.pack, 'unpack_seq_triton': layout.unpack,
+        'ops': windows})
+    body = windows.scope(body)
     body = layout.scope(body, native._resolve_layer_name)
     direct_register_custom_op(op_name=OP_NAME,
         op_func=eager_break_during_capture(_guard_execution(reserve_profile_temporary(body, budget))),
