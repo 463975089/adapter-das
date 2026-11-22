@@ -3,11 +3,11 @@
 > 目标：任何会话（人或 AI 助手）接手本仓工作时，按本页顺序读 5 份文件
 > 就能不迷糊地干活。每份文档的一句话定位 + 何时必读。
 >
-> **宿主纪律**：本仓同时服务 **sglang 与 vLLM 两个宿主**（`HCU_ADAPTER_HOST`
-> 分发）。公共机制、公共不变量一律用"宿主"指称（= sglang 或 vLLM）；
+> **宿主纪律**：本仓同时服务 **SGLang、vLLM 与 DeepInfer 三个宿主**（`HCU_ADAPTER_HOST`
+> 分发）。公共机制、公共不变量一律用"宿主"指称（SGLang、vLLM 或 DeepInfer）；
 > 只在某宿主成立的内容必须显式特指（如 `bridges/sglang.py`、影子包
 > `sgl_kernel/` 属 sglang 进程，`bridges/vllm.py`、HcuPlatform 属 vLLM
-> 进程）。改文档时先问一句：这段在另一个宿主上成立吗？成立→写宿主；
+> 进程；`bridges/deepinfer.py` 属 DeepInfer）。改文档时先核对适用宿主；
 > 不成立→写明哪个宿主、差异是什么。
 
 ## 按任务找文档（30 秒路由）
@@ -34,6 +34,8 @@
 | 设计性能 A/B、路由统计或代码退役 | docs/test-route-governance.md → docs/test-route-implementation-plan.md（MR-00～MR-12）→ docs/autotune.md → docs/governance.md |
 | 按测试治理路线开工 / 查依赖和验收 | docs/test-route-implementation-plan.md → 对应 MR 段的依赖、DoD 与验收命令 |
 | 判断一项工作归哪仓 / 开发插件新能力 | docs/governance.md §0 判别 → 本文「姊妹仓地图」→ sglang-plugin-das docs/ |
+
+文件职责与代码整理先读 [architecture §7](architecture.md#文件职责与整理顺序)；算子归属和迁移证据要求以 governance 为准，历史验证结论不随目录迁移自动继承。
 
 MiniMax-H3专用RoPE候选的接口、快关、CPU/离线编译证据与设备验收边界见 [MiniMax-H3](minimax-h3.md)。
 
@@ -99,7 +101,7 @@ DeepInfer 的具体文件位置见[算子导航](frameworks/deepinfer-kernels.md
 
 | 文档 | adapter-das（本仓） | sglang-plugin-das |
 |---|---|---|
-| architecture.md | 机制分层：影子库 / is_cuda 语义 / 三档路由 / 桥结构 | 插件架构 + 未来运行时目录规划 |
+| architecture.md | 机制分层：影子库 / is_cuda 语义 / 三档路由 / 桥结构 | 插件架构 + 当前运行时职责与整理边界 |
 | governance.md | 治理宪法：双仓判别（真相源）、裁决链、§7 共建 | 组合兼容契约：目标所有权、验证矩阵 |
 | bootstrap.md | **宿主**新容器部署手册（依赖钉 / tvm-ffi 预热 / 自检） | 方法库开发环境准备 |
 | ci.md | L0/L1/L2 宿主门禁体系 | 方法仓 CI 阶段约束 |

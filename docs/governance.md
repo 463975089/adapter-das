@@ -159,7 +159,7 @@ import、特性探测 hasattr 恒真、dlpack/numpy 标量、JIT hipcc nvcc-isms
 [operator-requests.md](operator-requests.md) 标准提报——契约锚定上游
 sglang 符号面，shim 妥协不进契约。
 
-全局翻转平台身份（把 `is_hip` 判定改成 `is_cuda`）**禁止**：它把所有
+§0.5 的 CUDA 语义由集中平台层及已审计的语义护栏提供。域桥自行全局翻转平台身份（把所有 `is_hip` 判定替换成 `is_cuda`）**禁止**：它把所有
 `elif _is_cuda:` 的不可移植分支（flashinfer/trtllm 独有符号）一并打进
 导入路径，且砍断依赖 `is_hip()=True` 的正常分支（fnuz 表、gfx workaround）。
 逐条放宽 + 已验证实现背书，是一个个来的。
@@ -183,7 +183,7 @@ sglang 符号面，shim 妥协不进契约。
    `_vendor`（`fa_vendor`、`mqa_vendor`）。前缀为主题而非档位的机制
    补丁不受限（`triton_libdev` / `triton_pdl` = 补 triton 编译栈本身，
    非 triton 档实现）。
-3. **同族实现共享 op 词根**：`paged_mqa_logits` 家族 =
+3. **新增同族实现共享 op 词根**。以下是当前 `paged_mqa_logits` 家族的历史名称，不是新文件命名示例：
    `dsa_mqa_logits_emu` / `mqa_logits_emu` / `mqa_logits_triton` /
    `mqa_vendor`——一眼可辨全家族档位覆盖与缺口。
 4. **`_ref` 红线**：ref 文件只准被 `tests/` 引用（§2）；生产路径出现
@@ -588,6 +588,10 @@ AOT/stub 注册。当前消费方是 DeepInfer；未来其他宿主复用时，�
 
 新算子计算代码只进入 `kernels/`，`bridges/` 只保留绑定、安装和契约分发。
 L0 检查档位命名与绑定层数值代码；代码评审还需检查职责，L0 GREEN 不代表目录归属免审。
+文件整理前先记录唯一实现所有者、全部消费者、注册目标、装配顺序和退役条件。静态 AST 相同、零静态引用或重复注册目标只能作为审计候选，不能直接判定可删除；多个合法包装须显式保留顺序，fallback 保留当前有效基线。
+
+涉及算子实现或分发变更前，先完成原生完整 prefill/decode profile；任务包含 MTP、Graph 时一并覆盖，并核对各并行组实际处理请求的 rank。逐分支对照框架入口、adapter/plugin、实际库/API/设备内核，以及参数、shape/stride、dtype、权重与缓存布局、量化/scale、累加、残差、舍入和索引顺序。记录容器实际包路径、版本/提交、哈希和 ABI。每项标明“已对齐 / 存在差异 / 未验证”；未关闭项先补齐。迁移后以同一实际输入比较输出和必要中间量，Graph 验证更换输入后的重放，再推进整模型复测与性能工作。
+
 不符合分层的变更应在 L0/评审阶段打回。跨层别名壳与无职责的旧路径转发不再保留；
 迁移模块时须同步 bridge、catalog、plugin 导入及 provider 身份检查。
 
