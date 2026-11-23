@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Hygon Information Technology Co., Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
-"""NCCL_TOPO_FILE card-count mismatch guard (box16 4-proc fatality, 2026-10-25).
+"""NCCL_TOPO_FILE card-count and host-PCI mismatch guard (box16 4-proc fatality, 2026-10-25).
 
 Team images preset NCCL_TOPO_FILE to the box's full-8-card topology XML
 (validation-host-26 sample: /usr/local/built-in-508-topo-input-tj-default.xml, GPUs
@@ -18,7 +18,8 @@ torch-visible device count:
 
   mismatch -> drop the env (NCCL falls back to sysfs detection, correct
               for ANY subset) + one log line naming both counts;
-  match    -> keep silently (full-card config is what the file is for);
+  equal count with foreign GPU PCI addresses -> drop the env;
+  match    -> keep silently when detected host PCI addresses also match;
   anything unreadable/undetectable -> keep + debug log (conservative).
 
 Debug tier: ``HCU_NCCL_TOPO_GUARD=0`` opts out (registry entry; explicit
@@ -27,6 +28,9 @@ env wins over the auto rule, docs/env-vars.md).
 
 import logging
 import os
+import re
+from pathlib import Path
+import xml.etree.ElementTree as ET
 
 LOG = logging.getLogger("hcu.adapter")
 
@@ -52,12 +56,40 @@ def _topo_gpus(topo_path):
         return 0
 
 
+def _topo_busids(topo_path):
+    try:
+        root = ET.parse(topo_path).getroot()
+    except (OSError, ET.ParseError):
+        return set()
+    return {
+        node.attrib["busid"].lower()
+        for node in root.iter("pci")
+        if node.find("gpu") is not None
+        and re.fullmatch(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]", node.attrib.get("busid", ""))
+    }
+
+
+def _host_gpu_busids(sysfs_root="/sys/class/drm"):
+    try:
+        return {
+            bus
+            for node in Path(sysfs_root).glob("renderD*")
+            if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]", bus := (node / "device").resolve().name.lower())
+        }
+    except OSError:
+        return set()
+
+
 def _check(topo_path, visible):
     """-> (action, reason): action in {'keep', 'clear'}."""
     topo = _topo_gpus(topo_path)
     if topo <= 0 or visible <= 0:
         return "keep", f"undecidable (topo gpus={topo}, visible={visible})"
     if topo == visible:
+        buses = _topo_busids(topo_path)
+        host_buses = _host_gpu_busids() if buses else set()
+        if host_buses and buses - host_buses:
+            return "clear", f"preset topo GPU PCI addresses absent from host: {sorted(buses - host_buses)}"
         return "keep", f"match ({topo} gpus)"
     return (
         "clear",
