@@ -63,6 +63,23 @@ def install(_he=None) -> None:
         logging.getLogger("hcu.adapter").warning(
             "HCU adapter: JIT EH norm launch bounds not installed", exc_info=True
         )
+    try:
+        from hcu_adapter.features.jit import small_copy_jit
+
+        small_copy_jit.install()
+    except ImportError:
+        logging.getLogger("hcu.adapter").info(
+            "HCU adapter: upstream small_copy is unavailable"
+        )
+    except Exception:
+        # Vendor-ABI refusals raise TypeError/RuntimeError before any
+        # registration (small_copy_jit.install); degrade to a warning so
+        # the bootstrap fixes below still install, matching the jit_eh_norm
+        # / dsa_topk_v2 step pattern. try_small_copy probes at call time,
+        # so running without the binding is safe.
+        logging.getLogger("hcu.adapter").warning(
+            "HCU adapter: small_copy JIT fix not installed", exc_info=True
+        )
     # DSA top-k v2 fusion (dsv41f decode): stride seam on the upstream JIT
     # topk_v2 kernel + the v41 full-topk fused decode arm. Replaces the
     # torch.topk fallbacks behind 57 mbtopk kernels/step (2026-10-22 trace).
