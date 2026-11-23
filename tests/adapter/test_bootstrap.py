@@ -203,6 +203,36 @@ def test_common_failure_does_not_block_the_selected_host(monkeypatch):
     assert events == ["common", "sglang"]
 
 
+@pytest.mark.parametrize("launcher", ["/usr/local/bin/ninja", "ninja.exe"])
+def test_ninja_cli_skips_bootstrap_before_hip_probe(monkeypatch, launcher):
+    events = _arm_install(monkeypatch)
+    monkeypatch.setenv(ACTIVE_HOST_ENV, "sglang")
+    monkeypatch.setattr(bootstrap.sys, "argv", [launcher, "-v"])
+
+    def unexpected_hip_probe():
+        pytest.fail("Ninja CLI must not probe HIP or import adapter bridges")
+
+    monkeypatch.setattr(bootstrap, "_is_hip", unexpected_hip_probe)
+    bootstrap.install()
+
+    assert events == []
+    assert bootstrap._installed_pid == bootstrap.os.getpid()
+
+
+def test_worker_with_ninja_argument_still_installs(monkeypatch):
+    events = _arm_install(monkeypatch)
+    monkeypatch.setenv(ACTIVE_HOST_ENV, "sglang")
+    monkeypatch.setattr(bootstrap.sys, "argv", ["-c", "/usr/local/bin/ninja"])
+    monkeypatch.setattr(
+        bootstrap.sys, "orig_argv",
+        ["python", "-c", "from multiprocessing.spawn import spawn_main; spawn_main()"],
+    )
+
+    bootstrap.install()
+
+    assert events == ["common", "sglang"]
+
+
 def test_install_is_a_noop_on_non_hip(monkeypatch):
     events = _arm_install(monkeypatch, hip=False)
 

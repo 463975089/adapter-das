@@ -319,6 +319,14 @@ cached conflicting value is refused. This keeps valid expert IDs for padded
 Graph rows without changing the selected graph mode. See
 [vLLM AITER candidate](frameworks/vllm033-aiter-moe.md) for admission limits.
 
+## HYV4 旧 topk 名称兼容（2026-11-18）
+
+SGLANG_NSA_FUSE_TOPK 由 plugin 兼容到 SGLANG_DSA_FUSE_TOPK。
+adapter 模型默认值可能在 plugin 注册前应用，因此在 DSA 默认值入口
+优先采用用户的旧名显式值。两个名字同时设置时 canonical 值优先，
+无用户值时仍使用已有 HCU 模型默认值。Ninja helper 的启动跳过逻辑
+保持原有独立处理。
+
 ### Explicit vLLM/plugin paged MQA candidate
 
 `HCU_DISABLE_OPS=vllm_paged_mqa_logits` refuses the non-MX FP8 page64

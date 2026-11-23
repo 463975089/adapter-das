@@ -101,6 +101,8 @@ def _setdefault(pairs):
     applied = []
     for k, v in pairs:
         if k not in os.environ:
+            if k == "SGLANG_DSA_FUSE_TOPK":
+                v = os.environ.get("SGLANG_NSA_FUSE_TOPK", v)
             os.environ[k] = v
             applied.append(f"{k}={v}")
     return applied

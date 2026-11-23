@@ -1,8 +1,18 @@
 # 算子档位矩阵（自动生成，勿手改）
 
-> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-21）；事实源 = `BACKEND_CATALOG`（hcu_adapter/infra/hcu_config.py）。
+> 生成：`python tools/gen_tier_matrix.py`（最近 2026-11-23）；事实源 = `BACKEND_CATALOG`（hcu_adapter/infra/hcu_config.py）。
 > L0 `impl-naming` 做新鲜度校验改表须随 catalog 同 commit（governance §3b）。
 > 文件命名导航规则见 governance §3b；缺档 = 该行空白——那是实现排期的直接输入。
+
+## small_copy
+
+Upstream batched buffer copy with dynamic tuple arguments
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| standard-jit | candidate HCU FastJIT tuple-cache corruption r |
+
+路由变量：（auto）
 
 ## vllm_inverse_rope
 
