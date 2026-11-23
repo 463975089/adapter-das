@@ -508,6 +508,12 @@ REGISTRY = {
                  "target 轨迹漂移 + 逐次不确定；二分定位 MTP 独立致病）。"
                  "sglang-das 用 hcu_get_last_loc 同向修复；=0 还原 stock 分发",
     },
+    "HCU_DIST_BROADCAST_COMPRESS": {
+        "env": "HCU_DIST_BROADCAST_COMPRESS", "default": "0",
+        "about": "SGLang broadcast_pyobj 大 pickle 载荷无损压缩。"
+                 "仅发送更小的压缩帧。启用前全部参与 rank 须部署支持解压的适配层；"
+                 "修改后需重启进程。",
+    },
     "HCU_SPEC_H2D_PIN": {
         "env": "HCU_SPEC_H2D_PIN", "default": "1",
         "about": "spec-decode KV-lens 使用 Torch 管理的 pinned CPU 分配"
