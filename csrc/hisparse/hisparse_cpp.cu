@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <optional>
 
 
@@ -46,20 +47,93 @@ bool attention_range_fits(int64_t rows, int64_t block_size, int64_t stride) {
       (last_page == 0 || stride <= (INT32_MAX - last_offset) / last_page);
 }
 
-// Always use the device alias returned by HIP, never assume host UVA identity.
-// The caller must retain pinned storage until work on the current stream ends.
+// Report the actual failed HIP query, rather than leaving its error to be
+// misattributed to a later kernel launch. No kernel has been launched here.
+void check_host_query(hipError_t status, const char* query) {
+  if (status != hipSuccess) {
+    (void)hipGetLastError();
+    TORCH_CHECK(false, "host_cache must be HIP-registered pinned CPU memory: ",
+                query, " failed: ", hipGetErrorString(status));
+  }
+}
+
+// Validate the *whole view*, not Torch allocator ownership or just its first
+// address. Core uses cudaHostRegister on a page-aligned slice of CPU storage;
+// such a pool need not satisfy Tensor::is_pinned(). Its GPU alias may differ.
+// The caller guards hot_cache.device() before entering this helper and retains
+// the original registration/storage until the current stream is synchronized.
+// Do not cache any query: unregister/re-register may reuse the same CPU address.
 const char* mapped_host_pointer(const at::Tensor& tensor) {
   TORCH_CHECK(tensor.device().is_cpu(), "host_cache must be CPU memory");
-  if (tensor.numel() == 0) return nullptr;
+  TORCH_CHECK(tensor.layout() == c10::kStrided && tensor.dim() == 2 &&
+                  tensor.is_contiguous(), "host_cache must be contiguous 2D");
+  const auto item = static_cast<size_t>(tensor.element_size());
+  const auto count = static_cast<uint64_t>(tensor.numel());
+  const auto offset = tensor.storage_offset();
+  const auto storage_bytes = tensor.storage().nbytes();
+  TORCH_CHECK(offset >= 0 && count <= std::numeric_limits<size_t>::max() / item &&
+                  static_cast<uint64_t>(offset) <= storage_bytes / item,
+              "host_cache byte span/offset overflow");
+  const size_t bytes = static_cast<size_t>(count) * item;
+  const size_t offset_bytes = static_cast<size_t>(offset) * item;
+  TORCH_CHECK(bytes <= storage_bytes - offset_bytes,
+              "host_cache span exceeds tensor storage");
+  const auto storage = reinterpret_cast<uintptr_t>(tensor.storage().data_ptr().get());
+  TORCH_CHECK(storage != 0 && offset_bytes <= UINTPTR_MAX - storage,
+              "host_cache must have registered backing storage");
+  const uintptr_t cpu = storage + offset_bytes;
+  // Empty *views* still need a registered anchor. Standalone empty/pageable
+  // sources must not bypass validation on a zero-work invocation.
+  const size_t checked_bytes = bytes == 0 ? 1 : bytes;
+  TORCH_CHECK(checked_bytes <= storage_bytes - offset_bytes &&
+                  checked_bytes - 1 <= UINTPTR_MAX - cpu,
+              "host_cache has no in-storage registered span");
+  if (bytes != 0) {
+    TORCH_CHECK(cpu == reinterpret_cast<uintptr_t>(tensor.const_data_ptr()),
+                "host_cache data pointer differs from its storage offset");
+  }
+  auto* ptr = reinterpret_cast<void*>(cpu);
   hipPointerAttribute_t attr{};
-  auto status = hipPointerGetAttributes(&attr, tensor.const_data_ptr());
-  TORCH_CHECK(status == hipSuccess && attr.memoryType == hipMemoryTypeHost,
+  check_host_query(hipPointerGetAttributes(&attr, ptr), "hipPointerGetAttributes");
+  TORCH_CHECK(attr.memoryType == hipMemoryTypeHost && !attr.isManaged,
               "host_cache must be HIP-registered pinned CPU memory");
+
+  void* range_start = nullptr;
+  size_t range_bytes = 0;
+  unsigned int mapped = 0;
+  uint64_t buffer_id = 0;
+  check_host_query(hipPointerGetAttribute(&range_start,
+      HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR, ptr), "registered range start");
+  check_host_query(hipPointerGetAttribute(&range_bytes,
+      HIP_POINTER_ATTRIBUTE_RANGE_SIZE, ptr), "registered range size");
+  check_host_query(hipPointerGetAttribute(&mapped,
+      HIP_POINTER_ATTRIBUTE_MAPPED, ptr), "registered mapping");
+  check_host_query(hipPointerGetAttribute(&buffer_id,
+      HIP_POINTER_ATTRIBUTE_BUFFER_ID, ptr), "registered buffer id");
+  const auto start = reinterpret_cast<uintptr_t>(range_start);
+  TORCH_CHECK(mapped != 0 && start != 0 && cpu >= start &&
+                  range_bytes <= UINTPTR_MAX - start && cpu - start <= range_bytes &&
+                  checked_bytes <= range_bytes - (cpu - start),
+              "host_cache span exceeds its mapped HIP registered range");
+
+  // hipMemGetAddressRange is NOT a substitute: DTK returns success/size but a
+  // null base for externally registered pools. RANGE_START_ADDR supplies the
+  // real host registration base, including for interior typed tensor views.
   void* alias = nullptr;
-  status = hipHostGetDevicePointer(&alias,
-      const_cast<void*>(tensor.const_data_ptr()), 0);
-  TORCH_CHECK(status == hipSuccess && alias != nullptr,
-              "host_cache must have a mapped HIP device alias");
+  check_host_query(hipHostGetDevicePointer(&alias, ptr, 0),
+                   "hipHostGetDevicePointer on the hot-cache device");
+  const auto device = reinterpret_cast<uintptr_t>(alias);
+  TORCH_CHECK(device != 0 && checked_bytes - 1 <= UINTPTR_MAX - device,
+              "host_cache must have a non-overflowing mapped HIP device alias");
+  uint64_t alias_id = 0;
+  uint64_t tail_id = 0;
+  check_host_query(hipPointerGetAttribute(&alias_id,
+      HIP_POINTER_ATTRIBUTE_BUFFER_ID, alias), "mapped alias buffer id");
+  check_host_query(hipPointerGetAttribute(&tail_id,
+      HIP_POINTER_ATTRIBUTE_BUFFER_ID,
+      reinterpret_cast<void*>(device + checked_bytes - 1)), "mapped alias tail");
+  TORCH_CHECK(alias_id == buffer_id && tail_id == buffer_id,
+              "host_cache device alias must cover the same registered buffer");
   return static_cast<const char*>(alias);
 }
 
@@ -876,10 +950,9 @@ void hisparse_resolve_residency(
               resident_block_size >= 0 && resident_block_size <= INT32_MAX &&
               resident_null_block >= 0 && resident_null_block <= INT32_MAX,
               "block parameters must fit nonnegative int32");
-  TORCH_CHECK(
-      host_cache.device().is_cpu() && host_cache.is_pinned(),
-      "host_cache must be pinned CPU memory");
   TORCH_CHECK(hot_cache.is_cuda(), "hot_cache must be on CUDA");
+  const c10::DeviceGuard registered_host_device_guard(hot_cache.device());
+  (void)mapped_host_pointer(host_cache);
   TORCH_CHECK(
       hot_block_table.is_cuda() &&
           hot_block_table.scalar_type() == at::ScalarType::Int &&
@@ -1201,10 +1274,9 @@ void hisparse_gather_plan(
                 request_state_indices->is_contiguous(), "plan state indices must be contiguous 1D");
   }
   if (attention_indices.has_value()) same_device(attention_indices.value(), hot_cache);
-  TORCH_CHECK(
-      host_cache.device().is_cpu() && host_cache.is_pinned(),
-      "host_cache must be pinned CPU memory");
   TORCH_CHECK(hot_cache.is_cuda(), "hot_cache must be on CUDA");
+  const c10::DeviceGuard registered_host_device_guard(hot_cache.device());
+  const char* host_device_alias = mapped_host_pointer(host_cache);
   TORCH_CHECK(
       global_indices.is_cuda() && hot_indices.is_cuda() && miss_mask.is_cuda(),
       "plan tensors must be on CUDA");
@@ -1294,7 +1366,7 @@ void hisparse_gather_plan(
       hot_cache.device());
   const hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
   hisparse_gather_plan_kernel<<<grid, kBlockSize, 0, stream>>>(
-      mapped_host_pointer(host_cache),
+      host_device_alias,
       static_cast<char*>(hot_cache.mutable_data_ptr()),
       global_indices.const_data_ptr<int32_t>(),
       hot_indices.const_data_ptr<int32_t>(),
@@ -1316,10 +1388,9 @@ void hisparse_gather_compact(at::Tensor const& host_cache,
   same_device(miss_global_indices, hot_cache);
   same_device(miss_hot_indices, hot_cache);
   same_device(miss_counts, hot_cache);
-  TORCH_CHECK(
-      host_cache.device().is_cpu() && host_cache.is_pinned(),
-      "host_cache must be pinned CPU memory");
   TORCH_CHECK(hot_cache.is_cuda(), "hot_cache must be on CUDA");
+  const c10::DeviceGuard registered_host_device_guard(hot_cache.device());
+  const char* host_device_alias = mapped_host_pointer(host_cache);
   TORCH_CHECK(
       miss_global_indices.is_cuda() && miss_hot_indices.is_cuda() &&
           miss_counts.is_cuda() &&
@@ -1361,7 +1432,7 @@ void hisparse_gather_compact(at::Tensor const& host_cache,
       hot_cache.device());
   const hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
   hisparse_gather_compact_kernel<<<grid, kBlockSize, 0, stream>>>(
-      mapped_host_pointer(host_cache),
+      host_device_alias,
       static_cast<char*>(hot_cache.mutable_data_ptr()),
       miss_global_indices.const_data_ptr<int32_t>(),
       miss_hot_indices.const_data_ptr<int32_t>(),
