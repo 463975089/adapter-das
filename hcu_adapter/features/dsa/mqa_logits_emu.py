@@ -232,6 +232,5 @@ def install():
 
     logger.warning(
         "[hcu] MQA-logits installed (impl=%s; paged/ragged triton arms with"
-        " torch-emu fallback; gfx936 has no fp8 matrix unit so exact decode"
-        " paths stay the numeric contract)", _impl_label
+        " torch-emu fallback; exact decode paths stay the numeric contract)", _impl_label
     )
