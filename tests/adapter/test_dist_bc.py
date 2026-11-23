@@ -6,6 +6,8 @@
 import importlib.util
 import inspect
 import os
+import pickle
+import random
 from pathlib import Path
 import subprocess
 import sys
@@ -98,6 +100,37 @@ def test_public_install_needs_no_writable_source(monkeypatch, tmp_path):
     assert not any(op == "dist_broadcast" for op, _ in registry.TEXT_PATCH_ALLOWLIST)
 
 
+def test_pickle_wire_compatibility_and_size_fallback():
+    disabled = dist_bc._BroadcastPickle(pickle, False)
+    enabled = dist_bc._BroadcastPickle(pickle, True)
+    large = [{"input_ids": [42] * (1 << 20)}]
+    plain = disabled.dumps(large)
+    compressed = enabled.dumps(large)
+    assert plain == pickle.dumps(large)
+    assert compressed.startswith(dist_bc._COMPRESSED)
+    assert len(compressed) < len(plain)
+    assert disabled.loads(compressed) == enabled.loads(plain) == large
+    for payload in (["short"], random.Random(0).randbytes(2 << 20)):
+        assert enabled.dumps(payload) == pickle.dumps(payload)
+
+
+def test_compression_keeps_cached_alias_and_private_pickle():
+    scope = {"np": np, "pickle": pickle}
+    exec(
+        "def broadcast_pyobj(data):\n"
+        "    return np.frombuffer(pickle.dumps(data), dtype=np.uint8)\n",
+        scope,
+    )
+    alias = scope["broadcast_pyobj"]
+    signature = inspect.signature(alias)
+    original_pickle = pickle.dumps([42] * (1 << 20))
+    assert alias([42] * (1 << 20)).tobytes() == original_pickle
+    assert dist_bc._install_function(alias, compress=True) is alias
+    wire = alias([42] * (1 << 20))
+    assert wire.flags.writeable and wire.tobytes().startswith(dist_bc._COMPRESSED)
+    assert scope["pickle"] is pickle and inspect.signature(alias) == signature
+
+
 def _rank_worker(rank, source, rendezvous):
     """Spawned rank: execute the exact community function, not a protocol copy."""
     import datetime
@@ -109,7 +142,7 @@ def _rank_worker(rank, source, rendezvous):
     spec.loader.exec_module(module)
     alias = module.broadcast_pyobj
     signature = inspect.signature(alias)
-    _install_function(alias)
+    _install_function(alias, compress=True)
     assert signature == inspect.signature(alias)
     distributed.init_process_group(
         "gloo", init_method=rendezvous, rank=rank, world_size=2,
@@ -118,7 +151,7 @@ def _rank_worker(rank, source, rendezvous):
     try:
         for src in (0, 1):
             for payload in ([], [{"text": "海光", "bytes": b"\x00\xff", "wave": src}],
-                            [list(range(4097)), None, True]):
+                            [list(range(4097)), None, True], [{"input_ids": [42] * 800000}]):
                 result = alias(payload if rank == src else None, rank, src=src)
                 assert result == payload
     finally:
