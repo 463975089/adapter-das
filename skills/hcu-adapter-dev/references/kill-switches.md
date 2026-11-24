@@ -89,3 +89,8 @@ over `ops.vllm_minimax_prefill: triton`. Changing a selected policy after use is
 refused; restart instead of mixing compiled/cache paths in one engine.
 
 `HCU_DISABLE_OPS=sglang_tree_sampling` 拒绝 target-only 随机树采样调用；该路径没有可用的 FlashInfer 回退，不静默改为贪心。
+
+Core033 HiSparse: `HCU_DISABLE_OPS=vllm_hisparse` refuses the explicit provider
+startup (no Torch/CUDA fallback). Use a fresh process to disable an already loaded
+dispatcher library. See `docs/frameworks/vllm033-hisparse.md`; GPU/Graph and DFly
+are not qualified by source or CPU compilation.

@@ -203,6 +203,8 @@ sglang 符号面，shim 妥协不进契约。
      复用 Core 的压缩和注意力实现。
    - `mhc_mega.py`：校验 DeepGEMM Mega mHC 的绑定和 ABI，管理 packed Fn 与工作区，
      组织厂商算子与现有 BF16 collapse 的交接。
+   - `hisparse.py` / `_hisparse_abi.py`：显式 native 加载、Core033 ABI 校验与 schema 数据，
+     不含张量计算或 import-time 编译；实现/build spec 为 `hisparse_cpp`。
    L0 对 `hcu_adapter/kernels/` 按此清单或档位后缀检查；新增豁免需同步说明职责。
 7. **实现文件档位与配置值分开管理**：`_emu` 是 Torch/仿真实现的文件后缀；
    已发布的后端选择值 `torch` 仍是合法配置值，不是文件命名档位。

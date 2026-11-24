@@ -214,6 +214,16 @@ DTK mapped CPU allocation exposed as a device tensor
 
 路由变量：（auto）
 
+## vllm_hisparse
+
+Explicit Core033 target-only HiSparse native HIP cache ops
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| cpp | candidate Precompiled explicit load only; no i |
+
+路由变量：（auto）
+
 ## vllm_paged_mqa_logits
 
 vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales

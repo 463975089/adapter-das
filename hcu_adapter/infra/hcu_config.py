@@ -226,6 +226,11 @@ BACKEND_CATALOG = {
         "summary": "DTK mapped CPU allocation exposed as a device tensor",
         "backends": {"dtk": {"status": "candidate", "note": "INT8/BF16/FP8 live-ID Graph replay passed on gfx936; caller retains host allocation"}},
     },
+    "vllm_hisparse": {
+        "var": None,
+        "summary": "Explicit Core033 target-only HiSparse native HIP cache ops",
+        "backends": {"cpp": {"status": "candidate", "note": "Precompiled explicit load only; no import-time JIT. Wave-independent metadata, mapped pinned host alias. CPU compile/contracts are not GPU, Graph, DFly or model qualification."}},
+    },
     "vllm_paged_mqa_logits": {
         "var": None,
         "summary": "vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales",

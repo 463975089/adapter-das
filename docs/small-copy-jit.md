@@ -28,7 +28,7 @@ FastJIT 关闭、无 CPU 同步、无模型采样流程改写。
 
 - `HCU_ADAPTER_HOST=none python -m pytest tests/adapter/test_small_copy_jit.py -q`
   验证对象别名、原参数、幂等及非 HCU FastJIT 不受影响。
-- `TRITON_FAST_JIT=1 HCU_ADAPTER_HOST=sglang python -m pytest tests/kernels/test_small_copy_jit.py -q`
+- `TRITON_FAST_JIT=1 HCU_ADAPTER_HOST=sglang python -m pytest tests/kernels/test_small_copy_jit_gpu.py -q`
   在真实 HCU bootstrap 下验证变 batch、变地址、空输入、INT32/INT64
   转换、二维非连续源/目标、目标哨兵与变输入 graph replay，逐元素零容差。
   先核对实际对象仍为 HCU `FastJITFunction`、其 `run` 已绑定标准 JIT，
