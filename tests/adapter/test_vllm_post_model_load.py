@@ -260,6 +260,7 @@ def prepare_wrapper(monkeypatch, cfg, runner, events, callback, *, real_plugins=
     def initialize(self, **kwargs):
         self.vllm_config = kwargs["vllm_config"]
         self.model_runner = runner
+        self.device = torch.device(runner.device)
     monkeypatch.setattr(gpu_worker.Worker, "__init__", initialize)
     monkeypatch.setattr(gpu_worker.Worker, "init_device", lambda self: events.append("init-device"))
     monkeypatch.setattr(gpu_worker.Worker, "_maybe_get_memory_pool_context", lambda *args, **kwargs: nullcontext())
