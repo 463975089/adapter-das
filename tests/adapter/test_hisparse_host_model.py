@@ -13,15 +13,36 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _host_model_namespace(source):
+    namespace = source[source.index('constexpr int kWarpSize'):source.index('int64_t check_2d_rows')]
+    # Keep the pure attention-range helper and device bodies, but exclude
+    # Torch/HIP host validation. Function anchors survive registration-comment
+    # changes and do not replace the native span/alias/device checks with mocks.
+    start = namespace.index('void check_host_query(')
+    end = namespace.index('__device__ __forceinline__ int32_t hash_slot')
+    return namespace[:start] + namespace[end:]
+
+
+def test_host_model_extraction_keeps_pure_helpers_without_host_runtime():
+    source = (ROOT / 'csrc/hisparse/hisparse_cpp.cu').read_text(encoding='utf-8')
+    namespace = _host_model_namespace(source)
+    assert 'bool attention_range_fits(' in namespace
+    for function in ('hash_slot', 'copy_row_warp', 'zero_row_warp',
+                     'hisparse_resolve_residency_kernel',
+                     'hisparse_gather_plan_kernel', 'hisparse_gather_compact_kernel',
+                     'hisparse_invalidate_written_slots_kernel'):
+        assert function + '(' in namespace
+    for host_only in ('at::Tensor', 'TORCH_CHECK', 'hipError_t',
+                      'mapped_host_pointer(', 'void check_host_query('):
+        assert host_only not in namespace
+
+
 def test_native_metadata_and_gathers_on_cpu(tmp_path):
     compiler = shutil.which('c++') or shutil.which('g++') or shutil.which('clang++')
     if compiler is None:
         pytest.skip('host C++ compiler unavailable; not a HIP/device test')
     source = (ROOT / 'csrc/hisparse/hisparse_cpp.cu').read_text(encoding='utf-8')
-    namespace = source[source.index('constexpr int kWarpSize'):source.index('int64_t check_2d_rows')]
-    start = namespace.index('// Always use the device alias')
-    end = namespace.index('__device__ __forceinline__ int32_t hash_slot')
-    namespace = namespace[:start] + namespace[end:]
+    namespace = _host_model_namespace(source)
     harness = r'''
 #include <algorithm>
 #include <cassert>

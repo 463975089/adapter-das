@@ -159,8 +159,20 @@ ext_modules = [] if "--hisparse-only" in sys.argv else [
 
 # Shared native build toolchain, with an explicit small isolation lane.
 # --hisparse-only is a build command option, not a runtime environment switch.
-from hcu_adapter.kernels.hisparse_cpp import extension as hisparse_extension
-hisparse_ext = hisparse_extension(root, libraries=libraries, extra_link_args=extra_link_args)
+def _hisparse_build_module():
+    # An installed sitecustomize may have cached an older hcu_adapter package.
+    # Like _pin_module(), bind build metadata to this checkout, not that cache.
+    import importlib.util
+
+    path = root / "hcu_adapter" / "kernels" / "hisparse_cpp.py"
+    spec = importlib.util.spec_from_file_location("_das_hisparse_build", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+hisparse_ext = _hisparse_build_module().extension(
+    root, libraries=libraries, extra_link_args=extra_link_args)
 if "--hisparse-only" in sys.argv:
     sys.argv.remove("--hisparse-only")
     ext_modules = [hisparse_ext]

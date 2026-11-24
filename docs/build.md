@@ -41,6 +41,14 @@ dist/hcu_adapter-0.5.22+dtk2610.torch2130.<YYMMDDHHMM>.g<commit6>-py3-none-any.w
 Requires-Dist: sgl-kernel ==0.0.0+dtk2610.torch2130.<同戳>
 ```
 
+HiSparse 构建 helper 必须按当前 checkout 的文件路径加载，不能经已缓存的
+`hcu_adapter` 包名导入：旧安装的 `sitecustomize` 即使在 HOSTnone 下也可能
+预先缓存旧包；只把 checkout 放到 `sys.path` 首位不能改变该包的 `__path__`。
+`setup_hip.py` 与版本 pin 一样从自身目录确定 helper；缺失文件直接失败，
+不回退到旧安装、不清空或重绑全局包缓存。离线回归覆盖 all-ops 与
+`--hisparse-only`、旧包/旧 helper 缓存及缺失 checkout helper；build API doubles
+只证明构建入口的来源与参数，不能替代真实 HIP 编译或配套 wheel 验证。
+
 ## 3. 版本与戳规则
 
 | 项 | 来源 | main 当前值 |
