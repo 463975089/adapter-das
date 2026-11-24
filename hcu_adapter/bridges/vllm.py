@@ -587,8 +587,6 @@ def hcu_runtime_plugin() -> None:
         from hcu_adapter.bridges.vllm_sparse_flashmla import install as install_sparse_flashmla
 
         install_sparse_flashmla()
-        from hcu_adapter.features.hy4.pcp_profile import install as install_hy4_profile
-        install_hy4_profile()
         from hcu_adapter.bridges.vllm_flashmla import install as install_flashmla_prefill
 
         install_flashmla_prefill()

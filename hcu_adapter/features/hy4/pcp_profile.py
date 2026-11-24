@@ -12,9 +12,11 @@ _runner_cls = None
 
 
 def matches(cfg):
+    model = getattr(cfg, 'model_config', None)
+    if getattr(getattr(model, 'hf_config', None), 'model_type', None) != 'hy_v4':
+        return False
     p = cfg.parallel_config
-    return (getattr(cfg.model_config.hf_config, 'model_type', None) == 'hy_v4'
-        and cfg.use_v2_model_runner and cfg.model_config.enforce_eager
+    return (cfg.use_v2_model_runner and model.enforce_eager
         and p.prefill_context_parallel_size > 1
         and p.decode_context_parallel_size == 1 and p.tensor_parallel_size == 1)
 
