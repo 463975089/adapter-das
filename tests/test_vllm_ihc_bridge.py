@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Provider ABI and BF16 storage boundaries; no GPU or real vendor numerics."""
 import importlib.util
+import importlib
 import os
 from pathlib import Path
 import sys
@@ -9,8 +10,10 @@ import torch
 
 
 def bridge():
-    path=Path(os.environ.get('HCU_IHC_BRIDGE_SOURCE',
-        Path(__file__).resolve().parents[1]/'hcu_adapter/bridges/vllm_ihc.py'))
+    explicit=os.environ.get('HCU_IHC_BRIDGE_SOURCE')
+    if explicit is None:
+        return importlib.import_module('hcu_adapter.bridges.vllm_ihc')
+    path=Path(explicit)
     spec=importlib.util.spec_from_file_location('ihc_bridge_candidate',path)
     module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
     return module
