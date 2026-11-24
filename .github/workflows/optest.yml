@@ -1,0 +1,130 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2026 Hygon Information Technology Co., Ltd.
+
+name: Optest
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: '待测 SGLang sf_b075 镜像的完整引用（可信 Harbor，带时间戳）'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-image:
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.validate.outputs.image }}
+      pypi_index: ${{ steps.validate.outputs.pypi_index }}
+      pypi_trusted_host: ${{ steps.validate.outputs.pypi_trusted_host }}
+    steps:
+      - name: Validate SGLang image and package index
+        id: validate
+        shell: bash
+        env:
+          REQUESTED_IMAGE: ${{ inputs.image }}
+          PYPI_URL: ${{ vars.PYPI_URL }}
+        run: |
+          allowed='^10[.]16[.]1[.]152:5000/hcu/base_env/sglang:[A-Za-z0-9][A-Za-z0-9_.-]*-sf_b075-[0-9]{8}-[0-9]{4}$'
+          if [[ ! "$REQUESTED_IMAGE" =~ $allowed ]]; then
+            echo "::error::Expected a timestamped SGLang sf_b075 image from 10.16.1.152:5000/hcu/base_env/sglang"
+            exit 1
+          fi
+          pypi_base="${PYPI_URL%/}"
+          pypi_pattern='^(https?)://([a-zA-Z0-9.-]+)(:[0-9]+)?(/[^?#[:space:]]*)?$'
+          if [[ ! "$pypi_base" =~ $pypi_pattern ]]; then
+            echo "::error::PYPI_URL must be the base URL of the configured HTTP or HTTPS package index"
+            exit 1
+          fi
+          printf 'image=%s\npypi_index=%s/nightly/dtk2604/+simple/\n' \
+            "$REQUESTED_IMAGE" "$pypi_base" >> "$GITHUB_OUTPUT"
+          if [[ "${BASH_REMATCH[1]}" == http ]]; then
+            printf 'pypi_trusted_host=%s\n' "${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          fi
+
+  optest:
+    needs: validate-image
+    runs-on: hygon-bw1100-4card
+    timeout-minutes: 360
+    container:
+      image: ${{ needs.validate-image.outputs.image }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install optest and CInotificate
+        env:
+          PYPI_INDEX_URL: ${{ needs.validate-image.outputs.pypi_index }}
+          PYPI_TRUSTED_HOST: ${{ needs.validate-image.outputs.pypi_trusted_host }}
+          PIP_CONFIG_FILE: /dev/null
+        run: |
+          pip_args=(--index-url "$PYPI_INDEX_URL")
+          if [[ -n "$PYPI_TRUSTED_HOST" ]]; then
+            pip_args+=(--trusted-host "$PYPI_TRUSTED_HOST")
+          fi
+          python3 -m pip --isolated install optest CInotificate "${pip_args[@]}"
+
+      - name: Run operator tests
+        id: tests
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: optest --op_name all --test_mode all
+
+      - name: Publish operator test results
+        id: publish
+        if: ${{ !cancelled() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure') }}
+        env:
+          IMAGE_TAG: ${{ needs.validate-image.outputs.image }}
+          OPTEST_OUTCOME: ${{ steps.tests.outcome }}
+          TZ: Asia/Shanghai
+        run: |
+          shared_dir=/public/ci_resources
+          mount_target="$(findmnt -n -o TARGET --target "$shared_dir")"
+          case "$mount_target" in
+            /public|/public/*) ;;
+            *)
+              echo "::error::$shared_dir is not on a /public mount"
+              exit 1
+              ;;
+          esac
+
+          optest --json || echo "::warning::Optest JSON export failed"
+          output_root="$shared_dir/op_test_output"
+          day="$(date '+%Y-%m-%d')"
+          output_dir="$output_root/daily-$day-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p -- "$output_root"
+          staging="$(mktemp -d "$shared_dir/.optest.XXXXXX")"
+          trap 'rm -rf -- "$staging"' EXIT
+          mkdir -- "$staging/daily"
+          if [ -d /op_test_output ]; then
+            cp -R -- /op_test_output/. "$staging/daily/"
+          fi
+
+          # 同一共享盘上的并发发布按顺序更新 daily 目录和入口页。
+          exec 9>"$shared_dir/.optest-publish.lock"
+          flock 9
+          python3 ci/publish_optest.py "$staging" "$output_dir"
+
+      - name: Record operator report in DashHub
+        if: ${{ !cancelled() && steps.publish.outcome == 'success' }}
+        env:
+          IMAGE_TAG: ${{ needs.validate-image.outputs.image }}
+          REPORT_URL: ${{ steps.publish.outputs.report_path }}
+          OPERATOR_RESULT: ${{ steps.publish.outputs.result_path }}
+          OPERATOR_STATUS: ${{ steps.publish.outputs.test_status }}
+        run: |
+          report_stamp="$(TZ=Asia/Shanghai date '+%Y-%m%d-%H%M')"
+          CInotificate --notificate_type op_daily_display --record \
+            --ci_accelerators BW1100 \
+            --operator_result "$OPERATOR_RESULT" --operator_test_status "$OPERATOR_STATUS" \
+            --report_url "$REPORT_URL" --report_name "SGLang 超节点${report_stamp}算子测试"

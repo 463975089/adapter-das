@@ -78,6 +78,9 @@ sys.modules.update({'torch': torch, 'torch.utils': utils,
 setuptools = types.ModuleType('setuptools')
 setup_calls = []
 setuptools.setup = lambda **kwargs: setup_calls.append(kwargs)
+def cpu_extension(name, **kwargs):
+    return extension(name=name, **kwargs)
+setuptools.Extension = cpu_extension
 sys.modules['setuptools'] = setuptools
 sys.argv = [str(root / 'setup_hip.py')]
 if mode == 'isolated':
@@ -91,7 +94,7 @@ else:
     assert len(setup_calls) == 1
     setup = setup_calls[0]
     expected = (['sgl_kernel.hisparse_ops'] if mode == 'isolated' else
-                ['sgl_kernel.native_ops', 'sgl_kernel.hisparse_ops'])
+                ['sgl_kernel.cpu_metadata', 'sgl_kernel.native_ops', 'sgl_kernel.hisparse_ops'])
     assert [v['name'] for v in setup['ext_modules']] == expected
     assert [v['name'] for v in calls] == expected
     hisparse = setup['ext_modules'][-1]

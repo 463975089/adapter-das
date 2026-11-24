@@ -33,9 +33,13 @@ def _stub_runtime_owners(monkeypatch, calls=None, *, preserve=()):
     for name, action, label in (
         ('vllm_fp8', 'install', 'fp8'),
         ('vllm_scaled_mm', 'install', 'scaled-mm'),
+        ('vllm_input_quant_lightop', 'install', 'input-fp8'),
+        ('vllm_input_quant_int8_lightop', 'install', 'input-int8'),
         ('vllm_allreduce', 'prepare_runtime', 'allreduce'),
         ('vllm_mhc', 'install', 'mhc'),
         ('vllm_sparse_indexer', 'install', 'indexer'),
+        ('vllm_sparse_flashmla', 'install', 'sparse-flashmla'),
+        ('pcp_profile', 'install', 'hy4-profile'),
         ('vllm_flashmla', 'install', 'prefill'),
         ('vllm_flashmla_decode', 'install', 'decode'),
         ('vllm_pcp', 'install', 'pcp'),
@@ -43,7 +47,9 @@ def _stub_runtime_owners(monkeypatch, calls=None, *, preserve=()):
     ):
         if name in preserve:
             continue
-        owner = import_module('hcu_adapter.bridges.' + name)
+        module = ('hcu_adapter.features.hy4.pcp_profile' if name == 'pcp_profile'
+                  else 'hcu_adapter.bridges.' + name)
+        owner = import_module(module)
         monkeypatch.setattr(owner, action, lambda label=label: calls.append(label) if calls is not None else None)
         if hasattr(owner, 'require_healthy'):
             monkeypatch.setattr(owner, 'require_healthy', lambda: None)
@@ -267,8 +273,9 @@ def test_platform_plugin_gates_once_and_returns_the_lazy_class_path(monkeypatch)
 
 
 @pytest.mark.parametrize("arch", ("gfx936", "gfx938"))
+@pytest.mark.parametrize("version", ("0.32.0+rocm723", "0.33.0"))
 def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
-    monkeypatch, arch,
+    monkeypatch, arch, version,
 ):
     calls = []
     report = ExtensionReport(
@@ -286,7 +293,7 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
     monkeypatch.setattr(
         bridge,
         "_ensure_vllm_compatible",
-        lambda: (calls.append("version"), "0.32.0+rocm723")[1],
+        lambda: (calls.append("version"), version)[1],
     )
     monkeypatch.setattr(
         bridge,
@@ -326,9 +333,11 @@ def test_runtime_plugin_runs_guards_then_extensions_once_and_keeps_reports(
         "dtk",
         "runtime-abi",
         "fp8",
-        "scaled-mm", "allreduce", "mhc", "indexer", "prefill", "decode", "pcp", "minimax-abi",
+        "scaled-mm",
+        *(["input-fp8", "input-int8"] if version == "0.33.0" else []),
+        "allreduce", "mhc", "indexer", "sparse-flashmla", "prefill", "decode", "pcp", "minimax-abi",
         "adapter-version",
-        ("extensions", "0.1.0", "0.32.0+rocm723"),
+        ("extensions", "0.1.0", version),
     ]
     assert bridge.extension_reports() == (report,)
 
@@ -421,6 +430,7 @@ def test_hcu_platform_defaults_to_triton_and_routes_flash_to_plugin(
     registry = ModuleType("vllm.v1.attention.backends.registry")
     registry.AttentionBackendEnum = SimpleNamespace(
         FLASH_ATTN="FLASH_ATTN",
+        FLASHMLA_SPARSE="FLASHMLA_SPARSE",
         TRITON_ATTN="TRITON_ATTN",
     )
     for name, module in {
@@ -525,6 +535,7 @@ def test_hcu_platform_rejects_invalid_flash_plugin_configuration(monkeypatch):
     registry = ModuleType("vllm.v1.attention.backends.registry")
     registry.AttentionBackendEnum = SimpleNamespace(
         FLASH_ATTN="FLASH_ATTN",
+        FLASHMLA_SPARSE="FLASHMLA_SPARSE",
         TRITON_ATTN="TRITON_ATTN",
     )
     for name, module in {

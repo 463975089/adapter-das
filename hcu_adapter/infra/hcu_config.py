@@ -77,6 +77,20 @@ BACKEND_CATALOG = {
             },
         },
     },
+    "vllm_hy4_pcp_profile": {
+        "var": None,
+        "summary": "Core HY4 MRV2 rank-local PCP memory profile bound",
+        "backends": {
+            "native": {"status": "candidate", "note": "Eager TP1/PCP>1/DCP1 only; keeps scheduler/runtime budgets; model/performance qualification pending"},
+        },
+    },
+    "vllm_hy4_sparse_indexer": {
+        "var": None,
+        "summary": "Core HY4 PCP FP8 indexer with bounded native scoring ABI glue",
+        "backends": {
+            "native": {"status": "candidate", "note": "Core PCP/cache/top-k; gfx938 LightOp FP8 prefill with AITER fallback and native NORMAL paged decode; model/performance qualification pending"},
+        },
+    },
     "vllm_inverse_rope": {
         "var": None,
         "summary": "Plugin HCU inverse GPT-J RoPE on V41 PCP BF16 attention output",
@@ -96,6 +110,13 @@ BACKEND_CATALOG = {
                         "Registration/dispatch contracts covered; model qualification "
                         "and hardware-specific graph support remain separate.",
             },
+        },
+    },
+    "vllm_sparse_flashmla": {
+        "var": None,
+        "summary": "Core D576 sparse FlashMLA with DTK vendor ABI and attention sinks",
+        "backends": {
+            "native": {"status": "candidate", "note": "Explicit FLASHMLA_SPARSE; native metadata/PCP/cache; eager HY4 PCP bounds Q/output workspace locally while keeping global KV gather capacity; DCP excluded; whole-model qualification pending"},
         },
     },
     "vllm_flashmla_decode": {

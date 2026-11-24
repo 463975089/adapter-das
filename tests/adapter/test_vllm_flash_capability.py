@@ -37,7 +37,9 @@ def platform(monkeypatch):
     rocm = ModuleType("vllm.platforms.rocm")
     rocm.RocmPlatform = RocmPlatform
     registry = ModuleType("vllm.v1.attention.backends.registry")
-    registry.AttentionBackendEnum = SimpleNamespace(FLASH_ATTN="FLASH", TRITON_ATTN="TRITON")
+    registry.AttentionBackendEnum = SimpleNamespace(
+        FLASH_ATTN="FLASH", TRITON_ATTN="TRITON", FLASHMLA_SPARSE="SPARSE",
+    )
     monkeypatch.setitem(sys.modules, rocm.__name__, rocm)
     monkeypatch.setitem(sys.modules, registry.__name__, registry)
     monkeypatch.delitem(bridge.__dict__, "HcuPlatform", raising=False)

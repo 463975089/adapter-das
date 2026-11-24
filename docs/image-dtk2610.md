@@ -86,7 +86,7 @@ torchvision 0.26.0 / triton 3.6.0（2026-11-05 实测，均随栈迁移，勿 pi
 第一批：**服务框架与调度**
 
 ```bash
-pip install "aiohttp" "fastapi" "uvicorn>=0.51" "uvloop" "watchfiles" \
+pip install "aiohttp" "fastapi" "uvicorn>=0.51" "sglang-router" "uvloop" "watchfiles" \
   "pyzmq>=25.1.2" "orjson" "msgspec" "setproctitle" "psutil" \
   "prometheus-client>=0.20.0" "packaging"
 ```

@@ -13,13 +13,8 @@ on:
   push:
     branches:
       - main
+  # 手动触发构建当前所选分支，不提供 ref 输入（无法手动指定）
   workflow_dispatch:
-    inputs:
-      ref:
-        description: '要构建的 Git ref/branch/tag/SHA，默认当前分支 HEAD'
-        required: false
-        default: ''
-        type: string
 
 permissions:
   contents: read
@@ -54,8 +49,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
 
       # 基础镜像带 DTK 工具链，python 侧只补 torch（必须来自 nightly 归档，
       # 裸 PyPI 会拉到同名 CUDA 构建）；ninja/wheel 等编译依赖缺失时由

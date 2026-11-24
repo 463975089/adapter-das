@@ -74,13 +74,14 @@ def test_auto_resolves_once_after_provider_health(model_type, caplog):
     assert sum("auto -> mxfp4" in record.message for record in caplog.records) == 1
 
 
-@pytest.mark.parametrize("field,error", [
-    ("tensor_parallel_size", "tensor_parallel_size=1 required"),
-    ("data_parallel_size", "DP1 or DP8 required"),
+@pytest.mark.parametrize("field,value,error", [
+    ("tensor_parallel_size", 2, "tensor_parallel_size=1 required"),
+    ("data_parallel_size", 0, "data_parallel_size must be a positive integer"),
+    ("data_parallel_size", True, "data_parallel_size must be a positive integer"),
 ])
-def test_unsupported_parallelism_keeps_auto_and_rejects_explicit_mxfp4(field, error):
+def test_unsupported_parallelism_keeps_auto_and_rejects_explicit_mxfp4(field, value, error):
     cfg = config()
-    setattr(cfg.parallel_config, field, 2)
+    setattr(cfg.parallel_config, field, value)
     bridge._configure_indexer_kv_dtype(cfg)
     assert cfg.attention_config.indexer_kv_dtype == "auto"
 
@@ -89,6 +90,16 @@ def test_unsupported_parallelism_keeps_auto_and_rejects_explicit_mxfp4(field, er
     assert cfg.attention_config.indexer_kv_dtype == "mxfp4"
     with pytest.raises(ValueError, match=error):
         fp4_indexer.validate_config(cfg)
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 4, 8, 16])
+def test_replica_count_does_not_change_fp4_page_abi(width):
+    cfg = config()
+    expected = fp4_indexer.validate_config(cfg)
+    cfg.parallel_config.data_parallel_size = width
+    bridge._configure_indexer_kv_dtype(cfg)
+    assert cfg.attention_config.indexer_kv_dtype == "mxfp4"
+    assert fp4_indexer.validate_config(cfg) == expected
 
 
 @pytest.mark.parametrize("kv_transfer", [False, True])
