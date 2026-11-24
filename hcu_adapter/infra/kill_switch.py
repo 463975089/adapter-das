@@ -33,6 +33,7 @@ LOG = logging.getLogger("hcu.adapter")
 
 # canonical name -> (what gets blocked, opt-in env that re-enables it)
 SWITCHES = {
+    "hy4_mooncake_grouping_reuse": ("Plugin invocation-local Mooncake grouping; native builder fallback", None),
     "hy4_prefill_workspace": ("Plugin PCP KV workspace coalescing; startup-only native builder fallback", None),
 
     "vllm_paged_mqa_logits": ("Explicit non-MX vLLM/plugin paged MQA provider; startup refusal", None),
