@@ -122,31 +122,33 @@ def validate_config(cfg, *, block_size=None):
         if getattr(p, name) != 1:
             errors.append(name + '=1 required')
     pcp = p.prefill_context_parallel_size
-    if pcp not in (1, 8):
-        errors.append('PCP1 or constrained PCP8 required')
-    if pcp == 8:
+    if pcp not in (1, 4, 8):
+        errors.append('PCP1 or constrained PCP4/PCP8 required')
+    if pcp in (4, 8):
         from hcu_adapter.kernels.pcp_fork import selected_mode
         if selected_mode() != 'native':
-            errors.append('FP4 PCP8 requires HCU_VLLM_PCP_IMPL=native')
+            errors.append(f'FP4 PCP{pcp} requires HCU_VLLM_PCP_IMPL=native')
         if cfg.kv_transfer_config is not None:
             from hcu_adapter.kernels.pcp_fork import validate_kv_transfer_config, PcpAttentionError
             try:
                 validate_kv_transfer_config(cfg)
             except (ValueError, PcpAttentionError) as error:
-                errors.append('FP4 PCP8 KV transfer is not admitted: ' + str(error))
+                errors.append(f'FP4 PCP{pcp} KV transfer is not admitted: {error}')
         if p.data_parallel_size != 1 or not cfg.model_config.enforce_eager:
-            errors.append('FP4 PCP8 requires eager DP1')
+            errors.append(f'FP4 PCP{pcp} requires eager DP1')
         if (not getattr(p, 'enable_expert_parallel', False)
                 or getattr(p, 'all2all_backend', None) != 'deepep_high_throughput'):
-            errors.append('FP4 PCP8 requires EP with DeepEP high throughput')
+            errors.append(f'FP4 PCP{pcp} requires EP with DeepEP high throughput')
         if cfg.speculative_config is not None:
             # pcp_dspark lives in hcu_adapter/kernels/, not under features/;
             # the relative form pointed at the pre-layout root and broke
             # after the features/dsv41 move (relative-import gate caught it).
             from hcu_adapter.kernels.pcp_dspark import validate_dspark_config
             validate_dspark_config(cfg)
-    if p.data_parallel_size not in (1, 8):
-        errors.append('DP1 or DP8 required')
+    # Each DP rank owns an independent indexer cache. Its page ABI does not
+    # depend on the number of replicas; expert sharding is checked by MoE.
+    if type(p.data_parallel_size) is not int or p.data_parallel_size <= 0:
+        errors.append('data_parallel_size must be a positive integer')
     if p.enable_dbo or p.enable_eplb:
         errors.append('DBO/EPLB unsupported')
     # LoRA stays rejected. PCP1 PD/KV-transfer is admitted here: the FP4
