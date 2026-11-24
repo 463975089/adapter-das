@@ -58,7 +58,7 @@ MiniMax prefill 优化使用正式配置 `ops.vllm_minimax_prefill`：准入模�
 | `HCU_VLLM_FP4_INDEXER_IMPL` | **lightop** | candidate 默认启用。HCU V4.1 的 `indexer_kv_dtype=auto` 在部署通过 FP4 准入且配套 Indexer 和 Triton packer Plugin 均激活且健康时，解析为 `mxfp4`。超出准入范围的部署保留 auto 的既有 FP8 默认，显式 `mxfp4` 仍需通过准入 | 配置 `ops.vllm_fp4_indexer: lightop`。要求 lowering=triton。执行支持 eager MRV2 或 PIECEWISE breakable Graph，full cudagraph 拒绝。逻辑64记录页，ratio2 物理32记录由 decode staging 转64，混合ratio1/2可准入。`stock` 或快关 `HCU_DISABLE_OPS=vllm_fp4_indexer` 在新进程保留 auto 的既有 FP8 默认。关闭 packer 或配套 Plugin 缺失时也保留 auto。与C4 native owner冲突时拒绝。CPU链路证据不等于native/model通过。 |
 | `HCU_VLLM_FP4_PACKER_IMPL` | **triton** | —（candidate，默认启用；显式 `stock` 回退） | 正式配置 `ops.vllm_fp4_packer: triton`，调试值 stock/triton。实现由独立 Plugin 的 `das_hcu_fp4_packer` 提供，默认不换绑；只覆盖真实 gfx938/vLLM 0.33。`HCU_DISABLE_OPS=vllm_fp4_packer` 启动时优先保留原绑定；策略变化必须新进程，不能热撤销 JIT/Graph。CPU/mock 通过不代表 native、Graph 或 FP4 模型已通过，详见 Plugin 的 `adapter_extension/README.md`。 |
 | `HCU_VLLM_DSV41_CHANNEL_FP8_IMPL` | **native** | —（candidate，默认注册） | vLLM 0.33 V4.1 channel-wise FP8：`native` 经公开 `register_quantization_config` 注册 `hcu_dsv41_channel_fp8`（channel 权重 + dynamic token 激活），不替换 FP8/CT/oracle owner；`stock` 显式回退。快关 `HCU_DISABLE_OPS=vllm_dsv41_channel_fp8` 优先；启动策略变更须新进程。Channel-FP8 MoE、Engram/EDP guard 与 DSpark draft 注册仍属插件私有，经注入 seam 提供；checkpoint 加载/GPU/模型门禁未闭环。 |
-| `HCU_VLLM_CT_W4A8_IMPL` | **native** | —（candidate，默认注册） | vLLM 0.33 V4.1 compressed-tensors W4A8：`native` 经公开 quantization API 注册 `hcu_dsv41_ct_w4a8`，原生 CT 仍是 owner；`stock` 显式回退。快关 `HCU_DISABLE_OPS=vllm_ct_w4a8` 优先，启动策略变更须新进程。CT W4A8 config 类、HIPC nibble/scale 表示与 HCU MoE/DeepGEMM 执行仍属插件私有，经注入 seam 提供。 |
+| `HCU_VLLM_CT_W4A8_IMPL` | **native** | —（candidate，默认注册） | vLLM 0.33 compressed-tensors W4A8：`native` 经公开 quantization API 注册 `hcu_dsv41_ct_w4a8`，并接收插件注入的独立 `hcu_` 配置，原生 CT 仍是 owner；`stock` 显式回退。快关 `HCU_DISABLE_OPS=vllm_ct_w4a8` 优先，启动策略变更须新进程。CT W4A8 config 类、HIPC nibble/scale 表示与 HCU MoE/DeepGEMM 执行仍属插件私有，经注入 seam 提供。 |
 | `HCU_VLLM_PCP_IMPL` | stock | —（candidate，默认不注册） | vLLM 0.33 V4.1 PCP attention 归属：`native` 时 adapter 侧的 `kernels/pcp_fork.py` 提供 PCP backend/indexer/attention，插件只保留模型发布并经 `set_indexer_reference` 注入 FP8 打分器；`stock` 不建任何类。正式配置 `ops.vllm_pcp: native`；快关 `HCU_DISABLE_OPS=vllm_pcp` 优先，启动后改策略须新进程。仅 eager PCP2+，真机/Graph/精度门禁未闭环。 |
 | `HCU_VLLM_PCP_ROPE_IMPL` | auto | gfx938 原生 V4.1 eager PCP | 未指定时，两种 RoPE 算子在适用路径默认用 HCU；旧配置文件可以按算子选择。显式 `hcu` 或 `stock` 同时指定两个实现，且不绕过设备和 PCP 门禁。可用 `HCU_DISABLE_OPS=vllm_inverse_rope,vllm_pcp_q_rope` 分别回退；改动需重新起服。 |
 | `HCU_VLLM_SPARSE_INDEXER_IMPL` | stock | —（candidate，默认不注册） | vLLM 0.33/gfx936 C4 indexer：native 经公开 OOT 调用官方 logits/top-k；query/weights 同步打包，长度取官方 host metadata，无 GPU 长度读回。正式配置为 `ops.vllm_sparse_indexer: native`；快关 `HCU_DISABLE_OPS=vllm_sparse_indexer` 优先。启动后改变策略须新进程；模型/安装态门禁未闭环，见 [C4 接缝](frameworks/vllm033-sparse-indexer.md)。 |
@@ -100,6 +100,7 @@ MiniMax prefill 优化使用正式配置 `ops.vllm_minimax_prefill`：准入模�
 | `AITER_AR_SMALL_MESSAGE` | off | vLLM AR candidate only | 现有 provider off/ll/ll128/auto；不是新算法实现。仅默认/显式 env；config-only 非默认值尚不支持。 |
 
 | `HCU_SPEC_LOC_SAFE` | **1（默认）** | 化 | spec-decode KV 位置安全路由：把 sglang `mem_cache/allocation.get_last_loc` 重绑纯 torch 变体——stock 在 is_cuda 平台语义下走 `get_last_loc_triton`（树内注释自证 HIP 混合位宽误编译，EAGLE+page_size>1 产生越界 last_loc）。2026-10-17 实测：GLM-5.3 MTP 下能让 Berlin 转逐次确定，但**不治本**（accept 仍 0.02、输出仍错——结构性缺口在 das 的 srt spec 补丁族，见 plugins.md P1）。=0 还原 stock 分发 |
+| `HCU_DIST_BROADCAST_COMPRESS` | 0 | SGLang 大对象广播 | `=1` 对至少 1 MiB 的 pickle 载荷尝试 zlib level 1，仅在帧更小时采用。全部参与 rank 须部署支持解压的适配层。修改开关后统一重启。 |
 | `HCU_SPEC_H2D_PIN` | **1（默认）** | 化 | spec-decode KV-lens 使用 Torch 管理的 pinned CPU 分配与异步 H2D；私有函数运行时桥保留已有别名，不改写 `eagle_utils.py`。不再使用固定深度 ring；pin 分配不可用时记录告警并回退社区 pageable 行为。=0 关闭安装 |
 | `HCU_MOE_STABLE_TOPK` | **1（默认）** | 正确性 | HIP 原生 grouped-TopK 按分数排序后执行社区归一化，避免相同专家集合的槽位排列变化影响 MoE 累加；仅改变已核对的 GPU 私有函数副本两处 sorted 参数常量，保留编译入口、已有别名和原指令，不写社区源码。CPU 与其他路由内核不变；=0 在新进程中关闭安装。平局 ID/顺序仍遵守社区未指定的 TopK 契约；重复一致性不代表整模型 FP32 精度门禁通过 |
 | `HCU_MQA_LOGITS_IMPL` | **auto（auto=triton，2026-10-18 R-13 #4 晋级）** | 化 | DSA indexer paged-MQA 实现档：auto 落到 **triton**（lightop 门禁未过=catalog planned，仅显式 `=lightop` 可 A/B，auto 不选）；**triton**=自研 triton 档（`mqa_logits_triton.py`）——**production 默认**：臂随 `HCU_DSA_PRESHUFFLE` 同一开关（默认交错=生产布局）；fp8-e4m3fn 位级解码+fp32 累加+页程序早退（64K 窗口下 ctx 外页两次标量载即返）；对金标准**精确**（rel=0.0、topk 全对，SetKAndS 交错/行主序/fused_store 三 writer 臂）、解码形状 N=8/窗口 64K **13.2× 快于 emu-vec**（0.19 vs 2.52ms）；R-02 validated → serving A/B（四门绿+马拉松 0/20+长文对，解码 +9% 短/+4% 长）→ 2026-10-18 R-13 #4 晋级翻默认；哨兵 tests/kernels/test_mqa_triton_gfx938.py（含修复后 emu 交叉验证）；**vec（=显式 opt-out）**=全窗口单遍双 bmm（gather→`sT=kg@qᵀ`→`row=sT@wᵀ`→×sc→mask；H 收缩在 GEMM fp32 累加器内完成，**大操作数永不转置、(N,H,T) 永不 fp32 物化**——两者在 DTK 图 replay 下各有 ~124ms/核崖（eager/standalone 小图无恙；loop 按 2048 tile 走小张量快路径故无恙）；N≤`HCU_MQA_VEC_MAXROWS`(32) 才走，prefill 大 N 自动回落 loop）；**loop**=(64,2048) 双层 tile 循环参考实现（曾占 decode 图节点 23.9k 的 72%，=loop 可回归对照）。战果（2026-10-17）：图节点 -84%、hipGraphLaunch API p50 540→21.6ms、单流 2.3→3.50 tok/s。**2026-10-18 R-02：vec/loop 池解包修正为页级+交错感知**——writer 普查（writer census）：GLM-5.3 走 IndexerKPool（kpool=4，独立类、不走 base store/fused_store），池由 kpool 写族（`kpool_softmax_rotate_write_cache` 等，stock triton gfx938 div-4 bug→`kpool_write_emu`）+SetKAndS 在 adapter 强制的 preshuffle 门下写入=**16-tile 交错 k+页尾 fp32 scale**；prefill gather（`_kpool_cache_k_offsets`）同序读**一致无辜**；旧行级 132 字节分裂使 k 每 slot 错位+scale 读到 k 字节——**生产解码 DSA top-k 一直确定性错误**（真实 writer 池对拍 rel=nan；锚点对 topk 不敏感未暴露）；`HCU_DSA_PRESHUFFLE=0` 切行主序臂（=kpool=1/fused_store 世界；PS=1 字节不变））；**vendor**（R-02 终裁取证档）=deepgemm 轮 `paged_mqa_logits` 直调（mqa_vendor.py 桥）：布局=行主序 k+页尾 64×fp32 scale=**kpool=1 世界同构**（kpool 模型需池重排）；**轮子 bug 定罪——q/k 负值 fp8 字节被钳为 0**（logits=Σw·max(q,0)·max(k,0)·s 四位小数拟合，真实数据 rel~3 垃圾），待 DTK 修复（deepgemm 2.1.0+dtk2604）；catalog 档 broken 选配即拒；双事实哨兵 tests/kernels/test_mqa_vendor_gfx938.py（正数据精确+带符号失配两钉） |
@@ -317,3 +318,18 @@ on the validated gfx936 path materializes `0` before workers spawn; an already
 cached conflicting value is refused. This keeps valid expert IDs for padded
 Graph rows without changing the selected graph mode. See
 [vLLM AITER candidate](frameworks/vllm033-aiter-moe.md) for admission limits.
+
+## HYV4 旧 topk 名称兼容（2026-11-18）
+
+SGLANG_NSA_FUSE_TOPK 由 plugin 兼容到 SGLANG_DSA_FUSE_TOPK。
+adapter 模型默认值可能在 plugin 注册前应用，因此在 DSA 默认值入口
+优先采用用户的旧名显式值。两个名字同时设置时 canonical 值优先，
+无用户值时仍使用已有 HCU 模型默认值。Ninja helper 的启动跳过逻辑
+保持原有独立处理。
+
+### Explicit vLLM/plugin paged MQA candidate
+
+`HCU_DISABLE_OPS=vllm_paged_mqa_logits` refuses the non-MX FP8 page64
+provider at model construction in a fresh process. No CUDA/native fallback
+is implied. Existing aliases and captured graphs are not hot-reconfigured.
+See `docs/frameworks/vllm033-paged-mqa.md`; no new environment variable is added.

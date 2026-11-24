@@ -72,6 +72,68 @@ DSV41 整模型或性能验收完成。该后端不处理 CT W4A8 MoE 的 INT4 p
 
 ## 验证
 
+### HY4 W4A8 注册边界
+
+`features/ct_w4a8/ct_w4a8_registration.py` 的
+`set_additional_config_provider(name, factory)` 允许插件在现有 CT 事务中注入
+独立 `hcu_` 配置；保持 `compressed-tensors`、FP8 等官方 owner 和既有
+`hcu_dsv41_ct_w4a8` 名称。Adapter 不包含 HY4 模型判断、量化格式、HIPC
+转换或 MoE 执行代码。这些实现由 vllm-plugin-das 的对应 provider 提供。
+
+factory 在框架激活时才调用。所有额外名称在第一处公开注册前检查冲突，
+注册开始后失败继续沿用既有 commit-fatal 处理。重复同一 factory 幂等；
+禁止更换 owner 或发布后新增 provider。健康检查包含额外配置的公开 selector
+和 factory 归属，沿用 `HCU_VLLM_CT_W4A8_IMPL` 与现有快关，不新增配置开关。
+
+本次 CPU 检查为 108 passed、23 skipped（4 项 fork，19 项需要真实 vLLM host）；
+覆盖 CT 原有及新增注册、公开扩展与共享 lifecycle、双宿主 bootstrap。
+框架/provider 由显式 doubles 隔离，不代表 HY4 加载、kernel、PCP/R16、
+HumanEval 或性能已验证。Plugin 的统一迁移候选为
+[vllm-plugin-das#490](https://github.com/HYGON-AI/vllm-plugin-das/pull/490)。
+另行尝试的启动契约套件为 24 passed、10 failed：缺少 Torch/vLLM，未计入上述通过项。
+
+### D576 sparse FlashMLA 与 HY4 sink
+
+`--attention-backend FLASHMLA_SPARSE` 使用 Adapter 注册的 DTK provider。
+仅在实际 gfx936/gfx938、vLLM 0.33 和兼容 `flash-mla` ABI 存在时注册；
+普通自动后端优先级不变。`HCU_DISABLE_OPS=vllm_sparse_flashmla` 在新进程中
+跳过注册，显式选择但不可用会在平台选择时拒绝。发布后 owner、provider 或
+快关变化会锁存失败，不能恢复后继续使用旧执行路径。
+
+复用 Core `HYV4FlashMLASparseImpl` 的 sink、padding、forward 与 cache 路径，
+仅在私有函数命名空间绑定 DTK 的 prefill/decode/metadata 入口。Core 源码及
+模块全局符号不变。旧 DTK prefill ABI 没有 `out`，调用后复制到 Core 的目标
+buffer。该桥不是 QK-FP8 优化，不改变 BF16 Q 或 packed FP8 KV 的精度。
+
+2026-11-21 的首轮 PCP16 启动发现：HY4 会在创建 `MLAAttention` 前预检
+sparse backend，而 Core 到后者才把公开 E4M3 名称转换为 packed 格式。
+Adapter 现在在平台配置入口提前调用 Core 同一 canonicalization helper，
+仅对显式 `FLASHMLA_SPARSE` 的 `fp8`/`fp8_e4m3` 解析为 `fp8_ds_mla`。
+不扩大 backend dtype 能力表，不转换其他 backend、E5M2 或 BF16；不可用的
+provider 在转换前拒绝。该动作只在配置期运行。
+新增配置及原 ABI CPU 检查18项通过，另53项宿主回归通过；实际 EngineArgs
+和 HY4 早期 selector 确认使用 packed 名称。完整模型及精度/性能仍须实测。
+
+DTK 带 sink 的 output 对齐完整分母，但非空行返回的 LSE 仅包含真实 key 的贡献；
+空行 output 为零，LSE 为算子哨兵值，不能作为数学分母使用。
+本候选拒绝 DCP，避免将这个 LSE 交给 CUDA 的跨 rank 合并；目标 PCP16/DCP1
+不做该合并。不得以伪造 AMD/NVIDIA 架构查询来扩大支持。
+
+2026-11-20，POD1_CN2 的实际 gfx938/BW1301_LC 上，Core `c440c08`、Torch
+2.11/DTK2610 与 FlashMLA `ge1ff2c`：6 项 CPU ABI/owner 检查、12 项 BF16
+prefill 数值检查（含空行）、4 项真实 Core writer→packed FP8 decode 及变输入 Graph
+检查通过。配置探针验证 PCP16＋主干/自然 MTP3 和 sink 后端选择；没有加载
+整模权重。首轮把 DTK LSE 当作包含 sink 的分母时 3 项失败，按上述实际 ABI
+区分两种分母后重测，空行也只验 output 和有效行的 LSE，原失败日志保留。
+53 项宿主启动检查通过，L0 为 GREEN。HumanEval 和 PD 性能尚未执行。
+
+```bash
+HCU_ADAPTER_HOST=none VLLM_PLUGINS=__disabled__ \
+  python -m pytest -q tests/adapter/test_sparse_flashmla_abi.py
+HCU_ADAPTER_HOST=none VLLM_PLUGINS=__disabled__ \
+  python -m pytest -q tests/vendor/test_hy4_sparse_flashmla.py
+```
+
 ### PCP 逆 RoPE
 
 配置 `ops.vllm_inverse_rope: hcu` 选择 Plugin 的 BF16 输出逆 RoPE，默认 `stock`。
@@ -119,6 +181,14 @@ metadata、官方 general-plugin loader 与 config spawn/unpickle 共 17 项检�
 
 
 mHC 行为适配候选、启动配置、缓存/生命周期及未闭合门禁见 [v0.33 mHC](vllm033-mhc.md)。默认仍为原始官方，不代表已知 gfx936 TileLang 分支通过。
+
+HY4 sparse FlashMLA 的持久索引表复用 Core 的
+`get_sparse_mla_index_group_max_rows`：表容量按 decode 行数设置，超出容量的
+prefill 沿用 Core 临时转换路径。原生 HY4 构造时按完整 prefill budget 建表，
+在98304 tokens、78层时仅物理索引表就约58.5GiB；S256/MTP3按1025行
+（含sentinel）分配后，普通PCP16启动已通过主干/MTP权重加载。未降低batch
+budget，也未复制转换kernel或修改Core全局。CPU ABI/config检查21项通过；
+整模启动仍受独立的gfx938 sparse indexer准入问题阻塞，精度与性能尚未通过。
 
 ## KV cache placement extension seam
 

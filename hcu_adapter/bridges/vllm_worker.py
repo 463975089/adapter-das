@@ -30,6 +30,10 @@ def _check_optimized_owners():
 class Worker(OfficialWorker):
     def _make_model_runner(self):
         from hcu_adapter.bridges.vllm_model_runner import create_model_runner
+        from hcu_adapter.features.hy4 import pcp_profile
+
+        if pcp_profile.matches(self.vllm_config):
+            pcp_profile.install()
 
         return create_model_runner(
             self.vllm_config, self.device, default=super()._make_model_runner,

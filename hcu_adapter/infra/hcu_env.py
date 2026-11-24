@@ -204,7 +204,7 @@ REGISTRY = {
     "HCU_VLLM_CT_W4A8_IMPL": {
         "env": "HCU_VLLM_CT_W4A8_IMPL", "default": "native",
         "hosts": ("vllm",),
-        "about": "vLLM 0.33 V4.1 CT W4A8 config registration: native or stock; startup only; kill vllm_ct_w4a8 wins",
+        "about": "vLLM 0.33 CT W4A8 config registration bundle: native or stock; startup only; kill vllm_ct_w4a8 wins",
     },
     "HCU_VLLM_PCP_IMPL": {
         "env": "HCU_VLLM_PCP_IMPL", "default": "stock",
@@ -507,6 +507,12 @@ REGISTRY = {
                  "last_loc → KV 读写错位（GLM-5.3 MTP 实测 accept len≈1.0 + "
                  "target 轨迹漂移 + 逐次不确定；二分定位 MTP 独立致病）。"
                  "sglang-das 用 hcu_get_last_loc 同向修复；=0 还原 stock 分发",
+    },
+    "HCU_DIST_BROADCAST_COMPRESS": {
+        "env": "HCU_DIST_BROADCAST_COMPRESS", "default": "0",
+        "about": "SGLang broadcast_pyobj 大 pickle 载荷无损压缩。"
+                 "仅发送更小的压缩帧。启用前全部参与 rank 须部署支持解压的适配层；"
+                 "修改后需重启进程。",
     },
     "HCU_SPEC_H2D_PIN": {
         "env": "HCU_SPEC_H2D_PIN", "default": "1",

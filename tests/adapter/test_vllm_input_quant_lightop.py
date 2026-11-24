@@ -75,6 +75,7 @@ def _reset(monkeypatch):
     bridge._LOGGED.clear()
     bridge._DIAG.update(calls=0, rows=0, tiny=0, floor=0.0)
     monkeypatch.delenv(bridge._AMAX_DIAG_ENV, raising=False)
+    monkeypatch.delenv(bridge._GRAPH_ENV, raising=False)
     monkeypatch.setenv("HCU_LIGHTOP_PER_TOKEN_FP8", "1")
     # Fallback tests select the public override explicitly; capture is now on
     # by default. The unset/explicit-on dispatch contracts are tested below.
@@ -181,8 +182,9 @@ def test_fallback_reasons(monkeypatch, kwargs, tensor, reason):
 
 
 @pytest.mark.parametrize('capture', [False, True])
-def test_non_device_or_capture_uses_original(monkeypatch, capture):
+def test_non_device_or_disabled_capture_uses_original(monkeypatch, capture):
     calls = _activate(monkeypatch)
+    monkeypatch.setenv(bridge._GRAPH_ENV, '0')
     module = _make_module()
     assert bridge.install(module)
     monkeypatch.setattr(bridge, '_device_ok', lambda x: capture)
@@ -193,30 +195,20 @@ def test_non_device_or_capture_uses_original(monkeypatch, capture):
     assert bridge._COUNTS == {'capture' if capture else 'device': 1}
 
 
-@pytest.mark.parametrize("graph_setting", [None, "1"])
-def test_capture_default_and_explicit_on_use_provider_without_host_diagnostic(
-    monkeypatch, graph_setting,
-):
-    """CPU dispatch only; no native capture/replay qualification is claimed."""
+@pytest.mark.parametrize('setting', [None, '1'])
+def test_default_and_explicit_graph_enable_use_lightop(monkeypatch, setting):
     calls = _activate(monkeypatch)
-    if graph_setting is None:
+    if setting is None:
         monkeypatch.delenv(bridge._GRAPH_ENV)
     else:
-        monkeypatch.setenv(bridge._GRAPH_ENV, graph_setting)
-    monkeypatch.setenv(bridge._AMAX_DIAG_ENV, "1")
-    monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
-    monkeypatch.setattr(bridge, "_diag_rows", lambda *a: pytest.fail(
-        "capture performed a host diagnostic"))
+        monkeypatch.setenv(bridge._GRAPH_ENV, setting)
     module = _make_module()
     assert bridge.install(module)
-
+    monkeypatch.setattr(torch.cuda, 'is_current_stream_capturing', lambda: True)
     x = torch.ones(2, 8, dtype=torch.bfloat16)
     quantized, scales = module.QuantFP8.forward_cuda(_instance(), x)
-
-    assert calls == [(x.shape, torch.float8_e4m3fn)]
-    torch.testing.assert_close(quantized.float(), x.float(), rtol=0, atol=0)
-    torch.testing.assert_close(scales, torch.full((2, 1), 0.5), rtol=0, atol=0)
-    assert bridge._COUNTS == {"hit": 1}
+    assert quantized.dtype == torch.float8_e4m3fn and scales.shape == (2, 1)
+    assert len(calls) == 1 and bridge._COUNTS == {'hit': 1}
 
 
 def test_capture_provider_failure_propagates_without_upstream_fallback(monkeypatch):

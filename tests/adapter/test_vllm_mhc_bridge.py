@@ -527,3 +527,115 @@ def test_post_activation_host_health_check_still_refuses_unactivated_owner(
     booting.run_once('vllm-runtime',lambda:None)
     with pytest.raises(RuntimeError,match='before runtime activation'):
         host.require_runtime_healthy()
+
+
+@pytest.mark.parametrize("packed_default", [None, "unexpected"])
+def test_known_delayed_packed_cache_abi_is_strict(seams, monkeypatch, packed_default):
+    s = seams
+
+    def delayed(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                pre_mix=None, x=None, norm_weight=None, norm_eps=1e-6,
+                sublayer_out=None, post_layer_mix=None, comb_res_mix=None,
+                fn_packed=packed_default):
+        pass
+
+    monkeypatch.setattr(s.mhc.MHCPreDelayedOp, "forward_hip", delayed)
+    if packed_default is None:
+        assert s.m.install()
+        s.m.require_healthy()
+    else:
+        with pytest.raises(s.m.MhcCompatibilityError, match="ABI"):
+            s.m.install()
+        assert not s.calls
+
+
+def test_unknown_delayed_cache_abi_fails_before_publication(seams, monkeypatch):
+    s = seams
+
+    def delayed(self, residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
+                hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
+                pre_mix=None, x=None, norm_weight=None, norm_eps=1e-6,
+                sublayer_out=None, post_layer_mix=None, comb_res_mix=None,
+                other_cache=None):
+        pass
+
+    monkeypatch.setattr(s.mhc.MHCPreDelayedOp, "forward_hip", delayed)
+    with pytest.raises(s.m.MhcCompatibilityError, match="ABI"):
+        s.m.install()
+    assert not s.calls
+
+
+@pytest.mark.parametrize("route", ["delayed", "boundary", "mega", "mega_fallback"])
+@pytest.mark.parametrize("latched", [False, True])
+@pytest.mark.parametrize("packed", [None, object()])
+def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed, route, latched):
+    import ast
+    from pathlib import Path
+
+    tree = ast.parse(Path(module.__file__).read_text())
+    parent = next(n for n in tree.body if isinstance(n, ast.FunctionDef)
+                  and n.name == "_declare_aiter")
+    cls = next(n for n in parent.body if isinstance(n, ast.ClassDef)
+               and n.name == "HcuMHCPreDelayedOp")
+    captured, predicates, health_calls, post_calls = [], [], [], []
+    result = (object(), object(), object(), object())
+
+    def op(*args):
+        captured.append(args)
+        return result
+
+    def supported(*args):
+        predicates.append(args)
+        return route == "mega"
+
+    def boundary_supported(*args):
+        predicates.append(args)
+        return route == "boundary"
+
+    class Base:
+        def _maybe_post(self, residual, sublayer_out, post_mix, comb_mix):
+            post_calls.append(residual)
+            return residual
+
+    mega_provider = object()
+    namespace = dict(
+        mhc=SimpleNamespace(MHCPreDelayedOp=Base),
+        torch=SimpleNamespace(ops=SimpleNamespace(vllm=SimpleNamespace(
+            hcu_adapter_mhc_delayed=op, hcu_adapter_mhc_boundary=op,
+            hcu_adapter_mhc_mega_seam=op))),
+        _failure="latched provider failure" if latched else None,
+        MhcCompatibilityError=module.MhcCompatibilityError,
+        mega=SimpleNamespace(supported=supported) if route.startswith("mega") else None,
+        mega_provider=mega_provider, _check_dispatch_provider=health_calls.append,
+        split_k="auto" if route == "boundary" else "1",
+        provider=SimpleNamespace(project=object(), tilelang_enabled=True,
+                                 tilelang_pre=object()),
+        boundary_supported=boundary_supported,
+        require_healthy=lambda: pytest.fail("forward must not resolve startup policy"),
+    )
+    exec(compile(ast.Module(body=[cls], type_ignores=[]), "<delayed-wrapper>", "exec"),
+         namespace)
+    residual, dense_fn, scale, base = (object() for _ in range(4))
+
+    def invoke():
+        return namespace["HcuMHCPreDelayedOp"]().forward_hip(
+            residual, dense_fn, scale, base, 1e-6, 1e-6, 1e-6, 2.0, 20,
+            fn_packed=packed)
+
+    if latched:
+        with pytest.raises(module.MhcCompatibilityError, match="latched provider failure"):
+            invoke()
+        assert not captured and not predicates and not post_calls and not health_calls
+        return
+    output = invoke()
+    fast_path = route in ("boundary", "mega")
+    assert output == (result if fast_path else (residual, *result))
+    assert len(captured) == 1
+    assert captured[0][0] is residual
+    assert captured[0][4 if route == "boundary" else 1] is dense_fn
+    assert post_calls == ([] if fast_path else [residual])
+    assert health_calls == ([mega_provider] if route == "mega_fallback" else [])
+    for args in captured + predicates:
+        if packed is not None:
+            assert all(value is not packed for value in args)
