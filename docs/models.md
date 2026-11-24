@@ -355,3 +355,15 @@ SGLang 兼容包装保留原生量化分发入口，配套 Plugin 可显式传�
 完整服务启动，8 个并发基础问答均为完整正确答案且正常停止；实际后端仍为 FA3，decode Graph=full、prefill Graph=breakable，日志有 Graph 执行。完成后仅停止本任务进程，端口关闭且显存释放。本轮未重跑 GSM8K、稳态性能、其他模型或其他架构，基础问答不替代精度/性能验收。
 
 使用完整 DeepGEMM `2.1.0.post1+das.dtk2610.unknown` wheel，SHA256 `8b622a05075a705bf28d0d7bfe08a0d3402503bea0706d2bb72a84a8d461e59f`。没有新增内核实现、构建工具或补充扩展。原始日志、启动与清理记录、测试时 SHA 和最终 SHA 保存于仓库外 `hy3/pr_sync_20261117/`；提交内仅更新此说明。
+
+## GLM5.2 Channel FP8 TP8/EP8/CP8：gfx938 环境修复（2026-11-20）
+
+组合为官方 SGLang 0.5.22、adapter release/sglang_v0.5.22 bcec3e0 加 PCI 拓扑 guard 修复，以及 plugin 同名发布分支 c47683e。卡名 BW1101，HIP 实测 gfx938。先复现同卡数外来 PCI 拓扑漏检，再通过新旧环境守卫共18项CPU回归；组合FP8 Linear/量化/Graph的10项GPU回归在资源占满前通过。修复后8个rank通信初始化通过，完整模型权重构造因其他任务占用显存而OOM。按用户选择不停止其他工作负载，完整生成/精度/性能验证保持pending。可复用配方与本次限制见姊妹仓 sglang-plugin-das 的 docs/glm52-fp8-adaptation.md；不能将CPU或通信通过登记为完整模型通过。
+
+### 2026-11-23 固定组合补充验证
+
+保持上文历史记录不变，后续在 plugin 1d51ae5 + MQA planner 接线、adapter bcec3e0 + PCI guard 的固定组合完成了整模型启动和全量数据集评测。thinking=false、max_tokens=8192：HumanEval 153/164，GSM8K 1269/1319，MATH500 474/500；1983题 API/判分错误均为0，3道 MATH500 触及输出上限。评测后服务自动停止。此为组合验证，不证明 PCI guard 带来精度变化，也不等同0518数据集精度对照。
+
+### 2026-11-23 PR 拆分检查
+
+本次独立分支重新通过18项拓扑/环境CPU回归、38项CPU算子测试及L0。节点门禁在 test_group_quant_u8_bridge 收集时遇到官方 fp8_kernel 缺少 per_token_group_quant；triage ops 另报告默认检查点不存在、旧 fused_add_rms_norm 调用签名不匹配和AR gate失败。原始失败记录保留，未扩大本PR范围修改量化、norm或AR；不能宣称全套提交门禁通过。仅准备Draft评审，不视为可直接合入。
