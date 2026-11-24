@@ -194,3 +194,33 @@ The 161/164 end-to-end result above belongs to the earlier immutable accuracy
 overlay. These new main-integration CPU/structural checks do not transfer that
 result to the final merged adapter or establish HCU model/image qualification;
 those validations remain pending. No running accuracy service was changed.
+
+## Exact owned-logits padding candidate — 2026-11-24
+
+The explicitly selected non-MX HIP Triton provider now copies its workspace
+logits through a private tiled mask/copy kernel. Valid FP32 payload bits are
+unchanged; columns at or beyond the original per-row length become positive
+zero. Output storage remains fresh and independent of the Core workspace.
+The scorer, TopK, attention arithmetic, context limits and generic fallbacks
+are unchanged. The private module is imported only after native-path admission.
+
+Actual gfx938 checks: 20 bitwise/ownership/pitched-offset/int32+int64/empty and
+changed-input HIP Graph tests passed; 259 existing public-provider/alignment
+tests passed, zero failures/skips, with 14 retained Torch deprecation warnings.
+Graph-replay component timings at width 262144 and Q1/8/64 showed reduced
+copy/mask time; these timings do not measure the scorer or model throughput.
+Full-model accuracy and FULL_AND_PIECEWISE throughput remain separate gates.
+Run the new focused tests with:
+
+```sh
+python -m pytest -q tests/kernels/test_vllm_paged_mqa_mask.py
+```
+
+The private launch uses an explicit tensor-device guard and the current stream
+on that device. The explicit two-device regression (ambient device0, delayed
+producer on a nondefault stream of device1) runs separately so a one-GPU test
+lane acquires no new skipped case:
+
+```sh
+HIP_VISIBLE_DEVICES=0,1 python tools/check_paged_mqa_mask_multidevice.py
+```
