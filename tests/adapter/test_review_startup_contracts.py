@@ -123,7 +123,12 @@ def test_explicit_unsupported_request_still_refuses(monkeypatch, source, owner):
     name = 'vllm_mhc' if owner == 'mhc' else 'vllm_flashmla_decode'
     bridge = importlib.reload(importlib.import_module('hcu_adapter.bridges.' + name))
     mode = 'aiter' if owner == 'mhc' else 'native'
-    monkeypatch.setattr(bridge.hcu_env, 'resolve', lambda *args, **kwargs: (mode, source))
+    # Only the mode variable carries the request. install() also reads the
+    # owner's other policy knobs (mHC: delayed fusion, mega) before the
+    # platform refusal; those answer their default, as they would at startup.
+    def resolve(variable, *args, **kwargs):
+        return (mode, source) if variable == bridge.MODE_VARIABLE else ('0', 'default')
+    monkeypatch.setattr(bridge.hcu_env, 'resolve', resolve)
     monkeypatch.setattr(host, 'detect_hcu', lambda: host.HcuDetection(True, 'gfx928', 'test'))
     error = bridge.MhcCompatibilityError if owner == 'mhc' else bridge.FlashMLADecodeCompatibilityError
     try:
