@@ -73,8 +73,13 @@ port, not blind hipify of the CUDA/PTX implementation:
   transplanted. Eager gfx938 coverage is recorded below; other hardware wave
   configurations and concurrent execution remain separate qualification gates.
 - `gather_*` verifies HIP-registered pinned CPU storage and obtains its mapped
-  device alias with `hipHostGetDevicePointer`. The host VA is never passed as a
-  device pointer. The caller must retain pinned storage and not overwrite it
+  device aliases with `hipHostGetDevicePointer`. A legal layer view may cross
+  adjacent registrations with distinct buffer IDs and noncontiguous GPU aliases.
+  Every intersecting range and alias is validated before launching work; gaps,
+  released registrations and overflowing spans are rejected. Linear aliases are
+  coalesced; otherwise each same-stream gather copies only the logical span
+  intersection, including a row split across registrations. The host VA is never
+  passed as a device pointer. The caller must retain pinned storage and not overwrite it
   until the stream finishes. This port does not silently register pageable RAM,
   synchronize transfers, invent a pinned ring, or guarantee concurrent CPU/GPU
   coherence. Mapped interior pointers are covered by eager device tests below. Asynchronous
@@ -186,3 +191,19 @@ and opaque FP8-DS MLA uint8 rows of656bytes, physical block64/256, plan/compact
 paths, pinned interior storage, padded page pitch, cross-block destinations,
 missing-host zero-fill and whole-allocation guard bytes. These are exact payload
 transfer/layout checks, not attention or quantization numerical validation.
+
+## Adjacent-registration regression qualification — 2026-11-24
+
+The published single-range implementation rejected valid crossing views in
+16 real HIP cases. The corrected per-span implementation passed **104 eager
+gfx938 native tests, zero failures/skips**, using a fresh isolated build
+(kernel source SHA256 `e2d4d887524c417a749b17e205d2fd45ed6d916e9a072dd27f80263deca0d87a`).
+The binary SHA256 is
+`2bc4ffeafc479058c7362d1953fa30aad54fd181e99e0637273a051329e35812`.
+Coverage includes independent adjacent registrations, typed/pitched gathers,
+resolve followed by actual bytes copied from the second registration, gap and
+unregister rejection. Exact host validation and serial kernel-body tests
+additionally exercise nonlinear aliases and an unaligned split inside a row.
+These component results do not qualify graph replay, concurrent registration
+mutation, full-engine HiSparse, DFly, model accuracy or throughput. All original
+registrations must remain valid for every queued use and any graph replay.

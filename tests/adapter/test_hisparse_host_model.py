@@ -183,6 +183,21 @@ int main() {
     assert(dgi[0]==-1 && dgi[1]==9 && dgi[2]==-1 && dgi[3]==11);
   }
 
+  { // A source row straddles two NON-adjacent aliases at an unaligned byte.
+    char left[35],right[93],hot[6*40];
+    for(int i=0;i<35;++i)left[i]=char(i);
+    for(int i=0;i<93;++i)right[i]=char(i+35);
+    std::memset(hot,0x55,sizeof(hot));
+    int g[]={2},dst[]={2},mm[]={1},att[1];
+    blockDim.x=32;gridDim.x=gridDim.y=1;blockIdx.x=blockIdx.y=0;
+    for(threadIdx.x=0;threadIdx.x<32;++threadIdx.x)
+      hisparse_gather_plan_kernel(left,hot,g,dst,mm,att,nullptr,8,12,16,40,2,1,5,0,35);
+    for(threadIdx.x=0;threadIdx.x<32;++threadIdx.x)
+      hisparse_gather_plan_kernel(right,hot,g,dst,mm,att,nullptr,8,12,16,40,2,1,5,35,128);
+    for(int i=0;i<16;++i)assert(hot[40+i]==char(32+i));
+    assert(hot[39]==0x55 && hot[56]==0x55);
+  }
+
   for (int physical_block : {64, 256}) {
     int table[]={1},indices[]={63,-1,64,64,65},request[]={0},source[]={1,2},state[]={0};
     int dgi[64];int16_t lru[64];

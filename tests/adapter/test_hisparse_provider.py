@@ -168,7 +168,7 @@ def test_native_source_has_no_ptx_or_subgroup_dependency():
         assert forbidden not in source
     assert 'hipHostGetDevicePointer' in source
     assert 'hipPointerGetAttributes' in source
-    assert 'mapped_host_pointer(host_cache)' in source
+    assert 'mapped_host_spans(host_cache)' in source
     assert 'hipDeviceAttributeMaxSharedMemoryPerBlock' in source
     assert 'check_grid' in source and 'same_device' in source
     assert 'TORCH_LIBRARY_FRAGMENT(_C_cache_ops' in source

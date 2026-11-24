@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <vector>
 
 
 namespace {
@@ -63,7 +64,13 @@ void check_host_query(hipError_t status, const char* query) {
 // The caller guards hot_cache.device() before entering this helper and retains
 // the original registration/storage until the current stream is synchronized.
 // Do not cache any query: unregister/re-register may reuse the same CPU address.
-const char* mapped_host_pointer(const at::Tensor& tensor) {
+struct MappedHostSpan {
+  uint64_t begin;
+  uint64_t end;
+  uintptr_t device;
+};
+
+std::vector<MappedHostSpan> mapped_host_spans(const at::Tensor& tensor) {
   TORCH_CHECK(tensor.device().is_cpu(), "host_cache must be CPU memory");
   TORCH_CHECK(tensor.layout() == c10::kStrided && tensor.dim() == 2 &&
                   tensor.is_contiguous(), "host_cache must be contiguous 2D");
@@ -92,49 +99,71 @@ const char* mapped_host_pointer(const at::Tensor& tensor) {
     TORCH_CHECK(cpu == reinterpret_cast<uintptr_t>(tensor.const_data_ptr()),
                 "host_cache data pointer differs from its storage offset");
   }
-  auto* ptr = reinterpret_cast<void*>(cpu);
-  hipPointerAttribute_t attr{};
-  check_host_query(hipPointerGetAttributes(&attr, ptr), "hipPointerGetAttributes");
-  TORCH_CHECK(attr.memoryType == hipMemoryTypeHost && !attr.isManaged,
-              "host_cache must be HIP-registered pinned CPU memory");
+  // Core may register a CPU allocation in adjacent chunks while a layer view
+  // crosses their boundary. Validate each intersecting registration rather
+  // than requiring a single buffer ID. Adjacent host registrations can have
+  // non-adjacent device aliases; gather kernels copy their logical intersections.
+  std::vector<MappedHostSpan> spans;
+  uintptr_t cursor = cpu;
+  size_t remaining = checked_bytes;
+  while (remaining != 0) {
+    auto* ptr = reinterpret_cast<void*>(cursor);
+    hipPointerAttribute_t attr{};
+    check_host_query(hipPointerGetAttributes(&attr, ptr), "hipPointerGetAttributes");
+    TORCH_CHECK(attr.memoryType == hipMemoryTypeHost && !attr.isManaged,
+                "host_cache must be HIP-registered pinned CPU memory");
 
-  void* range_start = nullptr;
-  size_t range_bytes = 0;
-  unsigned int mapped = 0;
-  uint64_t buffer_id = 0;
-  check_host_query(hipPointerGetAttribute(&range_start,
-      HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR, ptr), "registered range start");
-  check_host_query(hipPointerGetAttribute(&range_bytes,
-      HIP_POINTER_ATTRIBUTE_RANGE_SIZE, ptr), "registered range size");
-  check_host_query(hipPointerGetAttribute(&mapped,
-      HIP_POINTER_ATTRIBUTE_MAPPED, ptr), "registered mapping");
-  check_host_query(hipPointerGetAttribute(&buffer_id,
-      HIP_POINTER_ATTRIBUTE_BUFFER_ID, ptr), "registered buffer id");
-  const auto start = reinterpret_cast<uintptr_t>(range_start);
-  TORCH_CHECK(mapped != 0 && start != 0 && cpu >= start &&
-                  range_bytes <= UINTPTR_MAX - start && cpu - start <= range_bytes &&
-                  checked_bytes <= range_bytes - (cpu - start),
-              "host_cache span exceeds its mapped HIP registered range");
+    void* range_start = nullptr;
+    size_t range_bytes = 0;
+    unsigned int mapped = 0;
+    uint64_t buffer_id = 0;
+    check_host_query(hipPointerGetAttribute(&range_start,
+        HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR, ptr), "registered range start");
+    check_host_query(hipPointerGetAttribute(&range_bytes,
+        HIP_POINTER_ATTRIBUTE_RANGE_SIZE, ptr), "registered range size");
+    check_host_query(hipPointerGetAttribute(&mapped,
+        HIP_POINTER_ATTRIBUTE_MAPPED, ptr), "registered mapping");
+    check_host_query(hipPointerGetAttribute(&buffer_id,
+        HIP_POINTER_ATTRIBUTE_BUFFER_ID, ptr), "registered buffer id");
+    const auto start = reinterpret_cast<uintptr_t>(range_start);
+    TORCH_CHECK(mapped != 0 && start != 0 && cursor >= start &&
+                    range_bytes <= UINTPTR_MAX - start && cursor - start < range_bytes,
+                "host_cache span is not covered by mapped HIP registered ranges");
+    const size_t covered = std::min(remaining, range_bytes - (cursor - start));
 
-  // hipMemGetAddressRange is NOT a substitute: DTK returns success/size but a
-  // null base for externally registered pools. RANGE_START_ADDR supplies the
-  // real host registration base, including for interior typed tensor views.
-  void* alias = nullptr;
-  check_host_query(hipHostGetDevicePointer(&alias, ptr, 0),
-                   "hipHostGetDevicePointer on the hot-cache device");
-  const auto device = reinterpret_cast<uintptr_t>(alias);
-  TORCH_CHECK(device != 0 && checked_bytes - 1 <= UINTPTR_MAX - device,
-              "host_cache must have a non-overflowing mapped HIP device alias");
-  uint64_t alias_id = 0;
-  uint64_t tail_id = 0;
-  check_host_query(hipPointerGetAttribute(&alias_id,
-      HIP_POINTER_ATTRIBUTE_BUFFER_ID, alias), "mapped alias buffer id");
-  check_host_query(hipPointerGetAttribute(&tail_id,
-      HIP_POINTER_ATTRIBUTE_BUFFER_ID,
-      reinterpret_cast<void*>(device + checked_bytes - 1)), "mapped alias tail");
-  TORCH_CHECK(alias_id == buffer_id && tail_id == buffer_id,
-              "host_cache device alias must cover the same registered buffer");
-  return static_cast<const char*>(alias);
+    // hipMemGetAddressRange is NOT a substitute: DTK reports a null base for
+    // external registrations. Query the alias on the guarded hot-cache device
+    // at every range boundary; never cache across unregister/re-register.
+    void* alias = nullptr;
+    check_host_query(hipHostGetDevicePointer(&alias, ptr, 0),
+                     "hipHostGetDevicePointer on the hot-cache device");
+    const auto device = reinterpret_cast<uintptr_t>(alias);
+    TORCH_CHECK(device != 0 && covered - 1 <= UINTPTR_MAX - device,
+                "host_cache must have non-overflowing mapped HIP device aliases");
+    uint64_t alias_id = 0;
+    uint64_t tail_id = 0;
+    check_host_query(hipPointerGetAttribute(&alias_id,
+        HIP_POINTER_ATTRIBUTE_BUFFER_ID, alias), "mapped alias buffer id");
+    check_host_query(hipPointerGetAttribute(&tail_id,
+        HIP_POINTER_ATTRIBUTE_BUFFER_ID,
+        reinterpret_cast<void*>(device + covered - 1)), "mapped alias range tail");
+    TORCH_CHECK(alias_id == buffer_id && tail_id == buffer_id,
+                "host_cache device alias must cover the same registered buffer");
+    const uint64_t begin = checked_bytes - remaining;
+    const uint64_t end = begin + covered;
+    // Preserve the single-launch fast path when device aliases are linear,
+    // even when HIP assigns different buffer IDs to adjacent registrations.
+    if (!spans.empty() &&
+        spans.back().end - spans.back().begin <= UINTPTR_MAX - spans.back().device &&
+        spans.back().device + (spans.back().end - spans.back().begin) == device) {
+      spans.back().end = end;
+    } else {
+      spans.push_back({begin, end, device});
+    }
+    remaining -= covered;
+    if (remaining != 0) cursor += covered;
+  }
+  return spans;
 }
 
 void same_device(const at::Tensor& t, const at::Tensor& hot) {
@@ -204,6 +233,22 @@ __device__ __forceinline__ void copy_row_warp(int lane_id, const char* src,
 
   for (int64_t j = lane_id; j < row_bytes; j += kWarpSize) {
     dst[j] = src[j];
+  }
+}
+
+// A row may straddle registrations whose GPU aliases are not adjacent. Each
+// launch copies only its span's intersection; no descriptor allocation, cached
+// mapping or host-to-device staging is needed. Scalar arguments are capture-safe
+// while the caller retains the original registrations through synchronization.
+__device__ __forceinline__ void copy_host_span_row_warp(
+    int lane_id, const char* span_alias, uint64_t span_begin, uint64_t span_end,
+    uint64_t row_begin, char* dst, int64_t row_bytes) {
+  const uint64_t row_end = row_begin + static_cast<uint64_t>(row_bytes);
+  const uint64_t begin = row_begin > span_begin ? row_begin : span_begin;
+  const uint64_t end = row_end < span_end ? row_end : span_end;
+  if (begin < end) {
+    copy_row_warp(lane_id, span_alias + (begin - span_begin),
+                  dst + (begin - row_begin), static_cast<int64_t>(end - begin));
   }
 }
 
@@ -719,7 +764,8 @@ __global__ void hisparse_gather_plan_kernel(
     const int32_t* __restrict__ request_state_indices,  // [num_rows] or nullptr
     const int64_t host_rows, const int64_t hot_rows, const int64_t row_bytes,
     const int64_t hot_block_stride, const int32_t hot_block_size,
-    const int32_t top_k, const int64_t attention_block_stride) {
+    const int32_t top_k, const int64_t attention_block_stride,
+    const uint64_t host_span_begin = 0, const uint64_t host_span_end = UINT64_MAX) {
   const int NUM_WARPS = blockDim.x / kWarpSize;
   // Columns are interleaved across gridDim.y blocks per row so few-row
   // launches (local-prefill staging's single-row layout, small decode
@@ -754,10 +800,11 @@ __global__ void hisparse_gather_plan_kernel(
       continue;
     }
     if (g < host_rows) {
-      copy_row_warp(lane_id, host_cache + static_cast<int64_t>(g) * row_bytes,
-                    cache_row_ptr(hot_cache, dst, hot_block_size,
-                                  hot_block_stride, row_bytes),
-                    row_bytes);
+      copy_host_span_row_warp(
+          lane_id, host_cache, host_span_begin, host_span_end,
+          static_cast<uint64_t>(g) * row_bytes,
+          cache_row_ptr(hot_cache, dst, hot_block_size, hot_block_stride, row_bytes),
+          row_bytes);
     } else {
       // No source row for g: zero the planned slot rather than serving
       // whatever bytes it held (see the swap-in kernel's phase 5).
@@ -775,7 +822,8 @@ __global__ void hisparse_gather_compact_kernel(
     const int32_t* __restrict__ miss_counts, const int64_t host_rows,
     const int64_t hot_rows, const int64_t row_bytes,
     const int64_t hot_block_stride, const int32_t hot_block_size,
-    const int32_t top_k) {
+    const int32_t top_k, const uint64_t host_span_begin = 0,
+    const uint64_t host_span_end = UINT64_MAX) {
   const int NUM_WARPS = blockDim.x / kWarpSize;
   const int row = blockIdx.x;
   const int warp_id = threadIdx.x / kWarpSize;
@@ -791,10 +839,11 @@ __global__ void hisparse_gather_compact_kernel(
       continue;
     }
     if (g < host_rows) {
-      copy_row_warp(lane_id, host_cache + static_cast<int64_t>(g) * row_bytes,
-                    cache_row_ptr(hot_cache, dst, hot_block_size,
-                                  hot_block_stride, row_bytes),
-                    row_bytes);
+      copy_host_span_row_warp(
+          lane_id, host_cache, host_span_begin, host_span_end,
+          static_cast<uint64_t>(g) * row_bytes,
+          cache_row_ptr(hot_cache, dst, hot_block_size, hot_block_stride, row_bytes),
+          row_bytes);
     } else {
       zero_cache_row_warp(lane_id, hot_cache, dst, hot_block_size,
                           hot_block_stride, row_bytes);
@@ -952,7 +1001,7 @@ void hisparse_resolve_residency(
               "block parameters must fit nonnegative int32");
   TORCH_CHECK(hot_cache.is_cuda(), "hot_cache must be on CUDA");
   const c10::DeviceGuard registered_host_device_guard(hot_cache.device());
-  (void)mapped_host_pointer(host_cache);
+  (void)mapped_host_spans(host_cache);
   TORCH_CHECK(
       hot_block_table.is_cuda() &&
           hot_block_table.scalar_type() == at::ScalarType::Int &&
@@ -1276,7 +1325,7 @@ void hisparse_gather_plan(
   if (attention_indices.has_value()) same_device(attention_indices.value(), hot_cache);
   TORCH_CHECK(hot_cache.is_cuda(), "hot_cache must be on CUDA");
   const c10::DeviceGuard registered_host_device_guard(hot_cache.device());
-  const char* host_device_alias = mapped_host_pointer(host_cache);
+  const auto host_spans = mapped_host_spans(host_cache);
   TORCH_CHECK(
       global_indices.is_cuda() && hot_indices.is_cuda() && miss_mask.is_cuda(),
       "plan tensors must be on CUDA");
@@ -1365,14 +1414,16 @@ void hisparse_gather_plan(
   const c10::DeviceGuard device_guard(
       hot_cache.device());
   const hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
-  hisparse_gather_plan_kernel<<<grid, kBlockSize, 0, stream>>>(
-      host_device_alias,
-      static_cast<char*>(hot_cache.mutable_data_ptr()),
-      global_indices.const_data_ptr<int32_t>(),
-      hot_indices.const_data_ptr<int32_t>(),
-      miss_mask.const_data_ptr<int32_t>(), attention_indices_ptr,
-      request_state_ptr, host_rows, hot_rows, row_bytes, hot_block_stride,
-      hot_block_size, top_k, attention_block_stride);
+  for (const auto& span : host_spans) {
+    hisparse_gather_plan_kernel<<<grid, kBlockSize, 0, stream>>>(
+        reinterpret_cast<const char*>(span.device),
+        static_cast<char*>(hot_cache.mutable_data_ptr()),
+        global_indices.const_data_ptr<int32_t>(),
+        hot_indices.const_data_ptr<int32_t>(),
+        miss_mask.const_data_ptr<int32_t>(), attention_indices_ptr,
+        request_state_ptr, host_rows, hot_rows, row_bytes, hot_block_stride,
+        hot_block_size, top_k, attention_block_stride, span.begin, span.end);
+  }
   TORCH_CHECK(hipGetLastError() == hipSuccess, "HiSparse gather_plan launch failed");
 }
 
@@ -1390,7 +1441,7 @@ void hisparse_gather_compact(at::Tensor const& host_cache,
   same_device(miss_counts, hot_cache);
   TORCH_CHECK(hot_cache.is_cuda(), "hot_cache must be on CUDA");
   const c10::DeviceGuard registered_host_device_guard(hot_cache.device());
-  const char* host_device_alias = mapped_host_pointer(host_cache);
+  const auto host_spans = mapped_host_spans(host_cache);
   TORCH_CHECK(
       miss_global_indices.is_cuda() && miss_hot_indices.is_cuda() &&
           miss_counts.is_cuda() &&
@@ -1431,13 +1482,15 @@ void hisparse_gather_compact(at::Tensor const& host_cache,
   const c10::DeviceGuard device_guard(
       hot_cache.device());
   const hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
-  hisparse_gather_compact_kernel<<<grid, kBlockSize, 0, stream>>>(
-      host_device_alias,
-      static_cast<char*>(hot_cache.mutable_data_ptr()),
-      miss_global_indices.const_data_ptr<int32_t>(),
-      miss_hot_indices.const_data_ptr<int32_t>(),
-      miss_counts.const_data_ptr<int32_t>(), host_rows, hot_rows, row_bytes,
-      hot_block_stride, hot_block_size, top_k);
+  for (const auto& span : host_spans) {
+    hisparse_gather_compact_kernel<<<grid, kBlockSize, 0, stream>>>(
+        reinterpret_cast<const char*>(span.device),
+        static_cast<char*>(hot_cache.mutable_data_ptr()),
+        miss_global_indices.const_data_ptr<int32_t>(),
+        miss_hot_indices.const_data_ptr<int32_t>(),
+        miss_counts.const_data_ptr<int32_t>(), host_rows, hot_rows, row_bytes,
+        hot_block_stride, hot_block_size, top_k, span.begin, span.end);
+  }
   TORCH_CHECK(hipGetLastError() == hipSuccess, "HiSparse gather_compact launch failed");
 }
 

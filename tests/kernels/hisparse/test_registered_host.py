@@ -18,7 +18,7 @@ def registered_ops(request):
         pytest.skip("requires one explicitly assigned HIP device; not validated")
     from hcu_adapter.kernels.hisparse import ensure_hisparse_ops
     torch.cuda.set_device(request.config.getoption("--hisparse-device"))
-    ensure_hisparse_ops()  # discovery of the complete installed native wheel
+    ensure_hisparse_ops(request.config.getoption("--hisparse-library"))
     return torch.ops._C_cache_ops
 
 
@@ -52,9 +52,11 @@ def registration(pages=8, regions=None):
 @pytest.mark.parametrize("block_size", [64, 256])
 @pytest.mark.parametrize("kind", ["plan", "compact"])
 @pytest.mark.parametrize("offset", [16, 4096])
+@pytest.mark.parametrize("regions", [None, [(0, 1), (1, 1), (2, 6)]],
+                         ids=["single-registration", "adjacent-registrations"])
 def test_registered_typed_gather_offsets_and_guards(
-        registered_ops, dtype, columns, block_size, kind, offset):
-    with registration() as (pool, _):
+        registered_ops, dtype, columns, block_size, kind, offset, regions):
+    with registration(regions=regions) as (pool, _):
         rows, blocks, gap, guard = 8, 3, 24, 32
         item = torch.empty((), dtype=dtype).element_size()
         row_bytes = columns * item
@@ -67,7 +69,7 @@ def test_registered_typed_gather_offsets_and_guards(
         hot = owner.view(dtype).as_strided((blocks, block_size, columns),
                   (pitch // item, columns, 1), offset // item)
         expected = torch.full((size,), 85, dtype=torch.uint8)
-        sources = [0, 3, rows + 1]
+        sources = [0, rows - 1 if regions else 3, rows + 1]
         destinations = [block_size - 1, block_size, blocks * block_size - 1]
         for source, target in zip(sources, destinations):
             begin = offset + target // block_size * pitch + target % block_size * row_bytes
@@ -156,3 +158,31 @@ def test_invalid_registered_span_or_device_is_rejected(registered_ops, kind, bad
         else:
             host = pool[:128].view(8, 16)
         refused_call(registered_ops, host, kind, cpu_indices=bad == "cpu_indices")
+
+
+def test_adjacent_registrations_resolve_then_gather(registered_ops):
+    # Two independent registrations cover one legal per-layer view. The last
+    # host row belongs to the second registration and must actually be copied.
+    with registration(pages=2, regions=[(0,1),(1,1)]) as (pool,_):
+        pool.copy_((torch.arange(pool.numel(),dtype=torch.int64)*17%251).to(torch.uint8))
+        host=pool.view(512,16)
+        hot=torch.full((3,64,16),85,dtype=torch.uint8,device="cuda")
+        def gpu(values,dtype=torch.int32):
+            return torch.tensor(values,dtype=dtype,device="cuda")
+        table=gpu([[1]]);logical=gpu([[0,511]])
+        outputs={key:torch.full_like(logical,-77) for key in ["hot","mask","resolved","sh","sd"]}
+        attention=torch.full_like(logical,-77)
+        counts=gpu([-77]);swaps=gpu([-77])
+        dgi=gpu([[-1]*4]);lru=gpu([[0,1,2,3]],torch.int16);state=gpu([0])
+        stats=gpu([0,0],torch.uint64)
+        registered_ops.hisparse_resolve_residency(host,hot,table,logical,
+            outputs["hot"],dgi,lru,state,4,4,outputs["mask"],stats,attention,64,
+            None,None,0,outputs["resolved"],counts,outputs["sh"],outputs["sd"],swaps,
+            None,0,0)
+        registered_ops.hisparse_gather_compact(host,hot,outputs["sh"],outputs["sd"],swaps)
+        torch.cuda.synchronize()
+        assert counts.item()==2 and swaps.item()==2
+        assert outputs["hot"].unique().numel()==2
+        for column,source in enumerate([0,511]):
+            destination=outputs["hot"][0,column].item()
+            torch.testing.assert_close(hot.view(-1,16)[destination].cpu(),host[source],rtol=0,atol=0)
