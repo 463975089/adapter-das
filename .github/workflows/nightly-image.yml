@@ -5,8 +5,8 @@ name: Nightly Image
 
 # 每天北京时间 00:00（UTC 16:00）构建 sglang / vLLM 两张运行镜像并推送到内网
 # 仓库。两张镜像互不依赖、并发构建；手动触发时可用 image 输入只构建其中一张。
-# 镜像里的 adapter 取 nightly 归档最新版；需要复现时用 workflow_dispatch
-# 手动触发并指定 ref。
+# 镜像里的 adapter 取 nightly 归档最新版；workflow_dispatch 从当前触发分支构建，
+# 不提供 ref 输入（无法手动指定）。
 #
 # 本仓库不配置 schedule：GitHub 对 schedule 事件是 best-effort（实测会被推迟
 # 4.5–6.5 小时），准点触发由外部定时仓库（内网 GitLab scheduled pipeline）在
@@ -31,11 +31,6 @@ on:
           - all
           - sglang
           - vllm
-      ref:
-        description: '要构建的 Git ref/branch/tag/SHA，默认当前分支 HEAD'
-        required: false
-        default: ''
-        type: string
 
 permissions:
   contents: read
@@ -89,8 +84,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.ref || github.sha }}
 
       - name: Login registry
         run: |

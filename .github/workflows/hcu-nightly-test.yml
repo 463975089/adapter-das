@@ -3,13 +3,9 @@ name: HCU Nightly (K8s)
 on:
   schedule:
     - cron: '37 14 * * *'
+  # 手动触发跑当前所选分支，不提供 ref 输入（无法手动指定）
   workflow_dispatch:
     inputs:
-      ref:
-        description: '要构建的 Git ref/branch/tag/SHA，默认当前分支 HEAD'
-        required: false
-        default: ''
-        type: string
       l2_models:
         description: "L2 模型 id，空格分隔（见 tests/tools/run_model_suite.sh 的 MODELS；单卡池只能跑单卡模型）"
         required: false
@@ -53,10 +49,8 @@ jobs:
       - name: Checkout base branch
         uses: actions/checkout@v4
         with:
-          # 这个 workflow 只有 schedule / workflow_dispatch，没有 pull_request，
-          # 所以 input 为空时 github.ref 就是触发分支：schedule 是默认分支，
-          # 手动触发是所选分支。l15/l2 用同一个表达式，保证镜像和被测代码同源
-          ref: ${{ inputs.ref || github.ref }}
+          # 跟随当前触发分支（已移除 ref 输入，无法手动指定）；
+          # 同一 run 内 l15/l2 与 image job ref 一致，镜像和被测代码同源
           persist-credentials: false
           
       - name: Read ci/ci_docker_image
@@ -65,7 +59,7 @@ jobs:
           set -euo pipefail
           # 这个 workflow 要被 release 线复用，那条分支上的基础设施文件是后补的；
           # 缺失时直接报出来，比 tr 报 "No such file" 更容易定位
-          [ -f ci/ci_docker_image ]             || { echo "::error::${{ inputs.ref || github.ref }} 上没有 ci/ci_docker_image"; exit 1; }
+          [ -f ci/ci_docker_image ]             || { echo "::error::${{ github.ref_name }} 上没有 ci/ci_docker_image"; exit 1; }
           image="$(tr -d '[:space:]' < ci/ci_docker_image)"
           echo "用镜像: $image"
           echo "image=$image" >> "$GITHUB_OUTPUT"
@@ -91,9 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # 与 image job 同一个表达式：镜像和被测代码必须来自同一个 ref，
-          # 否则手动指定 ref 时会拿 A 分支的镜像跑 B 分支的代码
-          ref: ${{ inputs.ref || github.ref }}
+          # 同一 run 内与 image job 同一 ref，镜像和被测代码同源
           persist-credentials: false
 
       - name: reinstall adapter from source tree
@@ -268,8 +260,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # 与 image job 同一个表达式：镜像和被测代码必须来自同一个 ref
-          ref: ${{ inputs.ref || github.ref }}
+          # 同一 run 内与 image job 同一 ref
           persist-credentials: false
 
       - name: reinstall adapter from source tree
@@ -409,9 +400,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # 与 image job 同一个表达式：镜像和被测代码必须来自同一个 ref，
-          # 否则手动指定 ref 时会拿 A 分支的镜像跑 B 分支的代码
-          ref: ${{ inputs.ref || github.ref }}
+          # 同一 run 内与 image job 同一 ref，镜像和被测代码同源
           persist-credentials: false
 
       - name: reinstall adapter from source tree
