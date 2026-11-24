@@ -15,9 +15,9 @@ from types import SimpleNamespace as NS
 
 import pytest
 
+import hcu_adapter
 from hcu_adapter.infra import extensions as ext
 from hcu_adapter.infra.runtime_lifecycle import ProcessLocalLifecycle
-import hcu_adapter.infra.runtime_lifecycle as lifecycle
 
 
 CAP='shared-test-capability'
@@ -151,7 +151,11 @@ def test_actual_shared_and_bridge_imports_for_both_hosts_deny_frameworks_and_tor
     # -S isolates the import contract from system .pth/sitecustomize hooks.
     # Explicit paths include the actual prebound source/installed package and
     # packaging dependency, while a finder refuses every framework/kernel load.
-    root=str(Path(lifecycle.__file__).resolve().parent.parent)
+    # The package is located by its own file, not by this module's depth. CI
+    # installs the package and links the workspace names to it, so the path
+    # entry and the loaded files are compared after resolve().
+    package=str(Path(hcu_adapter.__file__).resolve().parent)
+    root=str(Path(package).parent)
     paths=[root]+[p for p in sys.path if p and p!=root]
     code='''
 import importlib.abc, importlib, json, sys
@@ -167,10 +171,10 @@ vl=importlib.import_module('hcu_adapter.bridges.vllm')
 assert issubclass(vl.ProcessLocalActions,shared.ProcessLocalLifecycle)
 assert callable(sg.install)
 from pathlib import Path
-for module in (shared,sg,vl):assert Path(module.__file__).is_relative_to(ROOT)
+for module in (shared,sg,vl):assert Path(module.__file__).resolve().is_relative_to(PACKAGE)
 assert not {'torch','sglang','vllm','sgl_kernel','hcu_vllm_das'}.intersection(sys.modules)
 print(json.dumps({'host':HOST,'shared':shared.__file__,'sglang_bridge':sg.__file__,'vllm_bridge':vl.__file__}))
-'''.replace('PATHS',repr(paths)).replace('ROOT',repr(root)).replace('HOST',repr(host))
+'''.replace('PATHS',repr(paths)).replace('PACKAGE',repr(package)).replace('HOST',repr(host))
     env=dict(os.environ,HCU_ADAPTER_HOST=host,PYTHONPATH='',PYTHONDONTWRITEBYTECODE='1')
     result=subprocess.run([sys.executable,'-S','-B','-c',code],env=env,text=True,capture_output=True,timeout=10)
     assert result.returncode==0,result.stdout+result.stderr
