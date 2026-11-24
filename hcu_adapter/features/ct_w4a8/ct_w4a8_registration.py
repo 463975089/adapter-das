@@ -31,6 +31,28 @@ _failure = None
 _publishing = False
 _config_provider = None
 _provider_binder = None
+_additional_config_providers = {}
+_additional_publications = {}
+
+
+def set_additional_config_provider(name, provider) -> None:
+    """Extend the same admission transaction with distinct HCU config owners.
+
+    Providers remain lazy and framework-free here; the Plugin supplies their
+    implementations. Existing stock names and the legacy primary are untouched.
+    """
+    if (not isinstance(name, str) or not name.startswith('hcu_')
+            or not name.isidentifier() or name == NAME or not callable(provider)):
+        raise ValueError('additional CT provider requires a distinct hcu_ name and callable')
+    with _lock:
+        previous = _additional_config_providers.get(name)
+        if previous is provider:
+            return
+        if previous is not None:
+            raise RuntimeError('additional CT provider already has another owner')
+        if _publication is not None or _publishing:
+            raise RuntimeError('additional CT providers must bind before publication')
+        _additional_config_providers[name] = provider
 
 
 def set_provider_binder(binder) -> None:
@@ -128,6 +150,20 @@ def check_health():
         if not owned:
             _fatal("CT W4A8 public registration changed owner")
         try:
+            extra_owned = (
+                _additional_config_providers.keys() == _additional_publications.keys()
+                and all(_additional_config_providers[name] is provider
+                        and name in quant.QUANTIZATION_METHODS and resolve(name) is cls
+                        for name, (provider, cls) in _additional_publications.items())
+            )
+        except BaseException as error:
+            try:
+                _fatal('additional CT W4A8 public selector is unavailable')
+            except ExtensionCommitError as refusal:
+                raise refusal from error
+        if not extra_owned:
+            _fatal('additional CT W4A8 provider changed owner')
+        try:
             record = registry.get(OP)
         except BaseException as error:
             try:
@@ -142,7 +178,7 @@ def check_health():
 
 
 def activate_extension(context):
-    global _publication, _publishing
+    global _publication, _publishing, _additional_publications
     with _lock:
         if _failure is not None:
             raise ExtensionCommitError(_failure)
@@ -196,6 +232,14 @@ def activate_extension(context):
                 for fn in (register, resolve)
             ):
                 raise RuntimeError("CT W4A8 public quantization registration ABI changed")
+            extras = {}
+            for name, provider in _additional_config_providers.items():
+                candidate = provider()
+                if candidate.get_name() != name:
+                    raise ValueError('additional CT provider name disagrees with its config')
+                extras[name] = (provider, candidate)
+                if name in quant.QUANTIZATION_METHODS and resolve(name) is not candidate:
+                    raise RuntimeError('additional CT W4A8 name has a foreign owner')
             if NAME in quant.QUANTIZATION_METHODS:
                 if resolve(NAME) is not cls:
                     raise RuntimeError("CT W4A8 name has a foreign owner")
@@ -211,6 +255,10 @@ def activate_extension(context):
             # The public registry has no rollback. Everything after publishing
             # its name is part of the same irreversible activation transaction.
             try:
+                for name, (_, candidate) in extras.items():
+                    if name not in quant.QUANTIZATION_METHODS:
+                        register(name)(candidate)
+                _additional_publications = extras
                 registry.register(
                     op=OP, impl="native", target=TARGET,
                     mechanism=registry.MECH_SEAM, source=__name__,

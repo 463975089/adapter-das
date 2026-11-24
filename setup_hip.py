@@ -38,7 +38,7 @@ import re
 from pathlib import Path
 
 import torch
-from setuptools import setup
+from setuptools import Extension, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 root = Path(__file__).parent.resolve()
@@ -142,6 +142,13 @@ hipcc_flags = [
 ]
 
 ext_modules = [
+    # Loaded via ctypes, deliberately separate from Torch op registration.
+    Extension(
+        "sgl_kernel.cpu_metadata",
+        sources=["csrc/distributed/cpu_metadata.cc"],
+        language="c++",
+        extra_compile_args=["-O3", "-std=c++17"],
+    ),
     CUDAExtension(
         # sgl_kernel.native_ops, NOT common_ops: same TORCH_LIBRARY
         # namespace, distinct module file — no clash if an official wheel
