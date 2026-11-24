@@ -145,8 +145,10 @@ def validate_config(cfg, *, block_size=None):
             # after the features/dsv41 move (relative-import gate caught it).
             from hcu_adapter.kernels.pcp_dspark import validate_dspark_config
             validate_dspark_config(cfg)
-    if p.data_parallel_size not in (1, 8):
-        errors.append('DP1 or DP8 required')
+    # Each DP rank owns an independent indexer cache. Its page ABI does not
+    # depend on the number of replicas; expert sharding is checked by MoE.
+    if type(p.data_parallel_size) is not int or p.data_parallel_size <= 0:
+        errors.append('data_parallel_size must be a positive integer')
     if p.enable_dbo or p.enable_eplb:
         errors.append('DBO/EPLB unsupported')
     # LoRA stays rejected. PCP1 PD/KV-transfer is admitted here: the FP4
