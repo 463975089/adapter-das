@@ -66,6 +66,17 @@ class HcuConfigError(RuntimeError):
 # backends   selectable backend -> {status, note}
 
 BACKEND_CATALOG = {
+    "small_copy": {
+        "var": None,
+        "summary": "Upstream batched buffer copy with dynamic tuple arguments",
+        "backends": {
+            "standard-jit": {
+                "status": "candidate",
+                "note": "HCU FastJIT tuple-cache corruption reproduced across batch sizes; retain upstream kernel with standard Triton JIT",
+                "implementation": "hcu_adapter.features.jit.small_copy_jit",
+            },
+        },
+    },
     "vllm_hy4_pcp_profile": {
         "var": None,
         "summary": "Core HY4 MRV2 rank-local PCP memory profile bound",

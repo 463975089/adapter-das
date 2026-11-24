@@ -196,6 +196,9 @@ def install() -> None:
     pid = os.getpid()
     if _installed_pid == pid:
         return
+    if sys.argv and PurePath(sys.argv[0]).name in {"ninja", "ninja.exe"}:
+        _installed_pid = pid
+        return
     original_argv = getattr(sys, "orig_argv", ())
     if sys.argv == ["-c"] and "-c" in original_argv:
         index = original_argv.index("-c") + 1

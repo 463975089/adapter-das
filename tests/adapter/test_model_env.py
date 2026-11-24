@@ -173,3 +173,18 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {e}")
     print("RESULT:", "PASS" if not fails else f"FAIL ({fails})")
     sys.exit(1 if fails else 0)
+
+
+def test_legacy_topk_export_is_preserved_before_model_defaults(monkeypatch):
+    monkeypatch.delenv("SGLANG_DSA_FUSE_TOPK", raising=False)
+    monkeypatch.delenv("SGLANG_DISABLE_DSA_INDEXER_FUSION", raising=False)
+    monkeypatch.setenv("SGLANG_NSA_FUSE_TOPK", "1")
+    apply_model_env(_MC("bfloat16", indexer_n_heads=64))
+    assert os.environ["SGLANG_DSA_FUSE_TOPK"] == "1"
+
+
+def test_current_topk_export_wins_over_legacy_name(monkeypatch):
+    monkeypatch.setenv("SGLANG_DSA_FUSE_TOPK", "0")
+    monkeypatch.setenv("SGLANG_NSA_FUSE_TOPK", "1")
+    apply_model_env(_MC("bfloat16", indexer_n_heads=64))
+    assert os.environ["SGLANG_DSA_FUSE_TOPK"] == "0"
