@@ -30,7 +30,7 @@ sglang-runtime = [
     "aiohttp",
     "fastapi",
     "uvicorn>=0.51",
-    "sgl-router",
+    "sglang-router",
     "uvloop",
     "watchfiles",
     "pyzmq>=25.1.2",
