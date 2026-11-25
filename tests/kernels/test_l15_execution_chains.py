@@ -7,6 +7,24 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+_FP8_SCALED_MM = None
+
+
+def _fp8_scaled_mm_available():
+    """gfx936 has no fp8 compute path: torch._scaled_mm rejects the device
+    (compute capability >= 9.0/8.9 or ROCm MI300+ only). Probe once so the
+    fp8 arms skip instead of failing where the platform cannot run them."""
+    global _FP8_SCALED_MM
+    if _FP8_SCALED_MM is None:
+        try:
+            a = torch.zeros(32, 64, device="cuda").to(torch.float8_e4m3fn)
+            s = torch.ones(1, device="cuda")
+            torch._scaled_mm(a, a.t(), scale_a=s, scale_b=s, out_dtype=torch.bfloat16)
+            _FP8_SCALED_MM = True
+        except Exception:
+            _FP8_SCALED_MM = False
+    return _FP8_SCALED_MM
+
 
 def _mamba2_decode_reference(mixer, case, hidden, conv, ssm, slots):
     """CPU FP32 recurrence, with BF16 storage at the public layer boundaries.
@@ -302,6 +320,8 @@ def test_w8a8_int8_moe_chain(runtime, tokens, topk):
 @pytest.mark.parametrize("kind", ["int8", "fp8", "ct-fp8"])
 @pytest.mark.parametrize("tokens", [1, 17, 33])
 def test_quantized_linear_chain(runtime, monkeypatch, kind, tokens):
+    if kind != "int8" and not _fp8_scaled_mm_available():
+        pytest.skip("no fp8 compute path on this platform")
     from compressed_tensors.quantization import QuantizationStrategy
     from sglang.srt.layers.quantization.compressed_tensors.schemes.compressed_tensors_w8a8_int8 import (
         CompressedTensorsW8A8Int8,
