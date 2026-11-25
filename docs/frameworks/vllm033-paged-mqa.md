@@ -7,9 +7,10 @@ interface. A startup JSON file is optional. The existing public `ops` setting
 can explicitly select `aiter`, `triton`, or `emu`.
 
 The native path accepts gfx936/gfx938, non-MX E4M3FN Q, page64/D128 row-major
-FP8 keys followed by FP32 page-tail scales, and 32/64 query heads. Shared
-physical pages with gaps between layers use the existing official vLLM Triton
-provider. The bridge avoids copying the entire allocated KV cache per call.
+FP8 keys followed by FP32 page-tail scales, and 32/64 query heads. On gfx938, an AITER build advertising
+`paged_mqa_logits.supports_page_stride = True` also accepts aligned page strides
+with gaps between physical pages. Older AITER builds use the existing official
+vLLM Triton provider for these views. The bridge avoids copying the entire allocated KV cache per call.
 Unavailable native modules and unsupported metadata also use that provider.
 Native launch failures propagate. AITER selects its own kernel configuration.
 

@@ -4,6 +4,7 @@
 
 import json
 import runpy
+from itertools import product
 
 import aiter
 import torch
@@ -28,13 +29,28 @@ def main():
         calls.append(1)
         return native(*args, **kwargs)
 
+    supports_stride = (
+        torch.cuda.get_device_properties(0).gcnArchName.split(":")[0] == "gfx938"
+        and getattr(native, "supports_page_stride", False) is True
+    )
+    counted.supports_page_stride = getattr(native, "supports_page_stride", False)
     aiter.paged_mqa_logits = counted
+    expected_calls = 0
     try:
         with torch.inference_mode():
-            for pitched in (False, True):
+            for heads, page_stride in product((32, 64), (8448, 8704, 2015232)):
+                pitched = page_stride != 8448
                 query, cache, weights, lengths, table, *_ = inputs(
-                    device="cuda", padded=pitched, heads=32,
+                    device="cuda", padded=False, heads=heads,
                 )
+                if pitched:
+                    storage = torch.full(
+                        (cache.shape[0], page_stride), 197,
+                        device="cuda", dtype=torch.uint8,
+                    )
+                    payload = storage[:, 128:128 + 8448]
+                    payload.copy_(cache.reshape(cache.shape[0], 8448))
+                    cache = payload.view(cache.shape[0], 64, 1, 132)
                 table[0].fill_(-1)
 
                 def run():
@@ -65,9 +81,13 @@ def main():
                     valid = torch.arange(129, device="cuda")[None, :] < lengths
                     assert torch.equal(captured[~valid], torch.zeros_like(captured[~valid]))
                 torch.testing.assert_close(output, saved, atol=0, rtol=0)
-                assert len(calls) == 2
+                if not pitched or supports_stride:
+                    expected_calls += 2
+                assert len(calls) == expected_calls
                 print(json.dumps({
                     "pitched": pitched,
+                    "heads": heads,
+                    "page_stride": page_stride,
                     "native_calls": len(calls),
                     "graph_replays": 3,
                     "passed": True,

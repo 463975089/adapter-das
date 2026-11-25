@@ -8,7 +8,7 @@ import logging
 
 @lru_cache(maxsize=32)
 def _report_provider(provider, page_stride):
-    logging.getLogger(__name__).info(
+    logging.getLogger("vllm." + __name__).info(
         "HCU paged MQA provider=%s cache_page_stride=%s", provider, page_stride,
     )
 
@@ -31,8 +31,11 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
     # entire allocated cache per decode step would grow with cache capacity.
     supported = (
         query.device.type == "cuda" and torch.version.hip
-        and query.shape[2] in (32, 64) and query.shape[0] > 0
-        and max_model_len > 0 and cache.is_contiguous()
+        and query.shape[2] in (32, 64) and 0 < query.shape[0] <= 65535
+        and 0 < max_model_len <= 2147483647 and cache.numel() <= 2147483647
+        and (cache.is_contiguous() or (
+            cache.stride(0) >= 64 * 132 and cache.stride(0) % 4 == 0
+        ))
         and cache.data_ptr() % 4 == 0
         and query.data_ptr() % 4 == 0
         and not query.requires_grad and not weights.requires_grad
@@ -56,6 +59,15 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
 
     paged_mqa_logits = getattr(aiter, "paged_mqa_logits", None)
     if not callable(paged_mqa_logits):
+        return triton_logits(q, cache, weights, lengths, table, metadata,
+                             max_model_len, indices=indices)
+
+    supports_stride = (
+        arch == "gfx938"
+        and getattr(paged_mqa_logits, "supports_page_stride", False) is True
+    )
+    if not cache.is_contiguous() and not supports_stride:
+        _report_provider("triton (AITER lacks page-stride support)", cache.stride(0))
         return triton_logits(q, cache, weights, lengths, table, metadata,
                              max_model_len, indices=indices)
 

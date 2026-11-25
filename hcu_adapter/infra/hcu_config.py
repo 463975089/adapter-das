@@ -235,7 +235,7 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales",
         "backends": {
-            "aiter": {"status": "candidate", "note": "Default HCU AITER Opus page64 provider on gfx936/gfx938; pitched caches or unavailable native API use the existing Triton provider. FP32 owned zero-masked output; explicit emu/triton overrides supported."},
+            "aiter": {"status": "candidate", "note": "Default HCU AITER Opus page64 provider on gfx936/gfx938; page-stride capable AITER builds accept pitched page64 caches on gfx938; older builds or unavailable APIs use the existing Triton provider. FP32 owned zero-masked output; explicit emu/triton overrides supported."},
             "emu": {"status": "candidate", "note": "Explicit HCU page64/D128 next_n=1 provider; FP32 logits and folded Q scales. CPU and gfx938 eager/Graph contracts covered; serving/wheel/throughput gates pending. Startup kill switch refuses, never selects CUDA."},
             "triton": {"status": "candidate", "note": "Opt-in existing official vLLM Triton page64/D128 H32/H64 launcher; zero-masked independent FP32 output. Explicit ops config; Torch fallback for CPU/unsupported strides or heads. HCU model and changing-input Graph gates required."},
         },
