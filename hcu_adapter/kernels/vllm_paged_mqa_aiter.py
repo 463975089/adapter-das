@@ -57,8 +57,10 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
         return triton_logits(q, cache, weights, lengths, table, metadata,
                              max_model_len, indices=indices)
 
+    from hcu_adapter._base import Missing
+
     paged_mqa_logits = getattr(aiter, "paged_mqa_logits", None)
-    if not callable(paged_mqa_logits):
+    if isinstance(paged_mqa_logits, Missing) or not callable(paged_mqa_logits):
         return triton_logits(q, cache, weights, lengths, table, metadata,
                              max_model_len, indices=indices)
 
