@@ -2,9 +2,14 @@
 import pytest
 import torch
 
-from hcu_adapter.kernels.fp4_staging_triton import stage_decode_pages
+from hcu_adapter.kernels.fp4_staging_triton import (
+    stage_decode_pages, supports_staging_device,
+)
 
-pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason='HCU required')
+pytestmark = pytest.mark.skipif(
+    not (torch.cuda.is_available() and supports_staging_device('cuda')),
+    reason='FP4 staging requires HIP gfx938 with 64 CUs',
+)
 
 
 def check_cpu_oracle(cache, table, lengths, pages, out_table):
