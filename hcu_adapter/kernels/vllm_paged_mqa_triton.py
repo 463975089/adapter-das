@@ -23,7 +23,9 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
     # Keep all valid generic ABI faces: the official fast launcher assumes
     # power-of-two head tiles and contiguous inner axes. Unsupported faces
     # use the existing active Torch implementation, not a native guess.
-    if (query.device.type != "cuda" or not torch.version.hip
+    # The official scorer multiplies row and output stride as signed int32.
+    if (query.shape[0] * max_model_len > (1 << 31)
+            or query.device.type != "cuda" or not torch.version.hip
             or query.shape[2] not in (32, 64) or query.stride(-1) != 1
             or weights.stride(-1) != 1 or table.stride(-1) != 1
             or not lengths.is_contiguous() or cache.storage_offset() % 4
@@ -43,5 +45,6 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
     scores = rocm_fp8_paged_mqa_logits_triton(
         query, cache, weights, lengths, table, max_model_len
     )
-    columns = torch.arange(max_model_len, device=query.device)
-    return scores.masked_fill(columns[None] >= lengths.reshape(-1, 1), 0)
+    from hcu_adapter.kernels._paged_mqa_mask_triton import owned_logits_mask
+
+    return owned_logits_mask(scores, lengths)
