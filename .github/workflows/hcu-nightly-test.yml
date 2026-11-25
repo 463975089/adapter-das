@@ -246,6 +246,9 @@ jobs:
         # tee 留一份给下面的 Summary 解析；pipefail 保证脚本失败不被 tee 的成功掩盖
         run: |
           set -o pipefail
+          wget https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.xz
+          tar -xf node-v24.18.0-linux-x64.tar.xz -C /opt
+          export PATH="/opt/node-v24.18.0-linux-x64/bin:$PATH"
           bash ci/l1_gpu_gate.sh 0 --up-tree "$HCU_UP_TREE" 2>&1 | tee /tmp/l15_run.log
 
       - name: Summarize L1.5 results
@@ -261,11 +264,26 @@ jobs:
           except OSError:
               lines = []
           # "L1: <segment> PASS|FAIL" / "L1: gate <name> PASS|FAIL" / "L1: gates|vendor ..."
-          pat = re.compile(r"^L1: (l15_\w+|gates|vendor|gate \S+) (PASS|FAIL)\b")
+          # 段名必须覆盖 ci/l1_gpu_gate.sh 里的全部 segment：l0/cpu/kernels 同样是
+          # 独立判定段（它们 FAIL 时脚本 exit 1）。早先只收 l15_*/gates/vendor，
+          # 这三个段红了不进明细 —— job 是 ❌，卡片下半截却写"全部通过（N 项）"。
+          pat = re.compile(
+              r"^L1: (gate \S+|l0|cpu|kernels|l15_\w+|gates|vendor) (PASS|FAIL)\b"
+          )
           for line in lines:
               m = pat.match(line)
               if m:
                   items[m.group(1).replace("gate ", "gate:", 1)] = m.group(2)
+          # 安全网：脚本的最终裁决 "L1: RED  (kernels gate:x ...)" 列出全部失败段。
+          # 将来若新增的 segment 没进上面的段名表，这条也能把它补成 FAIL，不再出现
+          # "脚本 RED、明细全绿"的自相矛盾。RED 里的名字与判定行的 key 同形
+          # （gate:<name>），用 setdefault 避免覆盖已解析到的状态。
+          red = re.compile(r"^L1: RED\s+\(([^)]*)\)")
+          for line in lines:
+              m = red.match(line)
+              if m:
+                  for name in m.group(1).split():
+                      items.setdefault(name, "FAIL")
           print("json=" + json.dumps({"items": items}, ensure_ascii=False, separators=(",", ":")))
           PY
 

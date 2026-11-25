@@ -114,17 +114,26 @@ def job_items(needs, jid):
         return None
 
 
-def details_markdown(needs):
-    """L1.5 / vLLM 车道的逐项明细：全绿只报数量，有红就把失败项列出来。"""
+def details_markdown(needs, results):
+    """L1.5 / vLLM 车道的逐项明细：全绿只报数量，有红就把失败项列出来。
+
+    明细只覆盖脚本打印了判定行的项；job 还会因为装包失败、日志上传失败、
+    超时/被取消等"判定项之外"的原因变红。所以最后那句结论必须再和 job
+    result 对一遍，否则卡片上半截 ❌、下半截"全部通过"，自相矛盾
+    （run 45573797349 就是这个形态）。
+    """
     lines = []
     for jid, label in JOBS:
         if jid == "l2":
             continue
+        result = results.get(jid, "skipped")
         items = job_items(needs, jid)
         if items is None:
             continue
         if not items:
-            lines.append(f"**{label}** — 未产生明细（脚本没跑到判定）")
+            lines.append(
+                f"**{label}** — 未产生明细（job 结果 {result}；脚本没跑到判定）"
+            )
             continue
         # vLLM 车道的 EMPTY（import-only 模块、rc=5）不算失败，单独计数
         fails = [name for name, state in items.items() if state == "FAIL"]
@@ -139,10 +148,19 @@ def details_markdown(needs):
             if empty:
                 line += f"（另有 {len(empty)} 项无用例）"
             lines.append(line)
-        elif empty:
-            lines.append(f"**{label}** — {passed}/{total} 通过（另有 {len(empty)} 项无用例）")
+            continue
+        if empty:
+            line = f"**{label}** — {passed}/{total} 通过（另有 {len(empty)} 项无用例）"
         else:
-            lines.append(f"**{label}** — 全部通过（{total} 项）")
+            line = f"**{label}** — 全部通过（{total} 项）"
+        if result == "cancelled":
+            line += "；但 job 被取消（超时或上游失败），明细可能不完整"
+        elif result != "success":
+            line += (
+                f"；但 job 结果为 {result}——判定项之外还有失败"
+                "（装包/收集/上传/超时），见日志"
+            )
+        lines.append(line)
     return "\n".join(lines)
 
 
@@ -164,7 +182,7 @@ def build_card(needs, results, status_text, template):
         {"tag": "div", "fields": fields},
         {"tag": "hr"},
     ]
-    details = details_markdown(needs)
+    details = details_markdown(needs, results)
     if details:
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": details}})
         elements.append({"tag": "hr"})
