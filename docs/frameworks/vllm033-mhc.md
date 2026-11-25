@@ -191,3 +191,33 @@ Graph replay。该改动随后用于 W4A8、FP4 Indexer、SWA bounded replay、
 `acceptance_runs/dspark_pcp_06`。每卡 KV 预算8 GiB，分配器使用
 `expandable_segments:False,max_split_size_mb:256`。精确模型、环境调整和
 退出日志记录见 Plugin 的 `docs/validation/dspark_layer_split_v033.md`。
+
+
+## gfx938 小行数 delayed 边界调度（2026-11-23 候选）
+
+在现有 AITER/TileLang、split-K auto、Mega 可用且支持完整 delayed ABI 时，
+对现有 `select_splits` 的小行数范围（1≤M≤64）优先复用已注册的
+`hcu_adapter_mhc_boundary`，合并 Post、投影部分归约及 collapse。
+Mega 原路径会生成本接口不用的 RMSNorm 输出，再单独执行 collapse。
+M 超过64、显式 split-K、不同输入布局或不支持的 ABI 保留既有分派；
+不增加启动参数或环境变量。这里只改变分派，不更改 kernel 的数学公式。
+
+独立 gfx938 检查覆盖真实 target/draft 的四组权重，M 为
+1/7/17/35/42/48/64/65/129/257，包含 eager 和三次变输入 Graph，240 项通过。
+更新残差和 collapse 的 BF16 输出与原生 Torch 精确一致；FP32 mix 对照独立
+CPU FP64，使用事先固定的 rtol=2e-5、atol=2e-6。现有 Mega 与该边界存在
+舍入差异，不能宣称两者逐位一致，仍须完整 HumanEval164 和实际服务验收。
+
+独占 GPU、7 轮交替配对、Graph 内16次调用×50次 replay：
+target M42 中位数43.565→29.356 µs，M35 42.706→28.707 µs；
+draft M42 43.519→29.333 µs。M257 的直接边界调用反而变慢，
+因此该候选保留大行数 Mega 分派。计时使用可缓存版本化权重，
+与服务 trace 中无逐 step 打包 kernel 的执行方式一致。
+
+原始证据：`run/dsv4.1/033/fp8_optimization_20261123/` 下
+`microbench/mhc_boundary_numerics_nmz10.json`、
+`microbench/mhc_boundary_paired_nmz10.json` 与 `MHC_GATE.json`。
+局部加速尚不代表整模型 TPOT 收益；下一轮与 Plugin 草稿 Q/KV 分拆固定为
+同一对提交后，执行完整164题、实际 trace 和三轮不带 profiler 的性能测试。
+
+本次桥接/分派/provider 契约 CPU 回归121项通过；L0结构门禁通过。
