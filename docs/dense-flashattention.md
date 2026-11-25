@@ -22,3 +22,16 @@
 [测试参考](../skills/hcu-adapter-dev/references/test-suite.md#非分页-diffusion-接口回归)。
 模型启动、性能表、图像复现限制及证据目录统一见
 [MiniMax-H3 部署第8节](image-dtk2610.md#8-minimax-h3-image-的原生-diffusion-平台候选)。
+
+## SGLang Diffusion FA / FA2 后端
+
+gfx936 上的 HCU diffusion 平台在 DTK FA2 可用时按调用方请求返回对应后端。
+`FA` 保留上游 FA 标识、dense、Ring 和 Skip Softmax 接口，常规 packed varlen
+通过 DTK `flash_attn_varlen_func` 执行。显式 `FA2` 用 DTK
+`flash_attn_func` 执行 dense，并与 `FA` 共享连续 packed varlen 路径。
+该路径以 sglang-das `d76d3f185d` 为行为基线，packed Q/K/V 和设备上的
+int32 序列边界使用连续布局，切分边界和最大长度由调用方提供。
+
+该路径需要真实 DTK wheel，支持 BF16/FP16。DTK FA2 不可用或设置
+`HCU_DISABLE_OPS=vendor_fa` 时，FA 交给上游 resolver，显式 FA2 报错。
+已有 FA3 桥仍通过 `HCU_FA_IMPL` 选择 provider。
