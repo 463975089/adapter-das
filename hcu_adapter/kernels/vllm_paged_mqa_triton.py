@@ -43,6 +43,6 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
     scores = rocm_fp8_paged_mqa_logits_triton(
         query, cache, weights, lengths, table, max_model_len
     )
-    from hcu_adapter.kernels._paged_mqa_mask import owned_logits_mask
+    from hcu_adapter.kernels._paged_mqa_mask_triton import owned_logits_mask
 
     return owned_logits_mask(scores, lengths)

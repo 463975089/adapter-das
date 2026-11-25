@@ -15,7 +15,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def helper():
-    path = Path(__file__).resolve().parents[2] / "hcu_adapter/kernels/_paged_mqa_mask.py"
+    path = Path(__file__).resolve().parents[2] / "hcu_adapter/kernels/_paged_mqa_mask_triton.py"
     spec = importlib.util.spec_from_file_location("_actual_paged_mqa_mask_test", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

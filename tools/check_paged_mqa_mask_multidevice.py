@@ -11,7 +11,7 @@ import torch
 def main():
     if not torch.version.hip or torch.cuda.device_count() < 2:
         raise RuntimeError("This explicit regression requires two assigned HIP GPUs")
-    path = Path(__file__).resolve().parents[1] / "hcu_adapter/kernels/_paged_mqa_mask.py"
+    path = Path(__file__).resolve().parents[1] / "hcu_adapter/kernels/_paged_mqa_mask_triton.py"
     spec = importlib.util.spec_from_file_location("_actual_mask_multidevice", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
