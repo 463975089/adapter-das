@@ -83,6 +83,7 @@ TEXT_PATCH_ALLOWLIST = {
         "    const auto [i0, i1] = cast<fp32x2_t>(bf16x2_t{i0_bf16, i1_bf16});",
     ),
     ("rotary_embedding", "      const auto [x0, x1] = cast<fp32x2_t>(input_vec_x[j]);"),
+    ("rotary_embedding", "const auto [x0, x1] = cast<fp32x2_t>(input_vec[j]);"),
     # JIT per-token-group-quant fp8: the CUDA DTypeTrait<fp8>::kFloatMax
     # member is compiled out under USE_ROCM; the HIP-side packed convert is
     # not the CUDA intrinsic. Repoint the clamp constant at the literal

@@ -367,3 +367,14 @@ print("CONFIG-DISCOVERY-OK")
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "CONFIG-DISCOVERY-OK" in result.stdout
+
+
+def test_adapter_wheel_ships_vendor_gemm_source(adapter_wheel, tmp_path):
+    # Exercise the built distribution, not just source-tree availability.
+    relative = "hcu_adapter/kernels/fp8_scaled_mm_cpp.cpp"
+    with zipfile.ZipFile(adapter_wheel) as archive:
+        assert relative in archive.namelist()
+        archive.extract(relative, tmp_path)
+        archive.extract("hcu_adapter/kernels/fp8_scaled_mm_cpp.py", tmp_path)
+    installed = tmp_path / "hcu_adapter/kernels/fp8_scaled_mm_cpp.py"
+    assert installed.with_suffix(".cpp").read_bytes() == (REPO_ROOT / relative).read_bytes()

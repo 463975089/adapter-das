@@ -388,3 +388,17 @@ DAS `275064cc8c` 的 HIP scaled-residual 路径提供了独立舍入的对照。
 FP32 参考逐位一致，倒平方根相对 FP64 参考舍入到 FP32 的最大误差为 1 ULP。
 两个 SGLang VAE residual kernel 的 FP16/BF16 对照通过。完整 T2VA
 生成和其他设备架构的内核执行仍待验证。
+
+## 10. MiniMax H3 DiT 上游 QK Norm + RoPE
+
+SGLang v0.5.22 `baa9befa` 的 diffusion QK Norm + RoPE 在 gfx936 上
+遇到 DTK hipcc 的 HIP 向量解构和 shuffle 掩码编译差异。JIT 输入
+staging 对该源码改用 `float2.x/y`、宽度为 32 的 HIP shuffle，
+并使用 `kDLGPU` 作为 DLPack 设备判据。生成的输入和编译产物使用
+独立缓存，原始社区源码可直接复用。配套 plugin 将能力探测限定在
+gfx936 H3 Attention 的构造期间，编译不可用时仍走分离路径。
+
+DTK 26.10、Torch 2.13.0、单卡 gfx936 的 BF16 head128/rotary96
+原位及 out-of-place 算子均已运行。四组 packed QKV 对比现有
+RMSNorm + partial RoPE 逐位一致，V 保持原值。原位算子通过两次
+变输入和位置的 Graph replay。

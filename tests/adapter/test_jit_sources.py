@@ -97,6 +97,30 @@ def test_per_token_fp8_conversion_is_staged_for_both_kernel_paths(tmp_path):
     assert _snapshot(root) == before
 
 
+def test_diffusion_qknorm_rope_hip_portability_is_staged(tmp_path):
+    from hcu_adapter.features.jit import jit_rope
+
+    root = tmp_path / "community" / "jit"
+    root.mkdir(parents=True)
+    _synthetic(root)
+    relative_path = "csrc/" + jit_rope._DIFFUSION_SOURCE
+    source = root / relative_path
+    source.parent.mkdir()
+    source.write_text("\n".join(
+        needle for needle, _, count in jit_rope._DIFFUSION_PATCHES for _ in range(count)
+    ))
+    before = source.read_bytes()
+    bundle, manifest = bridge.prepare(root, tmp_path / "cache")
+    compiler_input = (bundle / relative_path).read_text()
+    assert source.read_bytes() == before
+    assert compiler_input.count("device.set_options<kDLGPU>();") == 3
+    assert "__shfl(partner_bits, partner_lane, kWarpThreads)" in compiler_input
+    assert "__shfl(elems[i], partner_lane, kWarpThreads)" in compiler_input
+    assert "x0 = xy.x, x1 = xy.y" in compiler_input
+    assert "w0 = weights.x, w1 = weights.y" in compiler_input
+    assert any(relative_path in record["target"] for _, record in manifest["records"])
+
+
 @pytest.fixture(params=["offline", "community-git"])
 def source(tmp_path, request):
     root = tmp_path / "community" / "jit"

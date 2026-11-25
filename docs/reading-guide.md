@@ -37,8 +37,6 @@
 
 文件职责与代码整理先读 [architecture §7](architecture.md#文件职责与整理顺序)；算子归属和迁移证据要求以 governance 为准，历史验证结论不随目录迁移自动继承。
 
-MiniMax-H3专用RoPE候选的接口、快关、CPU/离线编译证据与设备验收边界见 [MiniMax-H3](minimax-h3.md)。
-
 ## 算子目录入口
 
 当前启动就绪门禁的执行顺序与严格入口见 [l15-readiness-plan.md](l15-readiness-plan.md)。

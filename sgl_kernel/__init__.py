@@ -29,7 +29,6 @@ from sgl_kernel.layernorm import (
     rmsnorm,
 )
 from sgl_kernel.rotary import rotary_embedding
-from sgl_kernel.minimax_h3_rotary_embedding_triton import minimax_h3_rotary_embedding
 from sgl_kernel.moe import (
     moe_align_block_size,
     moe_fused_gate,
@@ -145,7 +144,6 @@ __all__ = [
     "gemma_fused_add_rmsnorm",
     # rope
     "rotary_embedding",
-    "minimax_h3_rotary_embedding",
     # gemm
     "fp8_scaled_mm",
     "int8_scaled_mm",

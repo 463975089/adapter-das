@@ -176,6 +176,9 @@ py-modules = ["sitecustomize"]
 [tool.setuptools.package-dir]
 "" = "../.."
 
+[tool.setuptools.package-data]
+"hcu_adapter.kernels" = ["fp8_scaled_mm_cpp.cpp"]
+
 [tool.setuptools.packages.find]
 where = ["../.."]
 include = ["hcu_adapter*"]
