@@ -33,6 +33,8 @@ def _native_matches(device):
 
 
 if triton is not None:
+    from .mla_decode_rope_tiles_triton import _mask_copy_inverse_rope_heads
+
     @triton.jit
     def _mask_copy_inverse_rope(Result, Output, Main, Extra, Positions, CS,
                                 HEADS: tl.constexpr, HAS_EXTRA: tl.constexpr):
@@ -95,9 +97,9 @@ def qualify_inverse_rope(device):
                     positions = (255 - row).to(torch.int64) if with_extra else 255 - row
                     expected = torch.where(live[:, None, None], result, 0.)
                     entries[1](expected, positions, cos_sin, 64)
-                    _mask_copy_inverse_rope[(rows, heads)](
+                    _mask_copy_inverse_rope_heads[(rows, triton.cdiv(heads,16))](
                         result, output, main, extra, positions, cos_sin,
-                        heads, with_extra, num_warps=4)
+                        heads, with_extra, 16, num_warps=4)
                     if not torch.equal(output.view(torch.uint8), expected.view(torch.uint8)):
                         _LOG.warning('HCU inverse RoPE preflight output differs from vLLM Core')
                         return False
@@ -128,7 +130,7 @@ def try_mask_copy_rope(result, output, main_lens, extra_lens, positions, cos_sin
         return False
     if not _native_matches(result.device):
         return False
-    _mask_copy_inverse_rope[(result.shape[0], result.shape[1])](
+    _mask_copy_inverse_rope_heads[(result.shape[0], triton.cdiv(result.shape[1],16))](
         result, output, main_lens, extra_lens, positions, cos_sin,
-        result.shape[1], extra_lens is not None, num_warps=4)
+        result.shape[1], extra_lens is not None, 16, num_warps=4)
     return True
