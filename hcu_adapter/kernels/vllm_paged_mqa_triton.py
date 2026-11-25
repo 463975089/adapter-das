@@ -43,5 +43,6 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
     scores = rocm_fp8_paged_mqa_logits_triton(
         query, cache, weights, lengths, table, max_model_len
     )
-    columns = torch.arange(max_model_len, device=query.device)
-    return scores.masked_fill(columns[None] >= lengths.reshape(-1, 1), 0)
+    from hcu_adapter.kernels._paged_mqa_mask_triton import owned_logits_mask
+
+    return owned_logits_mask(scores, lengths)
