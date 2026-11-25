@@ -147,12 +147,23 @@ def try_decode(*, q, kv_cache, swa_k_cache, swa_only, topk_indices, topk_lens,
           or output.device != q.device or output.stride(-1) != 1):
         return None
 
-    main_ids, main_lens = _selectors(swa_indices, swa_lens, swa_ragged_indices,
-        swa_ragged_indptr, rows, swa_k_cache.shape[0] * swa_k_cache.shape[1])
-    extra_ids, extra_lens = None, None
-    if not swa_only:
-        extra_ids, extra_lens = _selectors(topk_indices, topk_lens, topk_ragged_indices,
-            topk_ragged_indptr, rows, kv_cache.shape[0] * kv_cache.shape[1])
+    paired = None
+    if not swa_only and enabled(_FUSED_SELECTORS_ENV):
+        from .mla_selector_pair_triton import try_selector_banks
+        paired = try_selector_banks(
+            (swa_indices, swa_lens, swa_ragged_indices, swa_ragged_indptr),
+            (topk_indices, topk_lens, topk_ragged_indices, topk_ragged_indptr),
+            rows, swa_k_cache.shape[0] * swa_k_cache.shape[1],
+            kv_cache.shape[0] * kv_cache.shape[1])
+    if paired is not None:
+        (main_ids, main_lens), (extra_ids, extra_lens) = paired
+    else:
+        main_ids, main_lens = _selectors(swa_indices, swa_lens, swa_ragged_indices,
+            swa_ragged_indptr, rows, swa_k_cache.shape[0] * swa_k_cache.shape[1])
+        extra_ids, extra_lens = None, None
+        if not swa_only:
+            extra_ids, extra_lens = _selectors(topk_indices, topk_lens, topk_ragged_indices,
+                topk_ragged_indptr, rows, kv_cache.shape[0] * kv_cache.shape[1])
     # DTK D512 native decode consumes H64/H128. Pad queries/sinks only, so TP
     # slices (H4/H8/H16/...) use the same packed cache without any KV gather.
     native_heads = 64 if heads <= 64 else 128
