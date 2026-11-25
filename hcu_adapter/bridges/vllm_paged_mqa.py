@@ -54,6 +54,16 @@ def triton_paged_mqa_logits(q, kv_cache, weights, context_lens, block_tables,
     )
 
 
+def aiter_paged_mqa_logits(q, kv_cache, weights, context_lens, block_tables,
+                           schedule_metadata, max_model_len, indices=None):
+    from hcu_adapter.kernels.vllm_paged_mqa_aiter import fp32_paged_mqa_logits
+
+    return fp32_paged_mqa_logits(
+        q, kv_cache, weights, context_lens, block_tables, schedule_metadata,
+        max_model_len, indices=indices,
+    )
+
+
 def get_paged_mqa_provider():
     """Return paired scheduler/scorer at model construction (also in workers).
 
@@ -63,10 +73,11 @@ def get_paged_mqa_provider():
     """
     if op_disabled(OP):
         raise NotImplementedError(f"HCU {OP} disabled via HCU_DISABLE_OPS; restart after changing policy")
-    # Use the existing public config, not a new model-private environment
-    # variable. Keep Torch as default until model/Graph qualification completes.
-    backend = hcu_config.load()["ops"].get(OP, "emu")
-    if backend == "triton":
+    # Default to the vendor AITER provider; explicit public overrides win.
+    backend = hcu_config.load()["ops"].get(OP, "aiter")
+    if backend == "aiter":
+        metadata, scorer = get_triton_paged_mqa_metadata, aiter_paged_mqa_logits
+    elif backend == "triton":
         metadata, scorer = get_triton_paged_mqa_metadata, triton_paged_mqa_logits
     elif backend == "emu":
         metadata, scorer = get_paged_mqa_logits_metadata, fp8_fp4_paged_mqa_logits
