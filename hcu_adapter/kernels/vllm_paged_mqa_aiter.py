@@ -27,6 +27,12 @@ def fp32_paged_mqa_logits(q, cache, weights, lengths, table, metadata,
     emu._validate_fp32_paged_mqa(query, cache, weights, lengths, table)
     if max_model_len < 0:
         raise ValueError("MQA max_model_len must be nonnegative")
+    # AITER's all-padding path stores its float-element offset in uint32.
+    # Keep the generic ABI for larger outputs through the Torch reference.
+    if query.shape[0] * max_model_len > (1 << 32):
+        return emu.fp8_fp4_paged_mqa_logits(
+            q, cache, weights, lengths, table, metadata, max_model_len, indices
+        )
     # Shared physical pages can contain another layer's payload. Copying the
     # entire allocated cache per decode step would grow with cache capacity.
     supported = (
