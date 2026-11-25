@@ -72,8 +72,10 @@ def install() -> bool:
 
     import torch
     from hcu_adapter.kernels.scaled_mm_lightop import scaled_mm, supported
+    from hcu_adapter.kernels.fp8_scaled_mm_cpp import try_scaled_mm
 
     architecture = detection.architecture
+    native_warmed_devices = set()
 
     # Opaque to Dynamo; actual dispatch uses concrete runtime dimensions. The
     # original Triton INT8 custom op remains intact and delegates here as well.
@@ -81,7 +83,22 @@ def install() -> bool:
                  Bs: torch.Tensor, out_dtype: torch.dtype,
                  bias: torch.Tensor | None = None) -> torch.Tensor:
         if supported(A, B, As, Bs, out_dtype, bias, architecture):
-            return scaled_mm(A, B, As, Bs, out_dtype, bias, gemm=vendor)
+            # The vendor handle and capture predicate both follow the tensor device.
+            with torch.cuda.device(A.device):
+                # The vendor lazily creates a per-device handle. Keep this eager
+                # initialization even when every warmup call takes the tuned path:
+                # an unseen graph shape must be able to use the original fallback.
+                if (A.device not in native_warmed_devices
+                        and not torch.cuda.is_current_stream_capturing()):
+                    scaled_mm(A, B, As, Bs, out_dtype, bias, gemm=vendor)
+                    native_warmed_devices.add(A.device)
+                if A.dtype == torch.float8_e4m3fn and out_dtype == torch.bfloat16 and bias is None:
+                    sa = As.reshape(-1, 1).expand(A.shape[0], 1).contiguous()
+                    sb = Bs.reshape(-1, 1).expand(B.shape[1], 1).contiguous()
+                    optimized = try_scaled_mm(A, B.t(), sa, sb)
+                    if optimized is not None:
+                        return optimized
+                return scaled_mm(A, B, As, Bs, out_dtype, bias, gemm=vendor)
         return original(A, B, As, Bs, out_dtype, bias)
 
     def fake(A, B, As, Bs, out_dtype, bias=None):

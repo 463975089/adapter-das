@@ -90,3 +90,59 @@ def test_unknown_host_site_stays_stock_in_auto_and_refuses_explicit(startup, cho
     assert module.triton_scaled_mm is original
     assert registry.get('vllm_scaled_mm') is None
     assert not publications
+
+
+@pytest.mark.parametrize('capturing', [False, True])
+@pytest.mark.parametrize('optimized', [False, True])
+def test_fp8_warmup_and_fallback_use_tensor_device(
+        startup, monkeypatch, capturing, optimized):
+    """CPU ownership doubles, with opposite capture states on the two devices."""
+    from contextlib import contextmanager
+    from hcu_adapter.kernels import fp8_scaled_mm_cpp, scaled_mm_lightop
+
+    module, _ = startup
+    caller, owner = torch.device('cuda:0'), torch.device('cuda:1')
+    state = {'device': caller, 'native_calls': 0}
+
+    @contextmanager
+    def device_context(device):
+        previous = state['device']
+        state['device'] = device
+        try:
+            yield
+        finally:
+            state['device'] = previous
+
+    def native(*args, **kwargs):
+        assert state['device'] == owner
+        state['native_calls'] += 1
+        return 'native'
+
+    def tuned(*args):
+        assert state['device'] == owner
+        return 'optimized' if optimized else None
+
+    class Op:
+        def __init__(self, dispatch):
+            self.dispatch = dispatch
+        def register_fake(self, fake):
+            pass
+        def __call__(self, *args):
+            return self.dispatch(*args)
+
+    monkeypatch.setattr(torch.library, 'custom_op', lambda name, fn, **kw: Op(fn))
+    monkeypatch.setattr(torch.cuda, 'device', device_context)
+    monkeypatch.setattr(torch.cuda, 'is_current_stream_capturing', lambda:
+        capturing if state['device'] == owner else not capturing)
+    monkeypatch.setattr(scaled_mm_lightop, 'supported', lambda *args: True)
+    monkeypatch.setattr(scaled_mm_lightop, 'scaled_mm', native)
+    monkeypatch.setattr(fp8_scaled_mm_cpp, 'try_scaled_mm', tuned)
+    assert bridge.install()
+    a = SimpleNamespace(device=owner, dtype=torch.float8_e4m3fn, shape=(7, 1024))
+    b = SimpleNamespace(shape=(1024, 1024), t=lambda: object())
+    sa, sb = torch.ones(7, 1), torch.ones(1024, 1)
+    for _ in range(2):
+        assert module.triton_scaled_mm(a, b, sa, sb, torch.bfloat16) == (
+            'optimized' if optimized else 'native')
+        assert state['device'] == caller
+    assert state['native_calls'] == (0 if capturing else 1) + (0 if optimized else 2)
