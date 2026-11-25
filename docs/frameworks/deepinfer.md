@@ -79,6 +79,20 @@ DEEPINFER_SOURCE="$OFFICIAL" bash examples/deepinfer/run.sh \
 脚本只选择宿主、配置和源码搜索路径，原样执行指定的上游命令；不会安装模型 plugin。
 命令和模型参数取自配套 DeepInfer 版本的使用说明。
 
+## 双机 CP8/EP8/Engram8
+
+配方使用两个各有四张 gfx938 HCU 设备 的节点，DP1。部署启动器负责提供全局 rank、本地 rank、进程组规模和主节点地址。每个 worker 在加载引擎前先调用 `install_runtime(physical_device_count=4)`，再调用 `install_distributed_workers()`。后者核对 DeepInfer 源码，接管 CP worker 启动，在原有 CPU CP 进程组上广播驱动命令。rank 0 负责请求和输出，其余 rank 执行原 Worker 循环。DeepInfer 使用启动器会合端口减 50 创建独立 TCP store。
+
+跨主机 EP 要求按节点连续排列的 4+4 rank，以及 DTK2610 / CPython 3.12 生效的 DeepEP `g0aee8c` MNVL 构建。每个 rank 校验实际加载的 C++ 扩展摘要和以下参数：
+
+| 参数 | 值 |
+| --- | --- |
+| `DEEP_EP_NORMAL_MNVL` | `1` |
+| `ROCSHMEM_IPC_MNVL` | `1` |
+| `ROCSHMEM_IPC_MNVL_NPES` | `16` |
+
+显式双机入口在固定上游 GPU Engram 存储路径持有原张量和 scale，避免加载时发生重复拷贝。单机仍使用 DeepInfer 本地 spawn、原 CP 命令队列和 Engram 拷贝路径。模型模式和启动示例由 DeepInfer plugin 提供。
+
 ## 验证状态
 
 本分支从原有 DeepInfer 适配工作区迁入，重新对接 adapter-das 的统一包结构。
