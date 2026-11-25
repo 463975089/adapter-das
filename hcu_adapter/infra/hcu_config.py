@@ -591,14 +591,6 @@ BACKEND_CATALOG = {
                                  "tests/kernels/test_mqa_vendor_gfx938.py"},
         },
     },
-    "minimax_h3_rotary_embedding": {
-        "var": None,
-        "summary": "MiniMax-H3 NeoX partial RoPE: DiT128/96 and VAE64/48; native preferred by plugin",
-        "backends": {
-            "triton": {"status": "candidate", "note": "BF16/FP16/FP32 old-native canonical parity passed; changed-input Graph passed; serving pending"},
-            "torch": {"status": "candidate", "note": "CPU contract and diagnostic fallback; no serving claim"},
-        },
-    },
     "rotary_embedding": {
         "var": None,
         "summary": "RoPE NeoX triton in place; GPT-J interleave = torch",

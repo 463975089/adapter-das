@@ -126,6 +126,61 @@ def _apply_minimax(csrc, register):
     return len(_MINIMAX_PATCHES)
 
 
+_DIFFUSION_SOURCE = "diffusion/qknorm_rope.cuh"
+_DIFFUSION_PATCHES = (
+    (
+        "const auto [x0, x1] = cast<fp32x2_t>(input_vec[j]);",
+        "const auto xy = cast<fp32x2_t>(input_vec[j]);\n"
+        "      const auto x0 = xy.x, x1 = xy.y;",
+        1,
+    ),
+    (
+        "\n      const auto [w0, w1] = cast<fp32x2_t>(weight_vec[j]);",
+        "\n      const auto weights = cast<fp32x2_t>(weight_vec[j]);\n"
+        "      const auto w0 = weights.x, w1 = weights.y;",
+        1,
+    ),
+    (
+        "__shfl_sync(kActiveMask, partner_bits, partner_lane)",
+        "__shfl(partner_bits, partner_lane, kWarpThreads)",
+        1,
+    ),
+    (
+        "__shfl_sync(kActiveMask, elems[i], partner_lane)",
+        "__shfl(elems[i], partner_lane, kWarpThreads)",
+        1,
+    ),
+    ("device.set_options<kDLCUDA>();", "device.set_options<kDLGPU>();", 3),
+)
+
+
+def _apply_diffusion(csrc, register):
+    path = csrc / _DIFFUSION_SOURCE
+    if not path.exists():
+        return 0
+    original = path.read_text(encoding="utf-8")
+    if not all(
+        original.count(needle) == count for needle, _, count in _DIFFUSION_PATCHES
+    ):
+        return 0
+
+    from hcu_adapter.infra.atomic_io import atomic_write
+    from hcu_adapter.infra.registry import MECH_TEXT
+
+    text = original
+    for needle, replacement, _ in _DIFFUSION_PATCHES:
+        text = text.replace(needle, replacement)
+    atomic_write(path, text)
+    register(
+        "rotary_embedding",
+        "diffusion-qknorm-hipcc-portability",
+        target=f"text:sglang/kernels/jit/csrc/{_DIFFUSION_SOURCE}",
+        mechanism=MECH_TEXT,
+        detail=_DIFFUSION_PATCHES[0][0],
+    )
+    return sum(count for _, _, count in _DIFFUSION_PATCHES)
+
+
 # shim appended to rope.cuh: mask-form syncwarp for HIP; identity on CUDA
 # (nvcc's __builtin has the mask overload; define only under __HIP__).
 _SHIM = """/*
@@ -183,6 +238,7 @@ def _apply(root, register):
         detail="  __syncwarp();  // to avoid warp divergence",
     )
     applied += _apply_minimax(csrc, register)
+    applied += _apply_diffusion(csrc, register)
     LOG.warning(
         "HCU adapter: JIT rope portability patch installed (%d edits + shim)",
         applied,
