@@ -66,6 +66,9 @@ jobs:
   l15:
     name: L1.5 upstream gate (bw1100-1card)
     needs: [image]
+    # 给 notify 用的逐段判定（L1: <segment> PASS|FAIL）
+    outputs:
+      summary: ${{ steps.summary.outputs.json }}
     runs-on: hygon-bw1100-1card
     # 冷 JIT：l15_upstream 约 35 分钟、l15_mech 约 14 分钟，manifest collect 和五类矩阵
     # 每个 case 最多 1200s；再加 30 分钟等卡
@@ -138,7 +141,12 @@ jobs:
             ws=(dist/sgl_kernel-*.whl)
             [ ${#ws[@]} -eq 1 ] || { echo "::error::单 dist 产物不是 sgl_kernel-*.whl"; exit 1; }
           fi
-          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps dist/*.whl
+          # 构建会在源码树留下 sgl_kernel.egg-info / packaging/hcu-adapter/*.egg-info；
+          # `python -m pip` 扫描"已安装"时包含当前目录，会把它们当成同版本已安装，
+          # 于是直接跳过本次 whl（2026-11-25 nightly 实测：两个 whl 全被跳过，
+          # 后面 pip show 拿不到 Location）。安装前必须清掉，dist/ 保留给安装用。
+          rm -rf build ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall dist/*.whl
           # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
           # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
           # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
@@ -235,7 +243,31 @@ jobs:
 
       - name: L1.5 gate (ci/l1_gpu_gate.sh)
         # 容器里只有分到的那张卡，编号固定为 0
-        run: bash ci/l1_gpu_gate.sh 0 --up-tree "$HCU_UP_TREE"
+        # tee 留一份给下面的 Summary 解析；pipefail 保证脚本失败不被 tee 的成功掩盖
+        run: |
+          set -o pipefail
+          bash ci/l1_gpu_gate.sh 0 --up-tree "$HCU_UP_TREE" 2>&1 | tee /tmp/l15_run.log
+
+      - name: Summarize L1.5 results
+        id: summary
+        if: always()
+        run: |
+          python3 - /tmp/l15_run.log <<'PY' >> "$GITHUB_OUTPUT"
+          import json, re, sys
+
+          items = {}
+          try:
+              lines = open(sys.argv[1], encoding="utf-8", errors="replace").read().splitlines()
+          except OSError:
+              lines = []
+          # "L1: <segment> PASS|FAIL" / "L1: gate <name> PASS|FAIL" / "L1: gates|vendor ..."
+          pat = re.compile(r"^L1: (l15_\w+|gates|vendor|gate \S+) (PASS|FAIL)\b")
+          for line in lines:
+              m = pat.match(line)
+              if m:
+                  items[m.group(1).replace("gate ", "gate:", 1)] = m.group(2)
+          print("json=" + json.dumps({"items": items}, ensure_ascii=False, separators=(",", ":")))
+          PY
 
       - name: Collect logs
         if: always()
@@ -260,6 +292,9 @@ jobs:
     # + VLLM_PLUGINS=none）。存量红清零前 observe（同 L15_MANIFEST_MODE 先例）：
     # 每晚产出完整红绿清单但不挡合并；修复完成后翻 blocking 并同步 pr 车道语义
     needs: [image]
+    # 给 notify 用的逐文件判定（VLLM-LANE: <file> PASS|FAIL|EMPTY）
+    outputs:
+      summary: ${{ steps.summary.outputs.json }}
     runs-on: hygon-bw1100-1card
     timeout-minutes: 150
     container:
@@ -328,7 +363,12 @@ jobs:
             ws=(dist/sgl_kernel-*.whl)
             [ ${#ws[@]} -eq 1 ] || { echo "::error::单 dist 产物不是 sgl_kernel-*.whl"; exit 1; }
           fi
-          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps dist/*.whl
+          # 构建会在源码树留下 sgl_kernel.egg-info / packaging/hcu-adapter/*.egg-info；
+          # `python -m pip` 扫描"已安装"时包含当前目录，会把它们当成同版本已安装，
+          # 于是直接跳过本次 whl（2026-11-25 nightly 实测：两个 whl 全被跳过，
+          # 后面 pip show 拿不到 Location）。安装前必须清掉，dist/ 保留给安装用。
+          rm -rf build ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall dist/*.whl
           # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
           # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
           # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
@@ -400,7 +440,31 @@ jobs:
 
       - name: vLLM host lane (ci/vllm_host_lane.sh)
         # 容器里只有分到的那张卡，编号固定为 0
-        run: bash ci/vllm_host_lane.sh 0
+        # tee 留一份给下面的 Summary 解析；pipefail 保证脚本失败不被 tee 的成功掩盖
+        run: |
+          set -o pipefail
+          bash ci/vllm_host_lane.sh 0 2>&1 | tee /tmp/l1_vllm_lane.log
+
+      - name: Summarize vLLM lane results
+        id: summary
+        if: always()
+        run: |
+          python3 - /tmp/l1_vllm_lane.log <<'PY' >> "$GITHUB_OUTPUT"
+          import json, re, sys
+
+          items = {}
+          try:
+              lines = open(sys.argv[1], encoding="utf-8", errors="replace").read().splitlines()
+          except OSError:
+              lines = []
+          # "VLLM-LANE: <file> PASS|FAIL|EMPTY"
+          pat = re.compile(r"^VLLM-LANE: (\S+) (PASS|FAIL|EMPTY)\b")
+          for line in lines:
+              m = pat.match(line)
+              if m:
+                  items[m.group(1)] = m.group(2)
+          print("json=" + json.dumps({"items": items}, ensure_ascii=False, separators=(",", ":")))
+          PY
 
       - name: Collect logs
         if: always()
@@ -420,6 +484,9 @@ jobs:
   l2:
     name: L2 e2e model suite (bw1100-4card)
     needs: [image]
+    # 给 notify 用的机器可读判定（id -> {G1..G4: PASS/FAIL}），由下面 Summary 步骤产出
+    outputs:
+      models: ${{ steps.summary.outputs.models_json }}
     runs-on: hygon-bw1100-4card
     # 每个模型最多等 1500s 启动 + 四判定；再加 30 分钟等卡
     timeout-minutes: 720
@@ -488,7 +555,12 @@ jobs:
             ws=(dist/sgl_kernel-*.whl)
             [ ${#ws[@]} -eq 1 ] || { echo "::error::单 dist 产物不是 sgl_kernel-*.whl"; exit 1; }
           fi
-          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps dist/*.whl
+          # 构建会在源码树留下 sgl_kernel.egg-info / packaging/hcu-adapter/*.egg-info；
+          # `python -m pip` 扫描"已安装"时包含当前目录，会把它们当成同版本已安装，
+          # 于是直接跳过本次 whl（2026-11-25 nightly 实测：两个 whl 全被跳过，
+          # 后面 pip show 拿不到 Location）。安装前必须清掉，dist/ 保留给安装用。
+          rm -rf build ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
+          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps --force-reinstall dist/*.whl
           # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
           # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
           # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
@@ -604,6 +676,33 @@ jobs:
           done
           exit $rc
 
+      - name: Summarize L2 results
+        id: summary
+        # Verdict 失败也要汇总，否则通知里只剩一个 failure、看不到是哪个门不过
+        if: always()
+        run: |
+          python3 - "$L2_MODELS" "$LOGD" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, sys
+
+          gates = ("G1-launch", "G2-generation", "G3-precision", "G4-long")
+          out = {}
+          for mid in sys.argv[1].split():
+              state = {}
+              try:
+                  lines = open(
+                      os.path.join(sys.argv[2], f"result_{mid}.txt"),
+                      encoding="utf-8", errors="replace",
+                  ).read().splitlines()
+              except OSError:
+                  lines = []
+              for line in lines:
+                  for g in gates:
+                      if g in line:
+                          state[g] = "PASS" if "PASS" in line else "FAIL"
+              out[mid] = state
+          print("models_json=" + json.dumps(out, ensure_ascii=False, separators=(",", ":")))
+          PY
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
@@ -612,3 +711,29 @@ jobs:
           path: /root/logs/model_suite/
           if-no-files-found: ignore
           retention-days: 7
+
+  notify:
+    name: Feishu card
+    # 判定已由各测试 job 完成；这里只负责透出，任务失败/取消时也要发
+    if: always()
+    needs: [l15, vllm-lane, l2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Send Feishu card
+        env:
+          # 群机器人 webhook 放仓库 secret；未配置时脚本只打印卡片 JSON 并退出 0
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          # 机器人开启"签名校验"时再配这个；留空则不带 timestamp/sign
+          FEISHU_SIGN_SECRET: ${{ secrets.FEISHU_SIGN_SECRET }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          L2_MODELS: ${{ inputs.l2_models || 'q25-05b q3-32b q3-30b-a3b' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: python3 ci/feishu_notify.py
