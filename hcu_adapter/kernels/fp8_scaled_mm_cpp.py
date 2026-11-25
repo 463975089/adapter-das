@@ -11,6 +11,21 @@ import subprocess
 import tempfile
 import torch
 
+
+def _library_signature(source, header, library):
+    """Pin source/header/vendor bytes without timestamps or stat formatting."""
+    digest = hashlib.sha256()
+    for path in (source, header, library):
+        # Hash files independently to keep their boundaries unambiguous. Stream
+        # the vendor library so cache lookup does not allocate a full copy.
+        content = hashlib.sha256()
+        with path.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                content.update(chunk)
+        digest.update(content.digest())
+    return digest.hexdigest()[:24]
+
+
 @lru_cache(maxsize=1)
 def _library():
     # The installed headers compile the ABI; never deserialize an opaque algo
@@ -21,8 +36,7 @@ def _library():
     header=root/'include/hipblaslt/hipblaslt.h'
     library=root/'lib/libhipblaslt.so'
     if not source.is_file() or not header.is_file() or not library.is_file():return None
-    signature=hashlib.sha256(source.read_bytes()+header.read_bytes()+
-        str(library.resolve().stat()).encode()).hexdigest()[:24]
+    signature=_library_signature(source, header, library)
     directory=Path.home()/'.cache/hcu_adapter/fp8_lt'/signature
     directory.mkdir(parents=True,exist_ok=True)
     with (directory/'build.lock').open('a') as lock:
