@@ -9,3 +9,9 @@ def install():
 def install_runtime(**options):
     from ._deepinfer.bootstrap import install
     install(**options)
+
+
+def install_distributed_workers():
+    from ._deepinfer.distributed_workers import install
+
+    install()

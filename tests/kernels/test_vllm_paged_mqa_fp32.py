@@ -132,7 +132,7 @@ def test_fresh_process_provider_selection_stays_light(tmp_path):
     import subprocess
     import sys
 
-    # This is a default-emu identity check. Do not inherit an operator choice
+    # This is a default-aiter identity check. Do not inherit an operator choice
     # from the developer's explicit native benchmark configuration or home.
     config = tmp_path / "hcu_adapter.json"
     config.write_text('{"version":1,"ops":{}}', encoding="utf-8")
@@ -142,7 +142,7 @@ def test_fresh_process_provider_selection_stays_light(tmp_path):
     code = """
 import sys
 from hcu_adapter.bridges.vllm_paged_mqa import (
-    fp8_fp4_paged_mqa_logits as existing_alias,
+    aiter_paged_mqa_logits as existing_alias,
     get_paged_mqa_provider,
 )
 metadata, score = get_paged_mqa_provider()
@@ -224,7 +224,7 @@ def test_triton_config_seam_is_explicit_and_kill_switch_wins(monkeypatch):
     monkeypatch.setattr(registry, "_RECORDS", dict(registry._RECORDS))
     monkeypatch.setattr(registry, "_BOUND", dict(registry._BOUND))
     monkeypatch.delenv("HCU_DISABLE_OPS", raising=False)
-    assert next(iter(hcu_config.BACKEND_CATALOG[bridge.OP]["backends"])) == "emu"
+    assert next(iter(hcu_config.BACKEND_CATALOG[bridge.OP]["backends"])) == "aiter"
     metadata, scorer = bridge.get_paged_mqa_provider()
     assert metadata(None, 64, 2) is None
     assert scorer is bridge.triton_paged_mqa_logits
@@ -290,7 +290,7 @@ def test_triton_unsupported_native_faces_keep_generic_abi(face, device):
                                rtol=1e-4, atol=2e-4)
 
 
-@pytest.mark.parametrize("backend", ["default", "emu", "triton"])
+@pytest.mark.parametrize("backend", ["default", "emu", "triton", "aiter"])
 def test_provider_getter_is_framework_free_in_fresh_interpreter(tmp_path, backend):
     import json
     import os
@@ -318,6 +318,6 @@ assert not {'torch', 'vllm', 'sglang'}.intersection(sys.modules)
     env = dict(os.environ, HCU_CONFIG=str(config))
     env.pop("HCU_DISABLE_OPS", None)
     completed = subprocess.run([sys.executable, "-I", "-S", "-c", source,
-                                str(Path(__file__).resolve().parents[2]), "emu" if backend == "default" else backend],
+                                str(Path(__file__).resolve().parents[2]), "aiter" if backend == "default" else backend],
                                env=env, capture_output=True, text=True, timeout=30)
     assert completed.returncode == 0, completed.stdout + completed.stderr

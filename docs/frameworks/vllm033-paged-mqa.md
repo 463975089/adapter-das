@@ -1,5 +1,25 @@
 # vLLM/plugin non-MX FP8 paged MQA (candidate)
 
+## Default AITER provider
+
+The installed HCU vLLM bridge defaults to the vendor AITER Opus Paged MQA
+interface. A startup JSON file is optional. The existing public `ops` setting
+can explicitly select `aiter`, `triton`, or `emu`.
+
+The native path accepts gfx936/gfx938, non-MX E4M3FN Q, page64/D128 row-major
+FP8 keys followed by FP32 page-tail scales, and 32/64 query heads. On gfx938, an AITER build advertising
+`paged_mqa_logits.supports_page_stride = True` also accepts aligned page strides
+with gaps between physical pages. Older AITER builds use the existing official
+vLLM Triton provider for these views. The bridge avoids copying the entire allocated KV cache per call.
+Unavailable native modules and unsupported metadata also use that provider.
+Native launch failures propagate. AITER selects its own kernel configuration.
+
+Zero-length graph rows receive safe temporary lengths and page tables on the
+device. An independent FP32 output masks those rows and all tail columns to
+positive zero. Query, lengths, and page-table changes are consumed on replay.
+
+
+
 ## Why this is adapter work
 
 The existing DeepInfer paged-MQA emulation accepts SM100 MX scales and
@@ -44,7 +64,7 @@ keys; it adds no data-dependent host reads or synchronization.
 
 ## Governance and rollback
 
-Catalog: `vllm_paged_mqa_logits`, backends `emu` and `triton`, both **candidate**.
+Catalog: `vllm_paged_mqa_logits`, backends `aiter`, `emu`, and `triton`, all **candidate**.
 The snapshot and generated tier matrix track the same entry. Runtime
 selection is visible through `registry.register`/adapter dump. No new env
 variable is introduced. `HCU_DISABLE_OPS=vllm_paged_mqa_logits` refuses
@@ -92,7 +112,7 @@ are completed. No benchmark or performance promotion is implied.
 
 ## Opt-in reuse of the official vLLM Triton launcher
 
-The default remains `emu`. Through the existing public `HCU_CONFIG`, select:
+The default is `aiter`. To explicitly select the existing Triton provider through `HCU_CONFIG`, use:
 
 ```json
 {"version": 1, "ops": {"vllm_paged_mqa_logits": "triton"}}
@@ -121,9 +141,8 @@ Focused HCU measurements and full-model accuracy are separate gates. An
 operator microbenchmark is not an end-to-end throughput claim. Keep both
 catalog entries candidate pending full repository, deployment and model gates.
 
-The catalog keeps `emu` first for wizard fallback and the UI explicitly sets
-`vllm_paged_mqa_logits` to `emu`. Default export must not enable Triton; an
-explicit Triton choice must write the op selection, not a new env variable.
+The catalog lists `aiter` first. Explicit `emu` and `triton` choices use the
+existing op selection. Existing configuration files retain their explicit choice.
 
 
 ## Pinned community DFly Core: separate compatibility gate
@@ -171,8 +190,8 @@ finals, syntax failures or request errors. The exact vendor runtime was
 This is a companion source-overlay result, not independent installed-wheel,
 image, standard-dispatch or full-model Graph qualification of this adapter.
 The identical-budget target comparison is still running; neither DFly speedup
-nor a matched-control accuracy gain is established. Default paged-MQA remains
-`emu`; the optional existing-Core `triton` provider stays candidate/opt-in.
+nor a matched-control accuracy gain is established. That historical qualification used `emu`. The current default is described
+in the AITER provider section above.
 The inspected mHC/FlashMLA ABI extensions do not certify arbitrary newer Core
 or binary combinations. No additional native capability, environment workaround,
 MiniMax ABI whitelist relaxation or global DeepGEMM rebinding is introduced.
