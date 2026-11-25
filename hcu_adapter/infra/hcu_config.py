@@ -235,6 +235,7 @@ BACKEND_CATALOG = {
         "var": None,
         "summary": "vLLM/plugin non-MX FP8 paged MQA with FP32 page-tail scales",
         "backends": {
+            "aiter": {"status": "candidate", "note": "Default HCU AITER Opus page64 provider on gfx936/gfx938; page-stride capable AITER builds accept pitched page64 caches on gfx938; older builds or unavailable APIs use the existing Triton provider. FP32 owned zero-masked output; explicit emu/triton overrides supported."},
             "emu": {"status": "candidate", "note": "Explicit HCU page64/D128 next_n=1 provider; FP32 logits and folded Q scales. CPU and gfx938 eager/Graph contracts covered; serving/wheel/throughput gates pending. Startup kill switch refuses, never selects CUDA."},
             "triton": {"status": "candidate", "note": "Opt-in existing official vLLM Triton page64/D128 H32/H64 launcher; zero-masked independent FP32 output. Explicit ops config; Torch fallback for CPU/unsupported strides or heads. HCU model and changing-input Graph gates required."},
         },
@@ -780,6 +781,26 @@ BACKEND_CATALOG = {
         "backends": {
             "hip-redirect": {"status": "production",
                              "note": "__nv_* -> __ocml_*；hip 缺的名响亮 stub"},
+        },
+    },
+    "diffusion_fp32_numerics": {
+        "var": None,
+        "summary": "SGLang diffusion FP32 算术原语，仅在可见设备均为 gfx936 时启用",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "gfx936 上实测乘法与精确除法逐位对拍，倒平方根最大误差 1 ULP。",
+            },
+        },
+    },
+    "diffusion_fa2": {
+        "summary": "SGLang Diffusion FA / FA2 后端",
+        "backends": {
+            "vendor": {
+                "status": "candidate",
+                "note": "FA 保留官方后端标识，packed varlen 走 DTK FA2；显式 FA2 的 dense 与 packed 均走 DTK。"
+                        "vendor_fa 快关恢复 FA 上游选路并拒绝显式 FA2。",
+            },
         },
     },
     "flash_attention": {
