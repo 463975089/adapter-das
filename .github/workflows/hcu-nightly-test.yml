@@ -9,7 +9,7 @@ on:
       l2_models:
         description: "L2 模型 id，空格分隔（见 tests/tools/run_model_suite.sh 的 MODELS；单卡池只能跑单卡模型）"
         required: false
-        default: "q25-05b"
+        default: "q25-05b q3-32b q3-30b-a3b"
       family_matrix_mode:
         description: "L1.5 五类代表矩阵模式（off|observe|blocking）"
         required: false
@@ -32,8 +32,7 @@ concurrency:
 
 env:
   SGLANG_REPO_URL: ${{ vars.SGLANG_REPO_URL || 'https://github.com/sgl-project/sglang.git' }}
-  SGLANG_REF: v0.5.22
-  SGLANG_COMMIT: baa9befa381511cd4d56f83980951e5a45fffc6d
+  SGLANG_REF: release/v0.5.22
   PIP_TRUSTED_HOST: ${{ inputs.pip_trusted_host || vars.PIP_TRUSTED_HOST }}
   PIP_INDEX_URL: ${{ inputs.pip_index_url || vars.PIP_INDEX_URL }}
 
@@ -94,14 +93,16 @@ jobs:
           # 容器里 workspace 常以别的 uid 挂进来，git 操作会以 dubious ownership 失败
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-          # 不再编 whl：按 README 的源码态做法直接从工作树安装（pip install .）。
           # 必须先卸后装——镜像里预装的 dist 认领的是同一批文件，不卸掉会留下一个
           # RECORD 已失效的 dist：它仍然注册 vllm entry-points，之后 pip 卸载它
-          # 还会连带删掉本次安装的文件。两条线的包布局不同：
-          #   main    : 根 pyproject 只含 sgl_kernel*，适配层在 packaging/hcu-adapter
-          #   release : 根 pyproject 一个 sgl-kernel 同时含 sgl_kernel* + hcu_adapter*
-          if [ -f packaging/hcu-adapter/pyproject.toml ]; then MODEL=dual; else MODEL=single; fi
-          echo "安装模型: $MODEL"
+          # 还会连带删掉本次安装的文件。两条线的打包模型不同，按仓库实际结构分派：
+          #   main    : packaging/build.sh 出双 dist（setup_hip.py 编译的 native
+          #             sgl-kernel + hcu-adapter，版本带 dtk/torch ABI 标签和构建戳，
+          #             两个 dist 精确互锁）
+          #   release : 无 packaging/，根 pyproject.toml 出单个纯 python sgl-kernel，
+          #             包内同时含 sgl_kernel* + hcu_adapter*
+          if [ -x packaging/build.sh ]; then MODEL=dual; else MODEL=single; fi
+          echo "打包模型: $MODEL"
 
           # 上一次运行残留的构建/元数据目录会让 pip 读到过期的 egg-info
           rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
@@ -110,16 +111,34 @@ jobs:
           # 进程加约 30 秒；未安装时 pip 只打 warning 并以 0 退出
           HCU_ADAPTER_HOST=none python3 -m pip uninstall -y sgl-kernel hcu-adapter
 
-          # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
-          # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
-          HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
-            || python3 -m pip install 'setuptools>=64' wheel
-          HCU_ADAPTER_HOST=none python3 -m pip install \
-            --no-deps --no-build-isolation .
+          # 先出 whl 再装：装进去的就是将来分发的同一个包，打包本身的问题
+          # （漏文件、版本/entry-point 元数据错）在打包这一步就暴露，而不是等 import/用例
           if [ "$MODEL" = dual ]; then
-            HCU_ADAPTER_HOST=none python3 -m pip install \
-              --no-deps --no-build-isolation ./packaging/hcu-adapter
+            HCU_ADAPTER_HOST=none bash packaging/build.sh
+          else
+            # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
+            # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
+            HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
+              || python3 -m pip install 'setuptools>=64' wheel
+            HCU_ADAPTER_HOST=none python3 -m pip wheel \
+              --no-deps --no-build-isolation --wheel-dir dist .
           fi
+          # 装到测试环境里的 whl 必须各有且只有一个，否则测到的不是本次构建的产物
+          shopt -s nullglob
+          all_wheels=(dist/*.whl)
+          [ ${#all_wheels[@]} -gt 0 ] || { echo "::error::dist/ 下没有 whl 产物"; exit 1; }
+          ls -l "${all_wheels[@]}"
+          if [ "$MODEL" = dual ]; then
+            for n in sgl_kernel hcu_adapter; do
+              ws=(dist/${n}-*.whl)
+              [ ${#ws[@]} -eq 1 ] || { echo "::error::dist/ 下 ${n} whl 数量为 ${#ws[@]}，预期 1"; exit 1; }
+            done
+          else
+            [ ${#all_wheels[@]} -eq 1 ] || { echo "::error::release 线应只产出 1 个 whl，实际 ${#all_wheels[@]} 个"; exit 1; }
+            ws=(dist/sgl_kernel-*.whl)
+            [ ${#ws[@]} -eq 1 ] || { echo "::error::单 dist 产物不是 sgl_kernel-*.whl"; exit 1; }
+          fi
+          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps dist/*.whl
           # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
           # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
           # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
@@ -189,7 +208,8 @@ jobs:
           src=image
           if [ -z "$up" ]; then
             src=clone
-            up="$RUNNER_TEMP/sglang-$SGLANG_REF"
+            # SGLANG_REF 里的 / 不能直接进目录名（release/v0.5.22 -> release-v0.5.22）
+            up="$RUNNER_TEMP/sglang-${SGLANG_REF//\//-}"
             rm -rf "$up"
             ok=0
             for i in 1 2 3; do
@@ -199,13 +219,7 @@ jobs:
             [ "$ok" = 1 ] || { echo "::error::拉取上游 sglang 失败：$SGLANG_REPO_URL @ $SGLANG_REF"; exit 1; }
           fi
           head="$(git -C "$up" rev-parse HEAD 2>/dev/null || echo unknown)"
-          echo "upstream tree: $up (source=$src, HEAD=$head)"
-          if [ "$head" != "$SGLANG_COMMIT" ]; then
-            if [ "$src" = clone ]; then
-              echo "::error::$SGLANG_REF 解析到 $head，预期 $SGLANG_COMMIT（tag 被移动或镜像仓库不同步）"; exit 1
-            fi
-            echo "::warning::镜像内上游树 HEAD=$head，与验证基线 $SGLANG_COMMIT 不一致"
-          fi
+          echo "upstream tree: $up (source=$src, ref=$SGLANG_REF, HEAD=$head)"
           [ -d "$up/test/registered/attention/unittests" ] \
             || { echo "::error::$up 下没有 test/registered/attention/unittests"; exit 1; }
           echo "HCU_UP_TREE=$up" >> "$GITHUB_ENV"
@@ -269,14 +283,16 @@ jobs:
           # 容器里 workspace 常以别的 uid 挂进来，git 操作会以 dubious ownership 失败
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-          # 不再编 whl：按 README 的源码态做法直接从工作树安装（pip install .）。
           # 必须先卸后装——镜像里预装的 dist 认领的是同一批文件，不卸掉会留下一个
           # RECORD 已失效的 dist：它仍然注册 vllm entry-points，之后 pip 卸载它
-          # 还会连带删掉本次安装的文件。两条线的包布局不同：
-          #   main    : 根 pyproject 只含 sgl_kernel*，适配层在 packaging/hcu-adapter
-          #   release : 根 pyproject 一个 sgl-kernel 同时含 sgl_kernel* + hcu_adapter*
-          if [ -f packaging/hcu-adapter/pyproject.toml ]; then MODEL=dual; else MODEL=single; fi
-          echo "安装模型: $MODEL"
+          # 还会连带删掉本次安装的文件。两条线的打包模型不同，按仓库实际结构分派：
+          #   main    : packaging/build.sh 出双 dist（setup_hip.py 编译的 native
+          #             sgl-kernel + hcu-adapter，版本带 dtk/torch ABI 标签和构建戳，
+          #             两个 dist 精确互锁）
+          #   release : 无 packaging/，根 pyproject.toml 出单个纯 python sgl-kernel，
+          #             包内同时含 sgl_kernel* + hcu_adapter*
+          if [ -x packaging/build.sh ]; then MODEL=dual; else MODEL=single; fi
+          echo "打包模型: $MODEL"
 
           # 上一次运行残留的构建/元数据目录会让 pip 读到过期的 egg-info
           rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
@@ -285,16 +301,34 @@ jobs:
           # 进程加约 30 秒；未安装时 pip 只打 warning 并以 0 退出
           HCU_ADAPTER_HOST=none python3 -m pip uninstall -y sgl-kernel hcu-adapter
 
-          # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
-          # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
-          HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
-            || python3 -m pip install 'setuptools>=64' wheel
-          HCU_ADAPTER_HOST=none python3 -m pip install \
-            --no-deps --no-build-isolation .
+          # 先出 whl 再装：装进去的就是将来分发的同一个包，打包本身的问题
+          # （漏文件、版本/entry-point 元数据错）在打包这一步就暴露，而不是等 import/用例
           if [ "$MODEL" = dual ]; then
-            HCU_ADAPTER_HOST=none python3 -m pip install \
-              --no-deps --no-build-isolation ./packaging/hcu-adapter
+            HCU_ADAPTER_HOST=none bash packaging/build.sh
+          else
+            # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
+            # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
+            HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
+              || python3 -m pip install 'setuptools>=64' wheel
+            HCU_ADAPTER_HOST=none python3 -m pip wheel \
+              --no-deps --no-build-isolation --wheel-dir dist .
           fi
+          # 装到测试环境里的 whl 必须各有且只有一个，否则测到的不是本次构建的产物
+          shopt -s nullglob
+          all_wheels=(dist/*.whl)
+          [ ${#all_wheels[@]} -gt 0 ] || { echo "::error::dist/ 下没有 whl 产物"; exit 1; }
+          ls -l "${all_wheels[@]}"
+          if [ "$MODEL" = dual ]; then
+            for n in sgl_kernel hcu_adapter; do
+              ws=(dist/${n}-*.whl)
+              [ ${#ws[@]} -eq 1 ] || { echo "::error::dist/ 下 ${n} whl 数量为 ${#ws[@]}，预期 1"; exit 1; }
+            done
+          else
+            [ ${#all_wheels[@]} -eq 1 ] || { echo "::error::release 线应只产出 1 个 whl，实际 ${#all_wheels[@]} 个"; exit 1; }
+            ws=(dist/sgl_kernel-*.whl)
+            [ ${#ws[@]} -eq 1 ] || { echo "::error::单 dist 产物不是 sgl_kernel-*.whl"; exit 1; }
+          fi
+          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps dist/*.whl
           # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
           # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
           # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
@@ -395,7 +429,7 @@ jobs:
       run:
         shell: bash
     env:
-      L2_MODELS: ${{ inputs.l2_models || 'q25-05b' }}
+      L2_MODELS: ${{ inputs.l2_models || 'q25-05b q3-32b q3-30b-a3b' }}
       LOGD: /root/logs/model_suite
     steps:
       - uses: actions/checkout@v4
@@ -409,14 +443,16 @@ jobs:
           # 容器里 workspace 常以别的 uid 挂进来，git 操作会以 dubious ownership 失败
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-          # 不再编 whl：按 README 的源码态做法直接从工作树安装（pip install .）。
           # 必须先卸后装——镜像里预装的 dist 认领的是同一批文件，不卸掉会留下一个
           # RECORD 已失效的 dist：它仍然注册 vllm entry-points，之后 pip 卸载它
-          # 还会连带删掉本次安装的文件。两条线的包布局不同：
-          #   main    : 根 pyproject 只含 sgl_kernel*，适配层在 packaging/hcu-adapter
-          #   release : 根 pyproject 一个 sgl-kernel 同时含 sgl_kernel* + hcu_adapter*
-          if [ -f packaging/hcu-adapter/pyproject.toml ]; then MODEL=dual; else MODEL=single; fi
-          echo "安装模型: $MODEL"
+          # 还会连带删掉本次安装的文件。两条线的打包模型不同，按仓库实际结构分派：
+          #   main    : packaging/build.sh 出双 dist（setup_hip.py 编译的 native
+          #             sgl-kernel + hcu-adapter，版本带 dtk/torch ABI 标签和构建戳，
+          #             两个 dist 精确互锁）
+          #   release : 无 packaging/，根 pyproject.toml 出单个纯 python sgl-kernel，
+          #             包内同时含 sgl_kernel* + hcu_adapter*
+          if [ -x packaging/build.sh ]; then MODEL=dual; else MODEL=single; fi
+          echo "打包模型: $MODEL"
 
           # 上一次运行残留的构建/元数据目录会让 pip 读到过期的 egg-info
           rm -rf build dist ./*.egg-info packaging/hcu-adapter/build packaging/hcu-adapter/*.egg-info
@@ -425,16 +461,34 @@ jobs:
           # 进程加约 30 秒；未安装时 pip 只打 warning 并以 0 退出
           HCU_ADAPTER_HOST=none python3 -m pip uninstall -y sgl-kernel hcu-adapter
 
-          # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
-          # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
-          HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
-            || python3 -m pip install 'setuptools>=64' wheel
-          HCU_ADAPTER_HOST=none python3 -m pip install \
-            --no-deps --no-build-isolation .
+          # 先出 whl 再装：装进去的就是将来分发的同一个包，打包本身的问题
+          # （漏文件、版本/entry-point 元数据错）在打包这一步就暴露，而不是等 import/用例
           if [ "$MODEL" = dual ]; then
-            HCU_ADAPTER_HOST=none python3 -m pip install \
-              --no-deps --no-build-isolation ./packaging/hcu-adapter
+            HCU_ADAPTER_HOST=none bash packaging/build.sh
+          else
+            # --no-deps            : torch/triton/packaging 由镜像提供，别让 pip 联网改版本
+            # --no-build-isolation : 隔离环境要现下 setuptools，离线节点会直接失败
+            HCU_ADAPTER_HOST=none python3 -c 'import setuptools.build_meta' >/dev/null 2>&1 \
+              || python3 -m pip install 'setuptools>=64' wheel
+            HCU_ADAPTER_HOST=none python3 -m pip wheel \
+              --no-deps --no-build-isolation --wheel-dir dist .
           fi
+          # 装到测试环境里的 whl 必须各有且只有一个，否则测到的不是本次构建的产物
+          shopt -s nullglob
+          all_wheels=(dist/*.whl)
+          [ ${#all_wheels[@]} -gt 0 ] || { echo "::error::dist/ 下没有 whl 产物"; exit 1; }
+          ls -l "${all_wheels[@]}"
+          if [ "$MODEL" = dual ]; then
+            for n in sgl_kernel hcu_adapter; do
+              ws=(dist/${n}-*.whl)
+              [ ${#ws[@]} -eq 1 ] || { echo "::error::dist/ 下 ${n} whl 数量为 ${#ws[@]}，预期 1"; exit 1; }
+            done
+          else
+            [ ${#all_wheels[@]} -eq 1 ] || { echo "::error::release 线应只产出 1 个 whl，实际 ${#all_wheels[@]} 个"; exit 1; }
+            ws=(dist/sgl_kernel-*.whl)
+            [ ${#ws[@]} -eq 1 ] || { echo "::error::单 dist 产物不是 sgl_kernel-*.whl"; exit 1; }
+          fi
+          HCU_ADAPTER_HOST=none python3 -m pip install --no-deps dist/*.whl
           # in-tree 构建会在源码目录留下 build/ 和 *.egg-info；仓库根又在 sys.path 上，
           # 这些元数据会被 importlib.metadata 当成另一个 dist 认领，后面判断版本和
           # “hcu-adapter 是否已消失”时结论会被它们污染，装完就清掉
@@ -504,7 +558,8 @@ jobs:
           src=image
           if [ -z "$up" ]; then
             src=clone
-            up="$RUNNER_TEMP/sglang-$SGLANG_REF"
+            # SGLANG_REF 里的 / 不能直接进目录名（release/v0.5.22 -> release-v0.5.22）
+            up="$RUNNER_TEMP/sglang-${SGLANG_REF//\//-}"
             rm -rf "$up"
             ok=0
             for i in 1 2 3; do
@@ -514,13 +569,7 @@ jobs:
             [ "$ok" = 1 ] || { echo "::error::拉取上游 sglang 失败：$SGLANG_REPO_URL @ $SGLANG_REF"; exit 1; }
           fi
           head="$(git -C "$up" rev-parse HEAD 2>/dev/null || echo unknown)"
-          echo "upstream tree: $up (source=$src, HEAD=$head)"
-          if [ "$head" != "$SGLANG_COMMIT" ]; then
-            if [ "$src" = clone ]; then
-              echo "::error::$SGLANG_REF 解析到 $head，预期 $SGLANG_COMMIT（tag 被移动或镜像仓库不同步）"; exit 1
-            fi
-            echo "::warning::镜像内上游树 HEAD=$head，与验证基线 $SGLANG_COMMIT 不一致"
-          fi
+          echo "upstream tree: $up (source=$src, ref=$SGLANG_REF, HEAD=$head)"
           echo "HCU_UP_TREE=$up" >> "$GITHUB_ENV"
 
       - name: Pre-check
