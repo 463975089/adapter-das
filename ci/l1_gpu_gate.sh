@@ -12,7 +12,7 @@
 # Segments (each independently timed out; all must pass):
 #   l0        structural gate (no GPU) -- fast fail before touching the card
 #   cpu       tests/test_ops_cpu.py            pure-torch contract paths
-#   kernels   tests/kernels + tests/adapter    triton numerics vs torch refs
+#   kernels   tests/kernels (not hisparse) + tests/adapter   triton numerics vs torch refs
 #   l15_up    upstream registered/attention/unittests (dsa+kda+dense+mla)
 #             via pinned PYTHONPATH; tilelang variants excluded (DTK bug)
 #   l15_manifest  L1.5 v2 manifest collect/verify shadow (non-blocking by
@@ -61,6 +61,11 @@ case "$L15_FAMILY_MATRIX_MODE" in observe|blocking|off) ;; *)
 esac
 case "$L15_UPSTREAM_MODE" in manifest|dirs|off) ;; *)
     echo "L1: invalid L15_UPSTREAM_MODE='$L15_UPSTREAM_MODE' (use off|manifest|dirs)"
+    exit 2;;
+esac
+L1_KERNELS_HISPARSE="${L1_KERNELS_HISPARSE:-0}"
+case "$L1_KERNELS_HISPARSE" in 0|1) ;; *)
+    echo "L1: invalid L1_KERNELS_HISPARSE='$L1_KERNELS_HISPARSE' (use 0|1)"
     exit 2;;
 esac
 
@@ -255,9 +260,24 @@ else
     # pytest-xdist was absent from the image).
     echo "L1: WARN pytest-xdist absent -- kernels tail runs SERIAL (~250s slower); pip install pytest-xdist in the image"
 fi
+# tests/kernels/hisparse needs the HiSparse native library built and installed
+# (setup_hip.py --hisparse-only, or conftest's --hisparse-library). Neither this
+# gate nor CI builds it, so on a stock image its three files error in setup:
+# 104 errors on main since #159 (2026-11-24). The suite's own header reserves it
+# for an explicitly authorized lane -- docs/frameworks/vllm033-hisparse.md,
+# "Reproduce the isolated native lane" -- so the default kernels segment leaves
+# that directory to it. L1_KERNELS_HISPARSE=1 collects it here once the library
+# is installed.
+# ${VAR:-0}, not $VAR: tests/adapter/test_l1_gate_ownership.py runs this block
+# on its own under set -u, without the defaults assigned at the top of the file.
+KERNELS_IGNORE=()
+if [ "${L1_KERNELS_HISPARSE:-0}" != "1" ] && [ -d "$ROOT/tests/kernels/hisparse" ]; then
+    KERNELS_IGNORE=(--ignore=tests/kernels/hisparse)
+    echo "L1: WARN kernels leaves tests/kernels/hisparse to its own lane (needs the HiSparse native library; L1_KERNELS_HISPARSE=1 collects it here)"
+fi
 run_seg kernels 900  python3 -m pytest tests/kernels tests/adapter -vv --no-header -m "not emu_parity and not fresh_process" "${XDIST_FLAGS[@]}" \
     --tb=short -o faulthandler_timeout=120 --durations=60 \
-    "${FAMILY_DESELECT[@]}"
+    "${FAMILY_DESELECT[@]}" "${KERNELS_IGNORE[@]}"
 
 # L1.5: upstream attention-unittest selection (dsa + kda + dense + mla
 # dirs; mla extend subtests over flashinfer stubs -> legal skips, see

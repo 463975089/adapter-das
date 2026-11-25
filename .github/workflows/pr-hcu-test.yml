@@ -37,8 +37,8 @@ concurrency:
 
 env:
   SGLANG_REPO_URL: ${{ vars.SGLANG_REPO_URL || 'https://github.com/sgl-project/sglang.git' }}
-  SGLANG_REF: v0.5.22
-  SGLANG_COMMIT: baa9befa381511cd4d56f83980951e5a45fffc6d
+  # 跟踪上游 release 分支而不是固定 commit
+  SGLANG_REF: release/v0.5.22
   PIP_TRUSTED_HOST: ${{ inputs.pip_trusted_host || vars.PIP_TRUSTED_HOST }}
   PIP_INDEX_URL: ${{ inputs.pip_index_url || vars.PIP_INDEX_URL }}
 
@@ -383,7 +383,8 @@ jobs:
           src=image
           if [ -z "$up" ]; then
             src=clone
-            up="$RUNNER_TEMP/sglang-$SGLANG_REF"
+            # SGLANG_REF 里的 / 不能直接进目录名（release/v0.5.22 -> release-v0.5.22）
+            up="$RUNNER_TEMP/sglang-${SGLANG_REF//\//-}"
             rm -rf "$up"
             ok=0
             for i in 1 2 3; do
@@ -393,13 +394,7 @@ jobs:
             [ "$ok" = 1 ] || { echo "::error::拉取上游 sglang 失败：$SGLANG_REPO_URL @ $SGLANG_REF"; exit 1; }
           fi
           head="$(git -C "$up" rev-parse HEAD 2>/dev/null || echo unknown)"
-          echo "upstream tree: $up (source=$src, HEAD=$head)"
-          if [ "$head" != "$SGLANG_COMMIT" ]; then
-            if [ "$src" = clone ]; then
-              echo "::error::$SGLANG_REF 解析到 $head，预期 $SGLANG_COMMIT（tag 被移动或镜像仓库不同步）"; exit 1
-            fi
-            echo "::warning::镜像内上游树 HEAD=$head，与验证基线 $SGLANG_COMMIT 不一致"
-          fi
+          echo "upstream tree: $up (source=$src, ref=$SGLANG_REF, HEAD=$head)"
           [ -d "$up/test/registered/attention/unittests" ] \
             || { echo "::error::$up 下没有 test/registered/attention/unittests"; exit 1; }
           echo "HCU_UP_TREE=$up" >> "$GITHUB_ENV"
