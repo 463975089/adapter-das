@@ -28,6 +28,17 @@ def _library_signature(source, header, library):
 
 @lru_cache(maxsize=1)
 def _library():
+    # The optional provider must not make a worker depend on a writable cache
+    # or a loadable cached binary. Cache failure for this process as well.
+    # Execution errors remain outside this boundary and still propagate.
+    try:
+        return _load_library()
+    except (OSError, subprocess.SubprocessError, RuntimeError, AttributeError) as error:
+        logging.getLogger('hcu.adapter').info('FP8 vendor heuristic unavailable: %s', error)
+        return None
+
+
+def _load_library():
     # The installed headers compile the ABI; never deserialize an opaque algo
     # from a different vendor library. Compilation happens only outside capture.
     import fcntl
@@ -43,19 +54,15 @@ def _library():
         fcntl.flock(lock,fcntl.LOCK_EX)
         target=directory/'kernel.so'
         if not target.exists():
-            try:
-                with tempfile.TemporaryDirectory(dir=directory) as temporary:
-                    built=Path(temporary)/'kernel.so'
-                    command=['g++','-std=c++17','-D__HIP_PLATFORM_AMD__','-fmax-errors=3',
-                        '-O2','-shared','-fPIC','-I'+str(root/'include'),'-L'+str(root/'lib'),
-                        '-Wl,-rpath,'+str(root/'lib'),str(source),'-lhipblaslt','-o',str(built)]
-                    result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=90)
-                    (directory/'build.log').write_bytes(result.stdout)
-                    if result.returncode:raise RuntimeError('vendor extension compile failed')
-                    built.replace(target)
-            except (OSError,subprocess.SubprocessError,RuntimeError) as error:
-                logging.getLogger('hcu.adapter').info('FP8 vendor heuristic unavailable: %s',error)
-                return None
+            with tempfile.TemporaryDirectory(dir=directory) as temporary:
+                built=Path(temporary)/'kernel.so'
+                command=['g++','-std=c++17','-D__HIP_PLATFORM_AMD__','-fmax-errors=3',
+                    '-O2','-shared','-fPIC','-I'+str(root/'include'),'-L'+str(root/'lib'),
+                    '-Wl,-rpath,'+str(root/'lib'),str(source),'-lhipblaslt','-o',str(built)]
+                result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=90)
+                (directory/'build.log').write_bytes(result.stdout)
+                if result.returncode:raise RuntimeError('vendor extension compile failed')
+                built.replace(target)
     lib=ctypes.CDLL(str(target));fn=lib.hcu_fp8_lt_run
     fn.argtypes=[ctypes.c_int]*3+[ctypes.c_void_p]*6+[ctypes.c_int]
     fn.restype=ctypes.c_int

@@ -22,7 +22,9 @@ not share mutable device state. Unseen capture shapes use the original provider;
 there is no compilation, tuning or synchronization during graph capture/replay.
 
 The helper uses the existing DTK library and a host C++ compiler. Missing compiler
-or header support retains native execution. The source/header/library identity
+or header support retains native execution. An unavailable build cache or a
+rejected shared object also retains native execution; loader failures are cached
+for the worker lifetime. The source/header/library identity
 keys the build cache, and file locking plus atomic publication supports eight
 worker processes. Execution failures are surfaced instead of hidden by fallback.
 

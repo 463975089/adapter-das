@@ -75,3 +75,41 @@ def test_library_reuses_compiled_artifact_after_metadata_only_change(monkeypatch
         assert len(compiled) == 2
     finally:
         kernel._library.cache_clear()
+
+
+@pytest.mark.parametrize("failure", ["cache-unavailable", "invalid-library"])
+def test_unavailable_loader_preserves_native_fallback(monkeypatch, tmp_path, failure):
+    source = tmp_path / "kernel.cpp"
+    source.write_bytes(b"source")
+    vendor = tmp_path / "dtk"
+    for suffix in ("include/hipblaslt/hipblaslt.h", "lib/libhipblaslt.so"):
+        path = vendor / suffix
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"vendor")
+    home = tmp_path / "home"
+    if failure == "cache-unavailable":
+        # A real filesystem error, even when the tests run as root.
+        home.write_bytes(b"cache cannot be created beneath a file")
+
+    def local_path(value):
+        return vendor if value == "/opt/dtk" else Path(value)
+
+    local_path.home = lambda: home
+    monkeypatch.setattr(kernel, "Path", local_path)
+    monkeypatch.setattr(kernel, "__file__", str(source.with_suffix(".py")))
+    compiled = []
+
+    def compile_library(command, **kwargs):
+        compiled.append(command)
+        # Exercise the real dynamic loader's rejection of a bad cache artifact.
+        Path(command[-1]).write_bytes(b"invalid shared library")
+        return SimpleNamespace(returncode=0, stdout=b"")
+
+    monkeypatch.setattr(kernel.subprocess, "run", compile_library)
+    kernel._library.cache_clear()
+    try:
+        assert kernel._library() is None
+        assert kernel._library() is None
+        assert len(compiled) == (failure == "invalid-library")
+    finally:
+        kernel._library.cache_clear()
