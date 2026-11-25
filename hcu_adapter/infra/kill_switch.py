@@ -41,7 +41,7 @@ SWITCHES = {
     "nextn_idle_metadata": ("Missing NEXTN idle KV metadata default (startup only)", None),
     "prefill_graph_driver": ("Breakable graph HIP stream query repair (startup only)", None),
     "vllm_inverse_rope": ("Plugin inverse RoPE; fresh-process stock fallback", None),
-    "vendor_fa": ("DTK FlashAttention routes; fresh-process triton fallback", "HCU_FA_IMPL"),
+    "vendor_fa": ("DTK FlashAttention; FA3 bridge falls back to Triton, explicit diffusion FA2 is refused", "HCU_FA_IMPL"),
     "vllm_flashmla_decode": ("vLLM V4.1 native packed sparse decode; fresh-process stock fallback", None),
     "vllm_flashmla_prefill": ("vLLM V4.1 native sparse prefill; fresh-process stock fallback", None),
     "vllm_fp4_indexer": ("V41 FP4 model/cache/producer/reader; fresh-process FP8 rollback", "HCU_VLLM_FP4_INDEXER_IMPL"),

@@ -114,7 +114,11 @@ def stage_decode_pages(cache, table, lengths, pages, out_table, *, live_only=Fal
     if pages.shape[0] and pages.shape[1]:
         if live_only:
             sms = torch.cuda.get_device_properties(cache.device).multi_processor_count
-            grid = (pages.shape[0], min(pages.shape[1], triton.cdiv(sms, pages.shape[0])))
+            # One CTA per CU serializes hundreds of independent page copies
+            # in each program for long contexts. Allow enough page programs
+            # to hide memory latency; short pools retain their natural bound.
+            # Bounds remain device lengths, including on graph replay.
+            grid = (pages.shape[0], min(pages.shape[1], triton.cdiv(sms * 16, pages.shape[0])))
             kernel = _stage_fp4_live_pages
         else:
             grid, kernel = (pages.shape[0], pages.shape[1]), _stage_fp4_pages

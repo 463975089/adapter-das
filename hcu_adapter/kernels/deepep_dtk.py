@@ -3,12 +3,14 @@
 
 """HCU DeepEP v1 communication with the pinned v2 expanded-token contract.
 
-Numerical transforms live here, independent of deepinfer. Only an explicitly
-selected, single-host baseline is supported. Graph providers are separate
-opt-in candidates and require fixed-capacity dispatch without CPU sync.
+Numerical transforms live here, independent of deepinfer. An explicitly
+selected MNVL deployment can also use an ordered pair of four-rank nodes.
+Graph providers require fixed-capacity dispatch without CPU sync.
 """
 
 from dataclasses import dataclass
+from functools import lru_cache
+import os
 import socket
 
 import torch
@@ -155,6 +157,34 @@ def get_logical_domain_size(group_or_buffer, allow_hybrid_mode=None):
     return 1, num_rdma_ranks * num_lsa_ranks
 
 
+@lru_cache(maxsize=1)
+def _qualified_mnvl_binary(path):
+    from hashlib import file_digest
+
+    try:
+        with open(path, "rb") as binary:
+            return file_digest(binary, "sha256").hexdigest() == (
+                "f09fd91b6c17bacf92a2715f702e5bab9a4bf9ca33d8c8602258b39929499738")
+    except OSError:
+        return False
+
+
+def _require_mnvl(group, hosts):
+    if len(hosts) != 8 or hosts != [hosts[0]] * 4 + [hosts[-1]] * 4:
+        raise NotImplementedError("Cross-host HCU EP requires two ordered nodes of four ranks")
+    from deep_ep import deep_ep_cpp
+
+    flags = ("DEEP_EP_NORMAL_MNVL", "ROCSHMEM_IPC_MNVL", "ROCSHMEM_IPC_MNVL_NPES")
+    enabled = tuple(map(os.environ.get, flags)) == ("1", "1", "16")
+    qualified = enabled and _qualified_mnvl_binary(deep_ep_cpp.__file__)
+    admitted = [None] * group.size()
+    dist.all_gather_object(admitted, qualified, group=group)
+    if not all(admitted):
+        raise NotImplementedError(
+            "Cross-host HCU EP requires the qualified DeepEP build and MNVL settings on every rank"
+        )
+
+
 class EPBuffer:
     """Explicit v1 Buffer bridge; all numerical dispatch uses the installed wheel."""
 
@@ -180,11 +210,11 @@ class EPBuffer:
         if kwargs or not allow_multiple_reduction:
             raise NotImplementedError("HCU v1 EP bridge supports default multiple-reduction only")
         if group.size() > 8:
-            raise NotImplementedError("HCU EP bridge is currently limited to one host, <=8 ranks")
+            raise NotImplementedError("HCU EP bridge supports at most 8 ranks")
         hosts = [None] * group.size()
         dist.all_gather_object(hosts, socket.gethostname(), group=group)
         if len(set(hosts)) != 1:
-            raise NotImplementedError("HCU EP bridge is currently limited to one host")
+            _require_mnvl(group, hosts)
         self.group = group
         self.explicitly_destroy = explicitly_destroy
         self.num_max_tokens_per_rank = num_max_tokens_per_rank
@@ -294,6 +324,7 @@ class EngramBuffer:
     """
 
     graph_capture_enabled = False
+    retain_gpu_storage = False
 
     def __init__(self, group, num_gpu_bytes, num_rdma_storage_size,
                  use_cpu_rdma_storage, num_allocated_qps, qp_depth,
@@ -347,9 +378,12 @@ class EngramBuffer:
                                     or sfs[i].shape != (rows * self.num_ranks, packs)
                                     or sfs[i].dtype != torch.int32):
                 raise ValueError("Engram SF must be replicated packed int32 table")
-        # Own storage independently of the model loader's subsequent release.
-        self.storages = [storage.clone() for storage in storages]
-        self.sfs = None if sfs is None else [sf.clone() for sf in sfs]
+        if self.retain_gpu_storage:
+            self.storages = [storage.detach() for storage in storages]
+            self.sfs = None if sfs is None else [sf.detach() for sf in sfs]
+        else:
+            self.storages = [storage.clone() for storage in storages]
+            self.sfs = None if sfs is None else [sf.clone() for sf in sfs]
 
     def fetch(self, indices, num_qps=0, use_tma_aligned_col_major_sf=True):
         if self.storages is None:

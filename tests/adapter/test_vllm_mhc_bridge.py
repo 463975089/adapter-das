@@ -241,7 +241,8 @@ def test_mega_requires_binary_override_and_respects_kill_switch(seams, monkeypat
 def _mega_seams(s, monkeypatch):
     monkeypatch.setenv('HCU_VLLM_MHC_IMPL', 'aiter')
     monkeypatch.setattr(host, 'detect_hcu', lambda: host.HcuDetection(True, 'gfx938', 'test'))
-    aiter = SimpleNamespace(available=True, tilelang_enabled=True, project=object(), stage2_ready=True,
+    aiter = SimpleNamespace(available=True, tilelang_enabled=True, tilelang_pre=None,
+                            project=object(), stage2_ready=True,
                             require_healthy=lambda: None, fingerprint=lambda: {})
     monkeypatch.setattr(s.m, '_load_aiter_provider', lambda: aiter)
     ops = SimpleNamespace(mhc_pre_mix_triton=object(), hc_collapse_triton=object())
@@ -566,7 +567,8 @@ def test_unknown_delayed_cache_abi_fails_before_publication(seams, monkeypatch):
     assert not s.calls
 
 
-@pytest.mark.parametrize("route", ["delayed", "boundary", "mega", "mega_fallback"])
+@pytest.mark.parametrize("route", ["delayed", "boundary", "mega", "mega_fallback",
+                                  "mega_boundary", "mega_boundary_large"])
 @pytest.mark.parametrize("latched", [False, True])
 @pytest.mark.parametrize("packed", [None, object()])
 def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed, route, latched):
@@ -587,11 +589,11 @@ def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed, rou
 
     def supported(*args):
         predicates.append(args)
-        return route == "mega"
+        return route in ("mega", "mega_boundary", "mega_boundary_large")
 
     def boundary_supported(*args):
         predicates.append(args)
-        return route == "boundary"
+        return route in ("boundary", "mega_boundary", "mega_boundary_large")
 
     class Base:
         def _maybe_post(self, residual, sublayer_out, post_mix, comb_mix):
@@ -608,7 +610,7 @@ def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed, rou
         MhcCompatibilityError=module.MhcCompatibilityError,
         mega=SimpleNamespace(supported=supported) if route.startswith("mega") else None,
         mega_provider=mega_provider, _check_dispatch_provider=health_calls.append,
-        split_k="auto" if route == "boundary" else "1",
+        split_k="auto" if route in ("boundary", "mega_boundary", "mega_boundary_large") else "1",
         provider=SimpleNamespace(project=object(), tilelang_enabled=True,
                                  tilelang_pre=object()),
         boundary_supported=boundary_supported,
@@ -617,6 +619,9 @@ def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed, rou
     exec(compile(ast.Module(body=[cls], type_ignores=[]), "<delayed-wrapper>", "exec"),
          namespace)
     residual, dense_fn, scale, base = (object() for _ in range(4))
+    if route in ("mega_boundary", "mega_boundary_large"):
+        residual = SimpleNamespace(shape=(42 if route == "mega_boundary" else 129,
+                                          4, 5120))
 
     def invoke():
         return namespace["HcuMHCPreDelayedOp"]().forward_hip(
@@ -629,13 +634,13 @@ def test_delayed_wrapper_uses_dense_weight_not_optional_packed_cache(packed, rou
         assert not captured and not predicates and not post_calls and not health_calls
         return
     output = invoke()
-    fast_path = route in ("boundary", "mega")
+    fast_path = route in ("boundary", "mega", "mega_boundary", "mega_boundary_large")
     assert output == (result if fast_path else (residual, *result))
     assert len(captured) == 1
     assert captured[0][0] is residual
-    assert captured[0][4 if route == "boundary" else 1] is dense_fn
+    assert captured[0][4 if route in ("boundary", "mega_boundary") else 1] is dense_fn
     assert post_calls == ([] if fast_path else [residual])
-    assert health_calls == ([mega_provider] if route == "mega_fallback" else [])
+    assert health_calls == ([mega_provider] if route in ("mega_fallback", "mega_boundary") else [])
     for args in captured + predicates:
         if packed is not None:
             assert all(value is not packed for value in args)
