@@ -233,6 +233,10 @@ def _wrap(module, original):
         )
         return quantized, scales.reshape(x.shape[0], 1)
 
+    # Consumer-side fusion may bypass this method only if it preserves this
+    # exact quantizer contract, including capture and compilation fallbacks.
+    forward_cuda._hcu_token_fp8_backend = "lightop"
+    forward_cuda._hcu_token_fp8_graph_enabled = graph_enabled
     return forward_cuda
 
 

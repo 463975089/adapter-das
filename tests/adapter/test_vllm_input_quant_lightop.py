@@ -184,7 +184,7 @@ def test_fallback_reasons(monkeypatch, kwargs, tensor, reason):
 @pytest.mark.parametrize('capture', [False, True])
 def test_non_device_or_disabled_capture_uses_original(monkeypatch, capture):
     calls = _activate(monkeypatch)
-    monkeypatch.setenv(bridge._GRAPH_ENV, '0')
+    monkeypatch.setenv(bridge._GRAPH_ENV, "0")
     module = _make_module()
     assert bridge.install(module)
     monkeypatch.setattr(bridge, '_device_ok', lambda x: capture)
@@ -227,6 +227,29 @@ def test_capture_provider_failure_propagates_without_upstream_fallback(monkeypat
         module.QuantFP8.forward_cuda(_instance(), torch.ones(2, 8, dtype=torch.bfloat16))
     assert caught.value is error
     assert bridge._COUNTS == {}
+
+
+@pytest.mark.parametrize("graph_setting", [None, "0", "1"])
+def test_capture_contract_metadata_matches_runtime(monkeypatch, graph_setting):
+    calls = _activate(monkeypatch)
+    if graph_setting is None:
+        monkeypatch.delenv(bridge._GRAPH_ENV, raising=False)
+    else:
+        monkeypatch.setenv(bridge._GRAPH_ENV, graph_setting)
+    module = _make_module()
+    assert bridge.install(module)
+    method = module.QuantFP8.forward_cuda
+    assert method._hcu_token_fp8_backend == "lightop"
+    enabled = graph_setting != "0"
+    assert method._hcu_token_fp8_graph_enabled is enabled
+    monkeypatch.setattr(torch.cuda, "is_current_stream_capturing", lambda: True)
+    output = method(_instance(), torch.ones(2, 8, dtype=torch.bfloat16))
+    if enabled:
+        assert len(calls) == 1
+        assert output[0].dtype == torch.float8_e4m3fn
+    else:
+        assert output[0] == "upstream"
+        assert calls == []
 
 
 def test_non_contiguous_falls_back(monkeypatch):
