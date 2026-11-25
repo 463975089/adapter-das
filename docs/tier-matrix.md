@@ -617,6 +617,26 @@ triton extra.cuda libdevice -> hip/OCML 重定向（is_cuda 语义选路修正�
 
 路由变量：（auto）
 
+## diffusion_fp32_numerics
+
+SGLang diffusion FP32 算术原语，仅在可见设备均为 gfx936 时启用
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| triton | candidate gfx936 上实测乘法与精确除法逐位对拍，倒平方根最大误差 1 ULP |
+
+路由变量：（auto）
+
+## diffusion_fa2
+
+SGLang Diffusion FA / FA2 后端
+
+| 档位 | 状态 / 备注 |
+|---|---|
+| vendor | candidate FA 保留官方后端标识，packed varlen 走 DTK FA2； |
+
+路由变量：（auto）
+
 ## flash_attention
 
 fa3 backend 注意力面（kvcache 分页/统一窗 + varlen prefill）

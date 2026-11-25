@@ -368,3 +368,23 @@ CPU 接口、原生设备数值、变输入 Graph 与实际六步 t2i/edit 分�
 详细命令、原始请求/图片、哈希与逐轮结果保留在部署目录的
 `artifacts/minimax-h3-image-20261114`、`artifacts/minimax-h3-image-single64-20261114`、
 `artifacts/minimax-h3-image-perf-20261114`、`artifacts/minimax-h3-image-attention-20261115`。
+
+## 9. SGLang Diffusion 的 gfx936 FP32 数值原语
+
+扩散 worker 在初始化 HCU OOT 平台时接入 `hcu_adapter.bridges.sglang_diffusion_numerics`。
+进程内可见的 HIP 设备均为 `gfx936` 时才发布绑定。遇到其他架构或混合架构时，
+启动日志会列出检测到的架构和跳过的数值原语。兼容 SGLang v0.5.22
+的 `sglang.kernels.numerics`，以及 DAS 的 `diffusion.common.numerics` 布局。
+启动时同步已加载的 SGLang 模块中指向原函数的引用。
+
+根据 BMZ v2.1 §3.7、§3.8、§3.10 和 §3.11，`mul_rn_f32` 通过
+`v_mul_f32` 保持 FP32 乘法独立舍入，`rsqrt_approx_f32` 使用
+`v_rsq_f32` 并对次正规输入做幂次缩放。精确除法由 `tl.div_rn`
+请求 DTK 降低为 `v_div_scale_f32`、`v_div_fmas_f32`、
+`v_div_fixup_f32` 等原生指令。编译器负责指令依赖和寄存器分配。
+DAS `275064cc8c` 的 HIP scaled-residual 路径提供了独立舍入的对照。
+
+在 DTK 26.10 的 gfx936 上检查了生成的汇编。乘加分开，乘法和除法与
+FP32 参考逐位一致，倒平方根相对 FP64 参考舍入到 FP32 的最大误差为 1 ULP。
+两个 SGLang VAE residual kernel 的 FP16/BF16 对照通过。完整 T2VA
+生成和其他设备架构的内核执行仍待验证。

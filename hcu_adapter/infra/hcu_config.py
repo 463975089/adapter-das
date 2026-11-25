@@ -783,6 +783,26 @@ BACKEND_CATALOG = {
                              "note": "__nv_* -> __ocml_*；hip 缺的名响亮 stub"},
         },
     },
+    "diffusion_fp32_numerics": {
+        "var": None,
+        "summary": "SGLang diffusion FP32 算术原语，仅在可见设备均为 gfx936 时启用",
+        "backends": {
+            "triton": {
+                "status": "candidate",
+                "note": "gfx936 上实测乘法与精确除法逐位对拍，倒平方根最大误差 1 ULP。",
+            },
+        },
+    },
+    "diffusion_fa2": {
+        "summary": "SGLang Diffusion FA / FA2 后端",
+        "backends": {
+            "vendor": {
+                "status": "candidate",
+                "note": "FA 保留官方后端标识，packed varlen 走 DTK FA2；显式 FA2 的 dense 与 packed 均走 DTK。"
+                        "vendor_fa 快关恢复 FA 上游选路并拒绝显式 FA2。",
+            },
+        },
+    },
     "flash_attention": {
         "var": "HCU_FA_IMPL",
         "summary": "fa3 backend 注意力面（kvcache 分页/统一窗 + varlen prefill）",
