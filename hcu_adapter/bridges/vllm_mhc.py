@@ -394,6 +394,23 @@ def _declare_aiter(mhc, kernels, ir, backend, provider, split_k, mega=None, *, m
             if mega is not None and mega.supported(
                     residual, fn, hc_scale, hc_base, pre_mix, x, norm_weight,
                     sublayer_out, post_layer_mix, comb_res_mix, sinkhorn_repeat):
+                # The existing split boundary preserves native Torch BF16
+                # storage and folds collapse into its partial kernel. Mega
+                # computes a mandatory normalized y that this seam discards,
+                # then launches collapse again. Prefer the verified boundary
+                # in the runtime's generic small-row split range; larger or
+                # unsupported calls retain Mega and its established contract.
+                if (split_k == 'auto' and provider.project is not None
+                        and provider.tilelang_enabled and provider.tilelang_pre is not None
+                        and boundary_supported(residual, fn, hc_scale, hc_base, pre_mix,
+                            sublayer_out, post_layer_mix, comb_res_mix, rms_eps, hc_pre_eps,
+                            hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat)
+                        and 0 < residual.shape[0] <= 64):
+                    _check_dispatch_provider(mega_provider)
+                    return torch.ops.vllm.hcu_adapter_mhc_boundary(
+                        residual, sublayer_out, post_layer_mix, comb_res_mix,
+                        fn, hc_scale, hc_base, pre_mix, norm_weight, norm_eps, rms_eps,
+                        hc_pre_eps, hc_post_mult_value, sinkhorn_repeat)
                 return torch.ops.vllm.hcu_adapter_mhc_mega_seam(
                     residual, fn, hc_scale, hc_base, rms_eps, hc_pre_eps,
                     hc_sinkhorn_eps, hc_post_mult_value, sinkhorn_repeat,
